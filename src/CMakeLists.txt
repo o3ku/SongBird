@@ -32,6 +32,7 @@ set(QT_V2RAYN_SOURCES
     platform/windows/WindowsPacServer.h
     platform/windows/WindowsPacServer.cpp
     runtime/CoreInfo.h
+    runtime/ProtocolCoreCompat.h
     runtime/ClientConfigWriter.h
     runtime/ClientConfigWriter.cpp
     runtime/ClashConfigWriter.h

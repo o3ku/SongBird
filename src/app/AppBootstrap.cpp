@@ -2711,7 +2711,8 @@ void AppBootstrap::openSettingsDialog(int initialTab)
             }
         }
 
-        dialogGuard->setCoreVersions(xrayVersion, singBoxVersion);
+        dialogGuard->setCoreVersion(CoreType::Xray, xrayVersion);
+        dialogGuard->setCoreVersion(CoreType::SingBox, singBoxVersion);
     };
     refreshCoreVersions();
 

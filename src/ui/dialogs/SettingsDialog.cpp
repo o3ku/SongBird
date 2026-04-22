@@ -1,8 +1,10 @@
 #include "ui/dialogs/SettingsDialog.h"
+#include "runtime/ProtocolCoreCompat.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QPushButton>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -392,11 +394,6 @@ void SettingsDialog::setupUi()
     auto* coreTab = new QWidget(this);
     auto* coreLayout = new QVBoxLayout(coreTab);
 
-    // Upper section: per-protocol core selection
-    auto* coreTypeGroup = new QGroupBox(coreTab);
-    coreTypeGroup->setTitle(tr("Core Type per Protocol"));
-    auto* coreTypeForm = new QFormLayout(coreTypeGroup);
-
     // EConfigType values: VMess=1, Custom=2, Shadowsocks=3, Socks=4, VLESS=5, Trojan=6, HTTP=11
     const QStringList protocolNames = {
         QStringLiteral("VMess"),
@@ -408,56 +405,86 @@ void SettingsDialog::setupUi()
         QStringLiteral("HTTP")
     };
     const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
+    const QList<CoreType> allCores = availableCoreTypes();
+
+    // Bulk-set buttons at top — one per core type
+    auto* bulkButtonLayout = new QHBoxLayout();
+    for (const CoreType core : allCores) {
+        auto* button = new QPushButton(tr("Set all to %1").arg(coreTypeDisplayName(core)), coreTab);
+        bulkButtonLayout->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, configTypes, core]() {
+            for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
+                auto* combo = coreTypeCombos_.at(i);
+                if (combo == nullptr) continue;
+                if (protocolSupportsCore(static_cast<ConfigType>(configTypes.at(i)), core)) {
+                    const int idx = combo->findData(static_cast<int>(core));
+                    if (idx >= 0) combo->setCurrentIndex(idx);
+                }
+            }
+        });
+    }
+    bulkButtonLayout->addStretch(1);
+
+    // Per-protocol core selection
+    auto* coreTypeGroup = new QGroupBox(tr("Per-Protocol Override"), coreTab);
+    auto* coreTypeForm = new QFormLayout(coreTypeGroup);
 
     for (int i = 0; i < protocolNames.size(); ++i) {
-        auto* coreCombo = new QComboBox(coreTab);
-        coreCombo->addItems({ QStringLiteral("Xray"), QStringLiteral("sing_box") });
-        coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
-        coreTypeForm->addRow(protocolNames.at(i), coreCombo);
-        coreTypeCombos_.append(coreCombo);
+        const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configTypes.at(i)));
+        if (cores.size() > 1) {
+            auto* coreCombo = new QComboBox(coreTab);
+            for (const CoreType core : cores) {
+                coreCombo->addItem(coreTypeDisplayName(core), static_cast<int>(core));
+            }
+            coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            coreTypeForm->addRow(protocolNames.at(i), coreCombo);
+            coreTypeCombos_.append(coreCombo);
+        } else if (cores.size() == 1) {
+            auto* fixedLabel = new QLabel(coreTypeDisplayName(cores.first()), coreTab);
+            fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            coreTypeForm->addRow(protocolNames.at(i), fixedLabel);
+            coreTypeCombos_.append(nullptr);
+        }
     }
 
-    // Lower section: core status
+    // Lower section: core status — one row per available core type
     auto* coreStatusGroup = new QGroupBox(coreTab);
     coreStatusGroup->setTitle(tr("Installed Cores"));
     auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
 
-    // Xray core row
-    coreVersionLabel_ = new QLabel(coreTab);
-    coreVersionLabel_->setObjectName(QStringLiteral("coreVersionLabel"));
-    coreStatusLabel_ = new QLabel(coreTab);
-    coreStatusLabel_->setObjectName(QStringLiteral("coreStatusLabel"));
-    downloadXrayButton_ = new QPushButton(tr("Download"), coreTab);
-    downloadXrayButton_->setObjectName(QStringLiteral("downloadXrayButton"));
-    auto* xrayInfoLayout = new QVBoxLayout();
-    xrayInfoLayout->setContentsMargins(0, 0, 0, 0);
-    xrayInfoLayout->setSpacing(2);
-    xrayInfoLayout->addWidget(coreVersionLabel_);
-    xrayInfoLayout->addWidget(coreStatusLabel_);
-    auto* xrayRowLayout = new QHBoxLayout();
-    xrayRowLayout->addLayout(xrayInfoLayout);
-    xrayRowLayout->addWidget(downloadXrayButton_);
-    xrayRowLayout->addStretch();
-    coreStatusLayout->addRow(QStringLiteral("Xray:"), xrayRowLayout);
+    for (const CoreType core : allCores) {
+        const int coreKey = static_cast<int>(core);
+        auto& row = coreStatusRows_[coreKey];
 
-    // sing-box core row
-    singBoxVersionLabel_ = new QLabel(coreTab);
-    singBoxVersionLabel_->setObjectName(QStringLiteral("singBoxVersionLabel"));
-    singBoxStatusLabel_ = new QLabel(coreTab);
-    singBoxStatusLabel_->setObjectName(QStringLiteral("singBoxStatusLabel"));
-    downloadSingBoxButton_ = new QPushButton(tr("Download"), coreTab);
-    downloadSingBoxButton_->setObjectName(QStringLiteral("downloadSingBoxButton"));
-    auto* singBoxInfoLayout = new QVBoxLayout();
-    singBoxInfoLayout->setContentsMargins(0, 0, 0, 0);
-    singBoxInfoLayout->setSpacing(2);
-    singBoxInfoLayout->addWidget(singBoxVersionLabel_);
-    singBoxInfoLayout->addWidget(singBoxStatusLabel_);
-    auto* singBoxRowLayout = new QHBoxLayout();
-    singBoxRowLayout->addLayout(singBoxInfoLayout);
-    singBoxRowLayout->addWidget(downloadSingBoxButton_);
-    singBoxRowLayout->addStretch();
-    coreStatusLayout->addRow(QStringLiteral("sing-box:"), singBoxRowLayout);
+        row.versionLabel = new QLabel(coreTab);
+        row.versionLabel->setObjectName(QStringLiteral("coreVersionLabel_%1").arg(coreKey));
+        row.statusLabel = new QLabel(coreTab);
+        row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
+        row.downloadButton = new QPushButton(tr("Download"), coreTab);
+        row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
 
+        auto* infoLayout = new QVBoxLayout();
+        infoLayout->setContentsMargins(0, 0, 0, 0);
+        infoLayout->setSpacing(2);
+        infoLayout->addWidget(row.versionLabel);
+        infoLayout->addWidget(row.statusLabel);
+
+        auto* rowLayout = new QHBoxLayout();
+        rowLayout->addLayout(infoLayout);
+        rowLayout->addWidget(row.downloadButton);
+        rowLayout->addStretch();
+
+        coreStatusLayout->addRow(coreTypeDisplayName(core) + QStringLiteral(":"), rowLayout);
+
+        connect(row.downloadButton, &QPushButton::clicked, this, [this, core]() {
+            coreDownloadRequested_ = true;
+            requestedCoreDownload_ = core;
+            beginCoreUpdate(core);
+            emit coreDownloadRequested(static_cast<int>(core));
+        });
+    }
+
+    coreLayout->addLayout(bulkButtonLayout);
     coreLayout->addWidget(coreTypeGroup);
     coreLayout->addWidget(coreStatusGroup);
 
@@ -740,20 +767,6 @@ void SettingsDialog::setupUi()
     });
     connect(subTable_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this]() {
         updateSubActionState();
-    });
-
-    // Core tab download button connections
-    connect(downloadXrayButton_, &QPushButton::clicked, this, [this]() {
-        coreDownloadRequested_ = true;
-        requestedCoreDownload_ = CoreType::Xray;
-        beginCoreUpdate(CoreType::Xray);
-        emit coreDownloadRequested(static_cast<int>(CoreType::Xray));
-    });
-    connect(downloadSingBoxButton_, &QPushButton::clicked, this, [this]() {
-        coreDownloadRequested_ = true;
-        requestedCoreDownload_ = CoreType::SingBox;
-        beginCoreUpdate(CoreType::SingBox);
-        emit coreDownloadRequested(static_cast<int>(CoreType::SingBox));
     });
 
     reloadRoutingTable();
@@ -1112,10 +1125,7 @@ QList<SubItem> SettingsDialog::collectSubItems() const
 
 void SettingsDialog::reloadCoreTypeTable()
 {
-    // configTypes order: 1=VMess, 2=Custom, 3=Shadowsocks, 4=Socks, 5=VLESS, 6=Trojan, 11=HTTP
     const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
-    // ECoreType: Xray=2, sing_box=24
-    const QList<int> coreTypeValues = { 2, 24 };
 
     for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
         auto* combo = coreTypeCombos_.at(i);
@@ -1124,7 +1134,7 @@ void SettingsDialog::reloadCoreTypeTable()
         }
 
         int configType = configTypes.at(i);
-        int coreType = 2; // default to Xray
+        int coreType = static_cast<int>(CoreType::Xray);
 
         for (const CoreTypeItem& item : coreTypeItems_) {
             if (item.configType == configType) {
@@ -1133,9 +1143,9 @@ void SettingsDialog::reloadCoreTypeTable()
             }
         }
 
-        int comboIndex = coreTypeValues.indexOf(coreType);
-        if (comboIndex >= 0) {
-            combo->setCurrentIndex(comboIndex);
+        const int dataIndex = combo->findData(coreType);
+        if (dataIndex >= 0) {
+            combo->setCurrentIndex(dataIndex);
         }
     }
 }
@@ -1143,23 +1153,23 @@ void SettingsDialog::reloadCoreTypeTable()
 QList<CoreTypeItem> SettingsDialog::collectCoreTypeItems() const
 {
     QList<CoreTypeItem> items;
-
-    // configTypes order: 1=VMess, 2=Custom, 3=Shadowsocks, 4=Socks, 5=VLESS, 6=Trojan, 11=HTTP
     const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
-    // ECoreType: Xray=2, sing_box=24
-    const QList<int> coreTypeValues = { 2, 24 };
 
     for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
+        const int configType = configTypes.at(i);
         auto* combo = coreTypeCombos_.at(i);
-        if (combo == nullptr) {
-            continue;
-        }
 
         CoreTypeItem item;
-        item.configType = configTypes.at(i);
-        const int comboIndex = combo->currentIndex();
-        if (comboIndex >= 0 && comboIndex < coreTypeValues.size()) {
-            item.coreType = coreTypeValues.at(comboIndex);
+        item.configType = configType;
+        if (combo != nullptr) {
+            bool ok = false;
+            const int coreTypeValue = combo->currentData().toInt(&ok);
+            item.coreType = ok ? coreTypeValue : static_cast<int>(CoreType::Xray);
+        } else {
+            const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configType));
+            item.coreType = cores.isEmpty()
+                ? static_cast<int>(CoreType::Xray)
+                : static_cast<int>(cores.first());
         }
         items.append(item);
     }
@@ -1167,11 +1177,13 @@ QList<CoreTypeItem> SettingsDialog::collectCoreTypeItems() const
     return items;
 }
 
-void SettingsDialog::setCoreVersions(const QString& xrayVersion, const QString& singBoxVersion)
+void SettingsDialog::setCoreVersion(CoreType coreType, const QString& version)
 {
-    xrayVersionText_ = xrayVersion.trimmed();
-    singBoxVersionText_ = singBoxVersion.trimmed();
-    refreshCoreStatusPresentation();
+    const int key = static_cast<int>(coreType);
+    if (coreStatusRows_.contains(key)) {
+        coreStatusRows_[key].versionText = version.trimmed();
+        refreshCoreStatusPresentation();
+    }
 }
 
 void SettingsDialog::beginCoreUpdate(CoreType coreType)
@@ -1183,62 +1195,48 @@ void SettingsDialog::beginCoreUpdate(CoreType coreType)
 
 void SettingsDialog::setCoreUpdateProgress(CoreType coreType, const QString& message)
 {
-    const QString trimmedMessage = message.trimmed();
-    if (coreType == CoreType::Xray) {
-        xrayProgressText_ = trimmedMessage;
-    } else if (coreType == CoreType::SingBox) {
-        singBoxProgressText_ = trimmedMessage;
+    const int key = static_cast<int>(coreType);
+    if (coreStatusRows_.contains(key)) {
+        coreStatusRows_[key].progressText = message.trimmed();
+        refreshCoreStatusPresentation();
     }
-    refreshCoreStatusPresentation();
 }
 
 void SettingsDialog::finishCoreUpdate(CoreType coreType, bool success, const QString& message)
 {
+    Q_UNUSED(message)
     updatingCoreType_ = CoreType::Unknown;
-    if (coreType == CoreType::Xray) {
-        xrayProgressText_ = success ? QString() : tr("Failed");
-    } else if (coreType == CoreType::SingBox) {
-        singBoxProgressText_ = success ? QString() : tr("Failed");
+    const int key = static_cast<int>(coreType);
+    if (coreStatusRows_.contains(key)) {
+        coreStatusRows_[key].progressText = success ? QString() : tr("Failed");
+        refreshCoreStatusPresentation();
     }
-    refreshCoreStatusPresentation();
 }
 
 void SettingsDialog::refreshCoreStatusPresentation()
 {
     const bool updateRunning = updatingCoreType_ != CoreType::Unknown;
-    const bool xrayActive = updatingCoreType_ == CoreType::Xray;
-    const bool singBoxActive = updatingCoreType_ == CoreType::SingBox;
 
-    if (coreVersionLabel_ != nullptr) {
-        if (xrayActive) {
-            coreVersionLabel_->setText(tr("Downloading..."));
-        } else {
-            coreVersionLabel_->setText(xrayVersionText_.isEmpty() ? tr("Not found") : xrayVersionText_);
-        }
-    }
-    if (singBoxVersionLabel_ != nullptr) {
-        if (singBoxActive) {
-            singBoxVersionLabel_->setText(tr("Downloading..."));
-        } else {
-            singBoxVersionLabel_->setText(singBoxVersionText_.isEmpty() ? tr("Not found") : singBoxVersionText_);
-        }
-    }
-    if (coreStatusLabel_ != nullptr) {
-        coreStatusLabel_->setText(coreStatusTextForProgress(xrayProgressText_));
-        coreStatusLabel_->setVisible(!xrayActive && !coreStatusLabel_->text().isEmpty());
-    }
-    if (singBoxStatusLabel_ != nullptr) {
-        singBoxStatusLabel_->setText(coreStatusTextForProgress(singBoxProgressText_));
-        singBoxStatusLabel_->setVisible(!singBoxActive && !singBoxStatusLabel_->text().isEmpty());
-    }
+    for (auto it = coreStatusRows_.begin(); it != coreStatusRows_.end(); ++it) {
+        const int key = it.key();
+        const bool isActive = static_cast<CoreType>(key) == updatingCoreType_;
+        auto& row = it.value();
 
-    if (downloadXrayButton_ != nullptr) {
-        downloadXrayButton_->setVisible(!xrayActive && xrayVersionText_.isEmpty());
-        downloadXrayButton_->setEnabled(!updateRunning);
-    }
-    if (downloadSingBoxButton_ != nullptr) {
-        downloadSingBoxButton_->setVisible(!singBoxActive && singBoxVersionText_.isEmpty());
-        downloadSingBoxButton_->setEnabled(!updateRunning);
+        if (row.versionLabel != nullptr) {
+            if (isActive) {
+                row.versionLabel->setText(tr("Downloading..."));
+            } else {
+                row.versionLabel->setText(row.versionText.isEmpty() ? tr("Not found") : row.versionText);
+            }
+        }
+        if (row.statusLabel != nullptr) {
+            row.statusLabel->setText(coreStatusTextForProgress(row.progressText));
+            row.statusLabel->setVisible(!isActive && !row.statusLabel->text().isEmpty());
+        }
+        if (row.downloadButton != nullptr) {
+            row.downloadButton->setVisible(!isActive && row.versionText.isEmpty());
+            row.downloadButton->setEnabled(!updateRunning);
+        }
     }
 }
 

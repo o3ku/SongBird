@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QList>
+#include <QMap>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QTextEdit>
@@ -32,7 +33,7 @@ public:
     QList<int> selectedSubRows() const;
     void clearUpdateSubRequested() { updateSubRequested_ = false; }
     void selectTab(int index) { requestedTabIndex_ = index; }
-    void setCoreVersions(const QString& xrayVersion, const QString& singBoxVersion);
+    void setCoreVersion(CoreType coreType, const QString& version);
     void beginCoreUpdate(CoreType coreType);
     void setCoreUpdateProgress(CoreType coreType, const QString& message);
     void finishCoreUpdate(CoreType coreType, bool success, const QString& message = {});
@@ -67,6 +68,13 @@ private:
     void refreshCoreStatusPresentation();
     QString coreStatusTextForProgress(const QString& message) const;
 
+    struct CoreStatusRow {
+        QLabel* versionLabel = nullptr;
+        QLabel* statusLabel = nullptr;
+        QPushButton* downloadButton = nullptr;
+        QString versionText;
+        QString progressText;
+    };
 
     Config config_;
     QCheckBox* showMainOnStartupCheck_ = nullptr;
@@ -123,10 +131,6 @@ private:
     bool coreDownloadRequested_ = false;
     CoreType requestedCoreDownload_ = CoreType::Unknown;
     CoreType updatingCoreType_ = CoreType::Unknown;
-    QString xrayVersionText_;
-    QString singBoxVersionText_;
-    QString xrayProgressText_;
-    QString singBoxProgressText_;
 
     QList<RoutingItem> routingItems_;
     int currentRoutingRow_ = -1;
@@ -148,11 +152,6 @@ private:
 
     QList<CoreTypeItem> coreTypeItems_;
     QList<QComboBox*> coreTypeCombos_;
-    QLabel* coreVersionLabel_ = nullptr;
-    QLabel* singBoxVersionLabel_ = nullptr;
-    QLabel* coreStatusLabel_ = nullptr;
-    QLabel* singBoxStatusLabel_ = nullptr;
-    QPushButton* downloadXrayButton_ = nullptr;
-    QPushButton* downloadSingBoxButton_ = nullptr;
+    QMap<int, CoreStatusRow> coreStatusRows_;
 
 };

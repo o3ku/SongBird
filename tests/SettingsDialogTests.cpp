@@ -32,8 +32,8 @@ void SettingsDialogTests::downloadButtonStartsInlineUpdate_data()
     QTest::addColumn<QString>("buttonObjectName");
     QTest::addColumn<int>("expectedCoreType");
 
-    QTest::newRow("xray") << QStringLiteral("downloadXrayButton") << static_cast<int>(CoreType::Xray);
-    QTest::newRow("sing-box") << QStringLiteral("downloadSingBoxButton") << static_cast<int>(CoreType::SingBox);
+    QTest::newRow("xray") << QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(CoreType::Xray)) << static_cast<int>(CoreType::Xray);
+    QTest::newRow("sing-box") << QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(CoreType::SingBox)) << static_cast<int>(CoreType::SingBox);
 }
 
 void SettingsDialogTests::downloadButtonStartsInlineUpdate()
@@ -43,7 +43,8 @@ void SettingsDialogTests::downloadButtonStartsInlineUpdate()
 
     SettingsDialog dialog;
     dialog.setConfig(Config());
-    dialog.setCoreVersions(QString(), QString());
+    dialog.setCoreVersion(CoreType::Xray, QString());
+    dialog.setCoreVersion(CoreType::SingBox, QString());
 
     auto* button = dialog.findChild<QPushButton*>(buttonObjectName);
     QVERIFY(button != nullptr);
@@ -63,11 +64,12 @@ void SettingsDialogTests::coreUpdateProgressRefreshesInlineStatus()
 {
     SettingsDialog dialog;
     dialog.setConfig(Config());
-    dialog.setCoreVersions(QString(), QString());
+    dialog.setCoreVersion(CoreType::Xray, QString());
+    dialog.setCoreVersion(CoreType::SingBox, QString());
 
-    auto* xrayButton = dialog.findChild<QPushButton*>(QStringLiteral("downloadXrayButton"));
-    auto* xrayLabel = dialog.findChild<QLabel*>(QStringLiteral("coreVersionLabel"));
-    auto* xrayStatusLabel = dialog.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
+    auto* xrayButton = dialog.findChild<QPushButton*>(QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(CoreType::Xray)));
+    auto* xrayLabel = dialog.findChild<QLabel*>(QStringLiteral("coreVersionLabel_%1").arg(static_cast<int>(CoreType::Xray)));
+    auto* xrayStatusLabel = dialog.findChild<QLabel*>(QStringLiteral("coreStatusLabel_%1").arg(static_cast<int>(CoreType::Xray)));
     QVERIFY(xrayButton != nullptr);
     QVERIFY(xrayLabel != nullptr);
     QVERIFY(xrayStatusLabel != nullptr);
@@ -227,19 +229,14 @@ void SettingsDialogTests::mux4SboxProtocolComboRoundTripsConfig()
 void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
 {
     Config config;
-    CoreTypeItem httpItem;
-    httpItem.configType = static_cast<int>(ConfigType::HTTP);
-    httpItem.coreType = static_cast<int>(CoreType::SingBox);
-    config.coreTypeItems = {httpItem};
 
     SettingsDialog dialog;
     dialog.setConfig(config);
 
-    auto* httpCombo = dialog.findChild<QComboBox*>(QStringLiteral("coreTypeCombo_11"));
-    QVERIFY(httpCombo != nullptr);
-    QCOMPARE(httpCombo->currentText(), QStringLiteral("sing_box"));
-
-    httpCombo->setCurrentText(QStringLiteral("Xray"));
+    // HTTP is a fixed label, not a combo
+    auto* httpLabel = dialog.findChild<QLabel*>(QStringLiteral("coreTypeCombo_11"));
+    QVERIFY(httpLabel != nullptr);
+    QCOMPARE(httpLabel->text(), QStringLiteral("Xray"));
 
     const Config updated = dialog.config();
     auto it = std::find_if(

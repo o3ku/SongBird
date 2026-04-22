@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <future>
 #include <utility>
+#include <vector>
 
 #include "runtime/ClientConfigWriter.h"
 
@@ -444,7 +445,7 @@ public:
             QString serverName;
             std::future<QString> future;
         };
-        QList<PendingItem> pending;
+        std::vector<PendingItem> pending;
 
         for (const SpeedTestRequestItem& item : items) {
             if (cancelled_.load()) {
@@ -452,7 +453,7 @@ public:
             }
             emit logGenerated(QStringLiteral("%1: %2").arg(modeDisplayName(mode), describeServer(item.server)));
 
-            pending.append(PendingItem{
+            pending.push_back(PendingItem{
                 item.server.indexId,
                 describeServer(item.server),
                 std::async(std::launch::async, [this, item, mode, &config]() -> QString {

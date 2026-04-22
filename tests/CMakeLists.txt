@@ -761,3 +761,37 @@ set_tests_properties(server-service PROPERTIES
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_server_service_tests)
 endif()
+
+set(QT_V2RAYN_PROTOCOL_CORE_COMPAT_TEST_SOURCES
+    ProtocolCoreCompatTests.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_protocol_core_compat_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_PROTOCOL_CORE_COMPAT_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_protocol_core_compat_tests ${QT_V2RAYN_PROTOCOL_CORE_COMPAT_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_protocol_core_compat_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_protocol_core_compat_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+add_test(NAME protocol-core-compat COMMAND qt_v2rayn_protocol_core_compat_tests)
+set_tests_properties(protocol-core-compat PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_protocol_core_compat_tests)
+endif()
