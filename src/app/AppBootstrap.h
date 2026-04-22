@@ -136,7 +136,7 @@ private:
     void removeStaleSingBoxCache();
     void cleanupOrphanCoreProcesses();
     void handleCoreExited(int exitCode, int status, bool stopRequested, bool auxiliary);
-    void scheduleCoreRestart(const QString& reason, bool auxiliary);
+    void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
 
     QString configPath_;

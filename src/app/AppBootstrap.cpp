@@ -82,8 +82,8 @@ namespace {
 constexpr auto DefaultIeProxyExceptions =
     "localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;"
     "172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*";
-constexpr auto ProjectPageUrl = "https://github.com/2dust/v2rayN";
-constexpr auto ReleasePageUrl = "https://github.com/2dust/v2rayN/releases";
+constexpr auto ProjectPageUrl = "https://github.com/o3ku/v2rayq";
+constexpr auto ReleasePageUrl = "https://github.com/o3ku/v2rayq/releases";
 constexpr auto DocumentationUrl = "https://www.v2fly.org/";
 constexpr auto DnsObjectUrl = "https://www.v2fly.org/config/dns.html#dnsobject";
 constexpr auto RuleObjectUrl = "https://www.v2fly.org/config/routing.html#ruleobject";
@@ -1590,7 +1590,7 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         auxiliary);
 }
 
-void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary)
+void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs)
 {
     if (shuttingDown_.load()) {
         return;
@@ -1609,7 +1609,7 @@ void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary)
             startCore();
         });
     }
-    slot->start(3000);
+    slot->start(delayMs);
 }
 
 void AppBootstrap::cancelPendingCoreRestarts()
@@ -1628,10 +1628,7 @@ void AppBootstrap::restartCoreIfRunning(const QString& reason)
         return;
     }
 
-    if (!reason.trimmed().isEmpty()) {
-        appendResult(OperationResult::ok(reason));
-    }
-    startCore();
+    scheduleCoreRestart(reason, false, 0);
 }
 
 void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
@@ -1665,6 +1662,15 @@ void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
     if (mode == SystemProxyMode::ForcedChange && !isCoreRunning()) {
         appendResult(OperationResult::ok(QStringLiteral("Starting the active core because Global system proxy mode was enabled.")));
         startCore();
+        return;
+    }
+
+    if (mode == SystemProxyMode::ForcedClear && isCoreRunning()) {
+        appendResult(OperationResult::ok(QStringLiteral("Stopping the active core because system proxy was cleared.")));
+        cancelPendingCoreRestarts();
+        QTimer::singleShot(0, mainWindow_.get(), [this]() {
+            stopCore();
+        });
         return;
     }
 

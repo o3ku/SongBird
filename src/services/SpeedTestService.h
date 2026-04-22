@@ -15,7 +15,7 @@ enum class SpeedTestMode {
     Ping = 0,
     TcpPing,
     RealPing,
-    DownloadSpeed
+    DownloadSpeed // Deprecated
 };
 
 struct SpeedTestRequestItem {

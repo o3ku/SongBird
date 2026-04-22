@@ -20,6 +20,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <future>
 #include <utility>
 
 #include "runtime/ClientConfigWriter.h"
@@ -409,41 +410,88 @@ public:
     void runBatch(SpeedTestMode mode, const Config& config, const QList<SpeedTestRequestItem>& items)
     {
         int completed = 0;
+
+        // Deprecated: download speed test remains serial
+        if (mode == SpeedTestMode::DownloadSpeed) {
+            for (const SpeedTestRequestItem& item : items) {
+                if (cancelled_.load()) {
+                    break;
+                }
+                emit logGenerated(QStringLiteral("%1: %2").arg(modeDisplayName(mode), describeServer(item.server)));
+                QString result;
+                if (item.server.configType == ConfigType::Custom) {
+                    result = QStringLiteral("Unsupported");
+                } else {
+                    result = runDownloadSpeedTest(item, config, customConfigDirectory_);
+                }
+                if (result.trimmed().isEmpty()) {
+                    result = QStringLiteral("Failed");
+                }
+                ++completed;
+                emit testResultReady(item.server.indexId, result);
+                emit logGenerated(QStringLiteral("%1 result | %2 -> %3")
+                                      .arg(modeDisplayName(mode), describeServer(item.server), result));
+            }
+            emit batchFinished(cancelled_.load()
+                ? QStringLiteral("%1 cancelled after %2 server(s).").arg(modeDisplayName(mode)).arg(completed)
+                : QStringLiteral("%1 finished for %2 server(s).").arg(modeDisplayName(mode)).arg(completed));
+            return;
+        }
+
+        // Concurrent execution for Ping/TcpPing/RealPing
+        struct PendingItem {
+            QString indexId;
+            QString serverName;
+            std::future<QString> future;
+        };
+        QList<PendingItem> pending;
+
         for (const SpeedTestRequestItem& item : items) {
             if (cancelled_.load()) {
                 break;
             }
-
             emit logGenerated(QStringLiteral("%1: %2").arg(modeDisplayName(mode), describeServer(item.server)));
 
-            QString result;
-            if (item.server.configType == ConfigType::Custom) {
-                result = QStringLiteral("Unsupported");
-            } else {
-                switch (mode) {
-                case SpeedTestMode::Ping:
-                    result = executePingProcess(item.server.address);
-                    break;
-                case SpeedTestMode::TcpPing:
-                    result = runTcpPingTest(item.server);
-                    break;
-                case SpeedTestMode::RealPing:
-                    result = runRealPingTest(item, config, customConfigDirectory_);
-                    break;
-                case SpeedTestMode::DownloadSpeed:
-                    result = runDownloadSpeedTest(item, config, customConfigDirectory_);
-                    break;
-                }
-            }
+            pending.append(PendingItem{
+                item.server.indexId,
+                describeServer(item.server),
+                std::async(std::launch::async, [this, item, mode, &config]() -> QString {
+                    if (cancelled_.load()) {
+                        return QString();
+                    }
+                    if (item.server.configType == ConfigType::Custom) {
+                        return QStringLiteral("Unsupported");
+                    }
+                    switch (mode) {
+                    case SpeedTestMode::Ping:
+                        return executePingProcess(item.server.address);
+                    case SpeedTestMode::TcpPing:
+                        return runTcpPingTest(item.server);
+                    case SpeedTestMode::RealPing:
+                        return runRealPingTest(item, config, customConfigDirectory_);
+                    default:
+                        return QString();
+                    }
+                })
+            });
+        }
 
+        for (auto& p : pending) {
+            QString result;
+            try {
+                result = p.future.get();
+            } catch (...) {
+                result = QStringLiteral("Failed");
+            }
             if (result.trimmed().isEmpty()) {
                 result = QStringLiteral("Failed");
             }
-
             ++completed;
-            emit testResultReady(item.server.indexId, result);
-            emit logGenerated(QStringLiteral("%1 result | %2 -> %3")
-                                  .arg(modeDisplayName(mode), describeServer(item.server), result));
+            if (!cancelled_.load()) {
+                emit testResultReady(p.indexId, result);
+                emit logGenerated(QStringLiteral("%1 result | %2 -> %3")
+                                      .arg(modeDisplayName(mode), p.serverName, result));
+            }
         }
 
         const bool wasCancelled = cancelled_.load();
