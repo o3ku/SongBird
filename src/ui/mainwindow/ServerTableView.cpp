@@ -1,0 +1,207 @@
+#include "ui/mainwindow/ServerTableView.h"
+
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QEvent>
+#include <QItemSelectionModel>
+#include <QPalette>
+#include <QPainter>
+#include <QStyle>
+#include <QStyledItemDelegate>
+
+#include <algorithm>
+
+namespace {
+
+class ServerTableItemDelegate final : public QStyledItemDelegate {
+public:
+    explicit ServerTableItemDelegate(QObject* parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QStyleOptionViewItem styledOption(option);
+        initStyleOption(&styledOption, index);
+
+        const auto* tableView = dynamic_cast<const ServerTableView*>(option.widget);
+        const bool selected = (styledOption.state & QStyle::State_Selected) != 0;
+        const bool hovered = tableView != nullptr && tableView->hoveredRow() == index.row() && !selected;
+        const QColor rowDividerColor(QStringLiteral("#e6e6e6"));
+        const QColor selectedFillColor(QStringLiteral("#cbd8ea"));
+        const QColor selectedDividerColor(QStringLiteral("#96a8c2"));
+        styledOption.state &= ~QStyle::State_HasFocus;
+        if (selected) {
+            painter->fillRect(option.rect, selectedFillColor);
+            styledOption.state &= ~QStyle::State_Selected;
+        } else if (hovered) {
+            painter->fillRect(option.rect, QColor(QStringLiteral("#e8ebef")));
+        }
+
+        QStyledItemDelegate::paint(painter, styledOption, index);
+
+        painter->save();
+        painter->setPen(QPen(selected ? selectedDividerColor : rowDividerColor));
+        painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
+        painter->restore();
+    }
+};
+
+} // namespace
+
+ServerTableView::ServerTableView(QWidget* parent)
+    : QTableView(parent)
+{
+    setDragDropMode(QAbstractItemView::DragDrop);
+    setDefaultDropAction(Qt::MoveAction);
+    setDragDropOverwriteMode(false);
+    setDropIndicatorShown(true);
+    setRowsReorderEnabled(true);
+    setMouseTracking(true);
+    viewport()->setMouseTracking(true);
+    setItemDelegate(new ServerTableItemDelegate(this));
+
+    connect(this, &QTableView::entered, this, [this](const QModelIndex& index) {
+        setHoveredRow(index.isValid() ? index.row() : -1);
+    });
+}
+
+void ServerTableView::setRowsReorderEnabled(bool enabled)
+{
+    rowsReorderEnabled_ = enabled;
+    setDragEnabled(enabled);
+    viewport()->setAcceptDrops(enabled);
+    setAcceptDrops(enabled);
+}
+
+bool ServerTableView::rowsReorderEnabled() const
+{
+    return rowsReorderEnabled_;
+}
+
+int ServerTableView::hoveredRow() const
+{
+    return hoveredRow_;
+}
+
+void ServerTableView::setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler)
+{
+    rowsMoveHandler_ = std::move(handler);
+}
+
+bool ServerTableView::moveSelectedRowsTo(int targetRow)
+{
+    return requestMoveSelectedRows(targetRow);
+}
+
+void ServerTableView::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (rowsReorderEnabled_
+        && event != nullptr
+        && event->source() == this
+        && selectionModel() != nullptr
+        && !selectionModel()->selectedRows().isEmpty()) {
+        event->acceptProposedAction();
+        return;
+    }
+
+    QTableView::dragEnterEvent(event);
+}
+
+void ServerTableView::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (rowsReorderEnabled_
+        && event != nullptr
+        && event->source() == this
+        && selectionModel() != nullptr
+        && !selectionModel()->selectedRows().isEmpty()) {
+        event->acceptProposedAction();
+        return;
+    }
+
+    QTableView::dragMoveEvent(event);
+}
+
+void ServerTableView::dropEvent(QDropEvent* event)
+{
+    if (rowsReorderEnabled_
+        && event != nullptr
+        && event->source() == this
+        && requestMoveSelectedRows(resolveDropRow(event->pos()))) {
+        event->acceptProposedAction();
+        return;
+    }
+
+    QTableView::dropEvent(event);
+}
+
+void ServerTableView::leaveEvent(QEvent* event)
+{
+    setHoveredRow(-1);
+    QTableView::leaveEvent(event);
+}
+
+int ServerTableView::resolveDropRow(const QPoint& viewportPosition) const
+{
+    if (model() == nullptr) {
+        return 0;
+    }
+
+    const QModelIndex targetIndex = indexAt(viewportPosition);
+    if (!targetIndex.isValid()) {
+        return model()->rowCount();
+    }
+
+    const QRect targetRect = visualRect(targetIndex);
+    return viewportPosition.y() > targetRect.center().y()
+        ? targetIndex.row() + 1
+        : targetIndex.row();
+}
+
+bool ServerTableView::requestMoveSelectedRows(int targetRow)
+{
+    if (!rowsReorderEnabled_
+        || rowsMoveHandler_ == nullptr
+        || model() == nullptr
+        || selectionModel() == nullptr) {
+        return false;
+    }
+
+    QList<int> rows;
+    const QModelIndexList selectedRows = selectionModel()->selectedRows();
+    rows.reserve(selectedRows.size());
+    for (const QModelIndex& index : selectedRows) {
+        if (index.isValid() && !rows.contains(index.row())) {
+            rows.append(index.row());
+        }
+    }
+
+    if (rows.isEmpty()) {
+        return false;
+    }
+
+    std::sort(rows.begin(), rows.end());
+
+    const int rowCount = model()->rowCount();
+    const int clampedTargetRow = qBound(0, targetRow, rowCount);
+    const int firstRow = rows.constFirst();
+    const int lastRow = rows.constLast() + 1;
+    if (clampedTargetRow >= firstRow && clampedTargetRow <= lastRow) {
+        return false;
+    }
+
+    rowsMoveHandler_(rows, clampedTargetRow);
+    return true;
+}
+
+void ServerTableView::setHoveredRow(int row)
+{
+    if (hoveredRow_ == row) {
+        return;
+    }
+
+    hoveredRow_ = row;
+    viewport()->update();
+}

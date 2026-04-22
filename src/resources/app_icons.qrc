@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/app">
+        <file alias="logo.ico">logo.ico</file>
+        <file alias="chevron-down.svg">chevron-down.svg</file>
+        <file alias="chevron-up.svg">chevron-up.svg</file>
+    </qresource>
+</RCC>

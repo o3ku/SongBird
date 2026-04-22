@@ -1,0 +1,277 @@
+#pragma once
+
+#include <QCloseEvent>
+#include <QMainWindow>
+#include <QMap>
+#include <QStringList>
+
+#include "common/SystemProxyMode.h"
+#include "domain/models/Config.h"
+#include "domain/models/ServerStatistics.h"
+#include "domain/models/StatisticsSessionState.h"
+
+class QAction;
+class QComboBox;
+class QEvent;
+class QLabel;
+class QLineEdit;
+class QListView;
+class QMenu;
+class QPoint;
+
+class QShowEvent;
+class QSplitter;
+class QTabBar;
+class QToolButton;
+class LogFilterProxyModel;
+class LogItemDelegate;
+class LogListModel;
+class ServerFilterProxyModel;
+class ServerTableModel;
+class ServerTableView;
+class QWidget;
+struct SubItem;
+struct VmessItem;
+
+class MainWindow final : public QMainWindow {
+    Q_OBJECT
+
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override = default;
+
+    void setConfig(const Config& config, const QList<ServerStatItem>& statistics = {});
+    void appendLog(const QString& message);
+    void showTransientStatus(const QString& message, int timeoutMs = 5000);
+    void setHideToTrayEnabled(bool enabled);
+    void setAllowClose(bool allowClose);
+    void setAutoRunEnabled(bool enabled);
+    void setSystemProxyState(int mode, bool enabled);
+    void setProxyEnabled(bool enabled);
+    void setCoreRunning(bool enabled);
+    void setCurrentServerName(const QString& name);
+    void setRoutingSummary(const QString& routingText, const QString& listenText);
+    void setStatisticsSessionState(const StatisticsSessionState& state);
+    void setTrafficSummary(const QString& text);
+    void setSpeedTestRunning(bool running);
+    void setSubscriptionUpdateRunning(bool running);
+    void restoreUiState(const Config& config);
+    void captureUiState(Config& config) const;
+    bool selectSubscriptionTab(const QString& selectionId);
+
+signals:
+    void openSettingsAtSubscriptionsTabRequested();
+    void addServerRequested();
+    void addCustomServerRequested();
+    void editServerRequested(const QString& indexId);
+    void duplicateServerRequested(const QString& indexId);
+    void exportClientConfigRequested(const QString& indexId);
+    void exportServerConfigRequested(const QString& indexId);
+    void importFromClipboardRequested();
+    void importClientConfigRequested();
+    void importServerConfigRequested();
+    void updateSubscriptionsRequested();
+    void updateCurrentSubscriptionRequested(const QString& subscriptionId);
+    void updateCurrentSubscriptionViaProxyRequested(const QString& subscriptionId);
+    void hideSubscriptionRequested(const QString& subscriptionId);
+    void deleteSubscriptionRequested(const QString& subscriptionId);
+    void testMeRequested();
+    void updateCoreRequested(int coreType);
+    void updateGeoResourcesRequested();
+    void openCustomConfigRequested(const QString& indexId);
+    void removeServersRequested(const QStringList& indexIds);
+    void moveServersRequested(const QStringList& indexIds, int operation);
+    void reorderServersRequested(const QStringList& orderedIndexIds);
+    void setDefaultServerRequested(const QString& indexId);
+    void pingServersRequested(const QStringList& indexIds);
+    void tcpPingServersRequested(const QStringList& indexIds);
+    void realPingServersRequested(const QStringList& indexIds);
+    void downloadSpeedTestRequested(const QStringList& indexIds);
+    void systemProxyModeSelected(int mode);
+    void routingModeSelected(int mode);
+    void enableSystemProxyRequested();
+    void disableSystemProxyRequested();
+    void toggleAutoRunRequested();
+    void reloadConfigRequested();
+    void restoreBackupRequested();
+    void globalHotkeySettingsRequested();
+    void dnsSettingsRequested();
+    void settingsRequested();
+    void aboutRequested();
+    void openProjectPageRequested();
+    void openReleasePageRequested();
+    void openDocumentationRequested();
+    void openDnsObjectDocumentationRequested();
+    void openRuleObjectDocumentationRequested();
+    void openLoopbackToolRequested();
+    void openV2RayReleasePageRequested();
+    void openXrayReleasePageRequested();
+    void openSingBoxReleasePageRequested();
+    void openGeoReleasePageRequested();
+    void startCoreRequested();
+    void stopCoreRequested();
+    void clearStatisticsRequested();
+    void hiddenToTray();
+
+private slots:
+    void onServerSelectionChanged();
+    void onServerFilterTextChanged(const QString& text);
+    void toggleServerSorting(int logicalIndex);
+    void updateActionState();
+
+private:
+    void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void setupUi();
+    void setupToolbar();
+    void setupServerView();
+    void setupDiagnosticsPanel();
+    void setupConnections();
+    void rebuildSubscriptionTabs(const Config& config);
+    void updateStatusIndicators();
+    void updateQrPreview();
+    void updateQrPanelActionText();
+    void applyLogFilter();
+    bool shouldStickLogViewToBottom(bool filterActive) const;
+    void updateLogContextActions();
+    void showLogContextMenu(const QPoint& position);
+    void updateSelectionForVisibleRows();
+    void updateServerReorderAvailability();
+    void updateSubscriptionFilter();
+    void showSubscriptionTabContextMenu(const QPoint& position);
+    void applyDeferredUiState();
+    void applyFrameAdjustedWindowMetrics();
+    void updateRoutingModeOptions(const Config& config);
+    void restoreServerColumnWidths(const QMap<QString, int>& widths);
+    QMap<QString, int> captureServerColumnWidths() const;
+    int captureSplitPercent(QSplitter* splitter, int fallback) const;
+    void applySplitPercent(QSplitter* splitter, int percent);
+    void showSystemProxyMenu(const QPoint& globalPosition);
+    QString persistedSubscriptionSelectionId() const;
+    bool confirmExit();
+    static int clampSplitPercent(int value, int fallback);
+    static QStringList serverColumnKeys();
+    QString currentSubscriptionTabKey() const;
+    static QString describeSubscription(const SubItem& item);
+    static QString describeRoutingMode(const RoutingItem& item, int index);
+    static QStringList buildShareLinks(const QList<const VmessItem*>& items);
+    QStringList buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const;
+    const VmessItem* selectedServer() const;
+    QList<const VmessItem*> selectedServers() const;
+    QString selectedServerId() const;
+    QStringList selectedServerIds() const;
+
+    ServerTableModel* serverModel_ = nullptr;
+    ServerFilterProxyModel* serverFilterModel_ = nullptr;
+    LogListModel* logModel_ = nullptr;
+    LogFilterProxyModel* logFilterModel_ = nullptr;
+    QTimer* logScrollTimer_ = nullptr;
+    bool logWasAtBottom_ = false;
+    LogItemDelegate* logItemDelegate_ = nullptr;
+    ServerTableView* serverView_ = nullptr;
+    QWidget* loadingOverlay_ = nullptr;    QSplitter* topSplitter_ = nullptr;
+    QSplitter* rootSplitter_ = nullptr;
+    QTabBar* subscriptionTabBar_ = nullptr;
+    QWidget* qrPanel_ = nullptr;
+    QListView* logView_ = nullptr;
+    QLabel* qrPlaceholder_ = nullptr;
+    QLabel* currentServerStatusLabel_ = nullptr;
+    QLabel* routingStatusLabel_ = nullptr;
+    QLabel* coreStatusLabel_ = nullptr;
+    QLabel* proxyStatusLabel_ = nullptr;
+    QLabel* autoRunStatusLabel_ = nullptr;
+    QLabel* statisticsStatusLabel_ = nullptr;
+    QLabel* trafficStatusLabel_ = nullptr;
+    QAction* addServerAction_ = nullptr;
+    QAction* addCustomServerAction_ = nullptr;
+    QAction* editServerAction_ = nullptr;
+    QAction* duplicateServerAction_ = nullptr;
+    QAction* exportClientConfigAction_ = nullptr;
+    QAction* exportServerConfigAction_ = nullptr;
+    QAction* copyShareLinkAction_ = nullptr;
+    QAction* copySubscriptionContentAction_ = nullptr;
+    QAction* openCustomConfigAction_ = nullptr;
+    QAction* importClipboardAction_ = nullptr;
+    QAction* importClientConfigAction_ = nullptr;
+    QAction* importServerConfigAction_ = nullptr;
+    QAction* subAction_ = nullptr;
+    QAction* updateSubscriptionsAction_ = nullptr;
+    QAction* testMeAction_ = nullptr;
+    QAction* updateV2RayCoreAction_ = nullptr;
+    QAction* updateXrayCoreAction_ = nullptr;
+    QAction* updateSingBoxCoreAction_ = nullptr;
+    QAction* updateClashCoreAction_ = nullptr;
+    QAction* updateClashMetaCoreAction_ = nullptr;
+    QAction* updateGeoResourcesAction_ = nullptr;
+    QAction* removeServerAction_ = nullptr;
+    QAction* moveServerTopAction_ = nullptr;
+    QAction* moveServerUpAction_ = nullptr;
+    QAction* moveServerDownAction_ = nullptr;
+    QAction* moveServerBottomAction_ = nullptr;
+    QAction* pingAction_ = nullptr;
+    QAction* tcpPingAction_ = nullptr;
+    QAction* realPingAction_ = nullptr;
+    QAction* downloadSpeedTestAction_ = nullptr;
+    QAction* setDefaultServerAction_ = nullptr;
+    QAction* clearProxyAction_ = nullptr;
+    QAction* globalProxyAction_ = nullptr;
+    QAction* unchangedProxyAction_ = nullptr;
+    QAction* pacProxyAction_ = nullptr;
+    QAction* toggleAutoRunAction_ = nullptr;
+    QAction* reloadConfigAction_ = nullptr;
+    QAction* restoreBackupAction_ = nullptr;
+    QAction* globalHotkeySettingsAction_ = nullptr;
+    QAction* dnsSettingsAction_ = nullptr;
+    QAction* settingsAction_ = nullptr;
+    QAction* aboutAction_ = nullptr;
+    QAction* openProjectPageAction_ = nullptr;
+    QAction* openReleasePageAction_ = nullptr;
+    QAction* openDocumentationAction_ = nullptr;
+    QAction* openDnsObjectDocumentationAction_ = nullptr;
+    QAction* openRuleObjectDocumentationAction_ = nullptr;
+    QAction* openLoopbackToolAction_ = nullptr;
+    QAction* openV2RayReleasePageAction_ = nullptr;
+    QAction* openXrayReleasePageAction_ = nullptr;
+    QAction* openSingBoxReleasePageAction_ = nullptr;
+    QAction* openGeoReleasePageAction_ = nullptr;
+    QAction* startCoreAction_ = nullptr;
+    QAction* stopCoreAction_ = nullptr;
+    QAction* clearStatisticsAction_ = nullptr;
+    QAction* toggleQrPanelAction_ = nullptr;
+    QAction* selectAllLogAction_ = nullptr;
+    QAction* copySelectedLogAction_ = nullptr;
+    QAction* copyAllLogAction_ = nullptr;
+    QAction* clearLogAction_ = nullptr;
+    QMenu* systemProxyMenu_ = nullptr;
+    QMenu* logContextMenu_ = nullptr;
+    QComboBox* systemProxyModeCombo_ = nullptr;
+    QComboBox* routingModeCombo_ = nullptr;
+    QLineEdit* serverFilterEdit_ = nullptr;
+    QLineEdit* logFilterEdit_ = nullptr;
+    QToolButton* logStickToBottomButton_ = nullptr;
+    bool logStickToBottomEnabled_ = false;
+    bool hideToTrayEnabled_ = false;
+    bool allowClose_ = false;
+    bool systemProxyApplied_ = false;
+    bool autoRunEnabled_ = false;
+    bool coreRunning_ = false;
+    bool speedTestRunning_ = false;
+    bool qrPreviewVisible_ = false;
+    bool uiStateRestorePending_ = false;
+    bool initialServerColumnLayoutPending_ = true;
+    bool frameAdjustedWindowMetricsApplied_ = false;
+    QString currentIndexId_;
+    QString lastSelectedServerId_;
+    QString currentServerName_;
+    QString routingSummary_;
+    QString listenSummary_;
+    StatisticsSessionState statisticsState_;
+    QString trafficSummary_;
+    QMap<QString, int> pendingColumnWidths_;
+    SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
+    int serverSortColumn_ = -1;
+    Qt::SortOrder serverSortOrder_ = Qt::AscendingOrder;
+    int serverLogSplitPercent_ = 60;
+    int serverQrSplitPercent_ = 78;
+};

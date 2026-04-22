@@ -1,0 +1,90 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "msvc-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "D:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "msvc-debug",
+      "inherits": "msvc-base",
+      "binaryDir": "${sourceDir}/build/msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "msvc-release",
+      "inherits": "msvc-base",
+      "binaryDir": "${sourceDir}/build/msvc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "msvc-debug-test",
+      "inherits": "msvc-debug",
+      "binaryDir": "${sourceDir}/build/msvc-debug-test",
+      "cacheVariables": {
+        "BUILD_TEST": "ON"
+      }
+    },
+    {
+      "name": "msvc-release-test",
+      "inherits": "msvc-release",
+      "binaryDir": "${sourceDir}/build/msvc-release-test",
+      "cacheVariables": {
+        "BUILD_TEST": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc-debug"
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-release"
+    },
+    {
+      "name": "msvc-debug-test",
+      "configurePreset": "msvc-debug-test"
+    },
+    {
+      "name": "msvc-release-test",
+      "configurePreset": "msvc-release-test"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-debug-test",
+      "configurePreset": "msvc-debug-test",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "msvc-release-test",
+      "configurePreset": "msvc-release-test",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

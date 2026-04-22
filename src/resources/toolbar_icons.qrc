@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/toolbar">
+        <file alias="checkupdate.png">checkupdate.png</file>
+        <file alias="help.png">help.png</file>
+        <file alias="option.png">option.png</file>
+        <file alias="restart.png">restart.png</file>
+        <file alias="server.png">server.png</file>
+        <file alias="share.png">share.png</file>
+        <file alias="sub.png">sub.png</file>
+    </qresource>
+</RCC>
