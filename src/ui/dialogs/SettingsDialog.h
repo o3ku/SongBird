@@ -72,6 +72,7 @@ private:
         QLabel* versionLabel = nullptr;
         QLabel* statusLabel = nullptr;
         QPushButton* downloadButton = nullptr;
+        QPushButton* setAllButton = nullptr;
         QString versionText;
         QString progressText;
     };

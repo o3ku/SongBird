@@ -407,24 +407,6 @@ void SettingsDialog::setupUi()
     const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
     const QList<CoreType> allCores = availableCoreTypes();
 
-    // Bulk-set buttons at top — one per core type
-    auto* bulkButtonLayout = new QHBoxLayout();
-    for (const CoreType core : allCores) {
-        auto* button = new QPushButton(tr("Set all to %1").arg(coreTypeDisplayName(core)), coreTab);
-        bulkButtonLayout->addWidget(button);
-        connect(button, &QPushButton::clicked, this, [this, configTypes, core]() {
-            for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
-                auto* combo = coreTypeCombos_.at(i);
-                if (combo == nullptr) continue;
-                if (protocolSupportsCore(static_cast<ConfigType>(configTypes.at(i)), core)) {
-                    const int idx = combo->findData(static_cast<int>(core));
-                    if (idx >= 0) combo->setCurrentIndex(idx);
-                }
-            }
-        });
-    }
-    bulkButtonLayout->addStretch(1);
-
     // Per-protocol core selection
     auto* coreTypeGroup = new QGroupBox(tr("Per-Protocol Override"), coreTab);
     auto* coreTypeForm = new QFormLayout(coreTypeGroup);
@@ -447,9 +429,8 @@ void SettingsDialog::setupUi()
         }
     }
 
-    // Lower section: core status — one row per available core type
-    auto* coreStatusGroup = new QGroupBox(coreTab);
-    coreStatusGroup->setTitle(tr("Installed Cores"));
+    // Installed Cores — one row per available core type, with download + "set all" actions
+    auto* coreStatusGroup = new QGroupBox(tr("Installed Cores"), coreTab);
     auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
 
     for (const CoreType core : allCores) {
@@ -463,6 +444,19 @@ void SettingsDialog::setupUi()
         row.downloadButton = new QPushButton(tr("Download"), coreTab);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
 
+        row.setAllButton = new QPushButton(tr("Set All"), coreTab);
+        row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
+        connect(row.setAllButton, &QPushButton::clicked, this, [this, configTypes, core]() {
+            for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
+                auto* combo = coreTypeCombos_.at(i);
+                if (combo == nullptr) continue;
+                if (protocolSupportsCore(static_cast<ConfigType>(configTypes.at(i)), core)) {
+                    const int idx = combo->findData(static_cast<int>(core));
+                    if (idx >= 0) combo->setCurrentIndex(idx);
+                }
+            }
+        });
+
         auto* infoLayout = new QVBoxLayout();
         infoLayout->setContentsMargins(0, 0, 0, 0);
         infoLayout->setSpacing(2);
@@ -472,6 +466,7 @@ void SettingsDialog::setupUi()
         auto* rowLayout = new QHBoxLayout();
         rowLayout->addLayout(infoLayout);
         rowLayout->addWidget(row.downloadButton);
+        rowLayout->addWidget(row.setAllButton);
         rowLayout->addStretch();
 
         coreStatusLayout->addRow(coreTypeDisplayName(core) + QStringLiteral(":"), rowLayout);
@@ -484,7 +479,6 @@ void SettingsDialog::setupUi()
         });
     }
 
-    coreLayout->addLayout(bulkButtonLayout);
     coreLayout->addWidget(coreTypeGroup);
     coreLayout->addWidget(coreStatusGroup);
 
@@ -1236,6 +1230,9 @@ void SettingsDialog::refreshCoreStatusPresentation()
         if (row.downloadButton != nullptr) {
             row.downloadButton->setVisible(!isActive && row.versionText.isEmpty());
             row.downloadButton->setEnabled(!updateRunning);
+        }
+        if (row.setAllButton != nullptr) {
+            row.setAllButton->setVisible(!isActive && !row.versionText.isEmpty());
         }
     }
 }
