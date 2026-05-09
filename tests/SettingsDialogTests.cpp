@@ -378,7 +378,7 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
 
     auto* card = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_0"));
     QVERIFY(card != nullptr);
-    QVERIFY(card->styleSheet().contains(QStringLiteral("text-align: left")));
+    QVERIFY(card->styleSheet().isEmpty());
     QVERIFY(card->maximumHeight() <= 120);
     QVERIFY(card->text().contains(QStringLiteral("BLOCK: geosite:category-ads-all")));
     QVERIFY(card->toolTip().contains(QStringLiteral("domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")));
@@ -463,11 +463,7 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
     auto* protocolEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomBlockProtocolEdit"));
     QVERIFY(protocolEdit != nullptr);
     QCOMPARE(protocolEdit->maximumHeight(), QWIDGETSIZE_MAX);
-    QVERIFY(protocolEdit->styleSheet().contains(QStringLiteral("border: 1px solid")));
-    QVERIFY(protocolEdit->styleSheet().contains(QStringLiteral("QTextEdit:hover")));
-    QVERIFY(protocolEdit->styleSheet().contains(QStringLiteral("border-radius: 0")));
-    QVERIFY(protocolEdit->styleSheet().contains(QStringLiteral("QTextEdit:hover")));
-    QVERIFY(protocolEdit->styleSheet().contains(QStringLiteral("palette(mid)")));
+    QVERIFY(protocolEdit->styleSheet().isEmpty());
 
     auto* baseRouteTitle = dialog.findChild<QLabel*>(QStringLiteral("routingBaseRouteTitle"));
     auto* customRulesTitle = dialog.findChild<QLabel*>(QStringLiteral("routingCustomRulesTitle"));

@@ -54,19 +54,6 @@ QString elideText(const QString& value, const QFontMetrics& metrics, int width)
     return ellipsis;
 }
 
-QString multiLineEditStyleSheet()
-{
-    return QStringLiteral(
-        "QTextEdit {"
-        " border: 1px solid palette(mid);"
-        " border-radius: 0px;"
-        " background: palette(base);"
-        "}"
-        "QTextEdit:hover {"
-        " border: 1px solid palette(mid);"
-        "}");
-}
-
 class BaseRouteCardButton final : public QPushButton
 {
 public:
@@ -457,7 +444,6 @@ void SettingsDialog::setupUi()
         editors.protocolEdit->setObjectName(QStringLiteral("routingCustom%1ProtocolEdit").arg(title));
         editors.protocolEdit->setTabChangesFocus(true);
         editors.protocolEdit->setPlaceholderText(QStringLiteral("tcp\nudp"));
-        editors.protocolEdit->setStyleSheet(multiLineEditStyleSheet());
         auto* portLabel = new QLabel(tr("Port"), protocolPortColumn);
         editors.portEdit = new QLineEdit(protocolPortColumn);
         editors.portEdit->setObjectName(QStringLiteral("routingCustom%1PortEdit").arg(title));
@@ -476,7 +462,6 @@ void SettingsDialog::setupUi()
         editors.ipEdit->setObjectName(QStringLiteral("routingCustom%1IpEdit").arg(title));
         editors.ipEdit->setTabChangesFocus(true);
         editors.ipEdit->setPlaceholderText(QStringLiteral("geoip:private\n10.0.0.0/8"));
-        editors.ipEdit->setStyleSheet(multiLineEditStyleSheet());
         ipLayout->addWidget(ipLabel);
         ipLayout->addWidget(editors.ipEdit, 1);
 
@@ -489,7 +474,6 @@ void SettingsDialog::setupUi()
         editors.domainEdit->setObjectName(QStringLiteral("routingCustom%1DomainEdit").arg(title));
         editors.domainEdit->setTabChangesFocus(true);
         editors.domainEdit->setPlaceholderText(QStringLiteral("geosite:cn\ndomain:example.com"));
-        editors.domainEdit->setStyleSheet(multiLineEditStyleSheet());
         domainLayout->addWidget(domainLabel);
         domainLayout->addWidget(editors.domainEdit, 1);
 
@@ -1047,9 +1031,9 @@ void SettingsDialog::reloadRoutingPresentation(int selectedRow)
         card->setCheckable(true);
         card->setProperty("collapsedText", collapsedText);
         card->setProperty("fullText", fullText);
+        card->setProperty("baseRouteCard", true);
         card->setText(index == rowToSelect ? fullText : collapsedText);
         card->setToolTip(fullText);
-        card->setStyleSheet(QStringLiteral("QPushButton { text-align: left; padding: 8px; }"));
         card->setMinimumHeight(96);
         card->setMaximumHeight(120);
         card->setChecked(index == rowToSelect);
