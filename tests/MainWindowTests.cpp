@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QScrollBar>
@@ -24,6 +25,7 @@ private slots:
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
+    void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
 };
 
 namespace {
@@ -269,6 +271,34 @@ void MainWindowTests::enterOnServerTableSetsCurrentWithoutMovingSelection()
     QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
     QCOMPARE(serverView->currentIndex().row(), 1);
     QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+}
+
+void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.autoRunEnabled = true;
+    window.setConfig(config);
+
+    auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
+    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
+    auto* proxyStatusLabel = window.findChild<QLabel*>(QStringLiteral("proxyStatusLabel"));
+    auto* autoRunStatusLabel = window.findChild<QLabel*>(QStringLiteral("autoRunStatusLabel"));
+    auto* statisticsStatusLabel = window.findChild<QLabel*>(QStringLiteral("statisticsStatusLabel"));
+    QVERIFY(routingStatusLabel != nullptr);
+    QVERIFY(coreStatusLabel != nullptr);
+    QVERIFY(proxyStatusLabel != nullptr);
+    QVERIFY(autoRunStatusLabel != nullptr);
+    QVERIFY(statisticsStatusLabel != nullptr);
+
+    QVERIFY(!coreStatusLabel->property("semanticState").toString().isEmpty());
+    QVERIFY(!proxyStatusLabel->property("semanticState").toString().isEmpty());
+    QVERIFY(!autoRunStatusLabel->property("semanticState").toString().isEmpty());
+    QVERIFY(!statisticsStatusLabel->property("semanticState").toString().isEmpty());
+    QVERIFY(!coreStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
+    QVERIFY(!proxyStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
+    QVERIFY(!autoRunStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
+    QVERIFY(!statisticsStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
 }
 
 QTEST_MAIN(MainWindowTests)

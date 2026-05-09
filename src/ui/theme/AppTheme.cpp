@@ -26,9 +26,10 @@ QString buildApplicationStyleSheet()
         "QToolBar#mainToolBar QToolButton#qrCodeButton:pressed, QToolBar#mainToolBar QToolButton#qrCodeButton:checked { border: 1px solid #8f8f8f; }"
         "QDialogButtonBox QPushButton { min-width: 72px; }"
         "QComboBox, QLineEdit, QSpinBox, QListView, QTableView, QTableWidget, QMenu, QTabWidget::pane { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; }"
+        "QTextEdit { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; }"
         "QComboBox, QLineEdit, QSpinBox { min-height: 28px; padding: 0 8px; }"
-        "QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QListView:hover { border-color: #a9a9a9; }"
-        "QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QListView:focus { border: 1px solid #7f7f7f; }"
+        "QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QListView:hover, QTextEdit:hover { border-color: #a9a9a9; }"
+        "QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QListView:focus, QTextEdit:focus { border: 1px solid #7f7f7f; }"
         "QComboBox { padding-right: 28px; }"
         "QSpinBox { padding-right: 22px; }"
         "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: none; border-left: 1px solid #d0d0d0; background: #f0f0f0; border-radius: 0px; }"
@@ -62,9 +63,16 @@ QString buildApplicationStyleSheet()
         "#logPanel, #qrPanel { background: transparent; }"
         "QListView#logView { background: #ffffff; border: none; border-radius: 0px; padding: 0px; }"
         "QLabel#logTitleLabel { color: #4b4b4b; font-weight: 600; }"
+        "QLabel#aboutTitleLabel { font-size: 22px; font-weight: 700; }"
         "QLabel#qrPlaceholder { border: 1px dashed #bdbdbd; background: #ffffff; color: #7a7a7a; border-radius: 0px; }"
+        "QWidget#loadingOverlay { background: rgba(255,255,255,200); }"
         "QStatusBar { background: #ffffff; border-top: 1px solid #d0d0d0; }"
         "QStatusBar QLabel { color: #5b5b5b; padding: 0 4px; }"
+        "QStatusBar QLabel#routingStatusLabel { color: #4d4d4d; font-weight: 400; }"
+        "QLabel[semanticState=\"#2f5d3a\"] { color: #2f5d3a; font-weight: 600; }"
+        "QLabel[semanticState=\"#7a6330\"] { color: #7a6330; font-weight: 600; }"
+        "QLabel[semanticState=\"#7a3434\"] { color: #7a3434; font-weight: 600; }"
+        "QLabel[semanticState=\"#4d4d4d\"] { color: #4d4d4d; font-weight: 600; }"
         "QSplitter::handle { background: #ffffff; }"
         "QSplitter::handle:horizontal { width: 2px; margin: 0px; }"
         "QSplitter::handle:vertical { height: 2px; margin: 0px; }"
@@ -73,6 +81,7 @@ QString buildApplicationStyleSheet()
         "QMenu::item:selected { background: #dfdfdf; color: #1f1f1f; }"
         "QMenu::separator { height: 1px; background: #e0e0e0; margin: 4px 0px; }"
         "QCheckBox { color: #4b4b4b; }"
+        "QPushButton[baseRouteCard=\"true\"] { text-align: left; padding: 8px; }"
         "QScrollBar:vertical { background: transparent; width: 8px; margin: 6px 2px 6px 0; }"
         "QScrollBar:horizontal { background: transparent; height: 8px; margin: 0 6px 2px 6px; }"
         "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #b8b8b8; min-height: 24px; min-width: 24px; border-radius: 0px; }"
@@ -89,9 +98,9 @@ void AppTheme::applyApplicationTheme(QApplication& app)
     app.setStyleSheet(buildApplicationStyleSheet());
 }
 
-QString AppTheme::semanticStatusStyle(QStringView colorHex)
+QString AppTheme::semanticStatusProperty(QStringView colorHex)
 {
-    return QStringLiteral("QLabel { color: %1; font-weight: 600; }").arg(colorHex.toString());
+    return colorHex.toString();
 }
 
 QString AppTheme::successStatusColor()

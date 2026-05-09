@@ -32,7 +32,6 @@ void AboutDialog::setupUi()
 
     auto* titleLabel = new QLabel(tr("v2rayq"), this);
     titleLabel->setObjectName(QStringLiteral("aboutTitleLabel"));
-    titleLabel->setStyleSheet(QStringLiteral("QLabel { font-size: 22px; font-weight: 700; }"));
 
     auto* summaryLabel = new QLabel(
         tr("A pure Qt/C++ prototype focused on legacy-compatible v2rayN workflows."),

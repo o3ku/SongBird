@@ -71,6 +71,18 @@ constexpr int SystemProxyComboFixedWidth = 120;
 constexpr int RoutingComboFixedWidth = 144;
 constexpr int ServerTableNoColumn = 0;
 
+void applySemanticState(QLabel* label, const QString& state)
+{
+    if (label == nullptr) {
+        return;
+    }
+
+    label->setProperty("semanticState", state);
+    label->style()->unpolish(label);
+    label->style()->polish(label);
+    label->update();
+}
+
 void paintChevron(QPainter& painter, const QRect& rect, bool enabled)
 {
     if (!rect.isValid()) {
@@ -1534,8 +1546,6 @@ void MainWindow::setupServerView()
     // Loading overlay on server table for subscription updates.
     loadingOverlay_ = new QWidget(serverView_->viewport());
     loadingOverlay_->setObjectName(QStringLiteral("loadingOverlay"));
-    loadingOverlay_->setStyleSheet(
-        QStringLiteral("QWidget#loadingOverlay { background: rgba(255,255,255,200); }"));
     auto* loadingLabel = new QLabel(tr("Updating subscriptions..."), loadingOverlay_);
     loadingLabel->setAlignment(Qt::AlignCenter);
     auto* loadingLayout = new QVBoxLayout(loadingOverlay_);
@@ -2442,14 +2452,15 @@ void MainWindow::updateStatusIndicators()
             ? tr("Unavailable")
             : listenSummary_;
         routingStatusLabel_->setText(tr("Listening: %1").arg(listenText));
-        routingStatusLabel_->setStyleSheet(QStringLiteral("QLabel { color: #4d4d4d; font-weight: 400; }"));
     }
 
     if (coreStatusLabel_ != nullptr) {
         coreStatusLabel_->setText(tr("Core: %1").arg(
             coreRunning_ ? tr("Running") : tr("Stopped")));
-        coreStatusLabel_->setStyleSheet(AppTheme::semanticStatusStyle(
-            coreRunning_ ? AppTheme::successStatusColor() : AppTheme::errorStatusColor()));
+        applySemanticState(
+            coreStatusLabel_,
+            AppTheme::semanticStatusProperty(
+                coreRunning_ ? AppTheme::successStatusColor() : AppTheme::errorStatusColor()));
     }
 
     if (proxyStatusLabel_ != nullptr) {
@@ -2480,14 +2491,16 @@ void MainWindow::updateStatusIndicators()
         }
 
         proxyStatusLabel_->setText(tr("Proxy: %1").arg(proxyText));
-        proxyStatusLabel_->setStyleSheet(AppTheme::semanticStatusStyle(color));
+        applySemanticState(proxyStatusLabel_, AppTheme::semanticStatusProperty(color));
     }
 
     if (autoRunStatusLabel_ != nullptr) {
         autoRunStatusLabel_->setText(tr("Auto Run: %1").arg(
             autoRunEnabled_ ? tr("Enabled") : tr("Disabled")));
-        autoRunStatusLabel_->setStyleSheet(AppTheme::semanticStatusStyle(
-            autoRunEnabled_ ? AppTheme::successStatusColor() : AppTheme::errorStatusColor()));
+        applySemanticState(
+            autoRunStatusLabel_,
+            AppTheme::semanticStatusProperty(
+                autoRunEnabled_ ? AppTheme::successStatusColor() : AppTheme::errorStatusColor()));
     }
 
     if (statisticsStatusLabel_ != nullptr) {
@@ -2515,7 +2528,7 @@ void MainWindow::updateStatusIndicators()
         }
 
         statisticsStatusLabel_->setText(summary);
-        statisticsStatusLabel_->setStyleSheet(AppTheme::semanticStatusStyle(color));
+        applySemanticState(statisticsStatusLabel_, AppTheme::semanticStatusProperty(color));
     }
 
     if (trafficStatusLabel_ != nullptr) {
