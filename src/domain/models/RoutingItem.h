@@ -13,4 +13,6 @@ struct RoutingItem {
     bool locked = false;
     QString customIcon;
     QString domainStrategy4Singbox;
+
+    bool operator==(const RoutingItem& other) const = default;
 };

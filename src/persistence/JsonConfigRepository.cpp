@@ -273,7 +273,6 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
         }
     }
     const QJsonObject constItem = root.value(QStringLiteral("constItem")).toObject();
-    config.speedTestUrl = constItem.value(QStringLiteral("speedTestUrl")).toString();
     config.speedPingTestUrl = constItem.value(QStringLiteral("speedPingTestUrl")).toString();
     config.defIeProxyExceptions = constItem.value(QStringLiteral("defIEProxyExceptions")).toString();
     config.enableFragment = root.value(QStringLiteral("enableFragment")).toBool(false);
@@ -343,6 +342,7 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
         routings = root.value(QStringLiteral("routingItems")).toArray();
     }
     config.routingItems = parseRoutingItems(routings);
+    config.routingCustomRules = parseRoutingRules(root.value(QStringLiteral("routingCustomRules")).toArray());
     ensureBuiltinRoutingItems(config);
     config.tunModeItem = parseTunModeItem(root.value(QStringLiteral("tunModeItem")).toObject());
     config.policyGroups = parsePolicyGroups(root.value(QStringLiteral("policyGroups")).toArray());
@@ -405,7 +405,6 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     root.insert(QStringLiteral("uiItem"), uiItem);
     root.remove(QStringLiteral("languageCode"));
     QJsonObject constItem = root.value(QStringLiteral("constItem")).toObject();
-    constItem.insert(QStringLiteral("speedTestUrl"), config.speedTestUrl);
     constItem.insert(QStringLiteral("speedPingTestUrl"), config.speedPingTestUrl);
     constItem.insert(QStringLiteral("defIEProxyExceptions"), config.defIeProxyExceptions);
     root.insert(QStringLiteral("constItem"), constItem);
@@ -447,6 +446,7 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     root.insert(QStringLiteral("GlobalHotkeys"), toGlobalHotkeyArray(config.globalHotkeys));
     root.remove(QStringLiteral("globalHotkeys"));
     root.insert(QStringLiteral("routings"), toRoutingArray(config.routingItems));
+    root.insert(QStringLiteral("routingCustomRules"), toRoutingRuleArray(config.routingCustomRules));
     root.remove(QStringLiteral("routingItems"));
     root.insert(QStringLiteral("tunModeItem"), toTunModeItem(config.tunModeItem));
     root.insert(QStringLiteral("policyGroups"), toPolicyGroupArray(config.policyGroups));
@@ -1160,3 +1160,4 @@ QJsonValue JsonConfigRepository::toLegacyCoreTypeValue(CoreType type)
         return QJsonValue(QJsonValue::Null);
     }
 }
+

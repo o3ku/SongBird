@@ -46,7 +46,6 @@ struct Config {
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
     bool mainQrPreviewVisible = false;
-    QString speedTestUrl;
     QString speedPingTestUrl;
     QString defIeProxyExceptions;
     bool enableFragment = false;
@@ -87,7 +86,9 @@ struct Config {
     QList<SubItem> subscriptions;
     QList<GlobalHotkeyItem> globalHotkeys;
     QList<RoutingItem> routingItems;
+    QList<RoutingRule> routingCustomRules;
     QList<CoreTypeItem> coreTypeItems;
     TunModeItem tunModeItem;
     QList<PolicyGroupItem> policyGroups;
 };
+

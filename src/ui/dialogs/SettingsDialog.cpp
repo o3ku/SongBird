@@ -2,21 +2,29 @@
 #include "runtime/ProtocolCoreCompat.h"
 
 #include <QCheckBox>
+#include <QAbstractButton>
+#include <QButtonGroup>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QFormLayout>
+#include <QFontMetrics>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPushButton>
+#include <QLayout>
+#include <QPainter>
 #include <QRegularExpression>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QSpinBox>
+#include <QStyle>
+#include <QStyleOptionButton>
 #include <QTabWidget>
 #include <QTableWidgetItem>
+#include <QTextEdit>
 #include <QVBoxLayout>
 #include <QItemSelectionModel>
 
@@ -25,6 +33,82 @@
 #include <algorithm>
 
 namespace {
+
+QString elideText(const QString& value, const QFontMetrics& metrics, int width)
+{
+    const QString trimmed = value.trimmed();
+    if (metrics.horizontalAdvance(trimmed) <= width) {
+        return trimmed;
+    }
+
+    const QString ellipsis = QStringLiteral("...");
+    int length = trimmed.size();
+    while (length > 0) {
+        const QString candidate = trimmed.left(length).trimmed() + ellipsis;
+        if (metrics.horizontalAdvance(candidate) <= width) {
+            return candidate;
+        }
+        --length;
+    }
+
+    return ellipsis;
+}
+
+QString multiLineEditStyleSheet()
+{
+    return QStringLiteral(
+        "QTextEdit {"
+        " border: 1px solid palette(mid);"
+        " border-radius: 0px;"
+        " background: palette(base);"
+        "}"
+        "QTextEdit:hover {"
+        " border: 1px solid palette(mid);"
+        "}");
+}
+
+class BaseRouteCardButton final : public QPushButton
+{
+public:
+    explicit BaseRouteCardButton(QWidget* parent = nullptr)
+        : QPushButton(parent)
+    {
+        setProperty("routeTitleBold", true);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        option.text.clear();
+        style()->drawControl(QStyle::CE_PushButtonBevel, &option, &painter, this);
+
+        const QRect textRect = rect().adjusted(8, 8, -8, -8);
+        const QStringList lines = text().split(QChar('\n'));
+        QFont normalFont = font();
+        QFont boldFont = normalFont;
+        boldFont.setBold(true);
+
+        painter.setPen(palette().buttonText().color());
+        int y = textRect.top();
+        for (int index = 0; index < lines.size(); ++index) {
+            painter.setFont(index == 0 ? boldFont : normalFont);
+            const QFontMetrics metrics(painter.font());
+            const int lineHeight = metrics.lineSpacing();
+            if (y + lineHeight > textRect.bottom() + 1) {
+                break;
+            }
+            painter.drawText(
+                QRect(textRect.left(), y, textRect.width(), lineHeight),
+                Qt::AlignLeft | Qt::AlignVCenter,
+                elideText(lines.at(index), metrics, textRect.width()));
+            y += lineHeight;
+        }
+    }
+};
 
 QStringList singBoxMuxProtocolOptions()
 {
@@ -60,9 +144,6 @@ QStringList defaultFingerprintOptions()
         QStringLiteral("randomized"),
         QString()};
 }
-
-constexpr int RuleNetworkRole = Qt::UserRole + 1;
-constexpr int RuleProcessRole = Qt::UserRole + 2;
 
 } // namespace
 
@@ -107,7 +188,8 @@ void SettingsDialog::setConfig(const Config& config)
     languageCombo_->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
 
     routingItems_ = config.routingItems;
-    reloadRoutingTable(findInitialRouteIndex(routingItems_, config));
+    reloadRoutingPresentation(findInitialRouteIndex(routingItems_, config));
+    loadRoutingCustomRules(config.routingCustomRules);
 
     subItems_ = config.subscriptions;
     reloadSubTable();
@@ -174,6 +256,9 @@ Config SettingsDialog::config() const
     updated.enableSecurityProtocolTls13 = enableSecurityProtocolTls13Check_->isChecked();
     updated.languageCode = languageCombo_->currentData().toString().trimmed();
     updated.routingItems = collectRoutingItems();
+    updated.routingCustomRules = collectRoutingCustomRules();
+    updated.enableRoutingAdvanced = !updated.routingItems.isEmpty();
+    updated.routingIndex = selectedBaseRouteIndex() < 0 ? 0 : selectedBaseRouteIndex();
     updated.subscriptions = collectSubItems();
     updated.coreTypeItems = collectCoreTypeItems();
     TunModeItem tun;
@@ -321,74 +406,101 @@ void SettingsDialog::setupUi()
     auto* routingTab = new QWidget(this);
     auto* routingLayout = new QVBoxLayout(routingTab);
 
-    routeHintLabel_ = new QLabel(routingTab);
-    routeHintLabel_->setWordWrap(true);
+    auto* baseRouteTitle = new QLabel(tr("Base Route"), routingTab);
+    baseRouteTitle->setObjectName(QStringLiteral("routingBaseRouteTitle"));
+    QFont baseRouteTitleFont = baseRouteTitle->font();
+    baseRouteTitleFont.setBold(true);
+    baseRouteTitle->setFont(baseRouteTitleFont);
+    routingLayout->addWidget(baseRouteTitle);
 
-    routingTable_ = new QTableWidget(routingTab);
-    routingTable_->setColumnCount(5);
-    routingTable_->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
-        QStringLiteral("Remarks"),
-        QStringLiteral("URL"),
-        QStringLiteral("Icon"),
-        QStringLiteral("Rules")
+    baseRouteLayout_ = new QHBoxLayout();
+    baseRouteLayout_->setObjectName(QStringLiteral("routingBaseRouteLayout"));
+    baseRouteLayout_->setContentsMargins(0, 0, 0, 0);
+    baseRouteLayout_->setSpacing(8);
+    baseRouteButtonGroup_ = new QButtonGroup(this);
+    baseRouteButtonGroup_->setExclusive(true);
+    connect(baseRouteButtonGroup_, QOverload<int>::of(&QButtonGroup::buttonClicked), this, [this](int) {
+        updateBaseRouteCardGeometry();
     });
-    routingTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    routingTable_->setSelectionMode(QAbstractItemView::SingleSelection);
-    routingTable_->verticalHeader()->setVisible(false);
-    routingTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    routingTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    routingTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    routingTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    routingTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    routingLayout->addLayout(baseRouteLayout_);
 
-    addRouteButton_ = new QPushButton(QStringLiteral("Add Route"), routingTab);
-    removeRouteButton_ = new QPushButton(QStringLiteral("Remove Route"), routingTab);
+    auto* customRulesTitle = new QLabel(tr("Custom Rules"), routingTab);
+    customRulesTitle->setObjectName(QStringLiteral("routingCustomRulesTitle"));
+    QFont customRulesTitleFont = customRulesTitle->font();
+    customRulesTitleFont.setBold(true);
+    customRulesTitle->setFont(customRulesTitleFont);
+    routingLayout->addWidget(customRulesTitle);
 
-    auto* routeButtonLayout = new QHBoxLayout();
-    routeButtonLayout->addWidget(addRouteButton_);
-    routeButtonLayout->addWidget(removeRouteButton_);
-    routeButtonLayout->addStretch(1);
+    customRuleTabs_ = new QTabWidget(routingTab);
+    customRuleTabs_->setObjectName(QStringLiteral("routingCustomRuleTabs"));
 
-    ruleTable_ = new QTableWidget(routingTab);
-    ruleTable_->setColumnCount(7);
-    ruleTable_->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
-        QStringLiteral("Outbound"),
-        QStringLiteral("Port"),
-        QStringLiteral("Protocol"),
-        QStringLiteral("Inbound"),
-        QStringLiteral("Domain"),
-        QStringLiteral("IP")
-    });
-    ruleTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    ruleTable_->setSelectionMode(QAbstractItemView::SingleSelection);
-    ruleTable_->verticalHeader()->setVisible(false);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
-    ruleTable_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
-    const int narrowColWidth = ruleTable_->fontMetrics().horizontalAdvance(QLatin1Char('x')) * 10 + 16;
-    ruleTable_->setColumnWidth(1, narrowColWidth);
-    ruleTable_->setColumnWidth(3, narrowColWidth);
-    ruleTable_->setColumnWidth(4, narrowColWidth);
+    const QList<QPair<QString, QString>> customTabs{
+        {QStringLiteral("block"), QStringLiteral("Block")},
+        {QStringLiteral("direct"), QStringLiteral("Direct")},
+        {QStringLiteral("proxy"), QStringLiteral("Proxy")}};
+    for (const auto& tab : customTabs) {
+        const QString action = tab.first;
+        const QString title = tab.second;
+        auto* tabWidget = new QWidget(customRuleTabs_);
+        auto* tabLayout = new QHBoxLayout(tabWidget);
+        tabLayout->setContentsMargins(9, 9, 9, 9);
+        tabLayout->setSpacing(12);
 
-    addRuleButton_ = new QPushButton(QStringLiteral("Add Rule"), routingTab);
-    removeRuleButton_ = new QPushButton(QStringLiteral("Remove Rule"), routingTab);
+        CustomRuleEditors editors;
 
-    auto* ruleButtonLayout = new QHBoxLayout();
-    ruleButtonLayout->addWidget(addRuleButton_);
-    ruleButtonLayout->addWidget(removeRuleButton_);
-    ruleButtonLayout->addStretch(1);
+        auto* protocolPortColumn = new QWidget(tabWidget);
+        auto* protocolPortLayout = new QVBoxLayout(protocolPortColumn);
+        protocolPortLayout->setContentsMargins(0, 0, 0, 0);
+        protocolPortLayout->setSpacing(4);
+        auto* protocolLabel = new QLabel(tr("Protocol"), protocolPortColumn);
+        editors.protocolEdit = new QTextEdit(protocolPortColumn);
+        editors.protocolEdit->setObjectName(QStringLiteral("routingCustom%1ProtocolEdit").arg(title));
+        editors.protocolEdit->setTabChangesFocus(true);
+        editors.protocolEdit->setPlaceholderText(QStringLiteral("tcp\nudp"));
+        editors.protocolEdit->setStyleSheet(multiLineEditStyleSheet());
+        auto* portLabel = new QLabel(tr("Port"), protocolPortColumn);
+        editors.portEdit = new QLineEdit(protocolPortColumn);
+        editors.portEdit->setObjectName(QStringLiteral("routingCustom%1PortEdit").arg(title));
+        editors.portEdit->setPlaceholderText(QStringLiteral("0-65535"));
+        protocolPortLayout->addWidget(protocolLabel);
+        protocolPortLayout->addWidget(editors.protocolEdit, 1);
+        protocolPortLayout->addWidget(portLabel);
+        protocolPortLayout->addWidget(editors.portEdit);
 
-    routingLayout->addWidget(routeHintLabel_);
-    routingLayout->addLayout(routeButtonLayout);
-    routingLayout->addWidget(routingTable_, 3);
-    routingLayout->addLayout(ruleButtonLayout);
-    routingLayout->addWidget(ruleTable_, 4);
+        auto* ipColumn = new QWidget(tabWidget);
+        auto* ipLayout = new QVBoxLayout(ipColumn);
+        ipLayout->setContentsMargins(0, 0, 0, 0);
+        ipLayout->setSpacing(4);
+        auto* ipLabel = new QLabel(QStringLiteral("IP"), ipColumn);
+        editors.ipEdit = new QTextEdit(ipColumn);
+        editors.ipEdit->setObjectName(QStringLiteral("routingCustom%1IpEdit").arg(title));
+        editors.ipEdit->setTabChangesFocus(true);
+        editors.ipEdit->setPlaceholderText(QStringLiteral("geoip:private\n10.0.0.0/8"));
+        editors.ipEdit->setStyleSheet(multiLineEditStyleSheet());
+        ipLayout->addWidget(ipLabel);
+        ipLayout->addWidget(editors.ipEdit, 1);
+
+        auto* domainColumn = new QWidget(tabWidget);
+        auto* domainLayout = new QVBoxLayout(domainColumn);
+        domainLayout->setContentsMargins(0, 0, 0, 0);
+        domainLayout->setSpacing(4);
+        auto* domainLabel = new QLabel(tr("Domain"), domainColumn);
+        editors.domainEdit = new QTextEdit(domainColumn);
+        editors.domainEdit->setObjectName(QStringLiteral("routingCustom%1DomainEdit").arg(title));
+        editors.domainEdit->setTabChangesFocus(true);
+        editors.domainEdit->setPlaceholderText(QStringLiteral("geosite:cn\ndomain:example.com"));
+        editors.domainEdit->setStyleSheet(multiLineEditStyleSheet());
+        domainLayout->addWidget(domainLabel);
+        domainLayout->addWidget(editors.domainEdit, 1);
+
+        tabLayout->addWidget(protocolPortColumn, 1);
+        tabLayout->addWidget(ipColumn, 1);
+        tabLayout->addWidget(domainColumn, 1);
+
+        customRuleTabs_->addTab(tabWidget, title);
+        customRuleEditors_.insert(action, editors);
+    }
+    routingLayout->addWidget(customRuleTabs_, 1);
 
     // === Core Tab ===
     auto* coreTab = new QWidget(this);
@@ -429,7 +541,7 @@ void SettingsDialog::setupUi()
         }
     }
 
-    // Installed Cores — one row per available core type, with download + "set all" actions
+    // Installed Cores: one row per available core type, with download + "set all" actions
     auto* coreStatusGroup = new QGroupBox(tr("Installed Cores"), coreTab);
     auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
 
@@ -687,54 +799,7 @@ void SettingsDialog::setupUi()
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
-    connect(routingTable_, &QTableWidget::currentCellChanged, this, [this](int currentRow, int, int previousRow, int) {
-        Q_UNUSED(previousRow)
-
-        if (currentRow == currentRoutingRow_) {
-            return;
-        }
-
-        persistCurrentRuleTable();
-        currentRoutingRow_ = currentRow;
-        reloadRuleTable(currentRoutingRow_);
-        updateRoutingActionState();
-    });
-    connect(addRouteButton_, &QPushButton::clicked, this, [this]() {
-        persistCurrentRuleTable();
-
-        RoutingItem item;
-        item.remarks = QStringLiteral("Route %1").arg(routingItems_.size() + 1);
-        routingItems_.append(item);
-        reloadRoutingTable(routingItems_.size() - 1);
-    });
-    connect(removeRouteButton_, &QPushButton::clicked, this, [this]() {
-        const int row = routingTable_->currentRow();
-        if (row < 0 || row >= routingItems_.size()) {
-            return;
-        }
-
-        persistCurrentRuleTable();
-        routingItems_.removeAt(row);
-        reloadRoutingTable(row >= routingItems_.size() ? routingItems_.size() - 1 : row);
-    });
-    connect(addRuleButton_, &QPushButton::clicked, this, [this]() {
-        RoutingRule rule;
-        rule.enabled = true;
-        rule.outboundTag = QStringLiteral("proxy");
-        appendRuleRow(rule);
-        updateRoutingActionState();
-    });
-    connect(removeRuleButton_, &QPushButton::clicked, this, [this]() {
-        const int row = ruleTable_->currentRow();
-        if (row < 0 || row >= ruleTable_->rowCount()) {
-            return;
-        }
-
-        ruleTable_->removeRow(row);
-        updateRoutingActionState();
-    });
     connect(buttonBox_, &QDialogButtonBox::accepted, this, [this]() {
-        persistCurrentRuleTable();
         accept();
     });
     connect(buttonBox_, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -763,7 +828,7 @@ void SettingsDialog::setupUi()
         updateSubActionState();
     });
 
-    reloadRoutingTable();
+    reloadRoutingPresentation();
 }
 
 void SettingsDialog::updateFieldState()
@@ -797,202 +862,379 @@ void SettingsDialog::updateFieldState()
     }
 }
 
-void SettingsDialog::reloadRoutingTable(int selectedRow)
+namespace {
+
+QString compactRuleValues(const QStringList& values)
 {
-    const QSignalBlocker blocker(routingTable_);
-    routingTable_->setRowCount(0);
-
-    for (const RoutingItem& item : routingItems_) {
-        appendRoutingRow(item);
+    QStringList normalized;
+    for (const QString& value : values) {
+        const QString trimmed = value.trimmed();
+        if (!trimmed.isEmpty()) {
+            normalized.append(trimmed);
+        }
     }
+    return normalized.join(QStringLiteral(", "));
+}
 
-    if (routingItems_.isEmpty()) {
-        currentRoutingRow_ = -1;
-        reloadRuleTable(-1);
-        updateRoutingActionState();
+constexpr int kBaseRouteCardMaxWidth = 220;
+constexpr int kBaseRouteCardTextWidth = 210;
+constexpr int kBaseRouteCardCollapsedWidth = 100;
+
+QString elideCardLine(const QString& value, const QFontMetrics& metrics)
+{
+    return elideText(value, metrics, kBaseRouteCardTextWidth);
+}
+
+void appendCardRuleLine(QStringList& lines, const QString& action, const QStringList& matches, const QFontMetrics& metrics)
+{
+    if (matches.isEmpty()) {
         return;
     }
+    lines.append(elideCardLine(QStringLiteral("%1: %2").arg(action, matches.join(QStringLiteral(", "))), metrics));
+}
+
+QString baseRouteCardText(const RoutingItem& item, int index, const QFontMetrics& metrics)
+{
+    QStringList lines;
+    const QString title = item.remarks.trimmed().isEmpty()
+        ? QStringLiteral("Route %1").arg(index + 1)
+        : item.remarks.trimmed();
+    lines.append(elideCardLine(title, metrics));
+
+    QStringList blockMatches;
+    QStringList directMatches;
+    QStringList proxyMatches;
+    for (const RoutingRule& rule : item.rules) {
+        if (!rule.enabled) {
+            continue;
+        }
+
+        QStringList matches;
+        const QString port = rule.port.trimmed();
+        if (!port.isEmpty()) {
+            matches.append(QStringLiteral("port: %1").arg(port));
+        }
+        const QString protocols = compactRuleValues(rule.protocol);
+        if (!protocols.isEmpty()) {
+            matches.append(QStringLiteral("protocol: %1").arg(protocols));
+        }
+        const QString ips = compactRuleValues(rule.ip);
+        if (!ips.isEmpty()) {
+            matches.append(ips);
+        }
+        const QString domains = compactRuleValues(rule.domain);
+        if (!domains.isEmpty()) {
+            matches.append(domains);
+        }
+        matches.removeAll(QString());
+        if (matches.isEmpty()) {
+            continue;
+        }
+
+        const QString outbound = rule.outboundTag.trimmed().toLower();
+        QStringList* target = &proxyMatches;
+        if (outbound == QStringLiteral("block")) {
+            target = &blockMatches;
+        } else if (outbound == QStringLiteral("direct")) {
+            target = &directMatches;
+        }
+        target->append(matches);
+    }
+
+    appendCardRuleLine(lines, QStringLiteral("BLOCK"), blockMatches, metrics);
+    appendCardRuleLine(lines, QStringLiteral("DIRECT"), directMatches, metrics);
+    appendCardRuleLine(lines, QStringLiteral("PROXY"), proxyMatches, metrics);
+    return lines.join(QChar('\n'));
+}
+
+QString baseRouteCardFullText(const RoutingItem& item, int index)
+{
+    QStringList lines;
+    lines.append(item.remarks.trimmed().isEmpty()
+        ? QStringLiteral("Route %1").arg(index + 1)
+        : item.remarks.trimmed());
+
+    QStringList blockMatches;
+    QStringList directMatches;
+    QStringList proxyMatches;
+    for (const RoutingRule& rule : item.rules) {
+        if (!rule.enabled) {
+            continue;
+        }
+
+        QStringList matches;
+        const QString port = rule.port.trimmed();
+        if (!port.isEmpty()) {
+            matches.append(QStringLiteral("port: %1").arg(port));
+        }
+        const QString protocols = compactRuleValues(rule.protocol);
+        if (!protocols.isEmpty()) {
+            matches.append(QStringLiteral("protocol: %1").arg(protocols));
+        }
+        const QString ips = compactRuleValues(rule.ip);
+        if (!ips.isEmpty()) {
+            matches.append(ips);
+        }
+        const QString domains = compactRuleValues(rule.domain);
+        if (!domains.isEmpty()) {
+            matches.append(domains);
+        }
+        matches.removeAll(QString());
+        if (matches.isEmpty()) {
+            continue;
+        }
+
+        const QString outbound = rule.outboundTag.trimmed().toLower();
+        QStringList* target = &proxyMatches;
+        if (outbound == QStringLiteral("block")) {
+            target = &blockMatches;
+        } else if (outbound == QStringLiteral("direct")) {
+            target = &directMatches;
+        }
+        target->append(matches);
+    }
+
+    if (!blockMatches.isEmpty()) {
+        lines.append(QStringLiteral("BLOCK: %1").arg(blockMatches.join(QStringLiteral(", "))));
+    }
+    if (!directMatches.isEmpty()) {
+        lines.append(QStringLiteral("DIRECT: %1").arg(directMatches.join(QStringLiteral(", "))));
+    }
+    if (!proxyMatches.isEmpty()) {
+        lines.append(QStringLiteral("PROXY: %1").arg(proxyMatches.join(QStringLiteral(", "))));
+    }
+    return lines.join(QChar('\n'));
+}
+
+void clearLayout(QLayout* layout)
+{
+    if (layout == nullptr) {
+        return;
+    }
+
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+}
+
+} // namespace
+
+void SettingsDialog::reloadRoutingPresentation(int selectedRow)
+{
+    if (baseRouteLayout_ == nullptr || baseRouteButtonGroup_ == nullptr) {
+        return;
+    }
+
+    const QList<QAbstractButton*> oldButtons = baseRouteButtonGroup_->buttons();
+    for (QAbstractButton* button : oldButtons) {
+        baseRouteButtonGroup_->removeButton(button);
+    }
+    clearLayout(baseRouteLayout_);
 
     int rowToSelect = selectedRow;
     if (rowToSelect < 0 || rowToSelect >= routingItems_.size()) {
-        rowToSelect = 0;
+        rowToSelect = routingItems_.isEmpty() ? -1 : 0;
     }
 
-    currentRoutingRow_ = rowToSelect;
-    routingTable_->selectRow(rowToSelect);
-    reloadRuleTable(rowToSelect);
+    for (int index = 0; index < routingItems_.size(); ++index) {
+        auto* card = new BaseRouteCardButton(this);
+        const QString collapsedText = baseRouteCardText(routingItems_.at(index), index, card->fontMetrics());
+        const QString fullText = baseRouteCardFullText(routingItems_.at(index), index);
+        card->setObjectName(QStringLiteral("routingBaseRouteCard_%1").arg(index));
+        card->setCheckable(true);
+        card->setProperty("collapsedText", collapsedText);
+        card->setProperty("fullText", fullText);
+        card->setText(index == rowToSelect ? fullText : collapsedText);
+        card->setToolTip(fullText);
+        card->setStyleSheet(QStringLiteral("QPushButton { text-align: left; padding: 8px; }"));
+        card->setMinimumHeight(96);
+        card->setMaximumHeight(120);
+        card->setChecked(index == rowToSelect);
+        baseRouteButtonGroup_->addButton(card, index);
+        baseRouteLayout_->addWidget(card, 0);
+    }
+    updateBaseRouteCardGeometry();
     updateRoutingActionState();
 }
 
-void SettingsDialog::reloadRuleTable(int routeRow)
+void SettingsDialog::updateBaseRouteCardGeometry()
 {
-    const QSignalBlocker blocker(ruleTable_);
-    ruleTable_->setRowCount(0);
-
-    if (routeRow < 0 || routeRow >= routingItems_.size()) {
-        updateRoutingActionState();
+    if (baseRouteButtonGroup_ == nullptr) {
         return;
     }
 
-    const QList<RoutingRule>& rules = routingItems_.at(routeRow).rules;
+    const int selectedId = baseRouteButtonGroup_->checkedId();
+    for (QAbstractButton* button : baseRouteButtonGroup_->buttons()) {
+        if (button == nullptr) {
+            continue;
+        }
+
+        const bool selected = baseRouteButtonGroup_->id(button) == selectedId;
+        if (selected) {
+            button->setMinimumWidth(kBaseRouteCardMaxWidth);
+            button->setMaximumWidth(QWIDGETSIZE_MAX);
+            button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            button->setText(button->property("fullText").toString());
+        } else {
+            button->setMinimumWidth(kBaseRouteCardCollapsedWidth);
+            button->setMaximumWidth(kBaseRouteCardCollapsedWidth);
+            button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+            button->setText(button->property("collapsedText").toString());
+        }
+
+        if (baseRouteLayout_ != nullptr) {
+            const int layoutIndex = baseRouteLayout_->indexOf(button);
+            if (layoutIndex >= 0) {
+                baseRouteLayout_->setStretch(layoutIndex, selected ? 1 : 0);
+            }
+        }
+    }
+
+    if (baseRouteLayout_ != nullptr) {
+        baseRouteLayout_->invalidate();
+    }
+}
+
+void SettingsDialog::loadRoutingCustomRules(const QList<RoutingRule>& rules)
+{
+    for (auto it = customRuleEditors_.begin(); it != customRuleEditors_.end(); ++it) {
+        if (it.value().protocolEdit != nullptr) {
+            it.value().protocolEdit->clear();
+        }
+        if (it.value().portEdit != nullptr) {
+            it.value().portEdit->clear();
+        }
+        if (it.value().ipEdit != nullptr) {
+            it.value().ipEdit->clear();
+        }
+        if (it.value().domainEdit != nullptr) {
+            it.value().domainEdit->clear();
+        }
+    }
+
+    struct RuleValues {
+        QStringList protocols;
+        QStringList ports;
+        QStringList ips;
+        QStringList domains;
+    };
+    QMap<QString, RuleValues> valuesByAction;
+    const auto appendUnique = [](QStringList& target, const QStringList& values) {
+        for (const QString& value : values) {
+            const QString trimmed = value.trimmed();
+            if (!trimmed.isEmpty() && !target.contains(trimmed)) {
+                target.append(trimmed);
+            }
+        }
+    };
+
     for (const RoutingRule& rule : rules) {
-        appendRuleRow(rule);
+        const QString action = rule.outboundTag.trimmed().toLower();
+        if (!customRuleEditors_.contains(action)) {
+            continue;
+        }
+
+        RuleValues& values = valuesByAction[action];
+        appendUnique(values.protocols, rule.protocol);
+        appendUnique(values.ips, rule.ip);
+        appendUnique(values.domains, rule.domain);
+        const QString port = rule.port.trimmed();
+        if (!port.isEmpty() && !values.ports.contains(port)) {
+            values.ports.append(port);
+        }
     }
 
-    if (ruleTable_->rowCount() > 0) {
-        ruleTable_->selectRow(0);
-    }
+    for (auto it = valuesByAction.cbegin(); it != valuesByAction.cend(); ++it) {
+        auto editorIt = customRuleEditors_.find(it.key());
+        if (editorIt == customRuleEditors_.end()) {
+            continue;
+        }
 
-    updateRoutingActionState();
-}
-
-void SettingsDialog::persistCurrentRuleTable()
-{
-    if (currentRoutingRow_ < 0 || currentRoutingRow_ >= routingItems_.size()) {
-        return;
-    }
-
-    routingItems_[currentRoutingRow_].rules = collectRulesFromTable();
-
-    if (routingTable_->item(currentRoutingRow_, 4) != nullptr) {
-        routingTable_->item(currentRoutingRow_, 4)
-            ->setText(QString::number(routingItems_.at(currentRoutingRow_).rules.size()));
+        const RuleValues& values = it.value();
+        CustomRuleEditors& editors = editorIt.value();
+        if (editors.protocolEdit != nullptr) {
+            editors.protocolEdit->setPlainText(values.protocols.join(QChar('\n')));
+        }
+        if (editors.portEdit != nullptr) {
+            editors.portEdit->setText(joinValues(values.ports));
+        }
+        if (editors.ipEdit != nullptr) {
+            editors.ipEdit->setPlainText(values.ips.join(QChar('\n')));
+        }
+        if (editors.domainEdit != nullptr) {
+            editors.domainEdit->setPlainText(values.domains.join(QChar('\n')));
+        }
     }
 }
 
 QList<RoutingItem> SettingsDialog::collectRoutingItems() const
 {
     QList<RoutingItem> items = routingItems_;
-    const int rowCount = routingTable_ == nullptr ? 0 : routingTable_->rowCount();
-    for (int row = 0; row < rowCount && row < items.size(); ++row) {
-        auto* enabledItem = routingTable_->item(row, 0);
-        auto* remarksItem = routingTable_->item(row, 1);
-        auto* urlItem = routingTable_->item(row, 2);
-        auto* iconItem = routingTable_->item(row, 3);
-
-        items[row].enabled = enabledItem == nullptr || enabledItem->checkState() == Qt::Checked;
-        items[row].remarks = remarksItem == nullptr ? QString() : remarksItem->text().trimmed();
-        items[row].url = urlItem == nullptr ? QString() : urlItem->text().trimmed();
-        items[row].customIcon = iconItem == nullptr ? QString() : iconItem->text().trimmed();
+    const int selectedIndex = selectedBaseRouteIndex();
+    for (int index = 0; index < items.size(); ++index) {
+        items[index].enabled = true;
+        items[index].locked = index == selectedIndex;
     }
-
-    if (currentRoutingRow_ >= 0 && currentRoutingRow_ < items.size()) {
-        items[currentRoutingRow_].rules = collectRulesFromTable();
-    }
-
     return items;
 }
 
-QList<RoutingRule> SettingsDialog::collectRulesFromTable() const
+QList<RoutingRule> SettingsDialog::collectRoutingCustomRules() const
 {
     QList<RoutingRule> rules;
-    if (ruleTable_ == nullptr) {
-        return rules;
-    }
+    const QStringList actionOrder{
+        QStringLiteral("block"),
+        QStringLiteral("direct"),
+        QStringLiteral("proxy")};
 
-    for (int row = 0; row < ruleTable_->rowCount(); ++row) {
-        auto* enabledItem = ruleTable_->item(row, 0);
-        auto* outboundItem = ruleTable_->item(row, 1);
-        auto* portItem = ruleTable_->item(row, 2);
-        auto* protocolItem = ruleTable_->item(row, 3);
-        auto* inboundItem = ruleTable_->item(row, 4);
-        auto* domainItem = ruleTable_->item(row, 5);
-        auto* ipItem = ruleTable_->item(row, 6);
+    for (const QString& action : actionOrder) {
+        const CustomRuleEditors editors = customRuleEditors_.value(action);
 
-        RoutingRule rule;
-        rule.type = QStringLiteral("field");
-        rule.enabled = enabledItem == nullptr || enabledItem->checkState() == Qt::Checked;
-        rule.outboundTag = outboundItem == nullptr ? QString() : outboundItem->text().trimmed();
-        rule.port = portItem == nullptr ? QString() : portItem->text().trimmed();
-        rule.network = outboundItem == nullptr ? QString() : outboundItem->data(RuleNetworkRole).toString();
-        rule.protocol = splitValues(protocolItem == nullptr ? QString() : protocolItem->text());
-        rule.inboundTag = splitValues(inboundItem == nullptr ? QString() : inboundItem->text());
-        rule.domain = splitValues(domainItem == nullptr ? QString() : domainItem->text());
-        rule.ip = splitValues(ipItem == nullptr ? QString() : ipItem->text());
-        rule.process = outboundItem == nullptr
+        const QString protocolText = editors.protocolEdit == nullptr ? QString() : editors.protocolEdit->toPlainText();
+        const QString portText = editors.portEdit == nullptr ? QString() : editors.portEdit->text().trimmed();
+        const QStringList protocols = splitValues(protocolText);
+        if (!protocols.isEmpty() || !portText.isEmpty()) {
+            RoutingRule rule;
+            rule.type = QStringLiteral("field");
+            rule.enabled = true;
+            rule.outboundTag = action;
+            rule.protocol = protocols;
+            rule.port = portText;
+            rules.append(rule);
+        }
+
+        const QStringList ips = editors.ipEdit == nullptr
             ? QStringList()
-            : outboundItem->data(RuleProcessRole).toStringList();
-        rules.append(rule);
+            : splitValues(editors.ipEdit->toPlainText());
+        if (!ips.isEmpty()) {
+            RoutingRule rule;
+            rule.type = QStringLiteral("field");
+            rule.enabled = true;
+            rule.outboundTag = action;
+            rule.ip = ips;
+            rules.append(rule);
+        }
+
+        const QStringList domains = editors.domainEdit == nullptr
+            ? QStringList()
+            : splitValues(editors.domainEdit->toPlainText());
+        if (!domains.isEmpty()) {
+            RoutingRule rule;
+            rule.type = QStringLiteral("field");
+            rule.enabled = true;
+            rule.outboundTag = action;
+            rule.domain = domains;
+            rules.append(rule);
+        }
     }
 
     return rules;
 }
 
-namespace {
-
-QTableWidgetItem* createCheckItem(bool checked)
-{
-    auto* item = new QTableWidgetItem();
-    item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-    item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
-    return item;
-}
-
-QTableWidgetItem* createTextItem(const QString& text)
-{
-    return new QTableWidgetItem(text);
-}
-
-QTableWidgetItem* createReadOnlyItem(const QString& text)
-{
-    auto* item = new QTableWidgetItem(text);
-    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-    return item;
-}
-
-} // namespace
-
-void SettingsDialog::appendRoutingRow(const RoutingItem& item)
-{
-    const int row = routingTable_->rowCount();
-    routingTable_->insertRow(row);
-    routingTable_->setItem(row, 0, createCheckItem(item.enabled));
-    routingTable_->setItem(row, 1, createTextItem(item.remarks));
-    routingTable_->setItem(row, 2, createTextItem(item.url));
-    routingTable_->setItem(row, 3, createTextItem(item.customIcon));
-    routingTable_->setItem(row, 4, createReadOnlyItem(QString::number(item.rules.size())));
-}
-
-void SettingsDialog::appendRuleRow(const RoutingRule& rule)
-{
-    const int row = ruleTable_->rowCount();
-    ruleTable_->insertRow(row);
-    ruleTable_->setItem(row, 0, createCheckItem(rule.enabled));
-    auto* outboundItem = createTextItem(rule.outboundTag);
-    outboundItem->setData(RuleNetworkRole, rule.network);
-    outboundItem->setData(RuleProcessRole, rule.process);
-    ruleTable_->setItem(row, 1, outboundItem);
-    ruleTable_->setItem(row, 2, createTextItem(rule.port));
-    ruleTable_->setItem(row, 3, createTextItem(joinValues(rule.protocol)));
-    ruleTable_->setItem(row, 4, createTextItem(joinValues(rule.inboundTag)));
-    ruleTable_->setItem(row, 5, createTextItem(joinValues(rule.domain)));
-    ruleTable_->setItem(row, 6, createTextItem(joinValues(rule.ip)));
-}
-
 void SettingsDialog::updateRoutingActionState()
 {
-    const bool hasRouteSelection = routingTable_ != nullptr
-        && routingTable_->currentRow() >= 0
-        && routingTable_->currentRow() < routingTable_->rowCount();
-    const bool hasRuleSelection = ruleTable_ != nullptr
-        && ruleTable_->currentRow() >= 0
-        && ruleTable_->currentRow() < ruleTable_->rowCount();
-
-    if (removeRouteButton_ != nullptr) {
-        removeRouteButton_->setEnabled(hasRouteSelection);
-    }
-
-    if (addRuleButton_ != nullptr) {
-        addRuleButton_->setEnabled(hasRouteSelection);
-    }
-
-    if (removeRuleButton_ != nullptr) {
-        removeRuleButton_->setEnabled(hasRuleSelection);
-    }
-
-    if (routeHintLabel_ != nullptr) {
-        routeHintLabel_->setText(QStringLiteral("The selected row becomes the active routing profile."));
-    }
 }
 
 int SettingsDialog::findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const
@@ -1012,6 +1254,15 @@ int SettingsDialog::findInitialRouteIndex(const QList<RoutingItem>& items, const
     }
 
     return 0;
+}
+
+int SettingsDialog::selectedBaseRouteIndex() const
+{
+    if (baseRouteButtonGroup_ == nullptr) {
+        return -1;
+    }
+
+    return baseRouteButtonGroup_->checkedId();
 }
 
 QString SettingsDialog::joinValues(const QStringList& values)
@@ -1128,7 +1379,7 @@ void SettingsDialog::reloadCoreTypeTable()
         }
 
         int configType = configTypes.at(i);
-        int coreType = static_cast<int>(CoreType::Xray);
+        int coreType = static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
 
         for (const CoreTypeItem& item : coreTypeItems_) {
             if (item.configType == configType) {
@@ -1158,11 +1409,13 @@ QList<CoreTypeItem> SettingsDialog::collectCoreTypeItems() const
         if (combo != nullptr) {
             bool ok = false;
             const int coreTypeValue = combo->currentData().toInt(&ok);
-            item.coreType = ok ? coreTypeValue : static_cast<int>(CoreType::Xray);
+            item.coreType = ok
+                ? coreTypeValue
+                : static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
         } else {
             const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configType));
             item.coreType = cores.isEmpty()
-                ? static_cast<int>(CoreType::Xray)
+                ? static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)))
                 : static_cast<int>(cores.first());
         }
         items.append(item);

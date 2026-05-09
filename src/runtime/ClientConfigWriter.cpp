@@ -16,8 +16,9 @@
 
 #include <utility>
 
-#include "runtime/TunCompatCoreRequirement.h"
 #include "runtime/ClashConfigWriter.h"
+#include "runtime/ProtocolCoreCompat.h"
+#include "runtime/TunCompatCoreRequirement.h"
 
 namespace {
 
@@ -289,6 +290,50 @@ QStringList splitPemCertificates(const QString& value)
     }
 
     return certificates;
+}
+
+QStringList splitPinnedCertificateHashes(const QString& value)
+{
+    QStringList hashes;
+    const QStringList parts = value.split(QChar(','), Qt::SkipEmptyParts);
+    for (QString part : parts) {
+        part = part.trimmed();
+        if (part.startsWith(QStringLiteral("sha256/"), Qt::CaseInsensitive)) {
+            part = part.mid(QStringLiteral("sha256/").size());
+        }
+        if (!part.isEmpty()) {
+            hashes.append(part);
+        }
+    }
+    return hashes;
+}
+
+QList<RoutingRule> effectiveRoutingRules(const Config& config, const RoutingItem* selectedRouting)
+{
+    QList<RoutingRule> rules;
+    const QStringList customOrder{
+        QStringLiteral("block"),
+        QStringLiteral("direct"),
+        QStringLiteral("proxy")};
+
+    for (const QString& outboundTag : customOrder) {
+        for (const RoutingRule& rule : config.routingCustomRules) {
+            if (!rule.enabled || rule.outboundTag.compare(outboundTag, Qt::CaseInsensitive) != 0) {
+                continue;
+            }
+            rules.append(rule);
+        }
+    }
+
+    if (selectedRouting != nullptr) {
+        for (const RoutingRule& rule : selectedRouting->rules) {
+            if (rule.enabled) {
+                rules.append(rule);
+            }
+        }
+    }
+
+    return rules;
 }
 
 QJsonArray buildLegacyTlsCertificates(const QStringList& certificates)
@@ -827,13 +872,7 @@ OperationResult ClientConfigWriter::writeClientConfigs(
         return writeCustomConfig(server, filePath);
     }
 
-    CoreType effectiveCore = resolveRuntimeCoreType(server.coreType);
-    for (const CoreTypeItem& item : config.coreTypeItems) {
-        if (item.configType == static_cast<int>(server.configType)) {
-            effectiveCore = resolveRuntimeCoreType(static_cast<CoreType>(item.coreType));
-            break;
-        }
-    }
+    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
     if (effectiveCore == CoreType::Clash || effectiveCore == CoreType::ClashMeta) {
         return ClashConfigWriter::writeClientConfig(config, server, filePath, statisticsPort);
     }
@@ -919,7 +958,7 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
 
 OperationResult ClientConfigWriter::validateServer(const VmessItem& server) const
 {
-    const CoreType runtimeCore = resolveRuntimeCoreType(server.coreType);
+    const CoreType runtimeCore = resolvePreferredCoreType(Config{}, server);
     const QString transportSecurity = server.streamSecurity.trimmed();
     const bool realityTransport = isRealityTransport(transportSecurity);
 
@@ -1004,13 +1043,7 @@ QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem&
 {
     const bool requiresSingBox = server.configType == ConfigType::AnyTLS
         || server.configType == ConfigType::Naive;
-    CoreType effectiveCore = resolveRuntimeCoreType(server.coreType);
-    for (const CoreTypeItem& item : config.coreTypeItems) {
-        if (item.configType == static_cast<int>(server.configType)) {
-            effectiveCore = resolveRuntimeCoreType(static_cast<CoreType>(item.coreType));
-            break;
-        }
-    }
+    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
     const bool useSingBox = requiresSingBox || effectiveCore == CoreType::SingBox;
     return useSingBox
         ? buildSingBoxRoot(config, server, statisticsPort)
@@ -1299,23 +1332,17 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
 
     QJsonArray rules;
     const RoutingItem* selectedRouting = resolveSelectedRouting(config);
-    if (selectedRouting != nullptr) {
-        for (const RoutingRule& rule : selectedRouting->rules) {
-            if (!rule.enabled) {
-                continue;
-            }
-            appendLegacyRoutingRule(rules, rule);
-        }
+    const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
+    for (const RoutingRule& rule : effectiveRules) {
+        appendLegacyRoutingRule(rules, rule);
     }
 
     if (!isCustomDnsObjectText(config.remoteDns)) {
         const QStringList directDnsAddresses = splitDnsAddresses(config.directDns);
         QStringList directDomains;
-        if (selectedRouting != nullptr) {
-            for (const RoutingRule& rule : selectedRouting->rules) {
-                if (rule.enabled && rule.outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
-                    directDomains.append(normalizeRuleValues(rule.domain, true, true));
-                }
+        for (const RoutingRule& rule : effectiveRules) {
+            if (rule.outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
+                directDomains.append(normalizeRuleValues(rule.domain, true, true));
             }
         }
 
@@ -1860,15 +1887,11 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
         appendResolveRule();
     }
 
-    if (selectedRouting != nullptr) {
-        for (const RoutingRule& rule : selectedRouting->rules) {
-            if (!rule.enabled) {
-                continue;
-            }
-            appendSingBoxRoutingRule(rules, rule);
-            if (reapplyIpRulesAfterResolve && !normalizeRuleValues(rule.ip).isEmpty()) {
-                ipRulesAfterResolve.append(rule);
-            }
+    const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
+    for (const RoutingRule& rule : effectiveRules) {
+        appendSingBoxRoutingRule(rules, rule);
+        if (reapplyIpRulesAfterResolve && !normalizeRuleValues(rule.ip).isEmpty()) {
+            ipRulesAfterResolve.append(rule);
         }
     }
 
@@ -2322,7 +2345,8 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
     // Hysteria2/TUIC use QUIC internally, WireGuard has no network concept
     const bool needsNetworkField = server.configType != ConfigType::Hysteria2
         && server.configType != ConfigType::TUIC
-        && server.configType != ConfigType::WireGuard;
+        && server.configType != ConfigType::WireGuard
+        && server.configType != ConfigType::HTTP;
     if (needsNetworkField) {
         outbound.insert(QStringLiteral("network"), resolveSingBoxNetwork(server));
     }
@@ -2353,6 +2377,25 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
             outbound.insert(QStringLiteral("password"), server.security);
         }
         break;
+    case ConfigType::HTTP: {
+        if (!server.id.trimmed().isEmpty()) {
+            outbound.insert(QStringLiteral("username"), server.id);
+        }
+        if (!server.security.trimmed().isEmpty()) {
+            outbound.insert(QStringLiteral("password"), server.security);
+        }
+        const QString path = server.path.trimmed();
+        if (!path.isEmpty()) {
+            outbound.insert(QStringLiteral("path"), path);
+        }
+        const QStringList hosts = splitCsv(server.requestHost);
+        if (!hosts.isEmpty()) {
+            QJsonObject headers;
+            headers.insert(QStringLiteral("Host"), hosts.constFirst());
+            outbound.insert(QStringLiteral("headers"), headers);
+        }
+        break;
+    }
     case ConfigType::Hysteria2:
         outbound.insert(QStringLiteral("password"), server.id);
         if (!server.obfsPassword.trimmed().isEmpty()) {
@@ -2484,7 +2527,8 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
     // Hysteria2 and TUIC use QUIC internally, WireGuard has no transport layer
     const bool needsTransport = server.configType != ConfigType::Hysteria2
         && server.configType != ConfigType::TUIC
-        && server.configType != ConfigType::WireGuard;
+        && server.configType != ConfigType::WireGuard
+        && server.configType != ConfigType::HTTP;
     if (needsTransport) {
         const QJsonObject transport = buildSingBoxTransport(server);
         if (!transport.isEmpty()) {
@@ -2739,6 +2783,16 @@ QJsonObject ClientConfigWriter::buildSingBoxTls(const Config& config, const Vmes
         }
         tls.insert(QStringLiteral("certificate"), certificateArray);
         tls.insert(QStringLiteral("insecure"), false);
+    } else if (!isRealityTransport(transportSecurity)) {
+        const QStringList pinnedHashes = splitPinnedCertificateHashes(server.certSha);
+        if (!pinnedHashes.isEmpty()) {
+            QJsonArray pinnedHashArray;
+            for (const QString& hash : pinnedHashes) {
+                pinnedHashArray.append(hash);
+            }
+            tls.insert(QStringLiteral("certificate_public_key_sha256"), pinnedHashArray);
+            tls.insert(QStringLiteral("insecure"), false);
+        }
     }
 
     if (isRealityTransport(transportSecurity)) {
@@ -3627,6 +3681,8 @@ QString ClientConfigWriter::resolveSingBoxOutboundType(ConfigType type)
         return QStringLiteral("shadowsocks");
     case ConfigType::Socks:
         return QStringLiteral("socks");
+    case ConfigType::HTTP:
+        return QStringLiteral("http");
     case ConfigType::Hysteria2:
         return QStringLiteral("hysteria2");
     case ConfigType::TUIC:

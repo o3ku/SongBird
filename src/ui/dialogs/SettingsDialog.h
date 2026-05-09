@@ -18,6 +18,9 @@
 #include "domain/models/RoutingItem.h"
 #include "domain/models/SubItem.h"
 
+class QButtonGroup;
+class QHBoxLayout;
+
 class SettingsDialog final : public QDialog {
     Q_OBJECT
 
@@ -44,15 +47,14 @@ signals:
 private:
     void setupUi();
     void updateFieldState();
-    void reloadRoutingTable(int selectedRow = 0);
-    void reloadRuleTable(int routeRow);
-    void persistCurrentRuleTable();
+    void reloadRoutingPresentation(int selectedRow = 0);
+    void updateBaseRouteCardGeometry();
+    void loadRoutingCustomRules(const QList<RoutingRule>& rules);
     QList<RoutingItem> collectRoutingItems() const;
-    QList<RoutingRule> collectRulesFromTable() const;
-    void appendRoutingRow(const RoutingItem& item);
-    void appendRuleRow(const RoutingRule& rule);
+    QList<RoutingRule> collectRoutingCustomRules() const;
     void updateRoutingActionState();
     int findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const;
+    int selectedBaseRouteIndex() const;
     static QString joinValues(const QStringList& values);
     static QStringList splitValues(const QString& value);
 
@@ -134,14 +136,16 @@ private:
     CoreType updatingCoreType_ = CoreType::Unknown;
 
     QList<RoutingItem> routingItems_;
-    int currentRoutingRow_ = -1;
-    QTableWidget* routingTable_ = nullptr;
-    QTableWidget* ruleTable_ = nullptr;
-    QPushButton* addRouteButton_ = nullptr;
-    QPushButton* removeRouteButton_ = nullptr;
-    QPushButton* addRuleButton_ = nullptr;
-    QPushButton* removeRuleButton_ = nullptr;
-    QLabel* routeHintLabel_ = nullptr;
+    QButtonGroup* baseRouteButtonGroup_ = nullptr;
+    QHBoxLayout* baseRouteLayout_ = nullptr;
+    QTabWidget* customRuleTabs_ = nullptr;
+    struct CustomRuleEditors {
+        QTextEdit* protocolEdit = nullptr;
+        QLineEdit* portEdit = nullptr;
+        QTextEdit* ipEdit = nullptr;
+        QTextEdit* domainEdit = nullptr;
+    };
+    QMap<QString, CustomRuleEditors> customRuleEditors_;
     QTabWidget* tabWidget_ = nullptr;
     int requestedTabIndex_ = 0;
 

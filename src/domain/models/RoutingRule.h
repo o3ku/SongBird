@@ -14,4 +14,6 @@ struct RoutingRule {
     QStringList protocol;
     QStringList process;
     bool enabled = true;
+
+    bool operator==(const RoutingRule& other) const = default;
 };

@@ -66,6 +66,8 @@ private slots:
     void savePersistsServerEchFields();
     void loadReadsRoutingRuleNetworkAndProcessFields();
     void savePersistsRoutingRuleNetworkAndProcessFields();
+    void loadReadsRoutingCustomRules();
+    void savePersistsRoutingCustomRules();
     void loadReadsRoutingItemDomainStrategy4Singbox();
     void savePersistsRoutingItemDomainStrategy4Singbox();
     void loadReadsGlobalHotkeys();
@@ -1275,6 +1277,75 @@ void JsonConfigRepositoryTests::savePersistsRoutingRuleNetworkAndProcessFields()
     const RoutingRule reloadedRule = it->rules.constFirst();
     QCOMPARE(reloadedRule.network, QStringLiteral("tcp,udp"));
     QCOMPARE(reloadedRule.process, QStringList({QStringLiteral("self/"), QStringLiteral("test.exe")}));
+}
+
+void JsonConfigRepositoryTests::loadReadsRoutingCustomRules()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject blockRule;
+    blockRule.insert(QStringLiteral("type"), QStringLiteral("field"));
+    blockRule.insert(QStringLiteral("outboundTag"), QStringLiteral("block"));
+    blockRule.insert(QStringLiteral("domain"), QJsonArray{QStringLiteral("geosite:category-ads-all")});
+
+    QJsonObject directRule;
+    directRule.insert(QStringLiteral("type"), QStringLiteral("field"));
+    directRule.insert(QStringLiteral("outboundTag"), QStringLiteral("direct"));
+    directRule.insert(QStringLiteral("ip"), QJsonArray{QStringLiteral("geoip:private")});
+
+    QJsonObject proxyRule;
+    proxyRule.insert(QStringLiteral("type"), QStringLiteral("field"));
+    proxyRule.insert(QStringLiteral("outboundTag"), QStringLiteral("proxy"));
+    proxyRule.insert(QStringLiteral("port"), QStringLiteral("443"));
+    proxyRule.insert(QStringLiteral("protocol"), QJsonArray{QStringLiteral("tls")});
+
+    QJsonObject root;
+    root.insert(QStringLiteral("routingCustomRules"), QJsonArray{blockRule, directRule, proxyRule});
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QCOMPARE(config.routingCustomRules.size(), 3);
+    QCOMPARE(config.routingCustomRules.at(0).outboundTag, QStringLiteral("block"));
+    QCOMPARE(config.routingCustomRules.at(0).domain, QStringList{QStringLiteral("geosite:category-ads-all")});
+    QCOMPARE(config.routingCustomRules.at(1).outboundTag, QStringLiteral("direct"));
+    QCOMPARE(config.routingCustomRules.at(1).ip, QStringList{QStringLiteral("geoip:private")});
+    QCOMPARE(config.routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
+    QCOMPARE(config.routingCustomRules.at(2).port, QStringLiteral("443"));
+    QCOMPARE(config.routingCustomRules.at(2).protocol, QStringList{QStringLiteral("tls")});
+}
+
+void JsonConfigRepositoryTests::savePersistsRoutingCustomRules()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    JsonConfigRepository repository(configPath);
+
+    Config config = repository.load();
+    RoutingRule rule;
+    rule.type = QStringLiteral("field");
+    rule.outboundTag = QStringLiteral("proxy");
+    rule.domain = QStringList{QStringLiteral("domain:openai.com")};
+    config.routingCustomRules = {rule};
+
+    QVERIFY(repository.save(config));
+
+    JsonConfigRepository reloadedRepository(configPath);
+    const Config reloaded = reloadedRepository.load();
+
+    QCOMPARE(reloaded.routingCustomRules.size(), 1);
+    QCOMPARE(reloaded.routingCustomRules.constFirst().outboundTag, QStringLiteral("proxy"));
+    QCOMPARE(reloaded.routingCustomRules.constFirst().domain, QStringList{QStringLiteral("domain:openai.com")});
 }
 
 void JsonConfigRepositoryTests::loadReadsRoutingItemDomainStrategy4Singbox()
