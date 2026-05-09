@@ -144,6 +144,22 @@ if(QT_V2RAYN_HAS_LINGUISTTOOLS)
     endif()
 
     add_custom_target(qt_v2rayn_translations ALL DEPENDS ${QT_V2RAYN_TRANSLATION_QM_FILES})
+
+    # Generate a .qrc that embeds compiled .qm files into the executable
+    set(QT_V2RAYN_TRANSLATIONS_QRC "${CMAKE_CURRENT_BINARY_DIR}/translations.qrc")
+    file(WRITE "${QT_V2RAYN_TRANSLATIONS_QRC}" "<RCC>\n    <qresource prefix=\"/translations\">\n")
+    foreach(qm_file ${QT_V2RAYN_TRANSLATION_QM_FILES})
+        get_filename_component(qm_name "${qm_file}" NAME)
+        file(APPEND "${QT_V2RAYN_TRANSLATIONS_QRC}" "        <file alias=\"${qm_name}\">${qm_file}</file>\n")
+    endforeach()
+    file(APPEND "${QT_V2RAYN_TRANSLATIONS_QRC}" "    </qresource>\n</RCC>\n")
+
+    # Ensure .qm files exist before rcc processes the .qrc
+    set_source_files_properties("${QT_V2RAYN_TRANSLATIONS_QRC}" PROPERTIES
+        OBJECT_DEPENDS "${QT_V2RAYN_TRANSLATION_QM_FILES}"
+    )
+
+    list(APPEND QT_V2RAYN_SOURCES "${QT_V2RAYN_TRANSLATIONS_QRC}")
 endif()
 
 if(QT_V2RAYN_HAS_GRPC)
@@ -212,6 +228,8 @@ target_compile_definitions(qt_v2rayn
 
 target_link_libraries(qt_v2rayn
     PRIVATE
+        Qt${QT_VERSION_MAJOR}::Core
+        Qt${QT_VERSION_MAJOR}::Gui
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Network
 )

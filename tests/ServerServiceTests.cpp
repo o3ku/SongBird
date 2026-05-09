@@ -759,7 +759,7 @@ void ServerServiceTests::moveServerUpDoesNothingAtTop()
     });
 
     const OperationResult result = service_->moveServers(config, {kId1}, ServerMoveOperation::Up);
-    // No move occurred — still reports success but order unchanged
+    // No move occurred: still reports success but order unchanged
     QVERIFY(result.success);
     QCOMPARE(config.servers.at(0).indexId, kId1);
     QCOMPARE(config.servers.at(1).indexId, kId2);
@@ -800,7 +800,7 @@ void ServerServiceTests::moveServerReturnsOkForSingleServer()
 
 void ServerServiceTests::moveServerReordersMultipleSelectedUp()
 {
-    // Servers: A B C D  —  move C,D up
+    // Servers: A B C D; move C,D up
     // C swaps with B (B not selected):  A C B D
     // D swaps with B (B not selected):  A C D B
     Config config = makeConfigWithServers({
@@ -821,7 +821,7 @@ void ServerServiceTests::moveServerReordersMultipleSelectedUp()
 
 void ServerServiceTests::moveServerReordersMultipleSelectedDown()
 {
-    // Servers: A B C D  —  move A,B down
+    // Servers: A B C D; move A,B down
     // B swaps with C (C not selected):  A C B D
     // A swaps with C (C not selected):  C A B D
     Config config = makeConfigWithServers({

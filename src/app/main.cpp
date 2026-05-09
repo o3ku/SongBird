@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QtGlobal>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -8,7 +9,6 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QMessageBox>
-#include <QThread>
 #include <QTimer>
 #include <QTranslator>
 
@@ -107,9 +107,6 @@ bool loadConfiguredTunEnabled(const QString& configPath)
 
 void installConfiguredTranslator(QApplication& app, QTranslator& translator, const QString& languageCode)
 {
-    const QString translationsDirectory =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("translations"));
-
     if (languageCode == QStringLiteral("en")) {
         return;
     }
@@ -117,8 +114,22 @@ void installConfiguredTranslator(QApplication& app, QTranslator& translator, con
     const QLocale locale = languageCode == QStringLiteral("zh_CN")
         ? QLocale(QLocale::Chinese, QLocale::China)
         : QLocale();
-    if (translator.load(locale, QStringLiteral("v2rayq"), QStringLiteral("_"), translationsDirectory)) {
-        app.installTranslator(&translator);
+
+    const QString qmPrefix = QStringLiteral("v2rayq");
+    const QString qmSeparator = QStringLiteral("_");
+
+    // Try embedded resource first, then filesystem
+    const QStringList searchDirs = {
+        QStringLiteral(":/translations"),
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("translations")),
+        QCoreApplication::applicationDirPath()
+    };
+
+    for (const QString& dir : searchDirs) {
+        if (translator.load(locale, qmPrefix, qmSeparator, dir)) {
+            app.installTranslator(&translator);
+            return;
+        }
     }
 }
 
@@ -197,6 +208,11 @@ bool restartAsAdministrator(const QString& program, const QStringList& arguments
 
 int main(int argc, char* argv[])
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#endif
+
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("v2rayq"));
     app.setOrganizationName(QStringLiteral("v2rayq"));
@@ -294,9 +310,7 @@ int main(int argc, char* argv[])
             [&singleInstanceBootstrap]() {
                 return singleInstanceBootstrap.tryAcquire();
             },
-            [](int delayMs) {
-                QThread::msleep(static_cast<unsigned long>(delayMs));
-            })) {
+            [](int) {})) {
         QMessageBox::information(
             nullptr,
             QStringLiteral("v2rayq"),

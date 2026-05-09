@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QProcess>
+#include <QTimer>
 
 #include <functional>
 #include <memory>
@@ -16,9 +17,11 @@ public:
         const CoreInfo& coreInfo,
         const QString& configFilePath,
         std::function<void(const QString&)> outputReceived,
+        StartedCallback started = {},
+        StartFailedCallback startFailed = {},
         ExitedCallback exited = {}) override;
 
-    OperationResult stop() override;
+    OperationResult stop(bool immediate = false) override;
     OperationResult reload() override;
     bool isRunning() const override;
 
@@ -27,13 +30,19 @@ private:
     void bindOutputSignals();
     void emitBufferedOutput(QProcess::ProcessChannel channel);
     void flushBufferedOutput(bool flushPartialLines);
+    void resetProcessState();
+    void scheduleForcedKill();
 
     std::unique_ptr<QProcess> process_;
     CoreInfo lastCoreInfo_;
     QString lastConfigFilePath_;
     std::function<void(const QString&)> outputReceived_;
+    StartedCallback startedCallback_;
+    StartFailedCallback startFailedCallback_;
     ExitedCallback exitedCallback_;
     bool stopRequested_ = false;
+    bool startNotified_ = false;
     QString standardOutputBuffer_;
     QString standardErrorBuffer_;
+    QTimer* forcedKillTimer_ = nullptr;
 };

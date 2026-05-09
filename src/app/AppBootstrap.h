@@ -5,6 +5,8 @@
 #include <memory>
 
 #include <QList>
+#include <QMetaObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -17,6 +19,7 @@ class CoreLifecycleService;
 class ClientConfigWriter;
 class ServerConfigWriter;
 class MainWindow;
+class SettingsDialog;
 class JsonConfigRepository;
 class QNetworkAccessManager;
 class QObject;
@@ -30,9 +33,7 @@ class QtCoreProcessHost;
 class QTimer;
 class RoutingService;
 class ConfigBackupService;
-class CoreUpdateService;
 class GeoResourceUpdateService;
-class ProxyAvailabilityCheckService;
 class ServerService;
 class SpeedTestService;
 class StatisticsService;
@@ -42,7 +43,6 @@ class TrayController;
 class WindowsAutoRunService;
 class WindowsGlobalHotkeyService;
 class WindowsSystemProxyService;
-enum class SpeedTestMode : int;
 
 class AppBootstrap {
 public:
@@ -65,9 +65,19 @@ private:
     void startCoreOnStartup();
     void appendStartupResourceCheckResults();
     void appendResult(const OperationResult& result);
+    void showOperationMessage(
+        const QString& title,
+        const OperationResult& result,
+        QWidget* parent = nullptr,
+        bool showDialog = true);
     void persistUiState();
     void startCore();
-    void stopCore();
+    void startCore(bool skipTunCleanup);
+    void stopCore(bool immediate = false);
+    void stopCoreInternal(bool immediate, bool clearRestartAfterStop);
+    void handleCoreStarted(const QString& serverIndexId, CoreType runtimeCore, int statisticsPort, bool customServer);
+    void handleCoreStartFailed(const QString& message);
+    void disconnectPendingCoreStartConnection();
     void restartCoreIfRunning(const QString& reason);
     void setSystemProxyMode(SystemProxyMode mode);
     void applySystemProxyModeOnExit(bool windowsShutdown);
@@ -75,6 +85,7 @@ private:
     void disableSystemProxy();
     void toggleAutoRun();
     void importFromClipboard();
+    void importClipboardTextAsync(const QString& text);
     void importSubscriptionUrlsFromTextAsync(const QString& text);
     void exportClientConfig(const QString& indexId);
     void exportServerConfig(const QString& indexId);
@@ -94,6 +105,21 @@ private:
         QWidget* dialogParent,
         const std::function<void(const QString&)>& progressObserver,
         const std::function<void(const OperationResult&)>& completionObserver);
+    void runCoreUpdateTask(
+        CoreType coreType,
+        Config workerConfig,
+        QString installDirectory,
+        QPointer<QObject> progressContextGuard,
+        std::function<void(const QString&)> progressObserver,
+        std::function<void(const OperationResult&)> completionObserver);
+    void finalizeCoreUpdate(
+        const QString& title,
+        const OperationResult& result,
+        bool stoppedForInstall,
+        bool startAfterSuccess,
+        QPointer<QWidget> dialogParentGuard,
+        const std::function<void(const OperationResult&)>& completionObserver);
+    void continuePendingCoreUpdate();
     void updateGeoResources();
     void updateSelectedSubscriptions(const QList<int>& rowIndexes);
     void updateSubscriptionsByIds(const QStringList& subscriptionIds, bool useProxy, const QString& startupMessage);
@@ -107,7 +133,7 @@ private:
     void openLoopbackTool();
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
-    void startSpeedTest(SpeedTestMode mode, const QStringList& indexIds);
+    void startSpeedTest(const QStringList& indexIds);
     bool isCoreRunning() const;
     const VmessItem* findServerById(const QString& indexId) const;
     const VmessItem* resolveActiveServer() const;
@@ -118,20 +144,26 @@ private:
     QString resolveRuntimeConfigPath(const VmessItem& server) const;
     QString resolveStatisticsFilePath() const;
     int resolveStatisticsPort() const;
+    CoreType resolveLaunchCoreType(const VmessItem& server) const;
     CoreInfo resolveCoreInfo(const VmessItem& server) const;
     CoreType resolveEffectiveCoreType(const VmessItem& server) const;
     QStringList resolveCoreCandidates(CoreType coreType) const;
-    QStringList resolveCoreCandidates(const VmessItem& server) const;
     QString locateFirstExistingFile(const QStringList& candidates) const;
+    QString detectCoreVersion(CoreType coreType) const;
+    void refreshSettingsCoreVersions(SettingsDialog* dialog);
     QString resolveCoreInstallDirectory(CoreType coreType) const;
     QString buildTrafficSummaryText() const;
     QString buildStatisticsSummaryText() const;
     QString buildRoutingSummaryText() const;
     QString buildListenSummaryText() const;
     QString buildSystemProxyExceptions() const;
+    void stopStatisticsBackends();
+    void stopStatisticsSession();
     void trackBackgroundThread(QThread* thread);
     void waitForBackgroundThreads();
     void stopAuxiliaryCore();
+    OperationResult removeStaleTunAdapterIfPresent() const;
+    void removeStaleTunAdapterAsync(const std::function<void(const OperationResult&)>& completion);
     void removeStaleTunAdapter();
     void removeStaleSingBoxCache();
     void cleanupOrphanCoreProcesses();
@@ -154,11 +186,7 @@ private:
     std::unique_ptr<GrpcStatisticsBackend> grpcStatisticsBackend_;
     std::unique_ptr<ClashRestStatisticsBackend> clashStatisticsBackend_;
     std::unique_ptr<SubscriptionService> subscriptionService_;
-    std::unique_ptr<ProxyAvailabilityCheckService> proxyAvailabilityCheckService_;
-    std::unique_ptr<CoreUpdateService> coreUpdateService_;
     std::unique_ptr<GeoResourceUpdateService> geoResourceUpdateService_;
-    std::unique_ptr<QNetworkAccessManager> networkAccessManager_;
-    std::unique_ptr<SubscriptionUpdateService> subscriptionUpdateService_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
     std::unique_ptr<ServerConfigWriter> serverConfigWriter_;
     std::unique_ptr<QtCoreProcessHost> coreProcessHost_;
@@ -179,8 +207,24 @@ private:
     bool proxyAvailabilityCheckRunning_ = false;
     bool coreUpdateRunning_ = false;
     bool geoUpdateRunning_ = false;
+    bool coreStartPending_ = false;
+    bool coreStopPending_ = false;
+    bool tunCleanupActive_ = false;
+    bool resumeCoreStartAfterTunCleanup_ = false;
+    bool restartAfterStopPending_ = false;
+    bool coreUpdatePendingAfterStop_ = false;
+    CoreType pendingCoreUpdateType_ = CoreType::Unknown;
+    bool pendingCoreUpdateStartAfterSuccess_ = false;
+    QPointer<QObject> pendingCoreUpdateProgressContext_;
+    QPointer<QWidget> pendingCoreUpdateDialogParent_;
+    std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;
+    std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
+    QMetaObject::Connection coreStartedConnection_;
     QList<QThread*> backgroundThreads_;
     std::atomic_bool shuttingDown_{false};
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
 };
+
+
+

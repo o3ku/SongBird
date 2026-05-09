@@ -12,12 +12,14 @@ public:
     explicit CoreLifecycleService(ICoreProcessHost& host, QObject* parent = nullptr);
 
     OperationResult start(const CoreInfo& coreInfo, const QString& configPath);
-    OperationResult stop();
+    OperationResult stop(bool immediate = false);
     OperationResult reload();
     bool isRunning() const;
 
 signals:
     void outputReceived(const QString& line);
+    void started(const QString& message);
+    void startFailed(const QString& message);
     void exited(int exitCode, QProcess::ExitStatus status, bool stopRequested);
 
 private:

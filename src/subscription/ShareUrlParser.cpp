@@ -450,7 +450,7 @@ VmessItem ShareUrlParser::parseHysteria2(const QString& shareUrl, bool* ok)
     }
     item.upMbps = query.queryItemValue(QStringLiteral("upmbps"));
     item.downMbps = query.queryItemValue(QStringLiteral("downmbps"));
-    item.fingerprint = query.queryItemValue(QStringLiteral("pinSHA256"));
+    item.certSha = QUrl::fromPercentEncoding(query.queryItemValue(QStringLiteral("pinSHA256")).toUtf8());
 
     const QString alpn = query.queryItemValue(QStringLiteral("alpn"));
     if (!alpn.isEmpty()) {

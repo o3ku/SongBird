@@ -9,14 +9,6 @@
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 class QThread;
-class QObject;
-
-enum class SpeedTestMode {
-    Ping = 0,
-    TcpPing,
-    RealPing,
-    DownloadSpeed // Deprecated
-};
 
 struct SpeedTestRequestItem {
     VmessItem server;
@@ -30,7 +22,7 @@ public:
     explicit SpeedTestService(QString customConfigDirectory = {}, QObject* parent = nullptr);
     ~SpeedTestService() override;
 
-    OperationResult start(SpeedTestMode mode, const Config& config, const QList<SpeedTestRequestItem>& items);
+    OperationResult start(const Config& config, const QList<SpeedTestRequestItem>& items);
     bool isRunning() const;
     void cancel();
 

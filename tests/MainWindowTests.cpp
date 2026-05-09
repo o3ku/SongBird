@@ -5,7 +5,9 @@
 #include <QListView>
 #include <QScrollBar>
 #include <QStyleOptionViewItem>
+#include <QTableView>
 
+#include "domain/models/Config.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/models/LogListModel.h"
@@ -21,6 +23,7 @@ private slots:
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
+    void enterOnServerTableSetsCurrentWithoutMovingSelection();
 };
 
 namespace {
@@ -41,6 +44,29 @@ void scrollToMiddle(QListView* logView)
     const int middleRow = qMax(0, model->rowCount() / 2);
     logView->scrollTo(model->index(middleRow, 0), QAbstractItemView::PositionAtTop);
     QCoreApplication::processEvents();
+}
+
+VmessItem createServer(const QString& id, const QString& remarks, int sort)
+{
+    VmessItem item;
+    item.indexId = id;
+    item.remarks = remarks;
+    item.address = QStringLiteral("127.0.0.%1").arg(sort);
+    item.port = 10000 + sort;
+    item.configType = ConfigType::VMess;
+    item.sort = sort;
+    return item;
+}
+
+Config createServerSelectionConfig()
+{
+    Config config;
+    config.servers = {
+        createServer(QStringLiteral("server-1"), QStringLiteral("First"), 1),
+        createServer(QStringLiteral("server-2"), QStringLiteral("Second"), 2),
+        createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3)};
+    config.currentIndexId = QStringLiteral("server-1");
+    return config;
 }
 
 } // namespace
@@ -201,6 +227,48 @@ void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
 
     const QSize wideHint = delegate.sizeHint(option, model.index(0, 0));
     QVERIFY(wideHint.height() < narrowHint.height());
+}
+
+void MainWindowTests::enterOnServerTableSetsCurrentWithoutMovingSelection()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    serverView->setFocus();
+    serverView->selectRow(1);
+    serverView->setCurrentIndex(serverView->model()->index(1, 2));
+    QCoreApplication::processEvents();
+
+    QSignalSpy spy(&window, SIGNAL(setDefaultServerRequested(QString)));
+    QVERIFY(spy.isValid());
+    connect(&window, &MainWindow::setDefaultServerRequested, &window, [&window, &config](const QString& indexId) {
+        config.currentIndexId = indexId;
+        window.setConfig(config);
+    });
+
+    QTest::keyClick(serverView, Qt::Key_Return);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
+    QCOMPARE(serverView->currentIndex().row(), 1);
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+
+    spy.clear();
+    QTest::keyClick(serverView, Qt::Key_Enter);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
+    QCOMPARE(serverView->currentIndex().row(), 1);
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
 }
 
 QTEST_MAIN(MainWindowTests)

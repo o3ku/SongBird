@@ -13,6 +13,8 @@
 #include <QUuid>
 #include <QVBoxLayout>
 
+#include "runtime/ProtocolCoreCompat.h"
+
 namespace {
 
 QString joinCsv(const QStringList& values)
@@ -369,6 +371,28 @@ void AddServerDialog::updateFieldState()
     extraEdit_->setVisible(!isQuicProtocol && !isWireguard && xhttpTransport);
     finalmaskLabel_->setVisible(!isQuicProtocol && !isWireguard);
     finalmaskEdit_->setVisible(!isQuicProtocol && !isWireguard);
+}
+
+void AddServerDialog::applyDefaultCoreTypeForCurrentProtocol()
+{
+    if (coreCombo_ == nullptr || typeCombo_ == nullptr) {
+        return;
+    }
+
+    const CoreType currentCore = static_cast<CoreType>(coreCombo_->currentData().toInt());
+    if (currentCore != CoreType::Auto) {
+        return;
+    }
+
+    const ConfigType type = static_cast<ConfigType>(typeCombo_->currentData().toInt());
+    if (type != ConfigType::HTTP) {
+        return;
+    }
+
+    const int singBoxIndex = coreCombo_->findData(static_cast<int>(CoreType::SingBox));
+    if (singBoxIndex >= 0) {
+        coreCombo_->setCurrentIndex(singBoxIndex);
+    }
 }
 
 void AddServerDialog::refillSecurityOptions(ConfigType type)
@@ -745,6 +769,7 @@ void AddServerDialog::setupUi()
     rootLayout->addWidget(buttonBox_);
 
     connect(typeCombo_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+        applyDefaultCoreTypeForCurrentProtocol();
         updateFieldState();
     });
     connect(networkCombo_, &QComboBox::currentTextChanged, this, [this](const QString&) {
@@ -761,4 +786,5 @@ void AddServerDialog::setupUi()
 
     headerTypeCombo_->setCurrentText(QStringLiteral("none"));
     networkCombo_->setCurrentText(QStringLiteral("tcp"));
+    applyDefaultCoreTypeForCurrentProtocol();
 }

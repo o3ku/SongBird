@@ -19,6 +19,7 @@ private slots:
     void buildAndParseAnytlsRoundTrips();
     void buildAndParseNaiveHttpsRoundTrips();
     void buildAndParseNaiveQuicRoundTrips();
+    void parseHysteria2PinSha256IntoCertSha();
 };
 
 void ShareUrlTests::buildAndParseHttpupgradeTransportRoundTrips()
@@ -231,6 +232,20 @@ void ShareUrlTests::buildAndParseNaiveQuicRoundTrips()
     QCOMPARE(parsed.username, source.username);
     QCOMPARE(parsed.id, source.id);
     QCOMPARE(parsed.congestionControl, source.congestionControl);
+}
+
+void ShareUrlTests::parseHysteria2PinSha256IntoCertSha()
+{
+    const QString url =
+        QStringLiteral("hysteria2://password@example.com:443?sni=cdn.example.com&pinSHA256=sha256%2Fbase64-pin#hy2");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::Hysteria2);
+    QCOMPARE(parsed.certSha, QStringLiteral("sha256/base64-pin"));
+    QVERIFY(parsed.fingerprint.isEmpty());
 }
 
 void ShareUrlTests::buildAndParseRealityMldsa65VerifyRoundTrips()

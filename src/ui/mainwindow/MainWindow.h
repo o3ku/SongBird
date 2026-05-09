@@ -83,10 +83,7 @@ signals:
     void moveServersRequested(const QStringList& indexIds, int operation);
     void reorderServersRequested(const QStringList& orderedIndexIds);
     void setDefaultServerRequested(const QString& indexId);
-    void pingServersRequested(const QStringList& indexIds);
-    void tcpPingServersRequested(const QStringList& indexIds);
-    void realPingServersRequested(const QStringList& indexIds);
-    void downloadSpeedTestRequested(const QStringList& indexIds);
+    void testServersRequested(const QStringList& indexIds);
     void systemProxyModeSelected(int mode);
     void routingModeSelected(int mode);
     void enableSystemProxyRequested();
@@ -209,10 +206,7 @@ private:
     QAction* moveServerUpAction_ = nullptr;
     QAction* moveServerDownAction_ = nullptr;
     QAction* moveServerBottomAction_ = nullptr;
-    QAction* pingAction_ = nullptr;
-    QAction* tcpPingAction_ = nullptr;
-    QAction* realPingAction_ = nullptr;
-    QAction* downloadSpeedTestAction_ = nullptr;
+    QAction* testAction_ = nullptr;
     QAction* setDefaultServerAction_ = nullptr;
     QAction* clearProxyAction_ = nullptr;
     QAction* globalProxyAction_ = nullptr;

@@ -31,7 +31,6 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
     connectTimer.start();
     while (socket.state() != QAbstractSocket::ConnectedState && connectTimer.elapsed() < kAvailabilityTimeoutMs) {
         socket.waitForConnected(50);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
 
     if (socket.state() != QAbstractSocket::ConnectedState) {
@@ -61,7 +60,6 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
 
     while (socket.bytesToWrite() > 0 && timer.elapsed() < kAvailabilityTimeoutMs) {
         socket.waitForBytesWritten(50);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     if (socket.bytesToWrite() > 0) {
         return OperationResult::fail(formatAvailabilityMessage(-1));
@@ -75,8 +73,6 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
                 break;
             }
         }
-
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
         if (socket.state() == QAbstractSocket::UnconnectedState) {
             response.append(socket.readAll());
@@ -98,11 +94,17 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
 
     return OperationResult::fail(formatAvailabilityMessage(elapsedMs));
 }
-
 } // namespace
 
 OperationResult ProxyAvailabilityCheckService::check(const Config& config) const
 {
+    if (config.tunModeItem.enableTun) {
+        return OperationResult::fail(
+            QCoreApplication::translate(
+                "ProxyAvailabilityCheckService",
+                "Availability check is not supported while TUN mode is enabled."));
+    }
+
     const int httpPort = config.localPort + 1;
     if (config.localPort <= 0 || httpPort <= 0 || httpPort > 65535) {
         return OperationResult::fail(formatAvailabilityMessage(-1));
@@ -159,3 +161,4 @@ OperationResult ProxyAvailabilityCheckService::check(const Config& config) const
 
     return OperationResult::fail(formatAvailabilityMessage(elapsedMs));
 }
+

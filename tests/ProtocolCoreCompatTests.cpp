@@ -11,6 +11,10 @@ private slots:
     void unknownSupportsNeitherCore();
     void protocolSupportsCoreQuery();
     void availableCoreTypesList();
+    void resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent();
+    void resolveExistingCoreTypeForProtocolFallsBackToXrayWhenOnlyXrayExists();
+    void resolveExistingCoreTypeForProtocolUsesSingBoxAsDownloadTargetWhenNothingExists();
+    void resolveExistingCoreTypeForCustomProtocolKeepsXrayDefault();
 };
 
 void ProtocolCoreCompatTests::dualProtocolSupportsBothCores()
@@ -30,8 +34,9 @@ void ProtocolCoreCompatTests::dualProtocolSupportsBothCores()
 void ProtocolCoreCompatTests::httpSupportsOnlyXray()
 {
     const auto cores = supportedCoreTypes(ConfigType::HTTP);
-    QCOMPARE(cores.size(), 1);
-    QCOMPARE(cores.first(), CoreType::Xray);
+    QCOMPARE(cores.size(), 2);
+    QVERIFY(cores.contains(CoreType::Xray));
+    QVERIFY(cores.contains(CoreType::SingBox));
 }
 
 void ProtocolCoreCompatTests::unknownSupportsNeitherCore()
@@ -45,7 +50,7 @@ void ProtocolCoreCompatTests::protocolSupportsCoreQuery()
     QVERIFY(protocolSupportsCore(ConfigType::VMess, CoreType::Xray));
     QVERIFY(protocolSupportsCore(ConfigType::VMess, CoreType::SingBox));
     QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::Xray));
-    QVERIFY(!protocolSupportsCore(ConfigType::HTTP, CoreType::SingBox));
+    QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::SingBox));
     QVERIFY(!protocolSupportsCore(ConfigType::Unknown, CoreType::Xray));
 }
 
@@ -55,6 +60,40 @@ void ProtocolCoreCompatTests::availableCoreTypesList()
     QVERIFY(cores.contains(CoreType::Xray));
     QVERIFY(cores.contains(CoreType::SingBox));
     QVERIFY(cores.size() >= 2);
+}
+
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent()
+{
+    const CoreType core = resolveExistingCoreTypeForProtocol(
+        ConfigType::VMess,
+        QList<CoreType>{CoreType::Xray, CoreType::SingBox});
+
+    QCOMPARE(core, CoreType::SingBox);
+}
+
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolFallsBackToXrayWhenOnlyXrayExists()
+{
+    const CoreType core = resolveExistingCoreTypeForProtocol(
+        ConfigType::VMess,
+        QList<CoreType>{CoreType::Xray});
+
+    QCOMPARE(core, CoreType::Xray);
+}
+
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolUsesSingBoxAsDownloadTargetWhenNothingExists()
+{
+    const CoreType core = resolveExistingCoreTypeForProtocol(ConfigType::VMess, {});
+
+    QCOMPARE(core, CoreType::SingBox);
+}
+
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForCustomProtocolKeepsXrayDefault()
+{
+    const CoreType core = resolveExistingCoreTypeForProtocol(
+        ConfigType::Custom,
+        QList<CoreType>{CoreType::SingBox});
+
+    QCOMPARE(core, CoreType::Xray);
 }
 
 QTEST_MAIN(ProtocolCoreCompatTests)

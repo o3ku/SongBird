@@ -8,6 +8,7 @@ struct CoreInfo {
     QStringList arguments;
     QString workingDirectory;
     bool captureOutput = true;
+    bool asyncStart = false;
     bool appendConfigArgument = true;
     QString configPlaceholder = QStringLiteral("{config}");
 };

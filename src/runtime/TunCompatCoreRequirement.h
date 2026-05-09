@@ -3,19 +3,14 @@
 #include <QList>
 
 #include "domain/models/Config.h"
+#include "runtime/ProtocolCoreCompat.h"
 
 inline bool requiresTunCompatSingBoxCore(const Config& config, const VmessItem& server)
 {
     if (!config.tunModeItem.enableTun || server.configType == ConfigType::Custom) {
         return false;
     }
-    CoreType effectiveCore = resolveRuntimeCoreType(server.coreType);
-    for (const CoreTypeItem& item : config.coreTypeItems) {
-        if (item.configType == static_cast<int>(server.configType)) {
-            effectiveCore = resolveRuntimeCoreType(static_cast<CoreType>(item.coreType));
-            break;
-        }
-    }
+    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
     return effectiveCore == CoreType::Xray;
 }
 

@@ -65,15 +65,10 @@ constexpr int DefaultServerLogSplitPercent = 60;
 constexpr int DefaultServerQrSplitPercent = 78;
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
-constexpr int ToolbarIconExtent = 20;
 constexpr int ToolbarControlSpacing = 4;
-constexpr int ToolbarButtonHeight = 26;
-constexpr int ToolbarComboBoxHeight = 24;
 constexpr int HeaderFilterFixedWidth = 200;
-constexpr int HeaderFilterFixedHeight = 22;
 constexpr int SystemProxyComboFixedWidth = 120;
 constexpr int RoutingComboFixedWidth = 144;
-constexpr int ServerTableRowHeight = 24;
 constexpr int ServerTableNoColumn = 0;
 
 void paintChevron(QPainter& painter, const QRect& rect, bool enabled)
@@ -339,7 +334,6 @@ QToolButton* createToolbarMenuButton(
     button->setPopupMode(QToolButton::InstantPopup);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
-    button->setFixedHeight(ToolbarButtonHeight);
     toolBar->addWidget(button);
     return button;
 }
@@ -358,7 +352,6 @@ QToolButton* createToolbarActionButton(
     button->setCheckable(action != nullptr && action->isCheckable());
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
-    button->setFixedHeight(ToolbarButtonHeight);
 
     if (action != nullptr) {
         QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
@@ -753,20 +746,8 @@ void MainWindow::updateActionState()
         setDefaultServerAction_->setEnabled(hasSelection);
     }
 
-    if (pingAction_ != nullptr) {
-        pingAction_->setEnabled(canSpeedTest);
-    }
-
-    if (tcpPingAction_ != nullptr) {
-        tcpPingAction_->setEnabled(canSpeedTest);
-    }
-
-    if (realPingAction_ != nullptr) {
-        realPingAction_->setEnabled(canSpeedTest);
-    }
-
-    if (downloadSpeedTestAction_ != nullptr) {
-        downloadSpeedTestAction_->setEnabled(canSpeedTest);
+    if (testAction_ != nullptr) {
+        testAction_->setEnabled(canSpeedTest);
     }
 
     if (startCoreAction_ != nullptr) {
@@ -1220,7 +1201,8 @@ void MainWindow::setupToolbar()
     toolBar->setObjectName(QStringLiteral("mainToolBar"));
     toolBar->setMovable(false);
     toolBar->setFloatable(false);
-    toolBar->setIconSize(QSize(ToolbarIconExtent, ToolbarIconExtent));
+    const int iconExtent = qRound(toolBar->fontMetrics().height() * 1.2);
+    toolBar->setIconSize(QSize(iconExtent, iconExtent));
     toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     toolBar->setContentsMargins(0, 2, 0, 2);
 
@@ -1270,11 +1252,8 @@ void MainWindow::setupToolbar()
     moveServerDownAction_->setObjectName(QStringLiteral("moveServerDownAction"));
     moveServerBottomAction_ = new QAction(tr("Move To Bottom"), this);
     moveServerBottomAction_->setObjectName(QStringLiteral("moveServerBottomAction"));
-    pingAction_ = new QAction(tr("Ping"), this);
-    tcpPingAction_ = new QAction(tr("TCP Ping"), this);
-    realPingAction_ = new QAction(tr("Real Ping"), this);
-    downloadSpeedTestAction_ = new QAction(tr("Download Speedtest"), this);
-    downloadSpeedTestAction_->setObjectName(QStringLiteral("downloadSpeedTestAction"));
+    testAction_ = new QAction(tr("Test"), this);
+    testAction_->setObjectName(QStringLiteral("testAction"));
     setDefaultServerAction_ = new QAction(tr("Set Current"), this);
     setDefaultServerAction_->setObjectName(QStringLiteral("setDefaultServerAction"));
     clearProxyAction_ = new QAction(tr("Clear Proxy"), this);
@@ -1362,10 +1341,7 @@ void MainWindow::setupToolbar()
     serverMenu->addMenu(moveMenu);
     serverMenu->addSeparator();
 
-    serverMenu->addAction(pingAction_);
-    serverMenu->addAction(tcpPingAction_);
-    serverMenu->addAction(realPingAction_);
-    serverMenu->addAction(downloadSpeedTestAction_);
+    serverMenu->addAction(testAction_);
     serverMenu->addAction(testMeAction_);
     serverMenu->addAction(clearStatisticsAction_);
     serverMenu->addSeparator();
@@ -1481,7 +1457,6 @@ void MainWindow::setupToolbar()
     systemProxyModeCombo_ = new StyledComboBox(toolBar);
     systemProxyModeCombo_->setObjectName(QStringLiteral("systemProxyModeCombo"));
     systemProxyModeCombo_->setFixedWidth(SystemProxyComboFixedWidth);
-    systemProxyModeCombo_->setFixedHeight(ToolbarComboBoxHeight);
     configureStyledComboBox(systemProxyModeCombo_);
     systemProxyModeCombo_->addItem(tr("Clear"), toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
     systemProxyModeCombo_->addItem(tr("Global"), toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
@@ -1493,7 +1468,6 @@ void MainWindow::setupToolbar()
     routingModeCombo_ = new StyledComboBox(toolBar);
     routingModeCombo_->setObjectName(QStringLiteral("routingModeCombo"));
     routingModeCombo_->setFixedWidth(RoutingComboFixedWidth);
-    routingModeCombo_->setFixedHeight(ToolbarComboBoxHeight);
     configureStyledComboBox(routingModeCombo_);
     toolBar->addWidget(routingModeCombo_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
@@ -1531,14 +1505,16 @@ void MainWindow::setupServerView()
     serverView_->setFrameShape(QFrame::NoFrame);
     serverView_->setContentsMargins(0, 0, 0, 0);
     serverView_->verticalHeader()->setVisible(false);
-    serverView_->verticalHeader()->setDefaultSectionSize(ServerTableRowHeight);
-    serverView_->verticalHeader()->setMinimumSectionSize(ServerTableRowHeight);
+    const int rowHeight = serverView_->fontMetrics().height() + 8;
+    serverView_->verticalHeader()->setDefaultSectionSize(rowHeight);
+    serverView_->verticalHeader()->setMinimumSectionSize(rowHeight);
     serverView_->horizontalHeader()->setStretchLastSection(false);
     serverView_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     serverView_->horizontalHeader()->setSectionsClickable(true);
     serverView_->horizontalHeader()->setHighlightSections(false);
-    serverView_->horizontalHeader()->setDefaultSectionSize(26);
-    serverView_->horizontalHeader()->setMinimumSectionSize(26);
+    const int headerHeight = serverView_->horizontalHeader()->fontMetrics().height() + 8;
+    serverView_->horizontalHeader()->setDefaultSectionSize(headerHeight);
+    serverView_->horizontalHeader()->setMinimumSectionSize(headerHeight);
     serverView_->horizontalHeader()->setSortIndicatorShown(true);
     serverView_->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
     const QList<int> columnWidths = defaultServerColumnWidths();
@@ -1577,7 +1553,7 @@ void MainWindow::setupServerView()
     serverFilterEdit_->setObjectName(QStringLiteral("serverFilterEdit"));
     serverFilterEdit_->setClearButtonEnabled(true);
     serverFilterEdit_->setPlaceholderText(tr("Filter servers"));
-    serverFilterEdit_->setFixedSize(HeaderFilterFixedWidth, HeaderFilterFixedHeight);
+    serverFilterEdit_->setFixedWidth(HeaderFilterFixedWidth);
 
     auto* serverFilterContainer = new QWidget(this);
     serverFilterContainer->setObjectName(QStringLiteral("serverFilterContainer"));
@@ -1651,14 +1627,15 @@ void MainWindow::setupServerView()
     logStickToBottomButton_->setCheckable(true);
     logStickToBottomButton_->setToolTip(tr("Stick to bottom"));
     logStickToBottomButton_->setText(QString(QChar(0x2193)));
-    logStickToBottomButton_->setFixedSize(HeaderFilterFixedHeight, HeaderFilterFixedHeight);
+    const int filterButtonSize = logStickToBottomButton_->fontMetrics().height() + 6;
+    logStickToBottomButton_->setFixedSize(filterButtonSize, filterButtonSize);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
     logFilterEdit_ = new QLineEdit(logHeaderRow);
     logFilterEdit_->setObjectName(QStringLiteral("logFilterEdit"));
     logFilterEdit_->setClearButtonEnabled(true);
     logFilterEdit_->setPlaceholderText(tr("Filter logs"));
-    logFilterEdit_->setFixedSize(HeaderFilterFixedWidth, HeaderFilterFixedHeight);
+    logFilterEdit_->setFixedWidth(HeaderFilterFixedWidth);
     logHeaderLayout->addWidget(logFilterEdit_);
 
     logPanelLayout->addWidget(logHeaderRow);
@@ -1864,22 +1841,19 @@ void MainWindow::setupConnections()
     connect(moveServerBottomAction_, &QAction::triggered, this, [this]() {
         emit moveServersRequested(selectedServerIds(), static_cast<int>(ServerMoveOperation::Bottom));
     });
-    connect(pingAction_, &QAction::triggered, this, [this]() {
-        emit pingServersRequested(selectedServerIds());
-    });
-    connect(tcpPingAction_, &QAction::triggered, this, [this]() {
-        emit tcpPingServersRequested(selectedServerIds());
-    });
-    connect(realPingAction_, &QAction::triggered, this, [this]() {
-        emit realPingServersRequested(selectedServerIds());
-    });
-    connect(downloadSpeedTestAction_, &QAction::triggered, this, [this]() {
-        emit downloadSpeedTestRequested(selectedServerIds());
+    connect(testAction_, &QAction::triggered, this, [this]() {
+        emit testServersRequested(selectedServerIds());
     });
     connect(setDefaultServerAction_, &QAction::triggered, this, [this]() {
         const QString indexId = selectedServerId();
         if (!indexId.isEmpty()) {
+            lastSelectedServerId_ = indexId;
             emit setDefaultServerRequested(indexId);
+            QTimer::singleShot(0, this, [this, indexId]() {
+                if (lastSelectedServerId_ == indexId) {
+                    updateSelectionForVisibleRows();
+                }
+            });
         }
     });
     connect(clearProxyAction_, &QAction::triggered, this, [this]() {
@@ -2060,7 +2034,13 @@ void MainWindow::setupConnections()
         connect(serverView_, &QTableView::doubleClicked, this, [this](const QModelIndex&) {
             const QString indexId = selectedServerId();
             if (!indexId.isEmpty()) {
+                lastSelectedServerId_ = indexId;
                 emit setDefaultServerRequested(indexId);
+                QTimer::singleShot(0, this, [this, indexId]() {
+                    if (lastSelectedServerId_ == indexId) {
+                        updateSelectionForVisibleRows();
+                    }
+                });
             }
         });
     }
@@ -2088,9 +2068,7 @@ void MainWindow::setupConnections()
             menu.addAction(setDefaultServerAction_);
             menu.addAction(editServerAction_);
             menu.addSeparator();
-            menu.addAction(pingAction_);
-            menu.addAction(tcpPingAction_);
-            menu.addAction(realPingAction_);
+            menu.addAction(testAction_);
             menu.exec(serverView_->viewport()->mapToGlobal(position));
         });
 
@@ -2102,9 +2080,9 @@ void MainWindow::setupConnections()
         importClipboardAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
         serverView_->addAction(importClipboardAction_);
 
-        downloadSpeedTestAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
-        downloadSpeedTestAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        serverView_->addAction(downloadSpeedTestAction_);
+        testAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
+        testAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        serverView_->addAction(testAction_);
 
         setDefaultServerAction_->setShortcut(QKeySequence(Qt::Key_Return));
         setDefaultServerAction_->setShortcuts({
@@ -2168,17 +2146,9 @@ void MainWindow::setupConnections()
         addAction(focusServerFilterShortcutAction);
     }
 
-    pingAction_->setShortcut(QKeySequence(Qt::ALT | Qt::Key_P));
-    pingAction_->setShortcutContext(Qt::WindowShortcut);
-    addAction(pingAction_);
-
-    tcpPingAction_->setShortcut(QKeySequence(Qt::ALT | Qt::Key_T));
-    tcpPingAction_->setShortcutContext(Qt::WindowShortcut);
-    addAction(tcpPingAction_);
-
-    realPingAction_->setShortcut(QKeySequence(Qt::ALT | Qt::Key_R));
-    realPingAction_->setShortcutContext(Qt::WindowShortcut);
-    addAction(realPingAction_);
+    testAction_->setShortcut(QKeySequence(Qt::ALT | Qt::Key_T));
+    testAction_->setShortcutContext(Qt::WindowShortcut);
+    addAction(testAction_);
 
     updateSubscriptionsAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
     updateSubscriptionsAction_->setShortcutContext(Qt::WindowShortcut);

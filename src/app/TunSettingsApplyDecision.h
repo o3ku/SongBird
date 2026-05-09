@@ -80,5 +80,9 @@ inline bool shouldHotApplyRuntimeSettings(
             || previous.enableStatistics != updated.enableStatistics
             || previous.statisticsFreshRate != updated.statisticsFreshRate
             || previous.coreTypeItems != updated.coreTypeItems
+            || previous.enableRoutingAdvanced != updated.enableRoutingAdvanced
+            || previous.routingIndex != updated.routingIndex
+            || previous.routingItems != updated.routingItems
+            || previous.routingCustomRules != updated.routingCustomRules
             || tunDecision.tunRuntimeChanged);
 }

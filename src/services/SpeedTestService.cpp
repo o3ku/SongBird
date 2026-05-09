@@ -1,6 +1,5 @@
 #include "services/SpeedTestService.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -20,21 +19,16 @@
 #include <QUrl>
 
 #include <algorithm>
-#include <future>
 #include <utility>
-#include <vector>
 
 #include "runtime/ClientConfigWriter.h"
 
 namespace {
 
-constexpr int kPingTimeoutMs = 6000;
-constexpr int kTcpPingTimeoutMs = 5000;
 constexpr int kRuntimeStartupTimeoutMs = 5000;
 constexpr int kRuntimeRequestTimeoutMs = 8000;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
-const QString kDefaultSpeedDownloadUrl = QStringLiteral("http://cachefly.cachefly.net/10mb.test");
-const QString kDefaultSpeedPingUrl = QStringLiteral("https://www.google.com/generate_204");
+const QString kDefaultUrlTestUrl = QStringLiteral("https://www.gstatic.com/generate_204");
 
 QString describeServer(const VmessItem& server)
 {
@@ -54,28 +48,10 @@ QString formatLatencyResult(qint64 milliseconds)
         : QStringLiteral("Timeout");
 }
 
-QString formatSpeedResult(qint64 bytesReceived, qint64 elapsedMs)
-{
-    if (bytesReceived <= 0 || elapsedMs <= 0) {
-        return QStringLiteral("Timeout");
-    }
-
-    const double seconds = std::max(0.001, static_cast<double>(elapsedMs) / 1000.0);
-    const double megabytesPerSecond = static_cast<double>(bytesReceived) / (1024.0 * 1024.0 * seconds);
-    return QStringLiteral("%1 MB/s").arg(QString::number(megabytesPerSecond, 'f', 2));
-}
-
-QString defaultSpeedDownloadUrl(const Config& config)
-{
-    return config.speedTestUrl.trimmed().isEmpty()
-        ? kDefaultSpeedDownloadUrl
-        : config.speedTestUrl.trimmed();
-}
-
-QString defaultSpeedPingUrl(const Config& config)
+QString defaultUrlTestUrl(const Config& config)
 {
     return config.speedPingTestUrl.trimmed().isEmpty()
-        ? kDefaultSpeedPingUrl
+        ? kDefaultUrlTestUrl
         : config.speedPingTestUrl.trimmed();
 }
 
@@ -93,22 +69,6 @@ QString normalizeErrorText(const QString& value)
 
     const QString firstLine = trimmed.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts).value(0).trimmed();
     return firstLine.left(96);
-}
-
-QString modeDisplayName(SpeedTestMode mode)
-{
-    switch (mode) {
-    case SpeedTestMode::Ping:
-        return QStringLiteral("Ping");
-    case SpeedTestMode::TcpPing:
-        return QStringLiteral("TCP Ping");
-    case SpeedTestMode::RealPing:
-        return QStringLiteral("Real Ping");
-    case SpeedTestMode::DownloadSpeed:
-        return QStringLiteral("Download Speedtest");
-    default:
-        return QStringLiteral("Speed Test");
-    }
 }
 
 int takeAvailablePortBase()
@@ -157,82 +117,24 @@ QStringList buildCoreArguments(const CoreInfo& coreInfo, const QString& configFi
     return arguments;
 }
 
-QString executePingProcess(const QString& address)
-{
-    const QString trimmedAddress = address.trimmed();
-    if (trimmedAddress.isEmpty()) {
-        return QStringLiteral("Address missing");
-    }
-
-    QProcess process;
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.setProgram(QStringLiteral("ping"));
-#ifdef Q_OS_WIN
-    process.setArguments(QStringList{
-        QStringLiteral("-n"),
-        QStringLiteral("1"),
-        QStringLiteral("-w"),
-        QString::number(kTcpPingTimeoutMs),
-        trimmedAddress});
-#else
-    process.setArguments(QStringList{
-        QStringLiteral("-c"),
-        QStringLiteral("1"),
-        QStringLiteral("-W"),
-        QStringLiteral("5"),
-        trimmedAddress});
-#endif
-
-    process.start();
-    if (!process.waitForStarted(1000)) {
-        return QStringLiteral("Ping unavailable");
-    }
-    if (!process.waitForFinished(kPingTimeoutMs)) {
-        process.kill();
-        process.waitForFinished(1000);
-        return QStringLiteral("Timeout");
-    }
-
-    const QString output = QString::fromLocal8Bit(process.readAll()).trimmed();
-    const QRegularExpression latencyPattern(
-        QStringLiteral("(?:time|时间)\\s*[=<]\\s*(\\d+)\\s*ms"),
-        QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpression averagePattern(
-        QStringLiteral("(?:Average|平均)\\D*(\\d+)\\s*ms"),
-        QRegularExpression::CaseInsensitiveOption);
-
-    const QRegularExpressionMatch latencyMatch = latencyPattern.match(output);
-    if (latencyMatch.hasMatch()) {
-        return formatLatencyResult(latencyMatch.captured(1).toLongLong());
-    }
-
-    const QRegularExpressionMatch averageMatch = averagePattern.match(output);
-    if (averageMatch.hasMatch()) {
-        return formatLatencyResult(averageMatch.captured(1).toLongLong());
-    }
-
-    if (output.contains(QStringLiteral("<1ms"), Qt::CaseInsensitive)
-        || output.contains(QStringLiteral("时间<1ms"))) {
-        return formatLatencyResult(1);
-    }
-
-    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
-        return QStringLiteral("Reachable");
-    }
-
-    return normalizeErrorText(output);
-}
-
-bool waitForProxyPort(int port, int timeoutMs)
+bool waitForProxyPort(int port, int timeoutMs, const std::atomic_bool& cancelled)
 {
     QElapsedTimer timer;
     timer.start();
     while (timer.elapsed() < timeoutMs) {
+        if (cancelled.load()) {
+            return false;
+        }
+
         QTcpSocket socket;
         socket.connectToHost(kLoopbackAddress, port);
         if (socket.waitForConnected(200)) {
             socket.disconnectFromHost();
             return true;
+        }
+
+        if (cancelled.load()) {
+            return false;
         }
 
         QThread::msleep(50);
@@ -241,28 +143,11 @@ bool waitForProxyPort(int port, int timeoutMs)
     return false;
 }
 
-QString runTcpPingTest(const VmessItem& server)
-{
-    QTcpSocket socket;
-    QElapsedTimer timer;
-    timer.start();
-    socket.connectToHost(server.address.trimmed(), server.port);
-    if (!socket.waitForConnected(kTcpPingTimeoutMs)) {
-        return socket.error() == QAbstractSocket::SocketTimeoutError
-            ? QStringLiteral("Timeout")
-            : normalizeErrorText(socket.errorString());
-    }
-
-    socket.disconnectFromHost();
-    return formatLatencyResult(timer.elapsed());
-}
-
-QString runRuntimeProxyRequest(
+QString runUrlTest(
     const SpeedTestRequestItem& item,
     const Config& config,
     const QString& customConfigDirectory,
-    const QString& url,
-    bool downloadMode)
+    const std::atomic_bool& cancelled)
 {
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
         return QStringLiteral("Core missing");
@@ -283,6 +168,7 @@ QString runRuntimeProxyRequest(
     runtimeConfig.allowLanConnection = false;
     runtimeConfig.enableStatistics = false;
     runtimeConfig.logEnabled = false;
+    runtimeConfig.tunModeItem.enableTun = false;
 
     const QString configPath = temporaryDirectory.filePath(QStringLiteral("runtime.json"));
     ClientConfigWriter clientConfigWriter(customConfigDirectory);
@@ -297,7 +183,7 @@ QString runRuntimeProxyRequest(
     coreProcess.setArguments(buildCoreArguments(item.coreInfo, configPath));
     coreProcess.start();
     if (!coreProcess.waitForStarted(kRuntimeStartupTimeoutMs)) {
-        return normalizeErrorText(coreProcess.errorString());
+        return cancelled.load() ? QStringLiteral("Cancelled") : normalizeErrorText(coreProcess.errorString());
     }
 
     const auto stopRuntime = [&coreProcess]() {
@@ -308,37 +194,34 @@ QString runRuntimeProxyRequest(
         }
     };
 
-    if (!waitForProxyPort(localPort, kRuntimeStartupTimeoutMs)) {
+    if (!waitForProxyPort(localPort, kRuntimeStartupTimeoutMs, cancelled)) {
         const QString output = QString::fromUtf8(coreProcess.readAll()).trimmed();
         stopRuntime();
+        if (cancelled.load()) {
+            return QStringLiteral("Cancelled");
+        }
         return output.isEmpty()
             ? QStringLiteral("Proxy startup timeout")
-            : normalizeErrorText(output);
+            : QStringLiteral("Proxy startup timeout: %1").arg(normalizeErrorText(output));
     }
+
+    const QString url = defaultUrlTestUrl(config);
 
     QNetworkAccessManager manager;
     manager.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, kLoopbackAddress, localPort));
 
     QNetworkRequest request{QUrl(url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq-speedtest"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq-urltest"));
 
     QElapsedTimer timer;
     timer.start();
 
-    qint64 bytesReceived = 0;
-    qint64 streamedBytes = 0;
     bool timedOut = false;
     QEventLoop loop;
     QTimer timeoutTimer;
     timeoutTimer.setSingleShot(true);
 
     QNetworkReply* reply = manager.get(request);
-    QObject::connect(reply, &QNetworkReply::downloadProgress, &loop, [&bytesReceived](qint64 received, qint64) {
-        bytesReceived = std::max(bytesReceived, received);
-    });
-    QObject::connect(reply, &QIODevice::readyRead, &loop, [&]() {
-        streamedBytes += reply->readAll().size();
-    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         timedOut = true;
@@ -349,21 +232,12 @@ QString runRuntimeProxyRequest(
     loop.exec();
     timeoutTimer.stop();
 
-    streamedBytes += reply->readAll().size();
-    bytesReceived = std::max(bytesReceived, streamedBytes);
     const QNetworkReply::NetworkError error = reply->error();
     const QString errorText = reply->errorString();
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     reply->deleteLater();
 
     stopRuntime();
-
-    if (downloadMode) {
-        if (bytesReceived > 0) {
-            return formatSpeedResult(bytesReceived, timer.elapsed());
-        }
-        return timedOut ? QStringLiteral("Timeout") : normalizeErrorText(errorText);
-    }
 
     const bool remoteClosed = error == QNetworkReply::RemoteHostClosedError
         || errorText.contains(QStringLiteral("Connection closed"), Qt::CaseInsensitive);
@@ -381,22 +255,6 @@ QString runRuntimeProxyRequest(
     return timedOut ? QStringLiteral("Timeout") : normalizeErrorText(errorText);
 }
 
-QString runRealPingTest(
-    const SpeedTestRequestItem& item,
-    const Config& config,
-    const QString& customConfigDirectory)
-{
-    return runRuntimeProxyRequest(item, config, customConfigDirectory, defaultSpeedPingUrl(config), false);
-}
-
-QString runDownloadSpeedTest(
-    const SpeedTestRequestItem& item,
-    const Config& config,
-    const QString& customConfigDirectory)
-{
-    return runRuntimeProxyRequest(item, config, customConfigDirectory, defaultSpeedDownloadUrl(config), true);
-}
-
 class SpeedTestWorker final : public QObject
 {
     Q_OBJECT
@@ -408,97 +266,40 @@ public:
     {
     }
 
-    void runBatch(SpeedTestMode mode, const Config& config, const QList<SpeedTestRequestItem>& items)
+    void runBatch(const Config& config, const QList<SpeedTestRequestItem>& items)
     {
         int completed = 0;
-
-        // Deprecated: download speed test remains serial
-        if (mode == SpeedTestMode::DownloadSpeed) {
-            for (const SpeedTestRequestItem& item : items) {
-                if (cancelled_.load()) {
-                    break;
-                }
-                emit logGenerated(QStringLiteral("%1: %2").arg(modeDisplayName(mode), describeServer(item.server)));
-                QString result;
-                if (item.server.configType == ConfigType::Custom) {
-                    result = QStringLiteral("Unsupported");
-                } else {
-                    result = runDownloadSpeedTest(item, config, customConfigDirectory_);
-                }
-                if (result.trimmed().isEmpty()) {
-                    result = QStringLiteral("Failed");
-                }
-                ++completed;
-                emit testResultReady(item.server.indexId, result);
-                emit logGenerated(QStringLiteral("%1 result | %2 -> %3")
-                                      .arg(modeDisplayName(mode), describeServer(item.server), result));
-            }
-            emit batchFinished(cancelled_.load()
-                ? QStringLiteral("%1 cancelled after %2 server(s).").arg(modeDisplayName(mode)).arg(completed)
-                : QStringLiteral("%1 finished for %2 server(s).").arg(modeDisplayName(mode)).arg(completed));
-            return;
-        }
-
-        // Concurrent execution for Ping/TcpPing/RealPing
-        struct PendingItem {
-            QString indexId;
-            QString serverName;
-            std::future<QString> future;
-        };
-        std::vector<PendingItem> pending;
 
         for (const SpeedTestRequestItem& item : items) {
             if (cancelled_.load()) {
                 break;
             }
-            emit logGenerated(QStringLiteral("%1: %2").arg(modeDisplayName(mode), describeServer(item.server)));
+            const QString serverName = describeServer(item.server);
+            emit logGenerated(QStringLiteral("URL Test: %1").arg(serverName));
 
-            pending.push_back(PendingItem{
-                item.server.indexId,
-                describeServer(item.server),
-                std::async(std::launch::async, [this, item, mode, &config]() -> QString {
-                    if (cancelled_.load()) {
-                        return QString();
-                    }
-                    if (item.server.configType == ConfigType::Custom) {
-                        return QStringLiteral("Unsupported");
-                    }
-                    switch (mode) {
-                    case SpeedTestMode::Ping:
-                        return executePingProcess(item.server.address);
-                    case SpeedTestMode::TcpPing:
-                        return runTcpPingTest(item.server);
-                    case SpeedTestMode::RealPing:
-                        return runRealPingTest(item, config, customConfigDirectory_);
-                    default:
-                        return QString();
-                    }
-                })
-            });
-        }
-
-        for (auto& p : pending) {
             QString result;
-            try {
-                result = p.future.get();
-            } catch (...) {
-                result = QStringLiteral("Failed");
+            if (item.server.configType == ConfigType::Custom) {
+                result = QStringLiteral("Unsupported");
+            } else if (cancelled_.load()) {
+                break;
+            } else {
+                result = runUrlTest(item, config, customConfigDirectory_, cancelled_);
             }
             if (result.trimmed().isEmpty()) {
                 result = QStringLiteral("Failed");
             }
             ++completed;
             if (!cancelled_.load()) {
-                emit testResultReady(p.indexId, result);
-                emit logGenerated(QStringLiteral("%1 result | %2 -> %3")
-                                      .arg(modeDisplayName(mode), p.serverName, result));
+                emit testResultReady(item.server.indexId, result);
+                emit logGenerated(QStringLiteral("URL Test result | %1 -> %2")
+                                      .arg(serverName, result));
             }
         }
 
         const bool wasCancelled = cancelled_.load();
         emit batchFinished(wasCancelled
-            ? QStringLiteral("%1 cancelled after %2 server(s).").arg(modeDisplayName(mode)).arg(completed)
-            : QStringLiteral("%1 finished for %2 server(s).").arg(modeDisplayName(mode)).arg(completed));
+            ? QStringLiteral("URL Test cancelled after %1 server(s).").arg(completed)
+            : QStringLiteral("URL Test finished for %1 server(s).").arg(completed));
     }
 
 signals:
@@ -535,7 +336,7 @@ SpeedTestService::SpeedTestService(QString customConfigDirectory, QObject* paren
     workerThread_->start();
 }
 
-OperationResult SpeedTestService::start(SpeedTestMode mode, const Config& config, const QList<SpeedTestRequestItem>& items)
+OperationResult SpeedTestService::start(const Config& config, const QList<SpeedTestRequestItem>& items)
 {
     if (running_) {
         return OperationResult::fail(QStringLiteral("Another speed test batch is already running."));
@@ -551,8 +352,7 @@ OperationResult SpeedTestService::start(SpeedTestMode mode, const Config& config
 
     running_ = true;
     cancelled_ = false;
-    const QString message = QStringLiteral("%1 started for %2 server(s).")
-                                .arg(modeDisplayName(mode))
+    const QString message = QStringLiteral("URL Test started for %1 server(s).")
                                 .arg(items.size());
     emit runningChanged(true);
     emit logGenerated(message);
@@ -560,8 +360,8 @@ OperationResult SpeedTestService::start(SpeedTestMode mode, const Config& config
     auto* worker = static_cast<SpeedTestWorker*>(worker_);
     const bool invoked = QMetaObject::invokeMethod(
         worker,
-        [worker, mode, config, items]() {
-            worker->runBatch(mode, config, items);
+        [worker, config, items]() {
+            worker->runBatch(config, items);
         },
         Qt::QueuedConnection);
     if (!invoked) {
@@ -596,3 +396,4 @@ SpeedTestService::~SpeedTestService()
 }
 
 #include "SpeedTestService.moc"
+

@@ -14,13 +14,15 @@ QtCoreProcessHost::QtCoreProcessHost() = default;
 
 QtCoreProcessHost::~QtCoreProcessHost()
 {
-    stop();
+    stop(true);
 }
 
 OperationResult QtCoreProcessHost::start(
     const CoreInfo& coreInfo,
     const QString& configFilePath,
     std::function<void(const QString&)> outputReceived,
+    StartedCallback started,
+    StartFailedCallback startFailed,
     ExitedCallback exited)
 {
     if (coreInfo.program.trimmed().isEmpty()) {
@@ -31,15 +33,18 @@ OperationResult QtCoreProcessHost::start(
         return OperationResult::fail(QStringLiteral("Core executable was not found: %1").arg(coreInfo.program));
     }
 
-    OperationResult stopResult = stop();
+    OperationResult stopResult = stop(true);
     if (!stopResult.success && isRunning()) {
         return stopResult;
     }
 
     process_ = std::make_unique<QProcess>();
     outputReceived_ = std::move(outputReceived);
+    startedCallback_ = std::move(started);
+    startFailedCallback_ = std::move(startFailed);
     exitedCallback_ = std::move(exited);
     stopRequested_ = false;
+    startNotified_ = false;
     lastCoreInfo_ = coreInfo;
     lastConfigFilePath_ = configFilePath;
     standardOutputBuffer_.clear();
@@ -58,38 +63,36 @@ OperationResult QtCoreProcessHost::start(
     bindOutputSignals();
 
     process_->start();
-    if (!process_->waitForStarted(1500)) {
-        const QString errorText = process_->errorString();
-        process_.reset();
-        exitedCallback_ = {};
-        return OperationResult::fail(QStringLiteral("Failed to start core process: %1").arg(errorText));
+    const QString programName = QFileInfo(coreInfo.program).fileName();
+    if (coreInfo.asyncStart) {
+        return OperationResult::ok(
+            QStringLiteral("Launching core process: %1").arg(programName));
     }
 
     return OperationResult::ok(
-        QStringLiteral("Core process started: %1").arg(QFileInfo(coreInfo.program).fileName()));
+        QStringLiteral("Launching core process: %1").arg(programName));
 }
 
-OperationResult QtCoreProcessHost::stop()
+OperationResult QtCoreProcessHost::stop(bool immediate)
 {
     if (!process_) {
         return OperationResult::ok(QStringLiteral("Core process is not running."));
     }
 
     stopRequested_ = true;
-    if (process_->state() != QProcess::NotRunning) {
-        process_->terminate();
-        if (!process_->waitForFinished(1500)) {
-            process_->kill();
-            process_->waitForFinished(1500);
-        }
+    if (process_->state() == QProcess::NotRunning) {
+        flushBufferedOutput(true);
+        resetProcessState();
+        return OperationResult::ok(QStringLiteral("Core process stopped."));
     }
 
-    flushBufferedOutput(true);
-    process_.reset();
-    exitedCallback_ = {};
-    standardOutputBuffer_.clear();
-    standardErrorBuffer_.clear();
-    return OperationResult::ok(QStringLiteral("Core process stopped."));
+    process_->terminate();
+    if (immediate) {
+        scheduleForcedKill();
+        return OperationResult::ok(QStringLiteral("Stopping core process immediately..."));
+    }
+
+    return OperationResult::ok(QStringLiteral("Stopping core process..."));
 }
 
 OperationResult QtCoreProcessHost::reload()
@@ -98,7 +101,7 @@ OperationResult QtCoreProcessHost::reload()
         return OperationResult::fail(QStringLiteral("No core process has been started yet."));
     }
 
-    return start(lastCoreInfo_, lastConfigFilePath_, outputReceived_, exitedCallback_);
+    return start(lastCoreInfo_, lastConfigFilePath_, outputReceived_, startedCallback_, startFailedCallback_, exitedCallback_);
 }
 
 bool QtCoreProcessHost::isRunning() const
@@ -141,13 +144,49 @@ void QtCoreProcessHost::bindOutputSignals()
 
     QObject::connect(
         process_.get(),
+        &QProcess::started,
+        process_.get(),
+        [this]() {
+            if (startNotified_) {
+                return;
+            }
+
+            startNotified_ = true;
+            if (startedCallback_) {
+                startedCallback_(QStringLiteral("Core process started: %1")
+                                     .arg(QFileInfo(lastCoreInfo_.program).fileName()));
+            }
+        });
+
+    QObject::connect(
+        process_.get(),
+        &QProcess::errorOccurred,
+        process_.get(),
+        [this](QProcess::ProcessError error) {
+            if (startNotified_ || error != QProcess::FailedToStart) {
+                return;
+            }
+
+            startNotified_ = true;
+            if (startFailedCallback_) {
+                startFailedCallback_(
+                    QStringLiteral("Failed to start core process: %1").arg(process_->errorString()));
+            }
+        });
+
+    QObject::connect(
+        process_.get(),
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
         process_.get(),
         [this](int exitCode, QProcess::ExitStatus status) {
+            if (forcedKillTimer_ != nullptr) {
+                forcedKillTimer_->stop();
+            }
             flushBufferedOutput(true);
             if (exitedCallback_) {
                 exitedCallback_(exitCode, status, stopRequested_);
             }
+            resetProcessState();
         });
 }
 
@@ -219,4 +258,41 @@ void QtCoreProcessHost::flushBufferedOutput(bool flushPartialLines)
 
     flushBuffer(standardOutputBuffer_);
     flushBuffer(standardErrorBuffer_);
+}
+
+void QtCoreProcessHost::resetProcessState()
+{
+    if (forcedKillTimer_ != nullptr) {
+        forcedKillTimer_->stop();
+        forcedKillTimer_->deleteLater();
+        forcedKillTimer_ = nullptr;
+    }
+
+    process_.reset();
+    startedCallback_ = {};
+    startFailedCallback_ = {};
+    exitedCallback_ = {};
+    startNotified_ = false;
+    stopRequested_ = false;
+    standardOutputBuffer_.clear();
+    standardErrorBuffer_.clear();
+}
+
+void QtCoreProcessHost::scheduleForcedKill()
+{
+    if (!process_) {
+        return;
+    }
+
+    if (forcedKillTimer_ == nullptr) {
+        forcedKillTimer_ = new QTimer();
+        forcedKillTimer_->setSingleShot(true);
+        QObject::connect(forcedKillTimer_, &QTimer::timeout, forcedKillTimer_, [this]() {
+            if (process_ && process_->state() != QProcess::NotRunning) {
+                process_->kill();
+            }
+        });
+    }
+
+    forcedKillTimer_->start(1500);
 }

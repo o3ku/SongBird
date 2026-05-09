@@ -94,10 +94,7 @@ Restart as administrator now?</source>
     <message><source>Move Up</source><translation>上移</translation></message>
     <message><source>Move Down</source><translation>下移</translation></message>
     <message><source>Move To Bottom</source><translation>移到底部</translation></message>
-    <message><source>Ping</source><translation>Ping</translation></message>
-    <message><source>TCP Ping</source><translation>TCP Ping</translation></message>
-    <message><source>Real Ping</source><translation>真实延迟</translation></message>
-    <message><source>Download Speedtest</source><translation>下载测速</translation></message>
+    <message><source>Test</source><translation>测试</translation></message>
     <message><source>Set Current</source><translation>设为当前</translation></message>
     <message><source>Clear Proxy</source><translation>清除系统代理</translation></message>
     <message><source>Global Proxy</source><translation>全局系统代理</translation></message>
@@ -150,6 +147,7 @@ Restart as administrator now?</source>
     <message><source>None</source><translation>无</translation></message>
     <message><source>Basic</source><translation>基础</translation></message>
     <message><source>Unavailable</source><translation>不可用</translation></message>
+    <message><source>Listening: %1</source><translation>监听：%1</translation></message>
     <message><source>Routing: %1 | Listen: %2</source><translation>路由：%1 | 监听：%2</translation></message>
     <message><source>Core: %1</source><translation>核心：%1</translation></message>
     <message><source>Running</source><translation>运行中</translation></message>
@@ -171,6 +169,7 @@ Restart as administrator now?</source>
     <message><source>Traffic: Today 0B/0B | Total 0B/0B</source><translation>流量：今日 0B/0B | 总计 0B/0B</translation></message>
     <message><source>Quit v2rayq</source><translation>退出 v2rayq</translation></message>
     <message><source>Quit v2rayq now?</source><translation>现在退出 v2rayq 吗？</translation></message>
+    <message><source>Stick to bottom</source><translation>滚动到底部</translation></message>
 </context>
 <context>
     <name>ServerTableModel</name>
@@ -214,6 +213,56 @@ Restart as administrator now?</source>
     <message><source>General</source><translation>常规</translation></message>
     <message><source>Proxy</source><translation>代理</translation></message>
     <message><source>Update</source><translation>更新</translation></message>
+    <message><source>Enable auto run</source><translation>启用开机自启</translation></message>
+    <message><source>Enable traffic sniffing</source><translation>启用流量嗅探</translation></message>
+    <message><source>Route only when sniffing</source><translation>嗅探时仅路由</translation></message>
+    <message><source>Enable fragmentation for TLS outbounds</source><translation>启用 TLS 出站分片</translation></message>
+    <message><source>Enable sing-box cache file</source><translation>启用 sing-box 缓存文件</translation></message>
+    <message><source>Allow insecure TLS by default</source><translation>默认允许不安全 TLS</translation></message>
+    <message><source>Default Fingerprint</source><translation>默认指纹</translation></message>
+    <message><source>Default User-Agent</source><translation>默认 User-Agent</translation></message>
+    <message><source>sing-box Mux Protocol</source><translation>sing-box 多路复用协议</translation></message>
+    <message><source>Per-Protocol Override</source><translation>按协议覆盖</translation></message>
+    <message><source>Installed Cores</source><translation>已安装核心</translation></message>
+    <message><source>Download</source><translation>下载</translation></message>
+    <message><source>Set All</source><translation>全部设为</translation></message>
+    <message><source>Set all protocols to %1</source><translation>将所有协议设为使用 %1</translation></message>
+    <message><source>Leave empty to use built-in PAC server (http://127.0.0.1:10870/pac)</source><translation>留空则使用内置 PAC 服务器 (http://127.0.0.1:10870/pac)</translation></message>
+    <message><source>Custom PAC URL</source><translation>自定义 PAC 地址</translation></message>
+    <message><source>Enable TUN mode (requires admin privileges)</source><translation>启用 TUN 模式（需要管理员权限）</translation></message>
+    <message><source>Auto route (route all traffic through TUN)</source><translation>自动路由（将所有流量通过 TUN）</translation></message>
+    <message><source>Strict route (apply strict routing rules)</source><translation>严格路由（应用严格路由规则）</translation></message>
+    <message><source>Auto (9000)</source><translation>自动 (9000)</translation></message>
+    <message><source>Enable IPv6 address</source><translation>启用 IPv6 地址</translation></message>
+    <message><source>Optional ICMP routing preference</source><translation>可选 ICMP 路由偏好</translation></message>
+    <message><source>Enable legacy protection (pre-socks relay for Xray)</source><translation>启用旧版保护（Xray 的预 socks 中继）</translation></message>
+    <message><source>MTU</source><translation>MTU</translation></message>
+    <message><source>Stack</source><translation>网络栈</translation></message>
+    <message><source>ICMP Routing</source><translation>ICMP 路由</translation></message>
+    <message><source>Remote DNS</source><translation>远程 DNS</translation></message>
+    <message><source>Direct DNS</source><translation>直连 DNS</translation></message>
+    <message><source>Bootstrap DNS</source><translation>引导 DNS</translation></message>
+    <message><source>Domain Strategy (Freedom)</source><translation>域名策略（自由出站）</translation></message>
+    <message><source>Domain Strategy (Proxy)</source><translation>域名策略（代理出站）</translation></message>
+    <message><source>Use system hosts file</source><translation>使用系统 hosts 文件</translation></message>
+    <message><source>Add common hosts (google, github, etc.)</source><translation>添加常用 hosts（google、github 等）</translation></message>
+    <message><source>Block binding query</source><translation>阻止绑定查询</translation></message>
+    <message><source>Enable FakeIP</source><translation>启用 FakeIP</translation></message>
+    <message><source>Global FakeIP</source><translation>全局 FakeIP</translation></message>
+    <message><source>Serve stale DNS cache</source><translation>提供过期 DNS 缓存</translation></message>
+    <message><source>Parallel DNS query</source><translation>并行 DNS 查询</translation></message>
+    <message><source>Direct Expected IPs</source><translation>直连预期 IP</translation></message>
+    <message><source>DNS Hosts</source><translation>DNS Hosts</translation></message>
+    <message><source>Subscriptions</source><translation>订阅</translation></message>
+    <message><source>Routing</source><translation>路由</translation></message>
+    <message><source>Core</source><translation>核心</translation></message>
+    <message><source>TUN</source><translation>TUN</translation></message>
+    <message><source>DNS</source><translation>DNS</translation></message>
+    <message><source>Restore Backup</source><translation>恢复备份</translation></message>
+    <message><source>Checking...</source><translation>正在检查...</translation></message>
+    <message><source>Failed</source><translation>失败</translation></message>
+    <message><source>Downloading...</source><translation>正在下载...</translation></message>
+    <message><source>Not found</source><translation>未找到</translation></message>
 </context>
 <context>
     <name>GlobalHotkeyDialog</name>

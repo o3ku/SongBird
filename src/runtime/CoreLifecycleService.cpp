@@ -14,14 +14,20 @@ OperationResult CoreLifecycleService::start(const CoreInfo& coreInfo, const QStr
         [this](const QString& line) {
             emit outputReceived(line);
         },
+        [this](const QString& message) {
+            emit started(message);
+        },
+        [this](const QString& message) {
+            emit startFailed(message);
+        },
         [this](int exitCode, QProcess::ExitStatus status, bool stopRequested) {
             emit exited(exitCode, status, stopRequested);
         });
 }
 
-OperationResult CoreLifecycleService::stop()
+OperationResult CoreLifecycleService::stop(bool immediate)
 {
-    return host_.stop();
+    return host_.stop(immediate);
 }
 
 OperationResult CoreLifecycleService::reload()

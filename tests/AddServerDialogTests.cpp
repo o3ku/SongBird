@@ -1,5 +1,7 @@
 #include <QtTest>
 
+#include <QComboBox>
+
 #include "ui/dialogs/AddServerDialog.h"
 
 class AddServerDialogTests : public QObject {
@@ -11,6 +13,7 @@ private slots:
     void xhttpExtraRoundTripsExistingServer();
     void finalmaskRoundTripsExistingServer();
     void httpTypeRoundTripsExistingServer();
+    void newHttpDialogDefaultsToSingBoxCore();
     void certPemRoundTripsExistingServer();
     void certShaRoundTripsExistingServer();
     void mldsa65VerifyRoundTripsExistingServer();
@@ -133,6 +136,25 @@ void AddServerDialogTests::httpTypeRoundTripsExistingServer()
     QCOMPARE(updated.configType, ConfigType::HTTP);
     QCOMPARE(updated.id, server.id);
     QCOMPARE(updated.security, server.security);
+}
+
+void AddServerDialogTests::newHttpDialogDefaultsToSingBoxCore()
+{
+    AddServerDialog dialog;
+
+    QComboBox* typeCombo = nullptr;
+    for (QComboBox* combo : dialog.findChildren<QComboBox*>()) {
+        if (combo != nullptr && combo->findText(QStringLiteral("HTTP")) >= 0) {
+            typeCombo = combo;
+            break;
+        }
+    }
+    QVERIFY(typeCombo != nullptr);
+    typeCombo->setCurrentText(QStringLiteral("HTTP"));
+
+    const VmessItem server = dialog.server();
+    QCOMPARE(server.configType, ConfigType::HTTP);
+    QCOMPARE(server.coreType, CoreType::SingBox);
 }
 
 void AddServerDialogTests::certPemRoundTripsExistingServer()
