@@ -87,8 +87,8 @@ OperationResult QtCoreProcessHost::stop(bool immediate)
     }
 
     process_->terminate();
+    scheduleForcedKill();
     if (immediate) {
-        scheduleForcedKill();
         return OperationResult::ok(QStringLiteral("Stopping core process immediately..."));
     }
 

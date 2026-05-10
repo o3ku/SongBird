@@ -13,6 +13,7 @@ class ClientConfigWriterTests : public QObject {
 private slots:
     void validateServerRejectsUnsupportedSingBoxTransportForSocks();
     void validateServerRejectsUnsupportedSingBoxTransportForShadowsocks();
+    void generateClientConfigsDoesNotEmitSingBoxSocksPasswordWithoutUsername();
     void generateClientConfigsBuildsSingBoxHttpOutbound();
     void generateClientConfigsDefaultsHttpAutoCoreToSingBox();
     void validateServerRejectsInvalidXhttpExtraJson();
@@ -88,7 +89,11 @@ private slots:
     void generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules();
     void generateClientConfigsSplitsSingBoxRoutingProcessNameAndPathRules();
     void generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute();
+    void generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules();
     void generateClientConfigsDoesNotCreateTunCompatRelayForSingBoxCore();
+    void generateClientConfigsBuildsSingBoxHysteria2Outbound();
+    void generateClientConfigsOmitsSingBoxDnsAndDefaultResolverWhenDnsInputsAreEmpty();
+    void generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls();
 };
 
 namespace {
@@ -261,6 +266,31 @@ void ClientConfigWriterTests::validateServerRejectsUnsupportedSingBoxTransportFo
     QVERIFY2(!result.success, qPrintable(result.message));
     QVERIFY(result.message.contains(QStringLiteral("Shadowsocks")));
     QVERIFY(result.message.contains(QStringLiteral("grpc")));
+}
+
+void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxSocksPasswordWithoutUsername()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.configType = ConfigType::Socks;
+    server.address = QStringLiteral("192.168.100.117");
+    server.port = 1080;
+    server.id.clear();
+    server.security = QStringLiteral("auto");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+
+    QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("socks"));
+    QVERIFY(!proxyOutbound.contains(QStringLiteral("username")));
+    QVERIFY(!proxyOutbound.contains(QStringLiteral("password")));
 }
 
 void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHttpOutbound()
@@ -2507,6 +2537,38 @@ void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelect
         QStringLiteral("geosite:cn")));
 }
 
+void ClientConfigWriterTests::generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+    config.remoteDns = QStringLiteral("1.1.1.1");
+    config.directDns = QStringLiteral("223.5.5.5");
+    config.routingCustomRules = {
+        createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("domain:ftp.sh")})};
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const QJsonArray dnsRules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
+
+    bool foundDirectDnsRule = false;
+    for (const QJsonValue& value : dnsRules) {
+        const QJsonObject rule = value.toObject();
+        if (rule.value(QStringLiteral("server")).toString() != QStringLiteral("direct_dns")) {
+            continue;
+        }
+
+        if (jsonArrayContainsString(rule.value(QStringLiteral("domain_suffix")).toArray(), QStringLiteral("ftp.sh"))) {
+            foundDirectDnsRule = true;
+            break;
+        }
+    }
+
+    QVERIFY(foundDirectDnsRule);
+}
+
 void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayForSingBoxCore()
 {
     const Config config = baseConfig();
@@ -2517,6 +2579,96 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
     const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
 
     QVERIFY(generated.auxiliary.isEmpty());
+}
+
+void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHysteria2Outbound()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.configType = ConfigType::Hysteria2;
+    server.address = QStringLiteral("69.12.75.229");
+    server.port = 18962;
+    server.id = QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8");
+    server.obfsPassword = QStringLiteral("A60kExOWbVc9FHqS");
+    server.headerType = QStringLiteral("salamander");
+    server.streamSecurity = QStringLiteral("tls");
+    server.sni = QStringLiteral("drus1.ipl.cc.cd");
+    server.allowInsecure = QStringLiteral("1");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("hysteria2"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("server")).toString(), QStringLiteral("69.12.75.229"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("server_port")).toInt(), 18962);
+    QCOMPARE(proxyOutbound.value(QStringLiteral("password")).toString(), QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8"));
+
+    const QJsonObject obfs = proxyOutbound.value(QStringLiteral("obfs")).toObject();
+    QCOMPARE(obfs.value(QStringLiteral("type")).toString(), QStringLiteral("salamander"));
+    QCOMPARE(obfs.value(QStringLiteral("password")).toString(), QStringLiteral("A60kExOWbVc9FHqS"));
+
+    const QJsonObject tls = proxyOutbound.value(QStringLiteral("tls")).toObject();
+    QCOMPARE(tls.value(QStringLiteral("enabled")).toBool(), true);
+    QCOMPARE(tls.value(QStringLiteral("server_name")).toString(), QStringLiteral("drus1.ipl.cc.cd"));
+    QCOMPARE(tls.value(QStringLiteral("insecure")).toBool(), true);
+}
+
+void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxDnsAndDefaultResolverWhenDnsInputsAreEmpty()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+    config.enableRoutingAdvanced = false;
+    config.routingItems.clear();
+    config.routingCustomRules.clear();
+    config.remoteDns.clear();
+    config.directDns.clear();
+    config.bootstrapDns.clear();
+    config.dnsHosts.clear();
+    config.addCommonHosts = false;
+    config.useSystemHosts = false;
+    config.fakeIp = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    QVERIFY(generated.primary.root.value(QStringLiteral("dns")).isUndefined());
+
+    const QJsonObject route = generated.primary.root.value(QStringLiteral("route")).toObject();
+    QVERIFY(route.value(QStringLiteral("default_domain_resolver")).isUndefined());
+}
+
+void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.configType = ConfigType::AnyTLS;
+    server.address = QStringLiteral("69.12.75.229");
+    server.port = 18963;
+    server.id = QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8");
+    server.streamSecurity = QStringLiteral("tls");
+    server.sni = QStringLiteral("drus1.ipl.cc.cd");
+    server.allowInsecure = QStringLiteral("1");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("anytls"));
+    QVERIFY(proxyOutbound.value(QStringLiteral("network")).isUndefined());
 }
 
 QTEST_MAIN(ClientConfigWriterTests)

@@ -48,7 +48,7 @@ public:
     void setAutoRunEnabled(bool enabled);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
-    void setCoreRunning(bool enabled);
+    void setCoreRunning(bool enabled, bool pending = false);
     void setCurrentServerName(const QString& name);
     void setRoutingSummary(const QString& routingText, const QString& listenText);
     void setStatisticsSessionState(const StatisticsSessionState& state);
@@ -58,6 +58,8 @@ public:
     void restoreUiState(const Config& config);
     void captureUiState(Config& config) const;
     bool selectSubscriptionTab(const QString& selectionId);
+    void updateServerTestResult(const QString& indexId, const QString& result);
+    void updateServerTestResults(const QStringList& indexIds, const QString& result);
 
 signals:
     void openSettingsAtSubscriptionsTabRequested();
@@ -129,6 +131,8 @@ private:
     void updateStatusIndicators();
     void updateQrPreview();
     void updateQrPanelActionText();
+    void updateCoreToggleAction();
+    void updateProxyToggleAction();
     void applyLogFilter();
     bool shouldStickLogViewToBottom(bool filterActive) const;
     void updateLogContextActions();
@@ -229,8 +233,8 @@ private:
     QAction* openXrayReleasePageAction_ = nullptr;
     QAction* openSingBoxReleasePageAction_ = nullptr;
     QAction* openGeoReleasePageAction_ = nullptr;
-    QAction* startCoreAction_ = nullptr;
-    QAction* stopCoreAction_ = nullptr;
+    QAction* coreToggleAction_ = nullptr;
+    QAction* proxyToggleAction_ = nullptr;
     QAction* clearStatisticsAction_ = nullptr;
     QAction* toggleQrPanelAction_ = nullptr;
     QAction* selectAllLogAction_ = nullptr;
@@ -250,6 +254,7 @@ private:
     bool systemProxyApplied_ = false;
     bool autoRunEnabled_ = false;
     bool coreRunning_ = false;
+    bool coreTransitionPending_ = false;
     bool speedTestRunning_ = false;
     bool qrPreviewVisible_ = false;
     bool uiStateRestorePending_ = false;

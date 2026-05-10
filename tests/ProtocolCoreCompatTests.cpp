@@ -8,6 +8,7 @@ class ProtocolCoreCompatTests : public QObject {
 private slots:
     void dualProtocolSupportsBothCores();
     void httpSupportsOnlyXray();
+    void singBoxOnlyProtocolsSupportBothCoresForSelection();
     void unknownSupportsNeitherCore();
     void protocolSupportsCoreQuery();
     void availableCoreTypesList();
@@ -15,6 +16,8 @@ private slots:
     void resolveExistingCoreTypeForProtocolFallsBackToXrayWhenOnlyXrayExists();
     void resolveExistingCoreTypeForProtocolUsesSingBoxAsDownloadTargetWhenNothingExists();
     void resolveExistingCoreTypeForCustomProtocolKeepsXrayDefault();
+    void resolveExistingCoreTypeForSingBoxFirstProtocolsPrefersSingBox();
+    void defaultCoreTypeForSingBoxFirstProtocolsUsesSingBox();
 };
 
 void ProtocolCoreCompatTests::dualProtocolSupportsBothCores()
@@ -37,6 +40,24 @@ void ProtocolCoreCompatTests::httpSupportsOnlyXray()
     QCOMPARE(cores.size(), 2);
     QVERIFY(cores.contains(CoreType::Xray));
     QVERIFY(cores.contains(CoreType::SingBox));
+}
+
+void ProtocolCoreCompatTests::singBoxOnlyProtocolsSupportBothCoresForSelection()
+{
+    const QList<ConfigType> protocols = {
+        ConfigType::Hysteria2,
+        ConfigType::TUIC,
+        ConfigType::WireGuard,
+        ConfigType::AnyTLS,
+        ConfigType::Naive
+    };
+
+    for (const ConfigType configType : protocols) {
+        const auto cores = supportedCoreTypes(configType);
+        QCOMPARE(cores.size(), 2);
+        QVERIFY(cores.contains(CoreType::Xray));
+        QVERIFY(cores.contains(CoreType::SingBox));
+    }
 }
 
 void ProtocolCoreCompatTests::unknownSupportsNeitherCore()
@@ -94,6 +115,38 @@ void ProtocolCoreCompatTests::resolveExistingCoreTypeForCustomProtocolKeepsXrayD
         QList<CoreType>{CoreType::SingBox});
 
     QCOMPARE(core, CoreType::Xray);
+}
+
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForSingBoxFirstProtocolsPrefersSingBox()
+{
+    const QList<ConfigType> protocols = {
+        ConfigType::Hysteria2,
+        ConfigType::TUIC,
+        ConfigType::WireGuard,
+        ConfigType::AnyTLS,
+        ConfigType::Naive
+    };
+
+    for (const ConfigType configType : protocols) {
+        QCOMPARE(resolveExistingCoreTypeForProtocol(configType, {}), CoreType::SingBox);
+        QCOMPARE(resolveExistingCoreTypeForProtocol(configType, QList<CoreType>{CoreType::SingBox}), CoreType::SingBox);
+        QCOMPARE(resolveExistingCoreTypeForProtocol(configType, QList<CoreType>{CoreType::Xray, CoreType::SingBox}), CoreType::SingBox);
+    }
+}
+
+void ProtocolCoreCompatTests::defaultCoreTypeForSingBoxFirstProtocolsUsesSingBox()
+{
+    const QList<ConfigType> protocols = {
+        ConfigType::Hysteria2,
+        ConfigType::TUIC,
+        ConfigType::WireGuard,
+        ConfigType::AnyTLS,
+        ConfigType::Naive
+    };
+
+    for (const ConfigType configType : protocols) {
+        QCOMPARE(defaultCoreTypeForProtocol(configType), CoreType::SingBox);
+    }
 }
 
 QTEST_MAIN(ProtocolCoreCompatTests)

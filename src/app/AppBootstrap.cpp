@@ -39,6 +39,7 @@
 #include <utility>
 
 #include "app/StartupAdminElevation.h"
+#include "app/SingleInstanceBootstrap.h"
 #include "app/TunSettingsApplyDecision.h"
 #include "common/DataSizeFormatter.h"
 #include "common/SystemProxyMode.h"
@@ -106,6 +107,83 @@ QString expectedCoreFilesText(const QStringList& candidates)
     return candidateNames.isEmpty()
         ? QCoreApplication::translate("AppBootstrap", "(unknown)")
         : candidateNames.join(QStringLiteral(", "));
+}
+
+QStringList splitProxyExceptions(const QString& value)
+{
+    QString normalized = value;
+    normalized.replace(QChar(','), QChar(';'));
+
+    QStringList parts;
+    for (const QString& item : normalized.split(QChar(';'), Qt::SkipEmptyParts)) {
+        const QString trimmed = item.trimmed();
+        if (!trimmed.isEmpty()) {
+            parts.append(trimmed);
+        }
+    }
+    return parts;
+}
+
+void appendUniqueProxyException(QStringList& entries, const QString& value)
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty()) {
+        return;
+    }
+
+    for (const QString& existing : std::as_const(entries)) {
+        if (existing.compare(trimmed, Qt::CaseInsensitive) == 0) {
+            return;
+        }
+    }
+    entries.append(trimmed);
+}
+
+QStringList collectRouteDerivedProxyExceptions(const Config& config)
+{
+    QList<RoutingRule> effectiveRules;
+    for (const RoutingRule& rule : config.routingCustomRules) {
+        if (rule.enabled) {
+            effectiveRules.append(rule);
+        }
+    }
+
+    if (config.enableRoutingAdvanced
+        && config.routingIndex >= 0
+        && config.routingIndex < config.routingItems.size()) {
+        const RoutingItem& selectedRouting = config.routingItems.at(config.routingIndex);
+        for (const RoutingRule& rule : selectedRouting.rules) {
+            if (rule.enabled) {
+                effectiveRules.append(rule);
+            }
+        }
+    }
+
+    QStringList derived;
+    for (const RoutingRule& rule : std::as_const(effectiveRules)) {
+        if (rule.outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        for (const QString& domainValue : rule.domain) {
+            const QString domain = domainValue.trimmed();
+            if (domain.startsWith(QStringLiteral("domain:"), Qt::CaseInsensitive)) {
+                const QString suffix = domain.mid(QStringLiteral("domain:").size()).trimmed();
+                if (suffix.isEmpty()) {
+                    continue;
+                }
+                appendUniqueProxyException(derived, suffix);
+                appendUniqueProxyException(derived, QStringLiteral("*.%1").arg(suffix));
+                continue;
+            }
+
+            if (domain.startsWith(QStringLiteral("full:"), Qt::CaseInsensitive)) {
+                appendUniqueProxyException(derived, domain.mid(QStringLiteral("full:").size()).trimmed());
+            }
+        }
+    }
+
+    return derived;
 }
 constexpr auto V2RayReleasePageUrl = "https://github.com/v2fly/v2ray-core/releases";
 constexpr auto XrayReleasePageUrl = "https://github.com/XTLS/Xray-core/releases";
@@ -419,7 +497,9 @@ bool AppBootstrap::run()
             return;
         }
 
-        syncWindow();
+        if (mainWindow_ != nullptr) {
+            mainWindow_->updateServerTestResult(indexId, result);
+        }
     });
     QObject::connect(speedTestService_.get(), &SpeedTestService::finished, mainWindow_.get(), [this](const QString& summary) {
         if (mainWindow_ != nullptr) {
@@ -673,6 +753,12 @@ void AppBootstrap::wireMainWindow()
     QObject::connect(mainWindow_.get(), &MainWindow::systemProxyModeSelected, mainWindow_.get(), [this](int mode) {
         setSystemProxyMode(normalizeSystemProxyMode(mode));
     });
+    QObject::connect(mainWindow_.get(), &MainWindow::enableSystemProxyRequested, mainWindow_.get(), [this]() {
+        enableSystemProxy();
+    });
+    QObject::connect(mainWindow_.get(), &MainWindow::disableSystemProxyRequested, mainWindow_.get(), [this]() {
+        disableSystemProxy();
+    });
     QObject::connect(mainWindow_.get(), &MainWindow::routingModeSelected, mainWindow_.get(), [this](int mode) {
         const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
         const int previousRoutingIndex = config_.routingIndex;
@@ -871,7 +957,9 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::startCoreRequested, mainWindow_.get(), [this]() {
-        startCore();
+        if (reloadConfig()) {
+            startCore();
+        }
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::stopCoreRequested, mainWindow_.get(), [this]() {
@@ -1010,7 +1098,9 @@ void AppBootstrap::syncStatusIndicators()
     systemProxyMode_ = normalizeSystemProxyMode(config_.sysProxyType);
     const bool systemProxyEnabled = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
     const bool autoRunEnabled = autoRunService_ != nullptr && autoRunService_->isEnabled();
-    const bool coreRunning = coreStartPending_ || (coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning());
+    const bool coreRestartPending = coreRestartTimer_ != nullptr && coreRestartTimer_->isActive();
+    const bool corePending = coreStartPending_ || coreStopPending_ || coreRestartPending;
+    const bool coreRunning = coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning();
     const QString currentServerName = describeServer(findServerById(config_.currentIndexId));
     const QString routingSummary = buildRoutingSummaryText();
     const QString listenSummary = buildListenSummaryText();
@@ -1025,7 +1115,7 @@ void AppBootstrap::syncStatusIndicators()
     if (mainWindow_ != nullptr) {
         mainWindow_->setCurrentServerName(currentServerName);
         mainWindow_->setRoutingSummary(routingSummary, listenSummary);
-        mainWindow_->setCoreRunning(coreRunning);
+        mainWindow_->setCoreRunning(coreRunning, corePending);
         mainWindow_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
         mainWindow_->setAutoRunEnabled(autoRunEnabled);
         if (statisticsService_ != nullptr) {
@@ -1685,22 +1775,8 @@ void AppBootstrap::removeStaleTunAdapter()
 
 void AppBootstrap::removeStaleSingBoxCache()
 {
-    if (!config_.enableCacheFile4Sbox) {
-        return;
-    }
-    const QString cachePath =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("cache.db"));
-    QFile cacheFile(cachePath);
-    if (!cacheFile.exists()) {
-        return;
-    }
-    if (cacheFile.remove()) {
-        appendResult(OperationResult::ok(
-            QStringLiteral("Removed stale sing-box cache file: %1").arg(cachePath)));
-        return;
-    }
-    appendResult(OperationResult::fail(
-        QStringLiteral("Could not remove sing-box cache file (may be locked): %1").arg(cachePath)));
+    // Keep the sing-box cache file across restarts so remote rule-set downloads
+    // can be reused when the upstream proxy is unstable.
 }
 
 void AppBootstrap::cleanupOrphanCoreProcesses()
@@ -1826,10 +1902,30 @@ void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary, in
     if (slot == nullptr) {
         slot = new QTimer(mainWindow_.get());
         slot->setSingleShot(true);
-        QObject::connect(slot, &QTimer::timeout, mainWindow_.get(), [this]() {
+        QObject::connect(slot, &QTimer::timeout, mainWindow_.get(), [this, auxiliary]() {
             if (shuttingDown_.load()) {
                 return;
             }
+
+            if (!auxiliary && config_.tunModeItem.enableTun) {
+                if (tunCleanupActive_) {
+                    return;
+                }
+
+                tunCleanupActive_ = true;
+                resumeCoreStartAfterTunCleanup_ = false;
+                syncStatusIndicators();
+                removeStaleTunAdapterAsync([this](const OperationResult& result) {
+                    tunCleanupActive_ = false;
+                    appendResult(result);
+                    syncStatusIndicators();
+                    if (!shuttingDown_.load() && !coreStopPending_) {
+                        startCore(true);
+                    }
+                });
+                return;
+            }
+
             startCore();
         });
     }
@@ -1933,7 +2029,18 @@ void AppBootstrap::enableSystemProxy()
 
 void AppBootstrap::disableSystemProxy()
 {
-    setSystemProxyMode(SystemProxyMode::ForcedClear);
+    const bool success = systemProxyService_ == nullptr
+        || systemProxyService_->update(
+            SystemProxyMode::ForcedClear,
+            config_.localPort + 1,
+            config_.localPort,
+            buildSystemProxyExceptions(),
+            config_.systemProxyAdvancedProtocol,
+            config_.pacUrl);
+    appendResult(success
+        ? OperationResult::ok(QStringLiteral("System proxy disabled."))
+        : OperationResult::fail(QStringLiteral("Failed to disable system proxy.")));
+    syncStatusIndicators();
 }
 
 void AppBootstrap::toggleAutoRun()
@@ -3207,15 +3314,27 @@ void AppBootstrap::promptRestartForLanguageChange()
         return;
     }
 
-    QStringList arguments;
-    const QString configPath = resolveConfigPath();
-    if (!configPath.trimmed().isEmpty()) {
-        arguments << QStringLiteral("--config") << configPath;
-    }
-    arguments << QStringLiteral("--admin-relaunch");
-
     persistUiState();
-    if (!QProcess::startDetached(QCoreApplication::applicationFilePath(), arguments)) {
+
+    QStringList arguments = startupAdminRelaunchArguments(QCoreApplication::arguments());
+    arguments.removeAll(QStringLiteral("--admin-relaunch"));
+
+    const bool requiresAdminRestart =
+        isWindowsPlatform() && !isProcessElevated() && config_.tunModeItem.enableTun;
+
+    SingleInstanceBootstrap::releaseCurrentInstance();
+
+    bool restarted = false;
+    if (requiresAdminRestart) {
+        const QStringList adminArguments = startupAdminRelaunchArgumentsForRunningInstance(
+            QStringList{QCoreApplication::applicationFilePath()} + arguments);
+        restarted = restartAsAdministrator(QCoreApplication::applicationFilePath(), adminArguments);
+    } else {
+        restarted = QProcess::startDetached(QCoreApplication::applicationFilePath(), arguments);
+    }
+
+    if (!restarted) {
+        SingleInstanceBootstrap::reacquireCurrentInstance();
         appendResult(OperationResult::fail(
             QCoreApplication::translate("AppBootstrap", "Failed to restart the application.")));
         return;
@@ -3248,9 +3367,15 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
             continue;
         }
 
+        const CoreType launchCore = resolveLaunchCoreType(*server);
+        const VmessItem runtimeServer = runtimeServerForLaunchCore(*server, launchCore);
+        Config runtimeConfig = runtimeConfigForLaunchCore(config_, *server);
+
         items.append(SpeedTestRequestItem{
             *server,
-            resolveCoreInfo(*server)});
+            runtimeConfig,
+            runtimeServer,
+            resolveCoreInfo(runtimeServer)});
     }
 
     const OperationResult startResult = speedTestService_->start(config_, items);
@@ -3258,14 +3383,18 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
 
     if (startResult.success) {
         static const QString pending = QStringLiteral("...");
+        QStringList pendingIds;
         for (const auto& item : items) {
             auto it = std::find_if(config_.servers.begin(), config_.servers.end(),
                 [&item](const VmessItem& s) { return s.indexId == item.server.indexId; });
             if (it != config_.servers.end()) {
                 it->testResult = pending;
+                pendingIds.append(it->indexId);
             }
         }
-        syncWindow();
+        if (mainWindow_ != nullptr) {
+            mainWindow_->updateServerTestResults(pendingIds, pending);
+        }
     }
 }
 
@@ -3531,17 +3660,20 @@ QString AppBootstrap::buildListenSummaryText() const
 
 QString AppBootstrap::buildSystemProxyExceptions() const
 {
-    const QString defaults = config_.defIeProxyExceptions.trimmed().isEmpty()
-        ? QString::fromUtf8(DefaultIeProxyExceptions)
-        : config_.defIeProxyExceptions.trimmed();
-    const QString custom = config_.systemProxyExceptions.trimmed();
-    if (custom.isEmpty()) {
-        return defaults;
+    QStringList entries = splitProxyExceptions(
+        config_.defIeProxyExceptions.trimmed().isEmpty()
+            ? QString::fromUtf8(DefaultIeProxyExceptions)
+            : config_.defIeProxyExceptions.trimmed());
+
+    for (const QString& item : splitProxyExceptions(config_.systemProxyExceptions.trimmed())) {
+        appendUniqueProxyException(entries, item);
     }
 
-    return defaults.isEmpty()
-        ? custom
-        : QStringLiteral("%1;%2").arg(defaults, custom);
+    for (const QString& item : collectRouteDerivedProxyExceptions(config_)) {
+        appendUniqueProxyException(entries, item);
+    }
+
+    return entries.join(QStringLiteral(";"));
 }
 
 CoreType AppBootstrap::resolveEffectiveCoreType(const VmessItem& server) const

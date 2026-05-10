@@ -12,6 +12,8 @@ class QThread;
 
 struct SpeedTestRequestItem {
     VmessItem server;
+    Config runtimeConfig;
+    VmessItem runtimeServer;
     CoreInfo coreInfo;
 };
 

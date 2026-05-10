@@ -15,6 +15,7 @@ public:
     explicit ServerTableModel(QObject* parent = nullptr);
 
     void setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId = {});
+    bool updateTestResult(const QString& indexId, const QString& result);
     const VmessItem* itemAt(int row) const;
     ServerStatItem statisticAt(int row) const;
     QString currentIndexId() const;

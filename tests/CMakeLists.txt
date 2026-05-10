@@ -612,6 +612,41 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_proxy_availability_check_tests)
 endif()
 
+set(QT_V2RAYN_SPEED_TEST_SERVICE_INTERNAL_TEST_SOURCES
+    SpeedTestServiceInternalTests.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_speed_test_service_internal_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_SPEED_TEST_SERVICE_INTERNAL_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_speed_test_service_internal_tests ${QT_V2RAYN_SPEED_TEST_SERVICE_INTERNAL_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_speed_test_service_internal_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_speed_test_service_internal_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME speed-test-service-internal COMMAND qt_v2rayn_speed_test_service_internal_tests)
+set_tests_properties(speed-test-service-internal PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_speed_test_service_internal_tests)
+endif()
+
 set(QT_V2RAYN_SUBSCRIPTION_SERVICE_TEST_SOURCES
     SubscriptionServiceTests.cpp
     ../src/services/SubscriptionService.h

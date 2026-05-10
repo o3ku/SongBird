@@ -16,6 +16,11 @@ inline QList<CoreType> supportedCoreTypes(ConfigType configType)
     case ConfigType::VLESS:
     case ConfigType::Trojan:
     case ConfigType::HTTP:
+    case ConfigType::Hysteria2:
+    case ConfigType::TUIC:
+    case ConfigType::WireGuard:
+    case ConfigType::AnyTLS:
+    case ConfigType::Naive:
         return { CoreType::Xray, CoreType::SingBox };
     default:
         return {};
@@ -41,13 +46,13 @@ inline bool prefersInstalledCoreForProtocol(ConfigType configType)
     case ConfigType::VLESS:
     case ConfigType::Trojan:
     case ConfigType::HTTP:
-        return true;
-    case ConfigType::Custom:
     case ConfigType::Hysteria2:
     case ConfigType::TUIC:
     case ConfigType::WireGuard:
     case ConfigType::AnyTLS:
     case ConfigType::Naive:
+        return true;
+    case ConfigType::Custom:
     case ConfigType::Unknown:
     default:
         return false;
@@ -58,6 +63,11 @@ inline CoreType defaultCoreTypeForProtocol(ConfigType configType)
 {
     switch (configType) {
     case ConfigType::HTTP:
+    case ConfigType::Hysteria2:
+    case ConfigType::TUIC:
+    case ConfigType::WireGuard:
+    case ConfigType::AnyTLS:
+    case ConfigType::Naive:
         return CoreType::SingBox;
     default:
         return CoreType::Xray;

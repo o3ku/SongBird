@@ -1556,10 +1556,13 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         }
     }
 
+    const bool hasPredefinedHosts = !predefinedHosts.isEmpty();
     QJsonObject hostsDnsServer;
-    hostsDnsServer.insert(QStringLiteral("tag"), kSingBoxHostsDnsTag);
-    hostsDnsServer.insert(QStringLiteral("type"), QStringLiteral("hosts"));
-    hostsDnsServer.insert(QStringLiteral("predefined"), predefinedHosts);
+    if (hasPredefinedHosts) {
+        hostsDnsServer.insert(QStringLiteral("tag"), kSingBoxHostsDnsTag);
+        hostsDnsServer.insert(QStringLiteral("type"), QStringLiteral("hosts"));
+        hostsDnsServer.insert(QStringLiteral("predefined"), predefinedHosts);
+    }
 
     const auto applyHostsResolver = [&predefinedHosts](QJsonObject& dnsServer) {
         const QString serverName = dnsServer.value(QStringLiteral("server")).toString().trimmed();
@@ -1580,7 +1583,9 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
             servers[index] = directDnsServer;
         }
     }
-    servers.append(hostsDnsServer);
+    if (hasPredefinedHosts) {
+        servers.append(hostsDnsServer);
+    }
 
     if (config.fakeIp) {
         QJsonObject fakeDnsServer;
@@ -1596,15 +1601,25 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
     }
 
     dns.insert(QStringLiteral("servers"), servers);
-    dns.insert(
-        QStringLiteral("final"),
-        useDirectFinal || remoteDnsServer.isEmpty() ? kSingBoxDirectDnsTag : kSingBoxRemoteDnsTag);
+    QString finalServerTag;
+    if (!remoteDnsServer.isEmpty() && !useDirectFinal) {
+        finalServerTag = kSingBoxRemoteDnsTag;
+    } else if (!directDnsServer.isEmpty()) {
+        finalServerTag = kSingBoxDirectDnsTag;
+    } else if (hasPredefinedHosts) {
+        finalServerTag = kSingBoxHostsDnsTag;
+    }
+    if (!finalServerTag.isEmpty()) {
+        dns.insert(QStringLiteral("final"), finalServerTag);
+    }
 
     QJsonArray rules;
-    QJsonObject hostsRule;
-    hostsRule.insert(QStringLiteral("ip_accept_any"), true);
-    hostsRule.insert(QStringLiteral("server"), kSingBoxHostsDnsTag);
-    rules.append(hostsRule);
+    if (hasPredefinedHosts) {
+        QJsonObject hostsRule;
+        hostsRule.insert(QStringLiteral("ip_accept_any"), true);
+        hostsRule.insert(QStringLiteral("server"), kSingBoxHostsDnsTag);
+        rules.append(hostsRule);
+    }
 
     if (!remoteDnsServer.isEmpty()) {
         QJsonObject proxyRule;
@@ -1713,11 +1728,12 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         }
     }
 
-    if (selectedRouting != nullptr) {
+    const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
+    if (!effectiveRules.isEmpty()) {
         const QString directStrategy = mapDomainStrategyToSingBox(config.domainStrategyForFreedom);
         const QString proxyStrategy = mapDomainStrategyToSingBox(config.domainStrategyForProxy);
 
-        for (const RoutingRule& sourceRule : selectedRouting->rules) {
+        for (const RoutingRule& sourceRule : effectiveRules) {
             if (!sourceRule.enabled) {
                 continue;
             }
@@ -1815,7 +1831,8 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
     QJsonObject route;
     route.insert(QStringLiteral("final"), QStringLiteral("proxy"));
     const bool customDnsObject = isCustomDnsObjectText(config.remoteDns);
-    if (!customDnsObject) {
+    const bool hasDirectDnsServer = !parseSingBoxDnsAddress(config.directDns).isEmpty();
+    if (!customDnsObject && hasDirectDnsServer) {
         QJsonObject defaultDomainResolver;
         defaultDomainResolver.insert(QStringLiteral("server"), kSingBoxDirectDnsTag);
         const QString directDnsStrategy = mapDomainStrategyToSingBox(config.domainStrategyForFreedom);
@@ -2346,6 +2363,7 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
     const bool needsNetworkField = server.configType != ConfigType::Hysteria2
         && server.configType != ConfigType::TUIC
         && server.configType != ConfigType::WireGuard
+        && server.configType != ConfigType::AnyTLS
         && server.configType != ConfigType::HTTP;
     if (needsNetworkField) {
         outbound.insert(QStringLiteral("network"), resolveSingBoxNetwork(server));
@@ -2373,7 +2391,7 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
         if (!server.id.trimmed().isEmpty()) {
             outbound.insert(QStringLiteral("username"), server.id);
         }
-        if (!server.security.trimmed().isEmpty()) {
+        if (!server.id.trimmed().isEmpty() && !server.security.trimmed().isEmpty()) {
             outbound.insert(QStringLiteral("password"), server.security);
         }
         break;

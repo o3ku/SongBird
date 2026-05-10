@@ -4,9 +4,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QComboBox>
 #include <QScrollBar>
 #include <QStyleOptionViewItem>
 #include <QTableView>
+#include <QToolButton>
 
 #include "domain/models/Config.h"
 #include "ui/mainwindow/LogItemDelegate.h"
@@ -21,10 +23,15 @@ private slots:
     void appendLogPreservesViewportWhenCursorNotAtLastLine();
     void appendLogPreservesViewportWhenFilterActive();
     void globalHotkeySettingsActionEmitsSignal();
+    void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
+    void coreToggleButtonUsesCheckedStateAndDisablesDuringTransition();
+    void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
+    void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
+    void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
 };
 
@@ -157,6 +164,97 @@ void MainWindowTests::globalHotkeySettingsActionEmitsSignal()
     QCOMPARE(spy.count(), 1);
 }
 
+void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
+{
+    MainWindow window;
+
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("reloadButton")) == nullptr);
+    QVERIFY(window.findChild<QComboBox*>(QStringLiteral("systemProxyModeCombo")) == nullptr);
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("coreToggleButton")) != nullptr);
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
+}
+
+void MainWindowTests::coreToggleButtonUsesCheckedStateAndDisablesDuringTransition()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(coreButton != nullptr);
+    QVERIFY(proxyButton != nullptr);
+    QCOMPARE(coreButton->text(), QStringLiteral("START"));
+    QVERIFY(!coreButton->isChecked());
+
+    QSignalSpy startSpy(&window, SIGNAL(startCoreRequested()));
+    QSignalSpy stopSpy(&window, SIGNAL(stopCoreRequested()));
+    QVERIFY(startSpy.isValid());
+    QVERIFY(stopSpy.isValid());
+
+    QVERIFY(window.findChild<QAction*>(QStringLiteral("coreToggleAction")) != nullptr);
+
+    coreButton->click();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(startSpy.count(), 1);
+    QCOMPARE(stopSpy.count(), 0);
+    QVERIFY(coreButton->isEnabled());
+
+    window.setCoreRunning(true, true);
+    QCoreApplication::processEvents();
+    QCOMPARE(coreButton->text(), QStringLiteral("START"));
+    QVERIFY(!coreButton->isChecked());
+    QVERIFY(!coreButton->isEnabled());
+    QVERIFY(!proxyButton->isEnabled());
+
+    window.setCoreRunning(true, false);
+    QCoreApplication::processEvents();
+    QVERIFY(coreButton->isEnabled());
+    QVERIFY(coreButton->isChecked());
+    QVERIFY(proxyButton->isEnabled());
+
+    coreButton->click();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(startSpy.count(), 1);
+    QCOMPARE(stopSpy.count(), 1);
+}
+
+void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+
+    QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QSignalSpy disableSpy(&window, SIGNAL(disableSystemProxyRequested()));
+    QVERIFY(enableSpy.isValid());
+    QVERIFY(disableSpy.isValid());
+
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(proxyButton != nullptr);
+    QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
+    QVERIFY(!proxyButton->isChecked());
+
+    QVERIFY(proxyButton->isEnabled());
+
+    proxyButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(enableSpy.count(), 1);
+
+    window.setProxyEnabled(true);
+    QCoreApplication::processEvents();
+    QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
+    QVERIFY(proxyButton->isChecked());
+
+    proxyButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(disableSpy.count(), 1);
+}
+
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 {
     const QString text = QStringLiteral("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron");
@@ -271,6 +369,85 @@ void MainWindowTests::enterOnServerTableSetsCurrentWithoutMovingSelection()
     QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
     QCOMPARE(serverView->currentIndex().row(), 1);
     QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+}
+
+void MainWindowTests::speedTestRefreshKeepsCurrentSelectionOnTriggeredRow()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    serverView->setFocus();
+    serverView->selectRow(1);
+    serverView->setCurrentIndex(serverView->model()->index(1, 2));
+    QCoreApplication::processEvents();
+
+    QSignalSpy spy(&window, SIGNAL(testServersRequested(QStringList)));
+    QVERIFY(spy.isValid());
+
+    auto* action = window.findChild<QAction*>(QStringLiteral("testAction"));
+    QVERIFY(action != nullptr);
+    action->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(spy.count(), 1);
+    const QStringList requestedIds = spy.takeFirst().at(0).toStringList();
+    QCOMPARE(requestedIds, QStringList{QStringLiteral("server-2")});
+
+    config.servers[1].testResult = QStringLiteral("...");
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(serverView->currentIndex().row(), 1);
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+}
+
+void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.servers[0].testResult = QStringLiteral("20 ms");
+    config.servers[1].testResult = QStringLiteral("30 ms");
+    config.servers[2].testResult = QStringLiteral("10 ms");
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    serverView->sortByColumn(7, Qt::AscendingOrder);
+    QCoreApplication::processEvents();
+
+    int selectedRow = -1;
+    for (int row = 0; row < serverView->model()->rowCount(); ++row) {
+        const QString display = serverView->model()->index(row, 2).data(Qt::DisplayRole).toString();
+        if (display == QStringLiteral("Second")) {
+            selectedRow = row;
+            break;
+        }
+    }
+    QVERIFY(selectedRow >= 0);
+
+    serverView->setFocus();
+    serverView->selectRow(selectedRow);
+    serverView->setCurrentIndex(serverView->model()->index(selectedRow, 2));
+    QCoreApplication::processEvents();
+
+    window.updateServerTestResult(QStringLiteral("server-2"), QStringLiteral("5 ms"));
+    QCoreApplication::processEvents();
+
+    const QModelIndex currentIndex = serverView->currentIndex();
+    QVERIFY(currentIndex.isValid());
+    QCOMPARE(currentIndex.data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
+    QVERIFY(serverView->selectionModel()->isRowSelected(currentIndex.row(), QModelIndex()));
 }
 
 void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()

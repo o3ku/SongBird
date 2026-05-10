@@ -37,6 +37,33 @@ void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> st
     endResetModel();
 }
 
+bool ServerTableModel::updateTestResult(const QString& indexId, const QString& result)
+{
+    const QString trimmedId = indexId.trimmed();
+    if (trimmedId.isEmpty()) {
+        return false;
+    }
+
+    for (int row = 0; row < items_.size(); ++row) {
+        VmessItem& item = items_[row];
+        if (item.indexId != trimmedId) {
+            continue;
+        }
+
+        const QString trimmedResult = result.trimmed();
+        if (item.testResult == trimmedResult) {
+            return true;
+        }
+
+        item.testResult = trimmedResult;
+        const QModelIndex changedIndex = index(row, TestResultColumn);
+        emit dataChanged(changedIndex, changedIndex, {Qt::DisplayRole});
+        return true;
+    }
+
+    return false;
+}
+
 const VmessItem* ServerTableModel::itemAt(int row) const
 {
     if (row < 0 || row >= items_.size()) {

@@ -67,7 +67,6 @@ constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
 constexpr int ToolbarControlSpacing = 4;
 constexpr int HeaderFilterFixedWidth = 200;
-constexpr int SystemProxyComboFixedWidth = 120;
 constexpr int RoutingComboFixedWidth = 144;
 constexpr int ServerTableNoColumn = 0;
 
@@ -319,6 +318,9 @@ void syncToolbarActionButton(QToolButton* button, QAction* action)
     }
 
     const auto syncState = [button, action]() {
+        button->setText(action->text());
+        button->setIcon(action->icon());
+        button->setToolTip(action->toolTip().isEmpty() ? action->text() : action->toolTip());
         button->setEnabled(action->isEnabled());
         button->setVisible(action->isVisible());
         if (action->isCheckable()) {
@@ -393,6 +395,11 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& statistics)
 {
+    const QString preferredSelectedId = selectedServerId().trimmed();
+    if (!preferredSelectedId.isEmpty()) {
+        lastSelectedServerId_ = preferredSelectedId;
+    }
+
     serverModel_->setItems(config.servers, statistics, config.currentIndexId);
     currentIndexId_ = config.currentIndexId.trimmed();
     updateRoutingModeOptions(config);
@@ -404,6 +411,26 @@ void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& st
 
     updateQrPreview();
     updateActionState();
+}
+
+void MainWindow::updateServerTestResult(const QString& indexId, const QString& result)
+{
+    if (serverModel_ == nullptr) {
+        return;
+    }
+
+    serverModel_->updateTestResult(indexId, result);
+}
+
+void MainWindow::updateServerTestResults(const QStringList& indexIds, const QString& result)
+{
+    if (serverModel_ == nullptr) {
+        return;
+    }
+
+    for (const QString& indexId : indexIds) {
+        serverModel_->updateTestResult(indexId, result);
+    }
 }
 
 void MainWindow::appendLog(const QString& message)
@@ -493,6 +520,7 @@ void MainWindow::setSystemProxyState(int mode, bool enabled)
         }
     }
 
+    updateActionState();
     updateStatusIndicators();
 }
 
@@ -504,11 +532,34 @@ void MainWindow::setProxyEnabled(bool enabled)
         enabled);
 }
 
-void MainWindow::setCoreRunning(bool enabled)
+void MainWindow::setCoreRunning(bool enabled, bool pending)
 {
     coreRunning_ = enabled;
+    coreTransitionPending_ = pending;
     updateActionState();
     updateStatusIndicators();
+}
+
+void MainWindow::updateCoreToggleAction()
+{
+    if (coreToggleAction_ == nullptr) {
+        return;
+    }
+
+    coreToggleAction_->setText(tr("START"));
+    coreToggleAction_->setCheckable(true);
+    coreToggleAction_->setChecked(coreRunning_);
+}
+
+void MainWindow::updateProxyToggleAction()
+{
+    if (proxyToggleAction_ == nullptr) {
+        return;
+    }
+
+    proxyToggleAction_->setText(tr("PROXY"));
+    proxyToggleAction_->setCheckable(true);
+    proxyToggleAction_->setChecked(systemProxyApplied_);
 }
 
 void MainWindow::setCurrentServerName(const QString& name)
@@ -762,12 +813,15 @@ void MainWindow::updateActionState()
         testAction_->setEnabled(canSpeedTest);
     }
 
-    if (startCoreAction_ != nullptr) {
-        startCoreAction_->setEnabled(hasServers && !coreRunning_);
+    updateCoreToggleAction();
+    const bool startToggleEnabled = (hasServers || coreRunning_) && !coreTransitionPending_;
+    if (coreToggleAction_ != nullptr) {
+        coreToggleAction_->setEnabled(startToggleEnabled);
     }
 
-    if (stopCoreAction_ != nullptr) {
-        stopCoreAction_->setEnabled(coreRunning_);
+    updateProxyToggleAction();
+    if (proxyToggleAction_ != nullptr) {
+        proxyToggleAction_->setEnabled(startToggleEnabled && (coreRunning_ || systemProxyApplied_));
     }
 }
 
@@ -1312,8 +1366,12 @@ void MainWindow::setupToolbar()
     openSingBoxReleasePageAction_->setObjectName(QStringLiteral("openSingBoxReleasePageAction"));
     openGeoReleasePageAction_ = new QAction(tr("Open Geo Releases"), this);
     openGeoReleasePageAction_->setObjectName(QStringLiteral("openGeoReleasePageAction"));
-    startCoreAction_ = new QAction(tr("Start Core"), this);
-    stopCoreAction_ = new QAction(tr("Stop Core"), this);
+    coreToggleAction_ = new QAction(tr("START"), this);
+    coreToggleAction_->setObjectName(QStringLiteral("coreToggleAction"));
+    coreToggleAction_->setCheckable(true);
+    proxyToggleAction_ = new QAction(tr("PROXY"), this);
+    proxyToggleAction_->setObjectName(QStringLiteral("proxyToggleAction"));
+    proxyToggleAction_->setCheckable(true);
     clearStatisticsAction_ = new QAction(tr("Clear Statistics"), this);
     toggleQrPanelAction_ = new QAction(tr("QR Code"), this);
     toggleQrPanelAction_->setObjectName(QStringLiteral("toggleQrPanelAction"));
@@ -1442,13 +1500,6 @@ void MainWindow::setupToolbar()
         settingsAction_);
     toolBar->addSeparator();
 
-    createToolbarActionButton(
-        toolBar,
-        QStringLiteral("reloadButton"),
-        tr("Reload"),
-        loadToolbarIcon(QStringLiteral("restart.png")),
-        reloadConfigAction_);
-    toolBar->addSeparator();
     createToolbarMenuButton(
         toolBar,
         QStringLiteral("updateButton"),
@@ -1466,15 +1517,19 @@ void MainWindow::setupToolbar()
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolBar->addWidget(spacer);
 
-    systemProxyModeCombo_ = new StyledComboBox(toolBar);
-    systemProxyModeCombo_->setObjectName(QStringLiteral("systemProxyModeCombo"));
-    systemProxyModeCombo_->setFixedWidth(SystemProxyComboFixedWidth);
-    configureStyledComboBox(systemProxyModeCombo_);
-    systemProxyModeCombo_->addItem(tr("Clear"), toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
-    systemProxyModeCombo_->addItem(tr("Global"), toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
-    systemProxyModeCombo_->addItem(tr("Unchanged"), toLegacySystemProxyModeValue(SystemProxyMode::Unchanged));
-    systemProxyModeCombo_->addItem(tr("PAC"), toLegacySystemProxyModeValue(SystemProxyMode::Pac));
-    toolBar->addWidget(systemProxyModeCombo_);
+    createToolbarActionButton(
+        toolBar,
+        QStringLiteral("coreToggleButton"),
+        tr("START"),
+        loadToolbarIcon(QStringLiteral("restart.png")),
+        coreToggleAction_);
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
+    createToolbarActionButton(
+        toolBar,
+        QStringLiteral("proxyToggleButton"),
+        tr("PROXY"),
+        loadToolbarIcon(QStringLiteral("option.png")),
+        proxyToggleAction_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
 
     routingModeCombo_ = new StyledComboBox(toolBar);
@@ -1491,6 +1546,8 @@ void MainWindow::setupToolbar()
         loadToolbarIcon(QStringLiteral("share.png")),
         toggleQrPanelAction_);
 
+    updateCoreToggleAction();
+    updateProxyToggleAction();
     updateQrPanelActionText();
 }
 
@@ -1925,8 +1982,22 @@ void MainWindow::setupConnections()
         this,
         &MainWindow::openSingBoxReleasePageRequested);
     connect(openGeoReleasePageAction_, &QAction::triggered, this, &MainWindow::openGeoReleasePageRequested);
-    connect(startCoreAction_, &QAction::triggered, this, &MainWindow::startCoreRequested);
-    connect(stopCoreAction_, &QAction::triggered, this, &MainWindow::stopCoreRequested);
+    connect(coreToggleAction_, &QAction::triggered, this, [this]() {
+        if (coreRunning_) {
+            emit stopCoreRequested();
+            return;
+        }
+
+        emit startCoreRequested();
+    });
+    connect(proxyToggleAction_, &QAction::triggered, this, [this]() {
+        if (systemProxyApplied_) {
+            emit disableSystemProxyRequested();
+            return;
+        }
+
+        emit enableSystemProxyRequested();
+    });
     connect(clearStatisticsAction_, &QAction::triggered, this, &MainWindow::clearStatisticsRequested);
     connect(toggleQrPanelAction_, &QAction::triggered, this, [this](bool checked) {
         if (qrPreviewVisible_ && !checked) {
