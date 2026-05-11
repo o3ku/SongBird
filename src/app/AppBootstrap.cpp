@@ -580,6 +580,7 @@ bool AppBootstrap::run()
     cleanupOrphanCoreProcesses();
     wireMainWindow();
     mainWindow_->setHideToTrayEnabled(trayController_->initialize());
+    refreshExistingCoreTypes();
     if (!reloadConfig()) {
         return false;
     }
@@ -1137,6 +1138,7 @@ void AppBootstrap::syncStatusIndicators()
 
 bool AppBootstrap::reloadConfig()
 {
+    refreshExistingCoreTypes();
     const Config loadedConfig = repository_->load();
     const QString loadError = repository_->lastLoadError().trimmed();
     if (!loadError.isEmpty()) {
@@ -2738,6 +2740,9 @@ void AppBootstrap::finalizeCoreUpdate(
     if (mainWindow_ != nullptr && !result.message.trimmed().isEmpty()) {
         mainWindow_->showTransientStatus(result.message, 5000);
     }
+    if (result.success) {
+        refreshExistingCoreTypes();
+    }
     if (completionObserver) {
         completionObserver(result);
     }
@@ -3090,6 +3095,7 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     SettingsDialog dialog(mainWindow_.get());
     QPointer<SettingsDialog> dialogGuard(&dialog);
     dialog.selectTab(initialTab);
+    dialog.setExistingCoreTypes(existingCoreTypes_);
     dialog.setConfig(config_);
 
     refreshSettingsCoreVersions(dialogGuard.data());
@@ -3116,6 +3122,7 @@ void AppBootstrap::openSettingsDialog(int initialTab)
                 }
 
                 if (result.success) {
+                    dialogGuard->setExistingCoreTypes(existingCoreTypes_);
                     refreshSettingsCoreVersions(dialogGuard.data());
                 }
                 dialogGuard->finishCoreUpdate(requestedCoreType, result.success, result.message);
@@ -3687,15 +3694,7 @@ CoreType AppBootstrap::resolveLaunchCoreType(const VmessItem& server) const
         return resolveEffectiveCoreType(server);
     }
 
-    QList<CoreType> existingCoreTypes;
-    const QList<CoreType> prioritized = prioritizedCoreTypesForProtocol(server.configType);
-    for (const CoreType coreType : prioritized) {
-        if (!locateFirstExistingFile(resolveCoreCandidates(coreType)).isEmpty()) {
-            existingCoreTypes.append(coreType);
-        }
-    }
-
-    return resolveExistingCoreTypeForProtocol(server.configType, existingCoreTypes);
+    return resolveExistingCoreTypeForProtocol(server.configType, existingCoreTypes_);
 }
 
 CoreInfo AppBootstrap::resolveCoreInfo(const VmessItem& server) const
@@ -3852,6 +3851,22 @@ QString AppBootstrap::locateFirstExistingFile(const QStringList& candidates) con
     }
 
     return {};
+}
+
+void AppBootstrap::refreshExistingCoreTypes()
+{
+    existingCoreTypes_ = detectExistingCoreTypes();
+}
+
+QList<CoreType> AppBootstrap::detectExistingCoreTypes() const
+{
+    QList<CoreType> existingCoreTypes;
+    for (const CoreType coreType : availableCoreTypes()) {
+        if (!locateFirstExistingFile(resolveCoreCandidates(coreType)).isEmpty()) {
+            existingCoreTypes.append(coreType);
+        }
+    }
+    return existingCoreTypes;
 }
 
 QString AppBootstrap::detectCoreVersion(CoreType coreType) const

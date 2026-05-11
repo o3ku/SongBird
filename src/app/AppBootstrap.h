@@ -149,6 +149,8 @@ private:
     CoreType resolveEffectiveCoreType(const VmessItem& server) const;
     QStringList resolveCoreCandidates(CoreType coreType) const;
     QString locateFirstExistingFile(const QStringList& candidates) const;
+    void refreshExistingCoreTypes();
+    QList<CoreType> detectExistingCoreTypes() const;
     QString detectCoreVersion(CoreType coreType) const;
     void refreshSettingsCoreVersions(SettingsDialog* dialog);
     QString resolveCoreInstallDirectory(CoreType coreType) const;
@@ -198,6 +200,7 @@ private:
     std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
     std::unique_ptr<TrayController> trayController_;
     std::unique_ptr<MainWindow> mainWindow_;
+    QList<CoreType> existingCoreTypes_;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
     bool uiReady_ = false;
     bool uiStateRestored_ = false;

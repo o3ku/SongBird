@@ -32,6 +32,8 @@
 
 #include <algorithm>
 
+#include "ui/theme/AppTheme.h"
+
 namespace {
 
 QString elideText(const QString& value, const QFontMetrics& metrics, int width)
@@ -132,6 +134,14 @@ QStringList defaultFingerprintOptions()
         QString()};
 }
 
+QString normalizedRoutingCustomRuleTabKey(QString key)
+{
+    key = key.trimmed().toLower();
+    return key == QStringLiteral("block") || key == QStringLiteral("proxy")
+        ? key
+        : QStringLiteral("direct");
+}
+
 } // namespace
 
 SettingsDialog::SettingsDialog(QWidget* parent)
@@ -177,6 +187,7 @@ void SettingsDialog::setConfig(const Config& config)
     routingItems_ = config.routingItems;
     reloadRoutingPresentation(findInitialRouteIndex(routingItems_, config));
     loadRoutingCustomRules(config.routingCustomRules);
+    selectRoutingCustomRuleTab(config.settingsRoutingRuleTabKey);
 
     subItems_ = config.subscriptions;
     reloadSubTable();
@@ -215,6 +226,18 @@ void SettingsDialog::setConfig(const Config& config)
     updateFieldState();
 }
 
+void SettingsDialog::setExistingCoreTypes(const QList<CoreType>& coreTypes)
+{
+    existingCoreTypes_.clear();
+    for (const CoreType coreType : coreTypes) {
+        const CoreType runtimeCore = resolveRuntimeCoreType(coreType);
+        if (runtimeCore != CoreType::Unknown && !existingCoreTypes_.contains(runtimeCore)) {
+            existingCoreTypes_.append(runtimeCore);
+        }
+    }
+    reloadCoreTypeTable();
+}
+
 Config SettingsDialog::config() const
 {
     Config updated = config_;
@@ -246,6 +269,7 @@ Config SettingsDialog::config() const
     updated.routingCustomRules = collectRoutingCustomRules();
     updated.enableRoutingAdvanced = !updated.routingItems.isEmpty();
     updated.routingIndex = selectedBaseRouteIndex() < 0 ? 0 : selectedBaseRouteIndex();
+    updated.settingsRoutingRuleTabKey = selectedRoutingCustomRuleTabKey();
     updated.subscriptions = collectSubItems();
     updated.coreTypeItems = collectCoreTypeItems();
     TunModeItem tun;
@@ -282,6 +306,7 @@ void SettingsDialog::setupUi()
 {
     setWindowTitle(tr("Settings"));
     resize(620, 540);
+    AppTheme::applyCompactFont(this);
 
     // === General Tab ===
     auto* generalTab = new QWidget(this);
@@ -338,6 +363,23 @@ void SettingsDialog::setupUi()
     languageCombo_->addItem(tr("System Default"), QString());
     languageCombo_->addItem(tr("English"), QStringLiteral("en"));
     languageCombo_->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
+    AppTheme::applyCompactFont({
+        showMainOnStartupCheck_,
+        autoRunCheck_,
+        allowLanConnectionCheck_,
+        sniffingEnabledCheck_,
+        routeOnlyCheck_,
+        localPortSpin_,
+        enableFragmentCheck_,
+        enableCacheFile4SboxCheck_,
+        defaultAllowInsecureCheck_,
+        defaultFingerprintCombo_,
+        defaultUserAgentCombo_,
+        mux4SboxProtocolCombo_,
+        enableStatisticsCheck_,
+        statisticsFreshRateSpin_,
+        trayMenuServersLimitSpin_,
+        languageCombo_});
 
     generalLayout->addRow(showMainOnStartupCheck_);
     generalLayout->addRow(autoRunCheck_);
@@ -375,10 +417,13 @@ void SettingsDialog::setupUi()
     subTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     subTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     subTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    AppTheme::applyCompactFont(subTable_);
+    AppTheme::applyCompactFont(subTable_->horizontalHeader());
 
     addSubButton_ = new QPushButton(QStringLiteral("Add"), subTab);
     removeSubButton_ = new QPushButton(QStringLiteral("Remove"), subTab);
     updateSubButton_ = new QPushButton(QStringLiteral("Update Selected"), subTab);
+    AppTheme::applyCompactFont({addSubButton_, removeSubButton_, updateSubButton_});
 
     auto* subButtonLayout = new QHBoxLayout();
     subButtonLayout->addWidget(addSubButton_);
@@ -395,6 +440,7 @@ void SettingsDialog::setupUi()
 
     auto* baseRouteTitle = new QLabel(tr("Base Route"), routingTab);
     baseRouteTitle->setObjectName(QStringLiteral("routingBaseRouteTitle"));
+    AppTheme::applyCompactFont(baseRouteTitle);
     QFont baseRouteTitleFont = baseRouteTitle->font();
     baseRouteTitleFont.setBold(true);
     baseRouteTitle->setFont(baseRouteTitleFont);
@@ -413,6 +459,7 @@ void SettingsDialog::setupUi()
 
     auto* customRulesTitle = new QLabel(tr("Custom Rules"), routingTab);
     customRulesTitle->setObjectName(QStringLiteral("routingCustomRulesTitle"));
+    AppTheme::applyCompactFont(customRulesTitle);
     QFont customRulesTitleFont = customRulesTitle->font();
     customRulesTitleFont.setBold(true);
     customRulesTitle->setFont(customRulesTitleFont);
@@ -420,6 +467,7 @@ void SettingsDialog::setupUi()
 
     customRuleTabs_ = new QTabWidget(routingTab);
     customRuleTabs_->setObjectName(QStringLiteral("routingCustomRuleTabs"));
+    AppTheme::applyCompactFont(customRuleTabs_);
 
     const QList<QPair<QString, QString>> customTabs{
         {QStringLiteral("block"), QStringLiteral("Block")},
@@ -448,6 +496,7 @@ void SettingsDialog::setupUi()
         editors.portEdit = new QLineEdit(protocolPortColumn);
         editors.portEdit->setObjectName(QStringLiteral("routingCustom%1PortEdit").arg(title));
         editors.portEdit->setPlaceholderText(QStringLiteral("0-65535"));
+        AppTheme::applyCompactFont({protocolLabel, editors.protocolEdit, portLabel, editors.portEdit});
         protocolPortLayout->addWidget(protocolLabel);
         protocolPortLayout->addWidget(editors.protocolEdit, 1);
         protocolPortLayout->addWidget(portLabel);
@@ -462,6 +511,7 @@ void SettingsDialog::setupUi()
         editors.ipEdit->setObjectName(QStringLiteral("routingCustom%1IpEdit").arg(title));
         editors.ipEdit->setTabChangesFocus(true);
         editors.ipEdit->setPlaceholderText(QStringLiteral("geoip:private\n10.0.0.0/8"));
+        AppTheme::applyCompactFont({ipLabel, editors.ipEdit});
         ipLayout->addWidget(ipLabel);
         ipLayout->addWidget(editors.ipEdit, 1);
 
@@ -474,6 +524,7 @@ void SettingsDialog::setupUi()
         editors.domainEdit->setObjectName(QStringLiteral("routingCustom%1DomainEdit").arg(title));
         editors.domainEdit->setTabChangesFocus(true);
         editors.domainEdit->setPlaceholderText(QStringLiteral("geosite:cn\ndomain:example.com"));
+        AppTheme::applyCompactFont({domainLabel, editors.domainEdit});
         domainLayout->addWidget(domainLabel);
         domainLayout->addWidget(editors.domainEdit, 1);
 
@@ -481,6 +532,7 @@ void SettingsDialog::setupUi()
         tabLayout->addWidget(ipColumn, 1);
         tabLayout->addWidget(domainColumn, 1);
 
+        tabWidget->setProperty("routingCustomRuleTabKey", action);
         customRuleTabs_->addTab(tabWidget, title);
         customRuleEditors_.insert(action, editors);
     }
@@ -506,6 +558,7 @@ void SettingsDialog::setupUi()
     // Per-protocol core selection
     auto* coreTypeGroup = new QGroupBox(tr("Per-Protocol Override"), coreTab);
     auto* coreTypeForm = new QFormLayout(coreTypeGroup);
+    AppTheme::applyCompactFont(coreTypeGroup);
 
     for (int i = 0; i < protocolNames.size(); ++i) {
         const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configTypes.at(i)));
@@ -515,19 +568,24 @@ void SettingsDialog::setupUi()
                 coreCombo->addItem(coreTypeDisplayName(core), static_cast<int>(core));
             }
             coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            AppTheme::applyCompactFont(coreCombo);
             coreTypeForm->addRow(protocolNames.at(i), coreCombo);
             coreTypeCombos_.append(coreCombo);
+            coreTypeComboConfigTypes_.append(configTypes.at(i));
         } else if (cores.size() == 1) {
             auto* fixedLabel = new QLabel(coreTypeDisplayName(cores.first()), coreTab);
             fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            AppTheme::applyCompactFont(fixedLabel);
             coreTypeForm->addRow(protocolNames.at(i), fixedLabel);
             coreTypeCombos_.append(nullptr);
+            coreTypeComboConfigTypes_.append(configTypes.at(i));
         }
     }
 
     // Installed Cores: one row per available core type, with download + "set all" actions
     auto* coreStatusGroup = new QGroupBox(tr("Installed Cores"), coreTab);
     auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
+    AppTheme::applyCompactFont(coreStatusGroup);
 
     for (const CoreType core : allCores) {
         const int coreKey = static_cast<int>(core);
@@ -539,9 +597,11 @@ void SettingsDialog::setupUi()
         row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
         row.downloadButton = new QPushButton(tr("Download"), coreTab);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
+        AppTheme::applyCompactFont({row.versionLabel, row.statusLabel, row.downloadButton});
 
         row.setAllButton = new QPushButton(tr("Set All"), coreTab);
         row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
+        AppTheme::applyCompactFont(row.setAllButton);
         connect(row.setAllButton, &QPushButton::clicked, this, [this, configTypes, core]() {
             for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
                 auto* combo = coreTypeCombos_.at(i);
@@ -596,6 +656,7 @@ void SettingsDialog::setupUi()
         QStringLiteral("http={ip}:{http_port};https={ip}:{http_port};ftp={ip}:{http_port};socks={ip}:{socks_port}"),
         QStringLiteral("http=http://{ip}:{http_port};https=http://{ip}:{http_port}")
     });
+    AppTheme::applyCompactFont({systemProxyExceptionsEdit_, systemProxyAdvancedProtocolCombo_});
 
     proxyLayout->addRow(tr("System Proxy Exceptions"), systemProxyExceptionsEdit_);
     proxyLayout->addRow(tr("Advanced Proxy Protocol"), systemProxyAdvancedProtocolCombo_);
@@ -628,6 +689,13 @@ void SettingsDialog::setupUi()
         updateTab);
     updateNote->setWordWrap(true);
     updateNote->setObjectName(QStringLiteral("settingsUpdateNoteLabel"));
+    AppTheme::applyCompactFont({
+        autoUpdateIntervalSpin_,
+        autoUpdateSubIntervalSpin_,
+        checkPreReleaseUpdateCheck_,
+        ignoreGeoUpdateCoreCheck_,
+        enableSecurityProtocolTls13Check_,
+        updateNote});
 
     updateLayout->addRow(tr("GUI / Core Update Interval"), autoUpdateIntervalSpin_);
     updateLayout->addRow(tr("Subscription Update Interval"), autoUpdateSubIntervalSpin_);
@@ -663,6 +731,15 @@ void SettingsDialog::setupUi()
     tunIcmpRoutingEdit_->setObjectName(QStringLiteral("settingsTunIcmpRoutingEdit"));
     tunIcmpRoutingEdit_->setPlaceholderText(tr("Optional ICMP routing preference"));
     tunEnableLegacyProtectCheck_ = new QCheckBox(tr("Enable legacy protection (pre-socks relay for Xray)"), tunTab);
+    AppTheme::applyCompactFont({
+        tunEnableCheck_,
+        tunAutoRouteCheck_,
+        tunStrictRouteCheck_,
+        tunMtuSpin_,
+        tunStackCombo_,
+        tunEnableIPv6AddressCheck_,
+        tunIcmpRoutingEdit_,
+        tunEnableLegacyProtectCheck_});
 
     tunLayout->addRow(tunEnableCheck_);
     tunLayout->addRow(tunAutoRouteCheck_);
@@ -731,6 +808,21 @@ void SettingsDialog::setupUi()
     dnsHostsEdit_->setTabChangesFocus(true);
     dnsHostsEdit_->setMaximumHeight(120);
     dnsHostsEdit_->setPlaceholderText(QStringLiteral("domain ip\nexample.com 1.2.3.4"));
+    AppTheme::applyCompactFont({
+        remoteDnsEdit_,
+        directDnsEdit_,
+        bootstrapDnsEdit_,
+        domainStrategyForFreedomCombo_,
+        domainStrategyForProxyCombo_,
+        useSystemHostsCheck_,
+        addCommonHostsCheck_,
+        blockBindingQueryCheck_,
+        fakeIpCheck_,
+        globalFakeIpCheck_,
+        serveStaleCheck_,
+        parallelQueryCheck_,
+        directExpectedIpsEdit_,
+        dnsHostsEdit_});
 
     dnsLayout->addRow(tr("Remote DNS"), remoteDnsEdit_);
     dnsLayout->addRow(tr("Direct DNS"), directDnsEdit_);
@@ -750,6 +842,7 @@ void SettingsDialog::setupUi()
     // === Tab Widget ===
     tabWidget_ = new QTabWidget(this);
     tabWidget_->setObjectName(QStringLiteral("settingsTabWidget"));
+    AppTheme::applyCompactFont(tabWidget_);
     tabWidget_->addTab(generalTab, tr("General"));
     tabWidget_->addTab(subTab, tr("Subscriptions"));
     tabWidget_->addTab(routingTab, tr("Routing"));
@@ -762,11 +855,13 @@ void SettingsDialog::setupUi()
     // === Button Box with Restore ===
     restoreBackupButton_ = new QPushButton(tr("Restore Backup"), this);
     restoreBackupButton_->setObjectName(QStringLiteral("settingsRestoreBackupButton"));
+    AppTheme::applyCompactFont(restoreBackupButton_);
     connect(restoreBackupButton_, &QPushButton::clicked, this, [this]() {
         restoreBackupRequested_ = true;
     });
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    AppTheme::applyCompactFont(buttonBox_);
 
     auto* bottomLayout = new QHBoxLayout();
     bottomLayout->addWidget(restoreBackupButton_);
@@ -1217,6 +1312,33 @@ QList<RoutingRule> SettingsDialog::collectRoutingCustomRules() const
     return rules;
 }
 
+void SettingsDialog::selectRoutingCustomRuleTab(const QString& key)
+{
+    if (customRuleTabs_ == nullptr) {
+        return;
+    }
+
+    const QString normalizedKey = normalizedRoutingCustomRuleTabKey(key);
+    for (int index = 0; index < customRuleTabs_->count(); ++index) {
+        QWidget* tab = customRuleTabs_->widget(index);
+        if (tab != nullptr && tab->property("routingCustomRuleTabKey").toString() == normalizedKey) {
+            customRuleTabs_->setCurrentIndex(index);
+            return;
+        }
+    }
+}
+
+QString SettingsDialog::selectedRoutingCustomRuleTabKey() const
+{
+    if (customRuleTabs_ == nullptr || customRuleTabs_->currentIndex() < 0) {
+        return QStringLiteral("direct");
+    }
+
+    const QWidget* tab = customRuleTabs_->widget(customRuleTabs_->currentIndex());
+    return normalizedRoutingCustomRuleTabKey(
+        tab == nullptr ? QString() : tab->property("routingCustomRuleTabKey").toString());
+}
+
 void SettingsDialog::updateRoutingActionState()
 {
 }
@@ -1354,16 +1476,16 @@ QList<SubItem> SettingsDialog::collectSubItems() const
 
 void SettingsDialog::reloadCoreTypeTable()
 {
-    const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
-
-    for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
+    for (int i = 0; i < coreTypeCombos_.size() && i < coreTypeComboConfigTypes_.size(); ++i) {
         auto* combo = coreTypeCombos_.at(i);
         if (combo == nullptr) {
             continue;
         }
 
-        int configType = configTypes.at(i);
-        int coreType = static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
+        int configType = coreTypeComboConfigTypes_.at(i);
+        int coreType = static_cast<int>(resolveExistingCoreTypeForProtocol(
+            static_cast<ConfigType>(configType),
+            existingCoreTypes_));
 
         for (const CoreTypeItem& item : coreTypeItems_) {
             if (item.configType == configType) {
@@ -1382,10 +1504,9 @@ void SettingsDialog::reloadCoreTypeTable()
 QList<CoreTypeItem> SettingsDialog::collectCoreTypeItems() const
 {
     QList<CoreTypeItem> items;
-    const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
 
-    for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
-        const int configType = configTypes.at(i);
+    for (int i = 0; i < coreTypeCombos_.size() && i < coreTypeComboConfigTypes_.size(); ++i) {
+        const int configType = coreTypeComboConfigTypes_.at(i);
         auto* combo = coreTypeCombos_.at(i);
 
         CoreTypeItem item;

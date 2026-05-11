@@ -118,6 +118,8 @@ set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
     ../src/ui/dialogs/SettingsDialog.h
     ../src/ui/dialogs/SettingsDialog.cpp
+    ../src/ui/theme/AppTheme.h
+    ../src/ui/theme/AppTheme.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)

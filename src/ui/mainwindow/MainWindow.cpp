@@ -8,6 +8,7 @@
 #include <QContextMenuEvent>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHeaderView>
@@ -66,8 +67,8 @@ constexpr int DefaultServerQrSplitPercent = 78;
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
 constexpr int ToolbarControlSpacing = 4;
-constexpr int HeaderFilterFixedWidth = 200;
-constexpr int RoutingComboFixedWidth = 144;
+constexpr int HeaderFilterMinimumCharacters = 14;
+constexpr int RoutingComboMinimumCharacters = 12;
 constexpr int ServerTableNoColumn = 0;
 
 void applySemanticState(QLabel* label, const QString& state)
@@ -382,6 +383,47 @@ QWidget* createToolbarSpacing(QWidget* parent, int width)
     spacer->setFixedWidth(width);
     spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     return spacer;
+}
+
+int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
+{
+    if (widget == nullptr) {
+        return 0;
+    }
+
+    const QFontMetrics metrics(widget->font());
+    const int textWidth = metrics.horizontalAdvance(text);
+    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
+    return qMax(textWidth, characterWidth) + chromeWidth;
+}
+
+void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
+{
+    if (edit == nullptr) {
+        return;
+    }
+
+    edit->setMinimumWidth(textControlMinimumWidth(edit, edit->placeholderText(), minimumCharacters, 40));
+    edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+}
+
+void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
+{
+    if (comboBox == nullptr) {
+        return;
+    }
+
+    QString widestText = comboBox->currentText();
+    for (int index = 0; index < comboBox->count(); ++index) {
+        if (comboBox->fontMetrics().horizontalAdvance(comboBox->itemText(index))
+            > comboBox->fontMetrics().horizontalAdvance(widestText)) {
+            widestText = comboBox->itemText(index);
+        }
+    }
+
+    comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    comboBox->setMinimumWidth(textControlMinimumWidth(comboBox, widestText, minimumCharacters, 48));
+    comboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }
 
 } // namespace
@@ -1267,6 +1309,7 @@ void MainWindow::setupToolbar()
     toolBar->setObjectName(QStringLiteral("mainToolBar"));
     toolBar->setMovable(false);
     toolBar->setFloatable(false);
+    AppTheme::applyCompactFont(toolBar);
     const int iconExtent = qRound(toolBar->fontMetrics().height() * 1.2);
     toolBar->setIconSize(QSize(iconExtent, iconExtent));
     toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -1534,7 +1577,8 @@ void MainWindow::setupToolbar()
 
     routingModeCombo_ = new StyledComboBox(toolBar);
     routingModeCombo_->setObjectName(QStringLiteral("routingModeCombo"));
-    routingModeCombo_->setFixedWidth(RoutingComboFixedWidth);
+    AppTheme::applyCompactFont(routingModeCombo_);
+    updateContentSizedComboBox(routingModeCombo_, RoutingComboMinimumCharacters);
     configureStyledComboBox(routingModeCombo_);
     toolBar->addWidget(routingModeCombo_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
@@ -1593,6 +1637,7 @@ void MainWindow::setupServerView()
 
     subscriptionTabBar_ = new QTabBar(this);
     subscriptionTabBar_->setObjectName(QStringLiteral("subscriptionTabBar"));
+    AppTheme::applyCompactFont(subscriptionTabBar_);
     subscriptionTabBar_->setContextMenuPolicy(Qt::CustomContextMenu);
     subscriptionTabBar_->setDocumentMode(true);
     subscriptionTabBar_->setDrawBase(false);
@@ -1618,9 +1663,10 @@ void MainWindow::setupServerView()
 
     serverFilterEdit_ = new QLineEdit(this);
     serverFilterEdit_->setObjectName(QStringLiteral("serverFilterEdit"));
+    AppTheme::applyCompactFont(serverFilterEdit_);
     serverFilterEdit_->setClearButtonEnabled(true);
     serverFilterEdit_->setPlaceholderText(tr("Filter servers"));
-    serverFilterEdit_->setFixedWidth(HeaderFilterFixedWidth);
+    configureContentSizedLineEdit(serverFilterEdit_, HeaderFilterMinimumCharacters);
 
     auto* serverFilterContainer = new QWidget(this);
     serverFilterContainer->setObjectName(QStringLiteral("serverFilterContainer"));
@@ -1685,24 +1731,28 @@ void MainWindow::setupServerView()
 
     auto* logTitleLabel = new QLabel(tr("Information"), logHeaderRow);
     logTitleLabel->setObjectName(QStringLiteral("logTitleLabel"));
+    AppTheme::applyCompactFont(logTitleLabel);
     logTitleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     logHeaderLayout->addWidget(logTitleLabel);
     logHeaderLayout->addStretch(1);
 
     logStickToBottomButton_ = new QToolButton(logHeaderRow);
     logStickToBottomButton_->setObjectName(QStringLiteral("logStickToBottomButton"));
+    AppTheme::applyCompactFont(logStickToBottomButton_);
     logStickToBottomButton_->setCheckable(true);
     logStickToBottomButton_->setToolTip(tr("Stick to bottom"));
     logStickToBottomButton_->setText(QString(QChar(0x2193)));
     const int filterButtonSize = logStickToBottomButton_->fontMetrics().height() + 6;
-    logStickToBottomButton_->setFixedSize(filterButtonSize, filterButtonSize);
+    logStickToBottomButton_->setMinimumSize(filterButtonSize, filterButtonSize);
+    logStickToBottomButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
     logFilterEdit_ = new QLineEdit(logHeaderRow);
     logFilterEdit_->setObjectName(QStringLiteral("logFilterEdit"));
+    AppTheme::applyCompactFont(logFilterEdit_);
     logFilterEdit_->setClearButtonEnabled(true);
     logFilterEdit_->setPlaceholderText(tr("Filter logs"));
-    logFilterEdit_->setFixedWidth(HeaderFilterFixedWidth);
+    configureContentSizedLineEdit(logFilterEdit_, HeaderFilterMinimumCharacters);
     logHeaderLayout->addWidget(logFilterEdit_);
 
     logPanelLayout->addWidget(logHeaderRow);
@@ -1757,6 +1807,16 @@ void MainWindow::setupDiagnosticsPanel()
     statisticsStatusLabel_->setObjectName(QStringLiteral("statisticsStatusLabel"));
     trafficStatusLabel_->setObjectName(QStringLiteral("trafficStatusLabel"));
 
+    AppTheme::applyCompactFont({
+        statusBar(),
+        currentServerStatusLabel_,
+        routingStatusLabel_,
+        coreStatusLabel_,
+        proxyStatusLabel_,
+        autoRunStatusLabel_,
+        statisticsStatusLabel_,
+        trafficStatusLabel_});
+
     logContextMenu_ = new QMenu(this);
     logContextMenu_->setObjectName(QStringLiteral("logContextMenu"));
     selectAllLogAction_ = logContextMenu_->addAction(tr("Select All"));
@@ -1777,9 +1837,9 @@ void MainWindow::setupDiagnosticsPanel()
     routingStatusLabel_->installEventFilter(this);
     trafficStatusLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    statusBar()->addPermanentWidget(currentServerStatusLabel_, 1);
-    statusBar()->addPermanentWidget(routingStatusLabel_, 1);
-    statusBar()->addPermanentWidget(trafficStatusLabel_, 1);
+    statusBar()->addPermanentWidget(currentServerStatusLabel_);
+    statusBar()->addPermanentWidget(routingStatusLabel_);
+    statusBar()->addPermanentWidget(trafficStatusLabel_);
     coreStatusLabel_->hide();
     proxyStatusLabel_->hide();
     autoRunStatusLabel_->hide();
@@ -2368,6 +2428,7 @@ void MainWindow::updateRoutingModeOptions(const Config& config)
         : qBound(0, config.routingIndex, config.routingItems.size() - 1);
     const int comboIndex = routingModeCombo_->findData(selectedMode);
     routingModeCombo_->setCurrentIndex(comboIndex >= 0 ? comboIndex : (routingModeCombo_->count() > 0 ? 0 : -1));
+    updateContentSizedComboBox(routingModeCombo_, RoutingComboMinimumCharacters);
 }
 
 void MainWindow::restoreServerColumnWidths(const QMap<QString, int>& widths)

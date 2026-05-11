@@ -36,6 +36,7 @@ public:
     QList<int> selectedSubRows() const;
     void clearUpdateSubRequested() { updateSubRequested_ = false; }
     void selectTab(int index) { requestedTabIndex_ = index; }
+    void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void setCoreVersion(CoreType coreType, const QString& version);
     void beginCoreUpdate(CoreType coreType);
     void setCoreUpdateProgress(CoreType coreType, const QString& message);
@@ -52,6 +53,8 @@ private:
     void loadRoutingCustomRules(const QList<RoutingRule>& rules);
     QList<RoutingItem> collectRoutingItems() const;
     QList<RoutingRule> collectRoutingCustomRules() const;
+    void selectRoutingCustomRuleTab(const QString& key);
+    QString selectedRoutingCustomRuleTabKey() const;
     void updateRoutingActionState();
     int findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const;
     int selectedBaseRouteIndex() const;
@@ -157,6 +160,8 @@ private:
 
     QList<CoreTypeItem> coreTypeItems_;
     QList<QComboBox*> coreTypeCombos_;
+    QList<int> coreTypeComboConfigTypes_;
+    QList<CoreType> existingCoreTypes_;
     QMap<int, CoreStatusRow> coreStatusRows_;
 
 };

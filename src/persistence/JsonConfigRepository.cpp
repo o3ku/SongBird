@@ -254,6 +254,7 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
     config.mainSizeWidth = uiItem.value(QStringLiteral("mainSizeWidth")).toInt(0);
     config.mainSizeHeight = uiItem.value(QStringLiteral("mainSizeHeight")).toInt(0);
     config.mainSelectedSubId = uiItem.value(QStringLiteral("mainSelectedSubId")).toString();
+    config.settingsRoutingRuleTabKey = uiItem.value(QStringLiteral("settingsRoutingRuleTabKey")).toString();
     config.mainServerLogSplitPercent =
         normalizeSplitPercent(uiItem.value(QStringLiteral("mainServerLogSplitPercent")).toInt(60), 60);
     config.mainServerQrSplitPercent =
@@ -392,6 +393,7 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     uiItem.insert(QStringLiteral("mainSizeWidth"), config.mainSizeWidth);
     uiItem.insert(QStringLiteral("mainSizeHeight"), config.mainSizeHeight);
     uiItem.insert(QStringLiteral("mainSelectedSubId"), config.mainSelectedSubId);
+    uiItem.insert(QStringLiteral("settingsRoutingRuleTabKey"), config.settingsRoutingRuleTabKey);
     uiItem.insert(QStringLiteral("mainServerLogSplitPercent"), normalizeSplitPercent(config.mainServerLogSplitPercent, 60));
     uiItem.insert(QStringLiteral("mainServerQrSplitPercent"), normalizeSplitPercent(config.mainServerQrSplitPercent, 78));
     uiItem.insert(QStringLiteral("mainQrPreviewVisible"), config.mainQrPreviewVisible);

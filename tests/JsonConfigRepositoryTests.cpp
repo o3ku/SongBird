@@ -68,6 +68,7 @@ private slots:
     void savePersistsRoutingRuleNetworkAndProcessFields();
     void loadReadsRoutingCustomRules();
     void savePersistsRoutingCustomRules();
+    void savePersistsSettingsRoutingRuleTabKey();
     void loadReadsRoutingItemDomainStrategy4Singbox();
     void savePersistsRoutingItemDomainStrategy4Singbox();
     void loadReadsGlobalHotkeys();
@@ -1346,6 +1347,25 @@ void JsonConfigRepositoryTests::savePersistsRoutingCustomRules()
     QCOMPARE(reloaded.routingCustomRules.size(), 1);
     QCOMPARE(reloaded.routingCustomRules.constFirst().outboundTag, QStringLiteral("proxy"));
     QCOMPARE(reloaded.routingCustomRules.constFirst().domain, QStringList{QStringLiteral("domain:openai.com")});
+}
+
+void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    JsonConfigRepository repository(configPath);
+
+    Config config = repository.load();
+    config.settingsRoutingRuleTabKey = QStringLiteral("proxy");
+
+    QVERIFY(repository.save(config));
+
+    JsonConfigRepository reloadedRepository(configPath);
+    const Config reloaded = reloadedRepository.load();
+
+    QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
 }
 
 void JsonConfigRepositoryTests::loadReadsRoutingItemDomainStrategy4Singbox()

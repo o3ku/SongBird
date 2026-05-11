@@ -1,7 +1,9 @@
 #include "ui/theme/AppTheme.h"
 
 #include <QApplication>
+#include <QFont>
 #include <QStringView>
+#include <QWidget>
 
 namespace {
 
@@ -32,7 +34,7 @@ QString buildApplicationStyleSheet()
         "QDialogButtonBox QPushButton { min-width: 72px; }"
         "QComboBox, QLineEdit, QSpinBox, QListView, QTableView, QTableWidget, QMenu, QTabWidget::pane { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; }"
         "QTextEdit { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; }"
-        "QComboBox, QLineEdit, QSpinBox { min-height: 28px; padding: 0 8px; }"
+        "QComboBox, QLineEdit, QSpinBox { padding: 2px 8px; }"
         "QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QListView:hover, QTextEdit:hover { border-color: #a9a9a9; }"
         "QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QListView:focus, QTextEdit:focus { border: 1px solid #7f7f7f; }"
         "QComboBox { padding-right: 28px; }"
@@ -55,13 +57,13 @@ QString buildApplicationStyleSheet()
         "QTableView#serverTableView { border: none; }"
         "QTableView#serverTableView QHeaderView::section { background: #ffffff; }"
         "QTabBar#subscriptionTabBar { background: transparent; }"
-        "QTabBar#subscriptionTabBar::tab { background: #ececec; color: #4a4a4a; min-height: 28px; padding: 0 12px; margin-left: -1px; margin-right: 0px; margin-bottom: 0px; border: 1px solid #c8c8c8; border-bottom: none; border-radius: 0px; }"
+        "QTabBar#subscriptionTabBar::tab { background: #ececec; color: #4a4a4a; padding: 4px 12px; margin-left: -1px; margin-right: 0px; margin-bottom: 0px; border: 1px solid #c8c8c8; border-bottom: none; border-radius: 0px; }"
         "QTabBar#subscriptionTabBar::tab:first { margin-left: 0px; border-left: none; }"
-        "QTabBar#subscriptionTabBar::tab:selected { background: #ffffff; color: #1f1f1f; min-height: 28px; padding: 1px 12px; border-color: #c8c8c8; border-bottom: none; }"
+        "QTabBar#subscriptionTabBar::tab:selected { background: #ffffff; color: #1f1f1f; padding: 5px 12px 4px 12px; border-color: #c8c8c8; border-bottom: none; }"
         "QTabBar#subscriptionTabBar::tab:hover:!selected { background: #e2e2e2; color: #1f1f1f; }"
         "#serverHeaderRow, QWidget#serverFilterContainer { background: #ffffff; }"
         "#serverHeaderRow { border-bottom: 1px solid #d6d6d6; }"
-        "QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; min-height: 24px; padding: 0 8px; }"
+        "QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; padding: 2px 8px; }"
         "QLineEdit#serverFilterEdit:hover, QLineEdit#logFilterEdit:hover { background: #ffffff; border: 1px solid #a9a9a9; }"
         "QLineEdit#serverFilterEdit:focus, QLineEdit#logFilterEdit:focus { background: #ffffff; border: 1px solid #7f7f7f; }"
         "#logHeaderRow { background: transparent; border-top: 1px solid #d6d6d6; }"
@@ -101,6 +103,24 @@ QString buildApplicationStyleSheet()
 void AppTheme::applyApplicationTheme(QApplication& app)
 {
     app.setStyleSheet(buildApplicationStyleSheet());
+}
+
+void AppTheme::applyCompactFont(QWidget* widget)
+{
+    if (widget == nullptr) {
+        return;
+    }
+
+    QFont font = widget->font();
+    font.setPointSizeF(qMax<qreal>(9.0, font.pointSizeF() - 1.0));
+    widget->setFont(font);
+}
+
+void AppTheme::applyCompactFont(const QList<QWidget*>& widgets)
+{
+    for (QWidget* widget : widgets) {
+        applyCompactFont(widget);
+    }
 }
 
 QString AppTheme::semanticStatusProperty(QStringView colorHex)

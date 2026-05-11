@@ -43,6 +43,7 @@ struct Config {
     int mainSizeHeight = 0;
     QMap<QString, int> mainColumnWidths;
     QString mainSelectedSubId;
+    QString settingsRoutingRuleTabKey;
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
     bool mainQrPreviewVisible = false;

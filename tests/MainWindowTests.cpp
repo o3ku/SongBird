@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
@@ -33,6 +34,7 @@ private slots:
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
+    void compactUiZonesDoNotExceedServerTableFont();
 };
 
 namespace {
@@ -476,6 +478,49 @@ void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()
     QVERIFY(!proxyStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
     QVERIFY(!autoRunStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
     QVERIFY(!statisticsStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
+}
+
+void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    RoutingItem routing;
+    routing.remarks = QStringLiteral("Bypass Mainland Route");
+    config.routingItems = {routing};
+    config.routingIndex = 0;
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
+    auto* subscriptionTabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
+    auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(routingCombo != nullptr);
+    QVERIFY(subscriptionTabBar != nullptr);
+    QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(logFilterEdit != nullptr);
+    QVERIFY(routingStatusLabel != nullptr);
+    QVERIFY(currentServerStatusLabel != nullptr);
+
+    const qreal serverTableFontSize = serverView->font().pointSizeF();
+    QVERIFY(routingCombo->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(subscriptionTabBar->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(serverFilterEdit->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(currentServerStatusLabel->font().pointSizeF() <= serverTableFontSize);
+    QCOMPARE(routingCombo->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
+    QCOMPARE(serverFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
+    QCOMPARE(logFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
+    QVERIFY(routingCombo->maximumWidth() > routingCombo->minimumWidth());
+    QVERIFY(serverFilterEdit->maximumWidth() > serverFilterEdit->minimumWidth());
+    QVERIFY(logFilterEdit->maximumWidth() > logFilterEdit->minimumWidth());
+    QVERIFY(routingCombo->minimumWidth() >= QFontMetrics(routingCombo->font()).horizontalAdvance(routingCombo->currentText()));
 }
 
 QTEST_MAIN(MainWindowTests)

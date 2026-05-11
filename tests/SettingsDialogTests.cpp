@@ -28,10 +28,13 @@ private slots:
     void defaultFingerprintComboRoundTripsConfig();
     void mux4SboxProtocolComboRoundTripsConfig();
     void coreTypeTableIncludesHttpProtocol();
+    void coreTypeTableDefaultsFollowExistingCorePriority();
     void routingRuleNetworkAndProcessRoundTripConfig();
     void routingCustomRuleTabsRoundTripConfig();
+    void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
     void routingPageUsesCompactCardsAndPlainCustomRuleForms();
     void routingBaseRouteCardsCollapseAroundSelectedCard();
+    void settingsDialogUsesCompactUiFontBaseline();
 };
 
 void SettingsDialogTests::downloadButtonStartsInlineUpdate_data()
@@ -255,6 +258,29 @@ void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
     QCOMPARE(it->coreType, static_cast<int>(CoreType::Xray));
 }
 
+void SettingsDialogTests::coreTypeTableDefaultsFollowExistingCorePriority()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* vmessCombo = dialog.findChild<QComboBox*>(QStringLiteral("coreTypeCombo_1"));
+    QVERIFY(vmessCombo != nullptr);
+    QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));
+
+    dialog.setExistingCoreTypes({CoreType::Xray});
+    QCOMPARE(vmessCombo->currentText(), QStringLiteral("Xray"));
+
+    dialog.setExistingCoreTypes({CoreType::Xray, CoreType::SingBox});
+    QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));
+
+    Config config;
+    config.coreTypeItems = {
+        CoreTypeItem{static_cast<int>(ConfigType::VMess), static_cast<int>(CoreType::Xray)}
+    };
+    dialog.setConfig(config);
+    QCOMPARE(vmessCombo->currentText(), QStringLiteral("Xray"));
+}
+
 void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
 {
     Config config;
@@ -351,6 +377,33 @@ void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
     QCOMPARE(updated.routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
     QCOMPARE(updated.routingCustomRules.at(2).protocol, QStringList{QStringLiteral("bittorrent")});
     QCOMPARE(updated.routingCustomRules.at(2).port, QStringLiteral("6881-6999"));
+}
+
+void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelection()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
+    QVERIFY(tabs != nullptr);
+    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Direct"));
+    QCOMPARE(dialog.config().settingsRoutingRuleTabKey, QStringLiteral("direct"));
+
+    Config config;
+    config.settingsRoutingRuleTabKey = QStringLiteral("proxy");
+    dialog.setConfig(config);
+    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Proxy"));
+
+    int blockIndex = -1;
+    for (int index = 0; index < tabs->count(); ++index) {
+        if (tabs->tabText(index) == QStringLiteral("Block")) {
+            blockIndex = index;
+            break;
+        }
+    }
+    QVERIFY(blockIndex >= 0);
+    tabs->setCurrentIndex(blockIndex);
+    QCOMPARE(dialog.config().settingsRoutingRuleTabKey, QStringLiteral("block"));
 }
 
 void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
@@ -472,6 +525,30 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
     QVERIFY(baseRouteTitle->font().bold());
     QVERIFY(customRulesTitle->font().bold());
     QVERIFY(first->property("routeTitleBold").toBool());
+}
+
+void SettingsDialogTests::settingsDialogUsesCompactUiFontBaseline()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    const qreal baseline = dialog.font().pointSizeF();
+
+    auto* tabWidget = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabWidget"));
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    auto* systemProxyExceptionsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsSystemProxyExceptionsEdit"));
+    auto* languageCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsLanguageCombo"));
+    QVERIFY(tabWidget != nullptr);
+    QVERIFY(subTable != nullptr);
+    QVERIFY(systemProxyExceptionsEdit != nullptr);
+    QVERIFY(languageCombo != nullptr);
+
+    QVERIFY(tabWidget->font().pointSizeF() <= baseline);
+    QVERIFY(subTable->font().pointSizeF() <= baseline);
+    QVERIFY(systemProxyExceptionsEdit->font().pointSizeF() <= baseline);
+    QVERIFY(languageCombo->font().pointSizeF() <= baseline);
 }
 
 QTEST_MAIN(SettingsDialogTests)
