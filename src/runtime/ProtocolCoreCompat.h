@@ -32,6 +32,24 @@ inline QList<CoreType> availableCoreTypes()
     return { CoreType::Xray, CoreType::SingBox };
 }
 
+inline QList<ConfigType> configurableCoreProtocols()
+{
+    return {
+        ConfigType::VMess,
+        ConfigType::Custom,
+        ConfigType::Shadowsocks,
+        ConfigType::Socks,
+        ConfigType::VLESS,
+        ConfigType::Trojan,
+        ConfigType::HTTP,
+        ConfigType::Hysteria2,
+        ConfigType::TUIC,
+        ConfigType::WireGuard,
+        ConfigType::AnyTLS,
+        ConfigType::Naive
+    };
+}
+
 inline bool protocolSupportsCore(ConfigType configType, CoreType coreType)
 {
     return supportedCoreTypes(configType).contains(coreType);
@@ -61,17 +79,8 @@ inline bool prefersInstalledCoreForProtocol(ConfigType configType)
 
 inline CoreType defaultCoreTypeForProtocol(ConfigType configType)
 {
-    switch (configType) {
-    case ConfigType::HTTP:
-    case ConfigType::Hysteria2:
-    case ConfigType::TUIC:
-    case ConfigType::WireGuard:
-    case ConfigType::AnyTLS:
-    case ConfigType::Naive:
-        return CoreType::SingBox;
-    default:
-        return CoreType::Xray;
-    }
+    Q_UNUSED(configType)
+    return CoreType::SingBox;
 }
 
 inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
@@ -94,10 +103,6 @@ inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
 
 inline CoreType resolveExistingCoreTypeForProtocol(ConfigType configType, const QList<CoreType>& existingCoreTypes)
 {
-    if (!prefersInstalledCoreForProtocol(configType)) {
-        return defaultCoreTypeForProtocol(configType);
-    }
-
     const QList<CoreType> prioritized = prioritizedCoreTypesForProtocol(configType);
     for (const CoreType coreType : prioritized) {
         if (existingCoreTypes.contains(coreType)) {
@@ -110,21 +115,56 @@ inline CoreType resolveExistingCoreTypeForProtocol(ConfigType configType, const 
     return prioritized.isEmpty() ? defaultCoreTypeForProtocol(configType) : prioritized.constFirst();
 }
 
-inline CoreType resolvePreferredCoreType(const Config& config, const VmessItem& server)
+inline CoreType configuredCoreTypeForProtocol(const Config& config, ConfigType configType)
 {
     for (const CoreTypeItem& item : config.coreTypeItems) {
-        if (item.configType == static_cast<int>(server.configType)) {
-            const CoreType configuredCore = static_cast<CoreType>(item.coreType);
-            if (configuredCore == CoreType::Auto || configuredCore == CoreType::Unknown) {
-                return defaultCoreTypeForProtocol(server.configType);
-            }
-            return resolveRuntimeCoreType(configuredCore);
+        if (item.configType != static_cast<int>(configType)) {
+            continue;
+        }
+
+        const CoreType configuredCore = resolveRuntimeCoreType(static_cast<CoreType>(item.coreType));
+        if (configuredCore != CoreType::Unknown && protocolSupportsCore(configType, configuredCore)) {
+            return configuredCore;
         }
     }
 
-    if (server.coreType == CoreType::Auto || server.coreType == CoreType::Unknown) {
-        return defaultCoreTypeForProtocol(server.configType);
+    return CoreType::Unknown;
+}
+
+inline CoreType resolvePreferredCoreType(const Config& config, const VmessItem& server)
+{
+    const CoreType configuredCore = configuredCoreTypeForProtocol(config, server.configType);
+    if (configuredCore != CoreType::Unknown) {
+        return configuredCore;
     }
 
-    return resolveRuntimeCoreType(server.coreType);
+    return resolveExistingCoreTypeForProtocol(server.configType, availableCoreTypes());
+}
+
+inline CoreType resolveSelectedCoreType(
+    const Config& config,
+    const VmessItem& server,
+    const QList<CoreType>& existingCoreTypes)
+{
+    const CoreType configuredCore = configuredCoreTypeForProtocol(config, server.configType);
+    if (configuredCore != CoreType::Unknown) {
+        return configuredCore;
+    }
+
+    return resolveExistingCoreTypeForProtocol(server.configType, existingCoreTypes);
+}
+
+inline QList<CoreTypeItem> defaultCoreTypeItems()
+{
+    QList<CoreTypeItem> items;
+    const QList<ConfigType> protocols = configurableCoreProtocols();
+    items.reserve(protocols.size());
+
+    for (const ConfigType configType : protocols) {
+        items.append(CoreTypeItem{
+            static_cast<int>(configType),
+            static_cast<int>(defaultCoreTypeForProtocol(configType))});
+    }
+
+    return items;
 }

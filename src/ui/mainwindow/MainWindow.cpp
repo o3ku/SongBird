@@ -25,9 +25,13 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QPointF>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QRegularExpression>
+#include <QResizeEvent>
 #include <QScreen>
 #include <QSet>
 #include <QShowEvent>
@@ -44,11 +48,15 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTextDocument>
+#include <QTextOption>
+#include <QtMath>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QAbstractItemView>
 
 #include "domain/models/VmessItem.h"
+#include "runtime/ProtocolCoreCompat.h"
 #include "subscription/ShareUrlBuilder.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/LogItemDelegate.h"
@@ -66,9 +74,12 @@ constexpr int DefaultServerLogSplitPercent = 60;
 constexpr int DefaultServerQrSplitPercent = 78;
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
-constexpr int ToolbarControlSpacing = 4;
+constexpr int ToolbarControlSpacing = 2;
 constexpr int HeaderFilterMinimumCharacters = 14;
 constexpr int RoutingComboMinimumCharacters = 12;
+constexpr int QrPreviewPadding = 10;
+constexpr int ShareLinkHorizontalPadding = 6;
+constexpr int ShareLinkBottomPadding = 10;
 constexpr int ServerTableNoColumn = 0;
 
 void applySemanticState(QLabel* label, const QString& state)
@@ -167,6 +178,75 @@ protected:
         const QRect indicatorRect(width() - 16, ((height() - 10) / 2) - 1, 10, 10);
         QPainter painter(this);
         paintChevron(painter, indicatorRect, isEnabled());
+    }
+};
+
+class ShareLinkTextEdit final : public QPlainTextEdit {
+public:
+    explicit ShareLinkTextEdit(QWidget* parent = nullptr)
+        : QPlainTextEdit(parent)
+    {
+        setReadOnly(true);
+        setFrameStyle(QFrame::NoFrame);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        setWordWrapMode(QTextOption::WrapAnywhere);
+        setBackgroundVisible(false);
+        setViewportMargins(ShareLinkHorizontalPadding, 0, ShareLinkHorizontalPadding, ShareLinkBottomPadding);
+        setProperty("shareLinkBottomPadding", ShareLinkBottomPadding);
+        document()->setDocumentMargin(0.0);
+
+        connect(document(), &QTextDocument::contentsChanged, this, [this]() {
+            updateGeometry();
+        });
+    }
+
+    bool hasHeightForWidth() const override
+    {
+        return true;
+    }
+
+    int heightForWidth(int width) const override
+    {
+        return documentHeightForWidth(width);
+    }
+
+    QSize sizeHint() const override
+    {
+        const int widthHint = qMax(minimumWidth(), width() > 0 ? width() : minimumWidth());
+        return QSize(QPlainTextEdit::sizeHint().width(), documentHeightForWidth(widthHint));
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        const int minimumHeight = fontMetrics().lineSpacing() + ShareLinkBottomPadding;
+        return QSize(QPlainTextEdit::minimumSizeHint().width(), minimumHeight);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QPlainTextEdit::resizeEvent(event);
+        updateGeometry();
+    }
+
+private:
+    int documentHeightForWidth(int width) const
+    {
+        if (width <= 0) {
+            return 0;
+        }
+
+        QTextDocument document;
+        document.setDefaultFont(font());
+        QTextOption option = document.defaultTextOption();
+        option.setWrapMode(QTextOption::WrapAnywhere);
+        document.setDefaultTextOption(option);
+        document.setDocumentMargin(0.0);
+        document.setPlainText(toPlainText());
+        document.setTextWidth(qMax(0, width - (ShareLinkHorizontalPadding * 2)));
+        return qCeil(document.size().height()) + ShareLinkBottomPadding;
     }
 };
 
@@ -444,6 +524,14 @@ void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& st
 
     serverModel_->setItems(config.servers, statistics, config.currentIndexId);
     currentIndexId_ = config.currentIndexId.trimmed();
+    tunEnabled_ = config.tunModeItem.enableTun;
+    currentCoreName_ = QStringLiteral("Unknown");
+    for (const VmessItem& item : config.servers) {
+        if (item.indexId == currentIndexId_) {
+            currentCoreName_ = coreTypeDisplayName(resolveSelectedCoreType(config, item, availableCoreTypes()));
+            break;
+        }
+    }
     updateRoutingModeOptions(config);
     rebuildSubscriptionTabs(config);
 
@@ -453,6 +541,7 @@ void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& st
 
     updateQrPreview();
     updateActionState();
+    updateWindowTitle();
 }
 
 void MainWindow::updateServerTestResult(const QString& indexId, const QString& result)
@@ -513,7 +602,34 @@ void MainWindow::appendLog(const QString& message)
 
 void MainWindow::showTransientStatus(const QString& message, int timeoutMs)
 {
-    statusBar()->showMessage(message, timeoutMs);
+    if (transientStatusLabel_ == nullptr) {
+        return;
+    }
+
+    transientStatusLabel_->setText(message.trimmed());
+
+    if (transientStatusTimer_ == nullptr) {
+        transientStatusTimer_ = new QTimer(this);
+        transientStatusTimer_->setSingleShot(true);
+        connect(transientStatusTimer_, &QTimer::timeout, this, &MainWindow::clearTransientStatus);
+    }
+
+    if (timeoutMs > 0 && !message.trimmed().isEmpty()) {
+        transientStatusTimer_->start(timeoutMs);
+    } else if (transientStatusTimer_->isActive()) {
+        transientStatusTimer_->stop();
+    }
+}
+
+void MainWindow::clearTransientStatus()
+{
+    if (transientStatusTimer_ != nullptr && transientStatusTimer_->isActive()) {
+        transientStatusTimer_->stop();
+    }
+
+    if (transientStatusLabel_ != nullptr) {
+        transientStatusLabel_->clear();
+    }
 }
 
 void MainWindow::setHideToTrayEnabled(bool enabled)
@@ -564,6 +680,7 @@ void MainWindow::setSystemProxyState(int mode, bool enabled)
 
     updateActionState();
     updateStatusIndicators();
+    updateWindowTitle();
 }
 
 void MainWindow::setProxyEnabled(bool enabled)
@@ -580,6 +697,7 @@ void MainWindow::setCoreRunning(bool enabled, bool pending)
     coreTransitionPending_ = pending;
     updateActionState();
     updateStatusIndicators();
+    updateWindowTitle();
 }
 
 void MainWindow::updateCoreToggleAction()
@@ -590,7 +708,7 @@ void MainWindow::updateCoreToggleAction()
 
     coreToggleAction_->setText(tr("START"));
     coreToggleAction_->setCheckable(true);
-    coreToggleAction_->setChecked(coreRunning_);
+    coreToggleAction_->setChecked(coreRunning_ && !coreTransitionPending_);
 }
 
 void MainWindow::updateProxyToggleAction()
@@ -608,6 +726,7 @@ void MainWindow::setCurrentServerName(const QString& name)
 {
     currentServerName_ = name.trimmed();
     updateStatusIndicators();
+    updateWindowTitle();
 }
 
 void MainWindow::setRoutingSummary(const QString& routingText, const QString& listenText)
@@ -620,13 +739,16 @@ void MainWindow::setRoutingSummary(const QString& routingText, const QString& li
 void MainWindow::setStatisticsSessionState(const StatisticsSessionState& state)
 {
     statisticsState_ = state;
+    if (statisticsState_.running && statisticsState_.coreType != CoreType::Unknown) {
+        currentCoreName_ = coreTypeDisplayName(statisticsState_.coreType);
+    }
     updateStatusIndicators();
+    updateWindowTitle();
 }
 
 void MainWindow::setTrafficSummary(const QString& text)
 {
-    trafficSummary_ = text.trimmed();
-    updateStatusIndicators();
+    Q_UNUSED(text)
 }
 
 void MainWindow::setSpeedTestRunning(bool running)
@@ -668,7 +790,7 @@ void MainWindow::restoreUiState(const Config& config)
     pendingColumnWidths_ = config.mainColumnWidths;
     serverLogSplitPercent_ = clampSplitPercent(config.mainServerLogSplitPercent, DefaultServerLogSplitPercent);
     serverQrSplitPercent_ = clampSplitPercent(config.mainServerQrSplitPercent, DefaultServerQrSplitPercent);
-    qrPreviewVisible_ = config.mainQrPreviewVisible;
+    qrPreviewVisible_ = false;
     if (qrPanel_ != nullptr) {
         qrPanel_->setVisible(qrPreviewVisible_);
     }
@@ -735,7 +857,7 @@ void MainWindow::captureUiState(Config& config) const
     config.mainSelectedSubId = persistedSubscriptionSelectionId();
     config.mainServerLogSplitPercent = captureSplitPercent(rootSplitter_, serverLogSplitPercent_);
     config.mainServerQrSplitPercent = captureSplitPercent(topSplitter_, serverQrSplitPercent_);
-    config.mainQrPreviewVisible = qrPreviewVisible_;
+    config.mainQrPreviewVisible = false;
 }
 
 bool MainWindow::selectSubscriptionTab(const QString& selectionId)
@@ -760,7 +882,7 @@ void MainWindow::onServerSelectionChanged()
     const VmessItem* item = selectedServer();
     if (item == nullptr) {
         lastSelectedServerId_.clear();
-        statusBar()->clearMessage();
+        clearTransientStatus();
         updateQrPreview();
         updateActionState();
         return;
@@ -863,7 +985,7 @@ void MainWindow::updateActionState()
 
     updateProxyToggleAction();
     if (proxyToggleAction_ != nullptr) {
-        proxyToggleAction_->setEnabled(startToggleEnabled && (coreRunning_ || systemProxyApplied_));
+        proxyToggleAction_->setEnabled(startToggleEnabled);
     }
 }
 
@@ -898,28 +1020,50 @@ void MainWindow::toggleServerSorting(int logicalIndex)
 
 void MainWindow::updateQrPreview()
 {
-    if (qrPlaceholder_ == nullptr) {
+    if (qrPlaceholder_ == nullptr || shareLinkLabel_ == nullptr) {
         return;
     }
 
-    const VmessItem* item = selectedServer();
-    if (item == nullptr) {
+    const QList<const VmessItem*> selectedItems = selectedServers();
+    if (selectedItems.isEmpty()) {
+        shareLinkLabel_->clear();
+        shareLinkLabel_->setToolTip(QString());
         qrPlaceholder_->setPixmap(QPixmap());
         qrPlaceholder_->setText(tr("QR preview placeholder"));
         qrPlaceholder_->setToolTip(QString());
         return;
     }
 
-    const QString shareUrl = ShareUrlBuilder::build(*item);
-    if (shareUrl.isEmpty()) {
+    const QStringList shareLinks = buildShareLinks(selectedItems);
+    const QString shareText = shareLinks.join(QChar('\n'));
+    shareLinkLabel_->setPlainText(shareText);
+    shareLinkLabel_->setToolTip(shareText);
+    if (shareContentPanel_ != nullptr && shareContentPanel_->layout() != nullptr) {
+        shareContentPanel_->layout()->activate();
+    }
+
+    if (shareLinks.isEmpty()) {
         qrPlaceholder_->setPixmap(QPixmap());
         qrPlaceholder_->setText(tr("QR preview unavailable for this server."));
         qrPlaceholder_->setToolTip(QString());
         return;
     }
 
+    const QString shareUrl = shareLinks.constFirst();
+    const int qrMargin = qrPlaceholder_->margin() * 2;
+    const int qrExtent = qMin(
+        qMax(0, qrPlaceholder_->width() - qrMargin),
+        qMax(0, qrPlaceholder_->height() - qrMargin));
     qrPlaceholder_->setText(QString());
-    qrPlaceholder_->setPixmap(QrCodeRenderer::render(shareUrl, 240));
+    if (qrExtent <= 0) {
+        qrPlaceholder_->setPixmap(QPixmap());
+        qrPlaceholder_->setToolTip(shareUrl);
+        QTimer::singleShot(0, this, [this]() {
+            updateQrPreview();
+        });
+        return;
+    }
+    qrPlaceholder_->setPixmap(QrCodeRenderer::render(shareUrl, qrExtent));
     qrPlaceholder_->setToolTip(shareUrl);
 }
 
@@ -1296,11 +1440,11 @@ void MainWindow::setupUi()
 {
     setMinimumSize(DefaultMainWindowWidth, DefaultMainWindowHeight);
     resize(DefaultMainWindowWidth, DefaultMainWindowHeight);
-    setWindowTitle(QStringLiteral("v2rayq"));
 
     setupToolbar();
     setupServerView();
     setupDiagnosticsPanel();
+    updateWindowTitle();
 }
 
 void MainWindow::setupToolbar()
@@ -1387,6 +1531,7 @@ void MainWindow::setupToolbar()
     dnsSettingsAction_->setObjectName(QStringLiteral("dnsSettingsAction"));
     settingsAction_ = new QAction(tr("Settings"), this);
     settingsAction_->setObjectName(QStringLiteral("settingsAction"));
+    settingsAction_->setIcon(loadToolbarIcon(QStringLiteral("option.png")));
     aboutAction_ = new QAction(tr("About"), this);
     aboutAction_->setObjectName(QStringLiteral("aboutAction"));
     openProjectPageAction_ = new QAction(tr("Project Page"), this);
@@ -1416,7 +1561,7 @@ void MainWindow::setupToolbar()
     proxyToggleAction_->setObjectName(QStringLiteral("proxyToggleAction"));
     proxyToggleAction_->setCheckable(true);
     clearStatisticsAction_ = new QAction(tr("Clear Statistics"), this);
-    toggleQrPanelAction_ = new QAction(tr("QR Code"), this);
+    toggleQrPanelAction_ = new QAction(tr("Share"), this);
     toggleQrPanelAction_->setObjectName(QStringLiteral("toggleQrPanelAction"));
     toggleQrPanelAction_->setCheckable(true);
     toggleQrPanelAction_->setChecked(qrPreviewVisible_);
@@ -1586,7 +1731,7 @@ void MainWindow::setupToolbar()
     createToolbarActionButton(
         toolBar,
         QStringLiteral("qrCodeButton"),
-        tr("QR Code"),
+        tr("Share"),
         loadToolbarIcon(QStringLiteral("share.png")),
         toggleQrPanelAction_);
 
@@ -1617,12 +1762,14 @@ void MainWindow::setupServerView()
     serverView_->viewport()->setMouseTracking(true);
     serverView_->setFrameShape(QFrame::NoFrame);
     serverView_->setContentsMargins(0, 0, 0, 0);
+    serverView_->installEventFilter(this);
     serverView_->verticalHeader()->setVisible(false);
     const int rowHeight = serverView_->fontMetrics().height() + 8;
     serverView_->verticalHeader()->setDefaultSectionSize(rowHeight);
     serverView_->verticalHeader()->setMinimumSectionSize(rowHeight);
-    serverView_->horizontalHeader()->setStretchLastSection(false);
+    serverView_->horizontalHeader()->setStretchLastSection(true);
     serverView_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    serverView_->horizontalHeader()->setSectionResizeMode(kServerResultColumn, QHeaderView::Stretch);
     serverView_->horizontalHeader()->setSectionsClickable(true);
     serverView_->horizontalHeader()->setHighlightSections(false);
     const int headerHeight = serverView_->horizontalHeader()->fontMetrics().height() + 8;
@@ -1677,15 +1824,38 @@ void MainWindow::setupServerView()
 
     qrPanel_ = new QWidget(this);
     qrPanel_->setObjectName(QStringLiteral("qrPanel"));
+    qrPanel_->setMinimumWidth(260);
+    qrPanel_->installEventFilter(this);
     auto* qrLayout = new QVBoxLayout(qrPanel_);
     qrLayout->setContentsMargins(0, 0, 0, 0);
+    qrLayout->setSpacing(0);
 
-    qrPlaceholder_ = new QLabel(tr("QR preview placeholder"), qrPanel_);
+    shareContentPanel_ = new QWidget(qrPanel_);
+    shareContentPanel_->setObjectName(QStringLiteral("shareContentPanel"));
+    shareContentPanel_->setMinimumWidth(260);
+    shareContentPanel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    auto* shareContentLayout = new QVBoxLayout(shareContentPanel_);
+    shareContentLayout->setContentsMargins(0, 0, 0, 0);
+    shareContentLayout->setSpacing(0);
+
+    qrPlaceholder_ = new QLabel(tr("QR preview placeholder"), shareContentPanel_);
     qrPlaceholder_->setObjectName(QStringLiteral("qrPlaceholder"));
     qrPlaceholder_->setAlignment(Qt::AlignCenter);
+    qrPlaceholder_->setMargin(QrPreviewPadding);
     qrPlaceholder_->setMinimumHeight(0);
     qrPlaceholder_->setMinimumWidth(260);
-    qrLayout->addWidget(qrPlaceholder_);
+    qrPlaceholder_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    qrPlaceholder_->installEventFilter(this);
+    shareContentLayout->addWidget(qrPlaceholder_, 1);
+
+    shareLinkLabel_ = new ShareLinkTextEdit(shareContentPanel_);
+    shareLinkLabel_->setObjectName(QStringLiteral("shareLinkLabel"));
+    shareLinkLabel_->setMinimumWidth(260);
+    shareLinkLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    shareLinkLabel_->installEventFilter(this);
+    AppTheme::applyCompactFont(shareLinkLabel_);
+    shareContentLayout->addWidget(shareLinkLabel_, 0);
+    qrLayout->addWidget(shareContentPanel_, 1);
 
     auto* serverPanel = new QWidget(this);
     serverPanel->setMinimumHeight(0);
@@ -1700,19 +1870,18 @@ void MainWindow::setupServerView()
     serverHeaderLayout->setSpacing(6);
     serverHeaderLayout->addWidget(subscriptionTabBarContainer, 1, Qt::AlignBottom);
     serverHeaderLayout->addWidget(serverFilterContainer, 0, Qt::AlignVCenter);
-
     serverPanelLayout->addWidget(serverHeaderRow);
     serverPanelLayout->addWidget(serverView_, 1);
 
     topSplitter_ = new QSplitter(Qt::Horizontal, this);
     topSplitter_->setObjectName(QStringLiteral("topSplitter"));
-    topSplitter_->setChildrenCollapsible(true);
+    topSplitter_->setChildrenCollapsible(false);
     topSplitter_->addWidget(serverPanel);
     topSplitter_->addWidget(qrPanel_);
     topSplitter_->setStretchFactor(0, 4);
     topSplitter_->setStretchFactor(1, 1);
     topSplitter_->setCollapsible(0, false);
-    topSplitter_->setCollapsible(1, true);
+    topSplitter_->setCollapsible(1, false);
     qrPanel_->setMinimumHeight(0);
     qrPanel_->setVisible(qrPreviewVisible_);
 
@@ -1742,8 +1911,8 @@ void MainWindow::setupServerView()
     logStickToBottomButton_->setCheckable(true);
     logStickToBottomButton_->setToolTip(tr("Stick to bottom"));
     logStickToBottomButton_->setText(QString(QChar(0x2193)));
-    const int filterButtonSize = logStickToBottomButton_->fontMetrics().height() + 6;
-    logStickToBottomButton_->setMinimumSize(filterButtonSize, filterButtonSize);
+    const int filterButtonSize = logStickToBottomButton_->fontMetrics().height() + 11;
+    logStickToBottomButton_->setFixedSize(filterButtonSize, filterButtonSize);
     logStickToBottomButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
@@ -1778,13 +1947,13 @@ void MainWindow::setupServerView()
 
     rootSplitter_ = new QSplitter(Qt::Vertical, this);
     rootSplitter_->setObjectName(QStringLiteral("rootSplitter"));
-    rootSplitter_->setChildrenCollapsible(true);
+    rootSplitter_->setChildrenCollapsible(false);
     rootSplitter_->addWidget(topSplitter_);
     rootSplitter_->addWidget(logPanel);
     rootSplitter_->setStretchFactor(0, 4);
     rootSplitter_->setStretchFactor(1, 1);
     rootSplitter_->setCollapsible(0, false);
-    rootSplitter_->setCollapsible(1, true);
+    rootSplitter_->setCollapsible(1, false);
 
     setCentralWidget(rootSplitter_);
 }
@@ -1797,7 +1966,7 @@ void MainWindow::setupDiagnosticsPanel()
     proxyStatusLabel_ = new QLabel(this);
     autoRunStatusLabel_ = new QLabel(this);
     statisticsStatusLabel_ = new QLabel(this);
-    trafficStatusLabel_ = new QLabel(this);
+    transientStatusLabel_ = new QLabel(this);
 
     currentServerStatusLabel_->setObjectName(QStringLiteral("currentServerStatusLabel"));
     routingStatusLabel_->setObjectName(QStringLiteral("routingStatusLabel"));
@@ -1805,7 +1974,7 @@ void MainWindow::setupDiagnosticsPanel()
     proxyStatusLabel_->setObjectName(QStringLiteral("proxyStatusLabel"));
     autoRunStatusLabel_->setObjectName(QStringLiteral("autoRunStatusLabel"));
     statisticsStatusLabel_->setObjectName(QStringLiteral("statisticsStatusLabel"));
-    trafficStatusLabel_->setObjectName(QStringLiteral("trafficStatusLabel"));
+    transientStatusLabel_->setObjectName(QStringLiteral("transientStatusLabel"));
 
     AppTheme::applyCompactFont({
         statusBar(),
@@ -1815,7 +1984,7 @@ void MainWindow::setupDiagnosticsPanel()
         proxyStatusLabel_,
         autoRunStatusLabel_,
         statisticsStatusLabel_,
-        trafficStatusLabel_});
+        transientStatusLabel_});
 
     logContextMenu_ = new QMenu(this);
     logContextMenu_->setObjectName(QStringLiteral("logContextMenu"));
@@ -1835,11 +2004,11 @@ void MainWindow::setupDiagnosticsPanel()
     routingStatusLabel_->setCursor(Qt::PointingHandCursor);
     routingStatusLabel_->setToolTip(tr("Click to open settings."));
     routingStatusLabel_->installEventFilter(this);
-    trafficStatusLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    transientStatusLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     statusBar()->addPermanentWidget(currentServerStatusLabel_);
     statusBar()->addPermanentWidget(routingStatusLabel_);
-    statusBar()->addPermanentWidget(trafficStatusLabel_);
+    statusBar()->addPermanentWidget(transientStatusLabel_, 1);
     coreStatusLabel_->hide();
     proxyStatusLabel_->hide();
     autoRunStatusLabel_->hide();
@@ -2407,6 +2576,7 @@ void MainWindow::applyDeferredUiState()
     }
 
     applySplitPercent(rootSplitter_, serverLogSplitPercent_);
+    updateQrPreview();
     updateQrPanelActionText();
 }
 
@@ -2572,6 +2742,21 @@ QString MainWindow::describeRoutingMode(const RoutingItem& item, int index)
     return QCoreApplication::translate("MainWindow", "Routing %1").arg(index + 1);
 }
 
+void MainWindow::updateWindowTitle()
+{
+    const QString coreName = currentCoreName_.trimmed().isEmpty()
+        ? QStringLiteral("Unknown")
+        : currentCoreName_.trimmed();
+    const QString serverName = currentServerName_.trimmed().isEmpty()
+        ? QStringLiteral("None")
+        : currentServerName_.trimmed();
+    const QString proxyState = systemProxyApplied_ ? QStringLiteral("Proxy ON") : QStringLiteral("Proxy OFF");
+    const QString tunState = tunEnabled_ ? QStringLiteral("TUN ON") : QStringLiteral("TUN OFF");
+
+    setWindowTitle(QStringLiteral("V2RAYQ [%1] [%2] [%3] [%4]")
+                       .arg(coreName, serverName, proxyState, tunState));
+}
+
 void MainWindow::updateStatusIndicators()
 {
     if (currentServerStatusLabel_ != nullptr) {
@@ -2663,11 +2848,6 @@ void MainWindow::updateStatusIndicators()
         applySemanticState(statisticsStatusLabel_, AppTheme::semanticStatusProperty(color));
     }
 
-    if (trafficStatusLabel_ != nullptr) {
-        trafficStatusLabel_->setText(trafficSummary_.isEmpty()
-                ? tr("Traffic: Today 0B/0B | Total 0B/0B")
-                : trafficSummary_);
-    }
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -2732,6 +2912,28 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     if (watched == serverView_->viewport() && event != nullptr && event->type() == QEvent::Resize) {
         if (loadingOverlay_ != nullptr && loadingOverlay_->isVisible()) {
             loadingOverlay_->setGeometry(serverView_->viewport()->rect());
+        }
+    }
+
+    if ((watched == serverView_ || watched == qrPanel_) && event != nullptr && event->type() == QEvent::Resize) {
+        updateQrPreview();
+    }
+
+    if (watched == qrPlaceholder_ && event != nullptr && event->type() == QEvent::Resize) {
+        updateQrPreview();
+    }
+
+    if (watched == shareLinkLabel_ && event != nullptr && event->type() == QEvent::MouseButtonPress) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton && QApplication::clipboard() != nullptr) {
+            const QTextCursor cursor = shareLinkLabel_->cursorForPosition(mouseEvent->pos());
+            const QTextBlock block = cursor.block();
+            const QString shareUrl = block.text().trimmed();
+            if (!shareUrl.isEmpty()) {
+                QApplication::clipboard()->setText(shareUrl);
+                showTransientStatus(tr("Copied share URL to the clipboard."), 2000);
+                return true;
+            }
         }
     }
 
@@ -2804,6 +3006,9 @@ void MainWindow::showEvent(QShowEvent* event)
 {
     QMainWindow::showEvent(event);
     applyFrameAdjustedWindowMetrics();
+    QTimer::singleShot(0, this, [this]() {
+        updateQrPreview();
+    });
     if (uiStateRestorePending_) {
         uiStateRestorePending_ = false;
         initialServerColumnLayoutPending_ = false;

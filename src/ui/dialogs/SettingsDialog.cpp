@@ -582,7 +582,7 @@ void SettingsDialog::setupUi()
         }
     }
 
-    // Installed Cores: one row per available core type, with download + "set all" actions
+    // Installed Cores: one row per available core type, with install/update + "set all" actions
     auto* coreStatusGroup = new QGroupBox(tr("Installed Cores"), coreTab);
     auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
     AppTheme::applyCompactFont(coreStatusGroup);
@@ -595,7 +595,7 @@ void SettingsDialog::setupUi()
         row.versionLabel->setObjectName(QStringLiteral("coreVersionLabel_%1").arg(coreKey));
         row.statusLabel = new QLabel(coreTab);
         row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
-        row.downloadButton = new QPushButton(tr("Download"), coreTab);
+        row.downloadButton = new QPushButton(tr("Install"), coreTab);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
         AppTheme::applyCompactFont({row.versionLabel, row.statusLabel, row.downloadButton});
 
@@ -1483,9 +1483,7 @@ void SettingsDialog::reloadCoreTypeTable()
         }
 
         int configType = coreTypeComboConfigTypes_.at(i);
-        int coreType = static_cast<int>(resolveExistingCoreTypeForProtocol(
-            static_cast<ConfigType>(configType),
-            existingCoreTypes_));
+        int coreType = static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
 
         for (const CoreTypeItem& item : coreTypeItems_) {
             if (item.configType == configType) {
@@ -1572,13 +1570,20 @@ void SettingsDialog::refreshCoreStatusPresentation()
     for (auto it = coreStatusRows_.begin(); it != coreStatusRows_.end(); ++it) {
         const int key = it.key();
         const bool isActive = static_cast<CoreType>(key) == updatingCoreType_;
+        const CoreType coreType = static_cast<CoreType>(key);
         auto& row = it.value();
 
         if (row.versionLabel != nullptr) {
             if (isActive) {
                 row.versionLabel->setText(tr("Downloading..."));
             } else {
-                row.versionLabel->setText(row.versionText.isEmpty() ? tr("Not found") : row.versionText);
+                if (!row.versionText.isEmpty()) {
+                    row.versionLabel->setText(row.versionText);
+                } else if (existingCoreTypes_.contains(coreType)) {
+                    row.versionLabel->setText(tr("Installed"));
+                } else {
+                    row.versionLabel->setText(tr("Not found"));
+                }
             }
         }
         if (row.statusLabel != nullptr) {
@@ -1586,11 +1591,13 @@ void SettingsDialog::refreshCoreStatusPresentation()
             row.statusLabel->setVisible(!isActive && !row.statusLabel->text().isEmpty());
         }
         if (row.downloadButton != nullptr) {
-            row.downloadButton->setVisible(!isActive && row.versionText.isEmpty());
+            const bool installed = existingCoreTypes_.contains(coreType);
+            row.downloadButton->setText(installed ? tr("Update") : tr("Install"));
+            row.downloadButton->setVisible(!isActive);
             row.downloadButton->setEnabled(!updateRunning);
         }
         if (row.setAllButton != nullptr) {
-            row.setAllButton->setVisible(!isActive && !row.versionText.isEmpty());
+            row.setAllButton->setVisible(!isActive && existingCoreTypes_.contains(coreType));
         }
     }
 }

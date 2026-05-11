@@ -31,7 +31,8 @@ public:
         const QString& targetDirectory,
         ConfirmDownloadHandler confirmDownload = {},
         BeforeInstallHandler beforeInstall = {},
-        ProgressHandler progressHandler = {}) const;
+        ProgressHandler progressHandler = {},
+        bool skipLocalVersionCheck = false) const;
 
 private:
     DownloadHandler downloadHandler_;

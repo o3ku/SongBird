@@ -108,6 +108,20 @@ Config baseConfig()
     return config;
 }
 
+void setProtocolCore(Config& config, ConfigType configType, CoreType coreType)
+{
+    config.coreTypeItems.append(CoreTypeItem{
+        static_cast<int>(configType),
+        static_cast<int>(coreType)});
+}
+
+Config legacyConfig(ConfigType configType = ConfigType::VMess)
+{
+    Config config = baseConfig();
+    setProtocolCore(config, configType, CoreType::Xray);
+    return config;
+}
+
 VmessItem baseServer()
 {
     VmessItem item;
@@ -389,7 +403,7 @@ void ClientConfigWriterTests::validateServerRejectsInvalidFinalmaskJson()
 
 void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.routeOnly = true;
     VmessItem server = baseServer();
@@ -406,7 +420,7 @@ void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenE
 
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.enableFragment = true;
     VmessItem server = baseServer();
@@ -436,7 +450,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyFragmentOutboundWhe
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForLegacyTlsWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultAllowInsecure = true;
     VmessItem server = baseServer();
@@ -457,7 +471,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForLe
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyWebSocketWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
@@ -480,7 +494,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyHttpupgradeWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
@@ -503,7 +517,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
 
 void ClientConfigWriterTests::generateClientConfigsUsesServerUserAgentBeforeDefaultForLegacyHttpupgrade()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
@@ -526,7 +540,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerUserAgentBeforeDefa
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyTcpHttpWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
@@ -553,7 +567,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLegacyTlsWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultFingerprint = QStringLiteral("firefox");
     VmessItem server = baseServer();
@@ -575,7 +589,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLega
 
 void ClientConfigWriterTests::generateClientConfigsAppliesLegacyFinalmaskOverride()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.network = QStringLiteral("kcp");
@@ -604,7 +618,7 @@ void ClientConfigWriterTests::generateClientConfigsAppliesLegacyFinalmaskOverrid
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsCertificates()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultAllowInsecure = true;
     VmessItem server = baseServer();
@@ -636,7 +650,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsCertificates()
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyPinnedPeerCertSha256()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultAllowInsecure = true;
     VmessItem server = baseServer();
@@ -661,7 +675,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyPinnedPeerCertSha25
 
 void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersAndHosts()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.directDns = QStringLiteral("223.5.5.5");
     config.remoteDns = QStringLiteral("https://dns.google/dns-query");
@@ -749,7 +763,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersA
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalServerForCatchAllDirectRouting()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.directDns = QStringLiteral("223.5.5.5");
     config.remoteDns = QStringLiteral("8.8.8.8");
@@ -798,7 +812,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalSer
 
 void ClientConfigWriterTests::generateClientConfigsAddsCommonHostsToLegacyDnsHosts()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.addCommonHosts = true;
     config.dnsHosts.clear();
@@ -824,7 +838,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsToLegacyDnsHos
 
     QVERIFY(qputenv("V2RAYQ_SYSTEM_HOSTS_PATH", hostsPath.toUtf8()));
 
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.addCommonHosts = false;
     config.useSystemHosts = true;
@@ -843,7 +857,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsToLegacyDnsHos
 
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyServeStaleAndParallelQueryWhenEnabled()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.serveStale = true;
     config.parallelQuery = true;
@@ -860,7 +874,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyServeStaleAndParall
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityMldsa65Verify()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("reality");
@@ -882,7 +896,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityMldsa65Verif
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsEchFields()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
@@ -1027,7 +1041,7 @@ void ClientConfigWriterTests::generateClientConfigsForcesSingBoxRealityTlsInsecu
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLegacyRealityWhenServerValueMissing()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.defaultFingerprint = QStringLiteral("firefox");
     VmessItem server = baseServer();
@@ -1402,7 +1416,7 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsTunInboundToIpv4OnlyW
 
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisableLegacyMux()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.muxEnabled = true;
     VmessItem server = baseServer();
@@ -1422,7 +1436,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisabl
 
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnableLegacyMux()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.muxEnabled = false;
     VmessItem server = baseServer();
@@ -1955,7 +1969,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesHostsDnsResolverForSingBo
 
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyDirectExpectedIpsForMatchingDirectGeosite()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.directDns = QStringLiteral("223.5.5.5");
     config.remoteDns = QStringLiteral("8.8.8.8");
@@ -2414,7 +2428,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
 
 void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
     config.routingItems = {
@@ -2496,7 +2510,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNa
 
 void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute()
 {
-    Config config = baseConfig();
+    Config config = legacyConfig();
     config.tunModeItem.enableTun = false;
     config.enableRoutingAdvanced = true;
     config.routingIndex = 0;

@@ -26,19 +26,11 @@ public:
         QStyleOptionViewItem styledOption(option);
         initStyleOption(&styledOption, index);
 
-        const auto* tableView = dynamic_cast<const ServerTableView*>(option.widget);
         const bool selected = (styledOption.state & QStyle::State_Selected) != 0;
-        const bool hovered = tableView != nullptr && tableView->hoveredRow() == index.row() && !selected;
         const QColor rowDividerColor(QStringLiteral("#e6e6e6"));
-        const QColor selectedFillColor(QStringLiteral("#cbd8ea"));
-        const QColor selectedDividerColor(QStringLiteral("#96a8c2"));
+        const QColor selectedDividerColor(QStringLiteral("#000000"));
         styledOption.state &= ~QStyle::State_HasFocus;
-        if (selected) {
-            painter->fillRect(option.rect, selectedFillColor);
-            styledOption.state &= ~QStyle::State_Selected;
-        } else if (hovered) {
-            painter->fillRect(option.rect, QColor(QStringLiteral("#e8ebef")));
-        }
+        styledOption.state &= ~QStyle::State_Selected;
 
         QStyledItemDelegate::paint(painter, styledOption, index);
 

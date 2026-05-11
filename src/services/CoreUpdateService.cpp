@@ -49,6 +49,19 @@ struct CoreUpdateDefinition {
     QStringList executablePatterns;
 };
 
+QString xrayLatestAssetName(bool prefer64Bit)
+{
+    return prefer64Bit
+        ? QStringLiteral("Xray-windows-64.zip")
+        : QStringLiteral("Xray-windows-32.zip");
+}
+
+QUrl xrayLatestDownloadUrl(bool prefer64Bit)
+{
+    return QUrl(QStringLiteral("https://github.com/XTLS/Xray-core/releases/latest/download/%1")
+                    .arg(xrayLatestAssetName(prefer64Bit)));
+}
+
 void reportProgress(const CoreUpdateService::ProgressHandler& progressHandler, const QString& message)
 {
     if (progressHandler && !message.trimmed().isEmpty()) {
@@ -702,7 +715,8 @@ OperationResult CoreUpdateService::update(
     const QString& targetDirectory,
     ConfirmDownloadHandler confirmDownload,
     BeforeInstallHandler beforeInstall,
-    ProgressHandler progressHandler) const
+    ProgressHandler progressHandler,
+    bool skipLocalVersionCheck) const
 {
     const CoreUpdateDefinition definition = resolveDefinition(coreType);
     if (definition.type == CoreType::Unknown || !definition.releasesApiUrl.isValid()) {
@@ -724,77 +738,91 @@ OperationResult CoreUpdateService::update(
                 .arg(QDir::toNativeSeparators(normalizedTargetDirectory)));
     }
 
-    reportProgress(
-        progressHandler,
-        QCoreApplication::translate("CoreUpdateService", "Checking the latest %1 release...")
-            .arg(definition.displayName));
-
     GitHubRelease release;
     QString lastError;
-    const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(definition.releasesApiUrl);
-    for (const QUrl& candidateUrl : releaseUrls) {
+    if (definition.type == CoreType::Xray) {
+        const bool prefer64Bit = is64BitOperatingSystem();
+        const QString assetName = xrayLatestAssetName(prefer64Bit);
+        release.tagName = QStringLiteral("latest");
+        release.assets.append(GitHubReleaseAsset{
+            assetName,
+            xrayLatestDownloadUrl(prefer64Bit)});
         reportProgress(
             progressHandler,
-            QCoreApplication::translate("CoreUpdateService", "Requesting release metadata: %1")
-                .arg(candidateUrl.toString(QUrl::FullyEncoded)));
-
-        QByteArray payload;
-        const OperationResult downloadResult = downloadHandler_
-            ? downloadHandler_(candidateUrl, &payload)
-            : downloadBytesWithNetwork(
-                candidateUrl,
-                &payload,
-                QStringLiteral("v2rayq-core-update"),
-                kCoreMetadataTimeoutMs);
-        if (!downloadResult.success) {
-            lastError = downloadResult.message;
-            reportProgress(
-                progressHandler,
-                QCoreApplication::translate("CoreUpdateService", "Release metadata request failed: %1")
-                    .arg(lastError));
-            continue;
-        }
-
-        QString parseError;
-        bool stableReleaseUnavailable = false;
-        if (parseReleasePayload(
-                payload,
-                config.checkPreReleaseUpdate,
-                &release,
-                &parseError,
-                &stableReleaseUnavailable)) {
-            lastError.clear();
-            break;
-        }
-
-        if (!config.checkPreReleaseUpdate
-            && stableReleaseUnavailable
-            && (definition.type == CoreType::Clash || definition.type == CoreType::ClashMeta)
-            && parseReleasePayload(payload, true, &release, &parseError)) {
-            reportProgress(
-                progressHandler,
-                QCoreApplication::translate(
-                    "CoreUpdateService",
-                    "No stable release was found for %1. Falling back to the latest pre-release.")
-                    .arg(definition.displayName));
-            lastError.clear();
-            break;
-        }
-
-        lastError = parseError;
-        reportProgress(
-            progressHandler,
-            QCoreApplication::translate("CoreUpdateService", "Release metadata parsing failed: %1")
-                .arg(lastError));
-    }
-
-    if (release.tagName.trimmed().isEmpty()) {
-        return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "Failed to resolve the latest %1 release: %2")
+            QCoreApplication::translate("CoreUpdateService", "Using direct latest %1 package: %2")
                 .arg(definition.displayName)
-                .arg(lastError.isEmpty()
-                    ? QCoreApplication::translate("CoreUpdateService", "Unknown error")
-                    : lastError));
+                .arg(assetName));
+    } else {
+        reportProgress(
+            progressHandler,
+            QCoreApplication::translate("CoreUpdateService", "Checking the latest %1 release...")
+                .arg(definition.displayName));
+
+        const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(definition.releasesApiUrl);
+        for (const QUrl& candidateUrl : releaseUrls) {
+            reportProgress(
+                progressHandler,
+                QCoreApplication::translate("CoreUpdateService", "Requesting release metadata: %1")
+                    .arg(candidateUrl.toString(QUrl::FullyEncoded)));
+
+            QByteArray payload;
+            const OperationResult downloadResult = downloadHandler_
+                ? downloadHandler_(candidateUrl, &payload)
+                : downloadBytesWithNetwork(
+                    candidateUrl,
+                    &payload,
+                    QStringLiteral("v2rayq-core-update"),
+                    kCoreMetadataTimeoutMs);
+            if (!downloadResult.success) {
+                lastError = downloadResult.message;
+                reportProgress(
+                    progressHandler,
+                    QCoreApplication::translate("CoreUpdateService", "Release metadata request failed: %1")
+                        .arg(lastError));
+                continue;
+            }
+
+            QString parseError;
+            bool stableReleaseUnavailable = false;
+            if (parseReleasePayload(
+                    payload,
+                    config.checkPreReleaseUpdate,
+                    &release,
+                    &parseError,
+                    &stableReleaseUnavailable)) {
+                lastError.clear();
+                break;
+            }
+
+            if (!config.checkPreReleaseUpdate
+                && stableReleaseUnavailable
+                && (definition.type == CoreType::Clash || definition.type == CoreType::ClashMeta)
+                && parseReleasePayload(payload, true, &release, &parseError)) {
+                reportProgress(
+                    progressHandler,
+                    QCoreApplication::translate(
+                        "CoreUpdateService",
+                        "No stable release was found for %1. Falling back to the latest pre-release.")
+                        .arg(definition.displayName));
+                lastError.clear();
+                break;
+            }
+
+            lastError = parseError;
+            reportProgress(
+                progressHandler,
+                QCoreApplication::translate("CoreUpdateService", "Release metadata parsing failed: %1")
+                    .arg(lastError));
+        }
+
+        if (release.tagName.trimmed().isEmpty()) {
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "Failed to resolve the latest %1 release: %2")
+                    .arg(definition.displayName)
+                    .arg(lastError.isEmpty()
+                        ? QCoreApplication::translate("CoreUpdateService", "Unknown error")
+                        : lastError));
+        }
     }
 
     const bool prefer64Bit = is64BitOperatingSystem();
@@ -814,7 +842,7 @@ OperationResult CoreUpdateService::update(
 
     QString currentVersion;
     const QString executablePath = findFirstExistingFile(normalizedTargetDirectory, definition.executablePatterns);
-    if (!executablePath.isEmpty()) {
+    if (!skipLocalVersionCheck && !executablePath.isEmpty()) {
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Checking the current %1 version...")

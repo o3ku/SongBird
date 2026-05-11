@@ -121,7 +121,7 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case DefaultColumn:
-            return QString::number(index.row() + 1);
+            return isDefault ? QVariant(QStringLiteral(">")) : QVariant(QString::number(index.row() + 1));
         case TypeColumn:
             return configTypeDisplayName(item->configType);
         case RemarksColumn:
@@ -153,7 +153,7 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole && isDefault) {
-        return QBrush(QColor(QStringLiteral("#2f6fce")));
+        return QBrush(QColor(QStringLiteral("#00C458")));
     }
 
     return {};

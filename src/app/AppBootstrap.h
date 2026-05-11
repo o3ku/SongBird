@@ -103,6 +103,8 @@ private:
         bool startAfterSuccess,
         QObject* progressContext,
         QWidget* dialogParent,
+        bool skipConfirmation,
+        bool skipLocalVersionCheck,
         const std::function<void(const QString&)>& progressObserver,
         const std::function<void(const OperationResult&)>& completionObserver);
     void runCoreUpdateTask(
@@ -110,6 +112,7 @@ private:
         Config workerConfig,
         QString installDirectory,
         QPointer<QObject> progressContextGuard,
+        bool skipLocalVersionCheck,
         std::function<void(const QString&)> progressObserver,
         std::function<void(const OperationResult&)> completionObserver);
     void finalizeCoreUpdate(
@@ -151,8 +154,6 @@ private:
     QString locateFirstExistingFile(const QStringList& candidates) const;
     void refreshExistingCoreTypes();
     QList<CoreType> detectExistingCoreTypes() const;
-    QString detectCoreVersion(CoreType coreType) const;
-    void refreshSettingsCoreVersions(SettingsDialog* dialog);
     QString resolveCoreInstallDirectory(CoreType coreType) const;
     QString buildTrafficSummaryText() const;
     QString buildStatisticsSummaryText() const;
@@ -218,6 +219,7 @@ private:
     bool coreUpdatePendingAfterStop_ = false;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;
     bool pendingCoreUpdateStartAfterSuccess_ = false;
+    bool pendingCoreUpdateSkipLocalVersionCheck_ = false;
     QPointer<QObject> pendingCoreUpdateProgressContext_;
     QPointer<QWidget> pendingCoreUpdateDialogParent_;
     std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;

@@ -8,6 +8,8 @@
 #include <QJsonValue>
 #include <QSaveFile>
 
+#include "runtime/ProtocolCoreCompat.h"
+
 #include <utility>
 
 namespace {
@@ -348,6 +350,9 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
     config.tunModeItem = parseTunModeItem(root.value(QStringLiteral("tunModeItem")).toObject());
     config.policyGroups = parsePolicyGroups(root.value(QStringLiteral("policyGroups")).toArray());
     config.coreTypeItems = parseCoreTypeItems(root.value(QStringLiteral("coreTypeItems")).toArray());
+    if (config.coreTypeItems.isEmpty()) {
+        config.coreTypeItems = defaultCoreTypeItems();
+    }
     return config;
 }
 

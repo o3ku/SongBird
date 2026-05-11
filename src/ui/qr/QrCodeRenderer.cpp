@@ -16,17 +16,15 @@ QPixmap QrCodeRenderer::render(const QString& text, int size)
         text.toUtf8().constData(),
         qrcodegen::QrCode::Ecc::MEDIUM);
 
-    const int border = 4;
     const int qrSize = qr.getSize();
-    const int imageSize = qrSize + border * 2;
 
-    QImage image(imageSize, imageSize, QImage::Format_ARGB32);
+    QImage image(qrSize, qrSize, QImage::Format_ARGB32);
     image.fill(Qt::white);
 
     for (int y = 0; y < qrSize; ++y) {
         for (int x = 0; x < qrSize; ++x) {
             if (qr.getModule(x, y)) {
-                image.setPixelColor(x + border, y + border, Qt::black);
+                image.setPixelColor(x, y, Qt::black);
             }
         }
     }

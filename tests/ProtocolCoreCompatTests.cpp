@@ -15,9 +15,9 @@ private slots:
     void resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent();
     void resolveExistingCoreTypeForProtocolFallsBackToXrayWhenOnlyXrayExists();
     void resolveExistingCoreTypeForProtocolUsesSingBoxAsDownloadTargetWhenNothingExists();
-    void resolveExistingCoreTypeForCustomProtocolKeepsXrayDefault();
+    void resolveExistingCoreTypeForCustomProtocolPrefersSingBoxWhenPresent();
     void resolveExistingCoreTypeForSingBoxFirstProtocolsPrefersSingBox();
-    void defaultCoreTypeForSingBoxFirstProtocolsUsesSingBox();
+    void defaultCoreTypeForAllSupportedProtocolsUsesSingBox();
 };
 
 void ProtocolCoreCompatTests::dualProtocolSupportsBothCores()
@@ -108,13 +108,13 @@ void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolUsesSingBoxAsDow
     QCOMPARE(core, CoreType::SingBox);
 }
 
-void ProtocolCoreCompatTests::resolveExistingCoreTypeForCustomProtocolKeepsXrayDefault()
+void ProtocolCoreCompatTests::resolveExistingCoreTypeForCustomProtocolPrefersSingBoxWhenPresent()
 {
     const CoreType core = resolveExistingCoreTypeForProtocol(
         ConfigType::Custom,
         QList<CoreType>{CoreType::SingBox});
 
-    QCOMPARE(core, CoreType::Xray);
+    QCOMPARE(core, CoreType::SingBox);
 }
 
 void ProtocolCoreCompatTests::resolveExistingCoreTypeForSingBoxFirstProtocolsPrefersSingBox()
@@ -134,9 +134,16 @@ void ProtocolCoreCompatTests::resolveExistingCoreTypeForSingBoxFirstProtocolsPre
     }
 }
 
-void ProtocolCoreCompatTests::defaultCoreTypeForSingBoxFirstProtocolsUsesSingBox()
+void ProtocolCoreCompatTests::defaultCoreTypeForAllSupportedProtocolsUsesSingBox()
 {
     const QList<ConfigType> protocols = {
+        ConfigType::VMess,
+        ConfigType::Custom,
+        ConfigType::Shadowsocks,
+        ConfigType::Socks,
+        ConfigType::VLESS,
+        ConfigType::Trojan,
+        ConfigType::HTTP,
         ConfigType::Hysteria2,
         ConfigType::TUIC,
         ConfigType::WireGuard,

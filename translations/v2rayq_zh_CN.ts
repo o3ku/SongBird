@@ -121,6 +121,7 @@ Restart as administrator now?</source>
     <message><source>Clear Statistics</source><translation>清空统计</translation></message>
     <message><source>Speed Test</source><translation>测速</translation></message>
     <message><source>Export</source><translation>导出</translation></message>
+    <message><source>Share</source><translation>分享</translation></message>
     <message><source>Server</source><translation>服务器</translation></message>
     <message><source>Sub</source><translation>订阅</translation></message>
     <message><source>Setting</source><translation>设置</translation></message>

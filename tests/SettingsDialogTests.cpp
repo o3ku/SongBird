@@ -28,7 +28,7 @@ private slots:
     void defaultFingerprintComboRoundTripsConfig();
     void mux4SboxProtocolComboRoundTripsConfig();
     void coreTypeTableIncludesHttpProtocol();
-    void coreTypeTableDefaultsFollowExistingCorePriority();
+    void coreTypeTableDefaultsUseConfiguredValue();
     void routingRuleNetworkAndProcessRoundTripConfig();
     void routingCustomRuleTabsRoundTripConfig();
     void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
@@ -258,7 +258,7 @@ void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
     QCOMPARE(it->coreType, static_cast<int>(CoreType::Xray));
 }
 
-void SettingsDialogTests::coreTypeTableDefaultsFollowExistingCorePriority()
+void SettingsDialogTests::coreTypeTableDefaultsUseConfiguredValue()
 {
     SettingsDialog dialog;
     dialog.setConfig(Config());
@@ -268,7 +268,7 @@ void SettingsDialogTests::coreTypeTableDefaultsFollowExistingCorePriority()
     QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));
 
     dialog.setExistingCoreTypes({CoreType::Xray});
-    QCOMPARE(vmessCombo->currentText(), QStringLiteral("Xray"));
+    QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));
 
     dialog.setExistingCoreTypes({CoreType::Xray, CoreType::SingBox});
     QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));

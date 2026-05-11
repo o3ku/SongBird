@@ -169,6 +169,14 @@ QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
             return {};
         }
 
+        const auto* tableModel = qobject_cast<const ServerTableModel*>(sourceModel());
+        const VmessItem* item = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceIndex.row());
+        if (tableModel != nullptr && item != nullptr
+            && !tableModel->currentIndexId().isEmpty()
+            && item->indexId == tableModel->currentIndexId()) {
+            return QStringLiteral(">");
+        }
+
         const int ordinal = visibleOrdinalForSourceRow(sourceIndex.row());
         return ordinal > 0 ? QVariant(QString::number(ordinal)) : QVariant();
     }

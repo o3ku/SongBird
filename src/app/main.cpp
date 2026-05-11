@@ -23,7 +23,7 @@
 #endif
 
 #ifndef QT_V2RAYN_APP_VERSION
-#define QT_V2RAYN_APP_VERSION "0.2.0"
+#define QT_V2RAYN_APP_VERSION "0.3.0"
 #endif
 
 namespace {
@@ -212,6 +212,7 @@ int main(int argc, char* argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
+    QCoreApplication::setAttribute(Qt::AA_DisableWindowContextHelpButton);
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("v2rayq"));

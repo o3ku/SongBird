@@ -66,7 +66,7 @@ void TunCompatCoreRequirementTests::httpAutoCoreDoesNotRequireAuxiliarySingBoxCo
 {
     VmessItem server = baseServer();
     server.configType = ConfigType::HTTP;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
 
     QVERIFY(resolveAuxiliaryTunCompatCoreTypes(baseConfig(), server).isEmpty());
 }

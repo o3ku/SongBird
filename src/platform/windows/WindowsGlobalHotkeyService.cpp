@@ -78,8 +78,7 @@ OperationResult WindowsGlobalHotkeyService::registerHotkeys(const QList<GlobalHo
 
     const QList<WindowsGlobalHotkeyBinding> bindings = buildWindowsGlobalHotkeyBindings(hotkeys);
     if (bindings.isEmpty()) {
-        return OperationResult::ok(
-            QCoreApplication::translate("WindowsGlobalHotkeyService", "No global hotkeys configured."));
+        return OperationResult::ok(QString());
     }
 
     application->installNativeEventFilter(this);

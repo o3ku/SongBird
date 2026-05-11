@@ -10,8 +10,8 @@ inline bool requiresTunCompatSingBoxCore(const Config& config, const VmessItem& 
     if (!config.tunModeItem.enableTun || server.configType == ConfigType::Custom) {
         return false;
     }
-    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
-    return effectiveCore == CoreType::Xray;
+    const CoreType selectedCore = resolveRuntimeCoreType(server.coreType);
+    return selectedCore == CoreType::Xray;
 }
 
 inline QList<CoreType> resolveAuxiliaryTunCompatCoreTypes(const Config& config, const VmessItem& server)

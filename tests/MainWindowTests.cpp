@@ -1,20 +1,26 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QBoxLayout>
 #include <QFontMetrics>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QListView>
+#include <QPlainTextEdit>
 #include <QComboBox>
 #include <QScrollBar>
 #include <QStyleOptionViewItem>
 #include <QTableView>
+#include <QTextOption>
 #include <QToolButton>
 
 #include "domain/models/Config.h"
+#include "subscription/ShareUrlBuilder.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/models/LogListModel.h"
+#include "ui/qr/QrCodeRenderer.h"
 
 class MainWindowTests : public QObject {
     Q_OBJECT
@@ -25,6 +31,9 @@ private slots:
     void appendLogPreservesViewportWhenFilterActive();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
+    void sharePanelShowsSelectedServerShareLink();
+    void shareLinkTextEditDoesNotForceTallMinimumHeight();
+    void qrCodeRendererRemovesQuietZone();
     void coreToggleButtonUsesCheckedStateAndDisablesDuringTransition();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
     void logDelegateUsesViewportWidthForSingleLineHeight();
@@ -176,6 +185,93 @@ void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
+}
+
+void MainWindowTests::sharePanelShowsSelectedServerShareLink()
+{
+    MainWindow window;
+    window.resize(1000, 640);
+    Config config = createServerSelectionConfig();
+    config.mainQrPreviewVisible = true;
+    window.restoreUiState(config);
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* shareButton = window.findChild<QToolButton*>(QStringLiteral("qrCodeButton"));
+    auto* shareAction = window.findChild<QAction*>(QStringLiteral("toggleQrPanelAction"));
+    auto* qrPanel = window.findChild<QWidget*>(QStringLiteral("qrPanel"));
+    auto* shareContentPanel = window.findChild<QWidget*>(QStringLiteral("shareContentPanel"));
+    auto* qrPlaceholder = window.findChild<QLabel*>(QStringLiteral("qrPlaceholder"));
+    auto* shareLinkLabel = window.findChild<QPlainTextEdit*>(QStringLiteral("shareLinkLabel"));
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(shareButton != nullptr);
+    QVERIFY(shareAction != nullptr);
+    QVERIFY(qrPanel != nullptr);
+    QVERIFY(shareContentPanel != nullptr);
+    QVERIFY(qrPlaceholder != nullptr);
+    QVERIFY(shareLinkLabel != nullptr);
+    QVERIFY(serverView != nullptr);
+    shareAction->trigger();
+    QCoreApplication::processEvents();
+    auto* shareContentLayout = qobject_cast<QBoxLayout*>(shareContentPanel->layout());
+    QVERIFY(shareContentLayout != nullptr);
+    QCOMPARE(shareButton->text(), QStringLiteral("Share"));
+    QCOMPARE(shareAction->text(), QStringLiteral("Share"));
+    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.servers.constFirst()));
+    QCOMPARE(shareContentPanel->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
+    QCOMPARE(shareContentLayout->count(), 2);
+    QCOMPARE(shareContentLayout->contentsMargins().top(), 0);
+    QCOMPARE(shareContentLayout->contentsMargins().bottom(), 0);
+    QCOMPARE(shareContentLayout->stretch(0), 1);
+    QCOMPARE(shareContentLayout->stretch(1), 0);
+    QCOMPARE(qrPlaceholder->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
+    QCOMPARE(qrPlaceholder->margin(), 10);
+    QVERIFY(qrPlaceholder->height() <= qrPlaceholder->width());
+    QTRY_VERIFY(qrPlaceholder->pixmap() != nullptr);
+    QTRY_VERIFY(!qrPlaceholder->pixmap()->isNull());
+    QVERIFY(qrPlaceholder->pixmap()->width() <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
+    QVERIFY(qrPlaceholder->pixmap()->height() <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
+    QCOMPARE(shareLinkLabel->sizePolicy().verticalPolicy(), QSizePolicy::Preferred);
+    QCOMPARE(shareLinkLabel->wordWrapMode(), QTextOption::WrapAnywhere);
+    QCOMPARE(shareLinkLabel->property("shareLinkBottomPadding").toInt(), 10);
+}
+
+void MainWindowTests::shareLinkTextEditDoesNotForceTallMinimumHeight()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.mainQrPreviewVisible = true;
+    window.resize(1000, 640);
+    window.restoreUiState(config);
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* shareLinkLabel = window.findChild<QPlainTextEdit*>(QStringLiteral("shareLinkLabel"));
+    QVERIFY(shareLinkLabel != nullptr);
+
+    shareLinkLabel->setPlainText(
+        QStringLiteral("vless://83e96db9-34ec-4d85-ac13-e37e44006aa8@45.196.236.198:38906?"
+                       "encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.icloud.com&"
+                       "fp=safari&pbk=CidZrpFUjWxsMWvKyrT6sf4uSzLwTnnbcqZp1b6x7FI&sid=4fe22a&spx=%2F&"
+                       "type=tcp&headerType=none#HK-05"));
+    QCoreApplication::processEvents();
+
+    QVERIFY(shareLinkLabel->sizeHint().height() > shareLinkLabel->minimumSizeHint().height());
+    QVERIFY(shareLinkLabel->minimumSizeHint().height()
+            <= shareLinkLabel->fontMetrics().lineSpacing() + 10);
+}
+
+void MainWindowTests::qrCodeRendererRemovesQuietZone()
+{
+    const QPixmap pixmap = QrCodeRenderer::render(QStringLiteral("vmess://share-test"), 256);
+    QVERIFY(!pixmap.isNull());
+
+    const QImage image = pixmap.toImage();
+    QCOMPARE(image.pixelColor(0, 0), QColor(Qt::black));
+    QCOMPARE(image.pixelColor(image.width() - 1, 0), QColor(Qt::black));
+    QCOMPARE(image.pixelColor(0, image.height() - 1), QColor(Qt::black));
 }
 
 void MainWindowTests::coreToggleButtonUsesCheckedStateAndDisablesDuringTransition()

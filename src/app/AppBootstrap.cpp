@@ -592,7 +592,6 @@ bool AppBootstrap::run()
             "AppBootstrap",
             "Global hotkeys disabled by command line.")));
     }
-    appendResult(OperationResult::ok(QStringLiteral("Pure Qt prototype initialized.")));
     mainWindow_->show();
     if (startHidden_ || !config_.showMainOnStartup) {
         if (trayController_ != nullptr && trayController_->isAvailable()) {
@@ -1178,20 +1177,6 @@ bool AppBootstrap::shouldStartCoreOnStartup() const
 
 namespace {
 
-Config runtimeConfigForLaunchCore(const Config& config, const VmessItem& server)
-{
-    Config runtimeConfig = config;
-    runtimeConfig.coreTypeItems.erase(
-        std::remove_if(
-            runtimeConfig.coreTypeItems.begin(),
-            runtimeConfig.coreTypeItems.end(),
-            [&server](const CoreTypeItem& item) {
-                return item.configType == static_cast<int>(server.configType);
-            }),
-        runtimeConfig.coreTypeItems.end());
-    return runtimeConfig;
-}
-
 VmessItem runtimeServerForLaunchCore(const VmessItem& server, CoreType launchCore)
 {
     VmessItem runtimeServer = server;
@@ -1384,7 +1369,7 @@ void AppBootstrap::startCore(bool skipTunCleanup)
 
     const CoreType launchCore = resolveLaunchCoreType(*server);
     const VmessItem runtimeServer = runtimeServerForLaunchCore(*server, launchCore);
-    Config runtimeConfig = runtimeConfigForLaunchCore(config_, *server);
+    Config runtimeConfig = config_;
     const CoreInfo coreInfo = resolveCoreInfo(runtimeServer);
     if (coreInfo.program.isEmpty()) {
         const CoreType runtimeCore = launchCore;
@@ -1399,11 +1384,11 @@ void AppBootstrap::startCore(bool skipTunCleanup)
                 .arg(expectedFiles)));
 
         if (mainWindow_ != nullptr) {
-            const QString title = QCoreApplication::translate("AppBootstrap", "Download %1 Core")
+            const QString title = QCoreApplication::translate("AppBootstrap", "Install %1 Core")
                                       .arg(coreTypeDisplayName(runtimeCore));
             const QString prompt = QCoreApplication::translate(
                                        "AppBootstrap",
-                                       "The active server \"%1\" requires the %2 core, but no compatible executable was found.\nExpected one of: %3.\nDownload it now?")
+                                       "The active server \"%1\" requires the %2 core, but no compatible executable was found.\nExpected one of: %3.\nInstall it now?")
                                        .arg(describeServer(server))
                                        .arg(coreTypeDisplayName(runtimeCore))
                                        .arg(expectedFiles);
@@ -1420,7 +1405,7 @@ void AppBootstrap::startCore(bool skipTunCleanup)
                            QMessageBox::Yes | QMessageBox::No,
                            QMessageBox::Yes)
                        == QMessageBox::Yes) {
-                updateCore(static_cast<int>(runtimeCore), true);
+                updateCore(static_cast<int>(runtimeCore), true, mainWindow_.get(), mainWindow_.get(), true, true, {}, {});
             }
         }
         return;
@@ -1443,11 +1428,11 @@ void AppBootstrap::startCore(bool skipTunCleanup)
                 .arg(expectedFiles)));
 
         if (mainWindow_ != nullptr) {
-            const QString title = QCoreApplication::translate("AppBootstrap", "Download %1 Core")
+            const QString title = QCoreApplication::translate("AppBootstrap", "Install %1 Core")
                                       .arg(coreTypeDisplayName(auxiliaryCoreType));
             const QString prompt = QCoreApplication::translate(
                                        "AppBootstrap",
-                                       "The active server \"%1\" needs the %2 core for TUN compatibility, but no compatible executable was found.\nExpected one of: %3.\nDownload it now?")
+                                       "The active server \"%1\" needs the %2 core for TUN compatibility, but no compatible executable was found.\nExpected one of: %3.\nInstall it now?")
                                        .arg(describeServer(server))
                                        .arg(coreTypeDisplayName(auxiliaryCoreType))
                                        .arg(expectedFiles);
@@ -1464,7 +1449,7 @@ void AppBootstrap::startCore(bool skipTunCleanup)
                            QMessageBox::Yes | QMessageBox::No,
                            QMessageBox::Yes)
                        == QMessageBox::Yes) {
-                updateCore(static_cast<int>(auxiliaryCoreType), true);
+                updateCore(static_cast<int>(auxiliaryCoreType), true, mainWindow_.get(), mainWindow_.get(), true, true, {}, {});
             }
         }
         return;
@@ -2580,7 +2565,7 @@ void AppBootstrap::updateCore(int coreTypeValue)
 
 void AppBootstrap::updateCore(int coreTypeValue, bool startAfterSuccess)
 {
-    updateCore(coreTypeValue, startAfterSuccess, mainWindow_.get(), mainWindow_.get(), {}, {});
+    updateCore(coreTypeValue, startAfterSuccess, mainWindow_.get(), mainWindow_.get(), false, false, {}, {});
 }
 
 void AppBootstrap::updateCore(
@@ -2588,6 +2573,8 @@ void AppBootstrap::updateCore(
     bool startAfterSuccess,
     QObject* progressContext,
     QWidget* dialogParent,
+    bool skipConfirmation,
+    bool skipLocalVersionCheck,
     const std::function<void(const QString&)>& progressObserver,
     const std::function<void(const OperationResult&)>& completionObserver)
 {
@@ -2601,7 +2588,7 @@ void AppBootstrap::updateCore(
     }
 
     const CoreType coreType = resolveRuntimeCoreType(static_cast<CoreType>(coreTypeValue));
-    const QString title = QCoreApplication::translate("AppBootstrap", "Update %1 Core")
+    const QString title = QCoreApplication::translate("AppBootstrap", "Install / Update %1 Core")
                               .arg(coreTypeDisplayName(coreType));
     const QString installDirectory = resolveCoreInstallDirectory(coreType);
     const VmessItem* activeServer = resolveActiveServer();
@@ -2614,16 +2601,16 @@ void AppBootstrap::updateCore(
     bool stoppedForInstall = false;
 
     QWidget* messageParent = dialogParentGuard.isNull() ? mainWindow_.get() : dialogParentGuard.data();
-    const QString prompt = QCoreApplication::translate("CoreUpdateService", "Download %1?\r\nThe running core will be stopped before installation if needed.")
+    const QString prompt = QCoreApplication::translate("CoreUpdateService", "Install / Update %1?\r\nThe running core will be stopped before installation if needed.")
                                .arg(coreTypeDisplayName(coreType));
-    const bool confirmed = messageParent != nullptr
+    const bool confirmed = skipConfirmation || (messageParent != nullptr
         && QMessageBox::question(
                messageParent,
                title,
                prompt,
                QMessageBox::Yes | QMessageBox::No,
                QMessageBox::Yes)
-            == QMessageBox::Yes;
+            == QMessageBox::Yes);
     if (!confirmed) {
         appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "%1 update was canceled.")
                                              .arg(coreTypeDisplayName(coreType))));
@@ -2638,6 +2625,7 @@ void AppBootstrap::updateCore(
         coreUpdatePendingAfterStop_ = true;
         pendingCoreUpdateType_ = coreType;
         pendingCoreUpdateStartAfterSuccess_ = startAfterSuccess;
+        pendingCoreUpdateSkipLocalVersionCheck_ = skipLocalVersionCheck;
         pendingCoreUpdateProgressContext_ = progressContextGuard;
         pendingCoreUpdateDialogParent_ = dialogParentGuard;
         pendingCoreUpdateProgressObserver_ = progressObserver;
@@ -2659,6 +2647,7 @@ void AppBootstrap::updateCore(
                                        title,
                                        stoppedForInstall,
                                        startAfterSuccess,
+                                       skipLocalVersionCheck,
                                        progressContextGuard,
                                        dialogParentGuard,
                                        progressObserver,
@@ -2668,6 +2657,7 @@ void AppBootstrap::updateCore(
             workerConfig,
             installDirectory,
             progressContextGuard,
+            skipLocalVersionCheck,
             progressObserver,
             [this, title, stoppedForInstall, startAfterSuccess, dialogParentGuard, completionObserver](const OperationResult& result) {
                 finalizeCoreUpdate(
@@ -2688,6 +2678,7 @@ void AppBootstrap::runCoreUpdateTask(
     Config workerConfig,
     QString installDirectory,
     QPointer<QObject> progressContextGuard,
+    bool skipLocalVersionCheck,
     std::function<void(const QString&)> progressObserver,
     std::function<void(const OperationResult&)> completionObserver)
 {
@@ -2718,7 +2709,8 @@ void AppBootstrap::runCoreUpdateTask(
         installDirectory,
         {},
         {},
-        reportProgress);
+        reportProgress,
+        skipLocalVersionCheck);
 
     QObject* uiTarget = progressContextGuard.isNull() ? mainWindow_.get() : progressContextGuard.data();
     invokeOnUiThread(uiTarget, [completionObserver, result]() {
@@ -2796,6 +2788,7 @@ void AppBootstrap::continuePendingCoreUpdate()
 
     const CoreType coreType = pendingCoreUpdateType_;
     const bool startAfterSuccess = pendingCoreUpdateStartAfterSuccess_;
+    const bool skipLocalVersionCheck = pendingCoreUpdateSkipLocalVersionCheck_;
     QPointer<QObject> progressContextGuard = pendingCoreUpdateProgressContext_;
     QPointer<QWidget> dialogParentGuard = pendingCoreUpdateDialogParent_;
     std::function<void(const QString&)> progressObserver = pendingCoreUpdateProgressObserver_;
@@ -2804,12 +2797,13 @@ void AppBootstrap::continuePendingCoreUpdate()
     coreUpdatePendingAfterStop_ = false;
     pendingCoreUpdateType_ = CoreType::Unknown;
     pendingCoreUpdateStartAfterSuccess_ = false;
+    pendingCoreUpdateSkipLocalVersionCheck_ = false;
     pendingCoreUpdateProgressContext_.clear();
     pendingCoreUpdateDialogParent_.clear();
     pendingCoreUpdateProgressObserver_ = {};
     pendingCoreUpdateCompletionObserver_ = {};
 
-    const QString title = QCoreApplication::translate("AppBootstrap", "Update %1 Core")
+    const QString title = QCoreApplication::translate("AppBootstrap", "Install / Update %1 Core")
                               .arg(coreTypeDisplayName(coreType));
     const QString installDirectory = resolveCoreInstallDirectory(coreType);
     const Config workerConfig = config_;
@@ -2825,6 +2819,7 @@ void AppBootstrap::continuePendingCoreUpdate()
                                        installDirectory,
                                        title,
                                        startAfterSuccess,
+                                       skipLocalVersionCheck,
                                        progressContextGuard,
                                        dialogParentGuard,
                                        progressObserver,
@@ -2834,6 +2829,7 @@ void AppBootstrap::continuePendingCoreUpdate()
             workerConfig,
             installDirectory,
             progressContextGuard,
+            skipLocalVersionCheck,
             progressObserver,
             [this, title, startAfterSuccess, dialogParentGuard, completionObserver](const OperationResult& result) {
                 finalizeCoreUpdate(
@@ -3098,8 +3094,6 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     dialog.setExistingCoreTypes(existingCoreTypes_);
     dialog.setConfig(config_);
 
-    refreshSettingsCoreVersions(dialogGuard.data());
-
     QObject::connect(&dialog, &SettingsDialog::coreDownloadRequested, &dialog, [this, dialogGuard](int coreTypeValue) {
         if (dialogGuard.isNull()) {
             return;
@@ -3111,6 +3105,8 @@ void AppBootstrap::openSettingsDialog(int initialTab)
             true,
             dialogGuard.data(),
             dialogGuard.data(),
+            false,
+            false,
             [dialogGuard, requestedCoreType](const QString& message) {
                 if (!dialogGuard.isNull()) {
                     dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
@@ -3123,7 +3119,6 @@ void AppBootstrap::openSettingsDialog(int initialTab)
 
                 if (result.success) {
                     dialogGuard->setExistingCoreTypes(existingCoreTypes_);
-                    refreshSettingsCoreVersions(dialogGuard.data());
                 }
                 dialogGuard->finishCoreUpdate(requestedCoreType, result.success, result.message);
             });
@@ -3376,7 +3371,7 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
 
         const CoreType launchCore = resolveLaunchCoreType(*server);
         const VmessItem runtimeServer = runtimeServerForLaunchCore(*server, launchCore);
-        Config runtimeConfig = runtimeConfigForLaunchCore(config_, *server);
+        Config runtimeConfig = config_;
 
         items.append(SpeedTestRequestItem{
             *server,
@@ -3685,16 +3680,12 @@ QString AppBootstrap::buildSystemProxyExceptions() const
 
 CoreType AppBootstrap::resolveEffectiveCoreType(const VmessItem& server) const
 {
-    return resolvePreferredCoreType(config_, server);
+    return resolveSelectedCoreType(config_, server, existingCoreTypes_);
 }
 
 CoreType AppBootstrap::resolveLaunchCoreType(const VmessItem& server) const
 {
-    if (!prefersInstalledCoreForProtocol(server.configType)) {
-        return resolveEffectiveCoreType(server);
-    }
-
-    return resolveExistingCoreTypeForProtocol(server.configType, existingCoreTypes_);
+    return resolveEffectiveCoreType(server);
 }
 
 CoreInfo AppBootstrap::resolveCoreInfo(const VmessItem& server) const
@@ -3867,72 +3858,6 @@ QList<CoreType> AppBootstrap::detectExistingCoreTypes() const
         }
     }
     return existingCoreTypes;
-}
-
-QString AppBootstrap::detectCoreVersion(CoreType coreType) const
-{
-    const QString programPath = locateFirstExistingFile(resolveCoreCandidates(coreType));
-    if (programPath.isEmpty()) {
-        return {};
-    }
-
-    QProcess process;
-    process.setProgram(programPath);
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::SingBox:
-        process.setArguments({QStringLiteral("version")});
-        break;
-    case CoreType::V2Fly:
-    case CoreType::Xray:
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Unknown:
-    default:
-        process.setArguments({QStringLiteral("-version")});
-        break;
-    }
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start();
-    if (!process.waitForStarted(1500) || !process.waitForFinished(3000)) {
-        if (process.state() != QProcess::NotRunning) {
-            process.kill();
-            process.waitForFinished(500);
-        }
-        return {};
-    }
-
-    const QString output = QString::fromUtf8(process.readAll()).trimmed();
-    const QRegularExpression expression = resolveRuntimeCoreType(coreType) == CoreType::SingBox
-        ? QRegularExpression(QStringLiteral("\\bsing-box\\s+version\\s+([0-9A-Za-z._-]+)"))
-        : QRegularExpression(QStringLiteral("\\b(?:V2Ray|Xray)\\s+([0-9A-Za-z._-]+)"));
-    const QRegularExpressionMatch match = expression.match(output);
-    return match.hasMatch() ? match.captured(1) : QString();
-}
-
-void AppBootstrap::refreshSettingsCoreVersions(SettingsDialog* dialog)
-{
-    if (dialog == nullptr) {
-        return;
-    }
-
-    QPointer<SettingsDialog> dialogGuard(dialog);
-    QObject* uiContext = dialog;
-    QThread* thread = QThread::create([this, dialogGuard, uiContext]() {
-        const QString xrayVersion = detectCoreVersion(CoreType::Xray);
-        const QString singBoxVersion = detectCoreVersion(CoreType::SingBox);
-
-        invokeOnUiThread(uiContext, [dialogGuard, xrayVersion, singBoxVersion]() {
-            if (dialogGuard.isNull()) {
-                return;
-            }
-
-            dialogGuard->setCoreVersion(CoreType::Xray, xrayVersion);
-            dialogGuard->setCoreVersion(CoreType::SingBox, singBoxVersion);
-        });
-    });
-    trackBackgroundThread(thread);
-    thread->start();
 }
 
 QString AppBootstrap::resolveCoreInstallDirectory(CoreType coreType) const
