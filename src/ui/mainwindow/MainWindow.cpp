@@ -1453,6 +1453,7 @@ void MainWindow::setupToolbar()
     toolBar->setObjectName(QStringLiteral("mainToolBar"));
     toolBar->setMovable(false);
     toolBar->setFloatable(false);
+    toolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     AppTheme::applyCompactFont(toolBar);
     const int iconExtent = qRound(toolBar->fontMetrics().height() * 1.2);
     toolBar->setIconSize(QSize(iconExtent, iconExtent));

@@ -20,6 +20,8 @@
 
 class QButtonGroup;
 class QHBoxLayout;
+class QStackedLayout;
+class QTabBar;
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -149,7 +151,8 @@ private:
         QTextEdit* domainEdit = nullptr;
     };
     QMap<QString, CustomRuleEditors> customRuleEditors_;
-    QTabWidget* tabWidget_ = nullptr;
+    QTabBar* settingsTabBar_ = nullptr;
+    QStackedLayout* settingsStackLayout_ = nullptr;
     int requestedTabIndex_ = 0;
 
     QList<SubItem> subItems_;

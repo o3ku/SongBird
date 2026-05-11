@@ -7,6 +7,8 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QLabel>
+#include <QStackedLayout>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTextEdit>
 
@@ -29,12 +31,14 @@ private slots:
     void mux4SboxProtocolComboRoundTripsConfig();
     void coreTypeTableIncludesHttpProtocol();
     void coreTypeTableDefaultsUseConfiguredValue();
+    void corePageUsesPlainContentWithoutGroupBoxes();
     void routingRuleNetworkAndProcessRoundTripConfig();
     void routingCustomRuleTabsRoundTripConfig();
     void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
     void routingPageUsesCompactCardsAndPlainCustomRuleForms();
     void routingBaseRouteCardsCollapseAroundSelectedCard();
     void settingsDialogUsesCompactUiFontBaseline();
+    void settingsDialogTabBarUsesImageReferenceStyleHooks();
 };
 
 void SettingsDialogTests::downloadButtonStartsInlineUpdate_data()
@@ -279,6 +283,21 @@ void SettingsDialogTests::coreTypeTableDefaultsUseConfiguredValue()
     };
     dialog.setConfig(config);
     QCOMPARE(vmessCombo->currentText(), QStringLiteral("Xray"));
+}
+
+void SettingsDialogTests::corePageUsesPlainContentWithoutGroupBoxes()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* vmessCombo = dialog.findChild<QComboBox*>(QStringLiteral("coreTypeCombo_1"));
+    QVERIFY(vmessCombo != nullptr);
+
+    const QList<QGroupBox*> groups = dialog.findChildren<QGroupBox*>();
+    for (QGroupBox* group : groups) {
+        QVERIFY(group->title() != QStringLiteral("Per-Protocol Override"));
+        QVERIFY(group->title() != QStringLiteral("Installed Cores"));
+    }
 }
 
 void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
@@ -536,19 +555,60 @@ void SettingsDialogTests::settingsDialogUsesCompactUiFontBaseline()
 
     const qreal baseline = dialog.font().pointSizeF();
 
-    auto* tabWidget = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabWidget"));
+    auto* settingsTabBar = dialog.findChild<QTabBar*>(QStringLiteral("settingsTabBar"));
     auto* subTable = dialog.findChild<QTableWidget*>();
     auto* systemProxyExceptionsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsSystemProxyExceptionsEdit"));
     auto* languageCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsLanguageCombo"));
-    QVERIFY(tabWidget != nullptr);
+    QVERIFY(settingsTabBar != nullptr);
     QVERIFY(subTable != nullptr);
     QVERIFY(systemProxyExceptionsEdit != nullptr);
     QVERIFY(languageCombo != nullptr);
 
-    QVERIFY(tabWidget->font().pointSizeF() <= baseline);
+    QVERIFY(settingsTabBar->font().pointSizeF() <= baseline);
     QVERIFY(subTable->font().pointSizeF() <= baseline);
     QVERIFY(systemProxyExceptionsEdit->font().pointSizeF() <= baseline);
     QVERIFY(languageCombo->font().pointSizeF() <= baseline);
+}
+
+void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()
+{
+    SettingsDialog dialog;
+    dialog.resize(880, 540);
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* settingsTabBar = dialog.findChild<QTabBar*>(QStringLiteral("settingsTabBar"));
+    auto* settingsTabBarContainer = dialog.findChild<QWidget*>(QStringLiteral("settingsTabBarContainer"));
+    auto* settingsActionBar = dialog.findChild<QWidget*>(QStringLiteral("settingsActionBar"));
+    auto* settingsStackContainer = dialog.findChild<QWidget*>(QStringLiteral("settingsStackContainer"));
+    auto* settingsStackLayout = dialog.findChild<QStackedLayout*>(QStringLiteral("settingsStackLayout"));
+    QVERIFY(settingsTabBar != nullptr);
+    QVERIFY(settingsTabBarContainer != nullptr);
+    QVERIFY(settingsActionBar != nullptr);
+    QVERIFY(settingsStackContainer != nullptr);
+    QVERIFY(settingsStackLayout != nullptr);
+    QCOMPARE(settingsTabBar->objectName(), QStringLiteral("settingsTabBar"));
+    QVERIFY(!settingsTabBar->expanding());
+    QVERIFY(!settingsTabBar->drawBase());
+    QCOMPARE(settingsTabBar->count(), settingsStackLayout->count());
+
+    const QMargins margins = settingsTabBar->contentsMargins();
+    QCOMPARE(margins.left(), 0);
+    QCOMPARE(margins.top(), 0);
+    QCOMPARE(margins.right(), 0);
+    QCOMPARE(margins.bottom(), 0);
+
+    auto* containerLayout = settingsTabBarContainer->layout();
+    QVERIFY(containerLayout != nullptr);
+    const QMargins containerMargins = containerLayout->contentsMargins();
+    QCOMPARE(containerMargins.left(), 0);
+    QCOMPARE(containerMargins.top(), 0);
+    QCOMPARE(containerMargins.right(), 0);
+    QCOMPARE(containerMargins.bottom(), 0);
+    QVERIFY(settingsTabBar->width() <= settingsTabBarContainer->contentsRect().width());
+    QVERIFY(settingsTabBar->tabRect(settingsTabBar->count() - 1).right() < settingsTabBar->width());
+    QVERIFY(settingsActionBar->layout() != nullptr);
 }
 
 QTEST_MAIN(SettingsDialogTests)

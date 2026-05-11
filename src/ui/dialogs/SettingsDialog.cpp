@@ -20,8 +20,10 @@
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSpinBox>
+#include <QStackedLayout>
 #include <QStyle>
 #include <QStyleOptionButton>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidgetItem>
 #include <QTextEdit>
@@ -221,7 +223,15 @@ void SettingsDialog::setConfig(const Config& config)
     directExpectedIpsEdit_->setText(config.directExpectedIps);
     dnsHostsEdit_->setPlainText(config.dnsHosts);
 
-    tabWidget_->setCurrentIndex(requestedTabIndex_);
+    const int targetTabIndex = settingsTabBar_ == nullptr || settingsTabBar_->count() == 0
+        ? 0
+        : qBound(0, requestedTabIndex_, settingsTabBar_->count() - 1);
+    if (settingsTabBar_ != nullptr) {
+        settingsTabBar_->setCurrentIndex(targetTabIndex);
+    }
+    if (settingsStackLayout_ != nullptr) {
+        settingsStackLayout_->setCurrentIndex(targetTabIndex);
+    }
     requestedTabIndex_ = 0;
     updateFieldState();
 }
@@ -556,9 +566,9 @@ void SettingsDialog::setupUi()
     const QList<CoreType> allCores = availableCoreTypes();
 
     // Per-protocol core selection
-    auto* coreTypeGroup = new QGroupBox(tr("Per-Protocol Override"), coreTab);
-    auto* coreTypeForm = new QFormLayout(coreTypeGroup);
-    AppTheme::applyCompactFont(coreTypeGroup);
+    auto* coreTypeWidget = new QWidget(coreTab);
+    auto* coreTypeForm = new QFormLayout(coreTypeWidget);
+    coreTypeForm->setContentsMargins(0, 0, 0, 0);
 
     for (int i = 0; i < protocolNames.size(); ++i) {
         const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configTypes.at(i)));
@@ -583,9 +593,9 @@ void SettingsDialog::setupUi()
     }
 
     // Installed Cores: one row per available core type, with install/update + "set all" actions
-    auto* coreStatusGroup = new QGroupBox(tr("Installed Cores"), coreTab);
-    auto* coreStatusLayout = new QFormLayout(coreStatusGroup);
-    AppTheme::applyCompactFont(coreStatusGroup);
+    auto* coreStatusWidget = new QWidget(coreTab);
+    auto* coreStatusLayout = new QFormLayout(coreStatusWidget);
+    coreStatusLayout->setContentsMargins(0, 0, 0, 0);
 
     for (const CoreType core : allCores) {
         const int coreKey = static_cast<int>(core);
@@ -635,8 +645,8 @@ void SettingsDialog::setupUi()
         });
     }
 
-    coreLayout->addWidget(coreTypeGroup);
-    coreLayout->addWidget(coreStatusGroup);
+    coreLayout->addWidget(coreTypeWidget);
+    coreLayout->addWidget(coreStatusWidget);
 
     // === Proxy Tab ===
     auto* proxyTab = new QWidget(this);
@@ -839,18 +849,40 @@ void SettingsDialog::setupUi()
     dnsLayout->addRow(tr("Direct Expected IPs"), directExpectedIpsEdit_);
     dnsLayout->addRow(tr("DNS Hosts"), dnsHostsEdit_);
 
-    // === Tab Widget ===
-    tabWidget_ = new QTabWidget(this);
-    tabWidget_->setObjectName(QStringLiteral("settingsTabWidget"));
-    AppTheme::applyCompactFont(tabWidget_);
-    tabWidget_->addTab(generalTab, tr("General"));
-    tabWidget_->addTab(subTab, tr("Subscriptions"));
-    tabWidget_->addTab(routingTab, tr("Routing"));
-    tabWidget_->addTab(coreTab, tr("Core"));
-    tabWidget_->addTab(proxyTab, tr("Proxy"));
-    tabWidget_->addTab(tunTab, QStringLiteral("TUN"));
-    tabWidget_->addTab(dnsTab, QStringLiteral("DNS"));
-    tabWidget_->addTab(updateTab, tr("Update"));
+    // === Settings Pages ===
+    settingsTabBar_ = new QTabBar(this);
+    settingsTabBar_->setObjectName(QStringLiteral("settingsTabBar"));
+    settingsTabBar_->setExpanding(false);
+    settingsTabBar_->setDrawBase(false);
+    AppTheme::applyCompactFont(settingsTabBar_);
+
+    auto* settingsStackContainer = new QWidget(this);
+    settingsStackContainer->setObjectName(QStringLiteral("settingsStackContainer"));
+    settingsStackLayout_ = new QStackedLayout(settingsStackContainer);
+    settingsStackLayout_->setObjectName(QStringLiteral("settingsStackLayout"));
+    settingsStackLayout_->setContentsMargins(0, 0, 0, 0);
+    auto addSettingsTab = [this](QWidget* page, const QString& title) {
+        settingsStackLayout_->addWidget(page);
+        settingsTabBar_->addTab(title);
+    };
+    addSettingsTab(generalTab, tr("General"));
+    addSettingsTab(subTab, tr("Subscriptions"));
+    addSettingsTab(routingTab, tr("Routing"));
+    addSettingsTab(coreTab, tr("Core"));
+    addSettingsTab(proxyTab, tr("Proxy"));
+    addSettingsTab(tunTab, QStringLiteral("TUN"));
+    addSettingsTab(dnsTab, QStringLiteral("DNS"));
+    addSettingsTab(updateTab, tr("Update"));
+
+    connect(settingsTabBar_, &QTabBar::currentChanged, settingsStackLayout_, &QStackedLayout::setCurrentIndex);
+    connect(settingsStackLayout_, &QStackedLayout::currentChanged, settingsTabBar_, &QTabBar::setCurrentIndex);
+
+    auto* settingsTabBarContainer = new QWidget(this);
+    settingsTabBarContainer->setObjectName(QStringLiteral("settingsTabBarContainer"));
+    auto* settingsTabBarLayout = new QVBoxLayout(settingsTabBarContainer);
+    settingsTabBarLayout->setContentsMargins(0, 0, 0, 0);
+    settingsTabBarLayout->setSpacing(0);
+    settingsTabBarLayout->addWidget(settingsTabBar_);
 
     // === Button Box with Restore ===
     restoreBackupButton_ = new QPushButton(tr("Restore Backup"), this);
@@ -863,14 +895,17 @@ void SettingsDialog::setupUi()
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     AppTheme::applyCompactFont(buttonBox_);
 
-    auto* bottomLayout = new QHBoxLayout();
+    auto* settingsActionBar = new QWidget(this);
+    settingsActionBar->setObjectName(QStringLiteral("settingsActionBar"));
+    auto* bottomLayout = new QHBoxLayout(settingsActionBar);
     bottomLayout->addWidget(restoreBackupButton_);
     bottomLayout->addStretch();
     bottomLayout->addWidget(buttonBox_);
 
     auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->addWidget(tabWidget_);
-    rootLayout->addLayout(bottomLayout);
+    rootLayout->addWidget(settingsTabBarContainer);
+    rootLayout->addWidget(settingsStackContainer);
+    rootLayout->addWidget(settingsActionBar);
 
     connect(enableStatisticsCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
@@ -1539,7 +1574,12 @@ void SettingsDialog::setCoreVersion(CoreType coreType, const QString& version)
 void SettingsDialog::beginCoreUpdate(CoreType coreType)
 {
     updatingCoreType_ = coreType;
-    tabWidget_->setCurrentIndex(3);
+    if (settingsTabBar_ != nullptr) {
+        settingsTabBar_->setCurrentIndex(3);
+    }
+    if (settingsStackLayout_ != nullptr) {
+        settingsStackLayout_->setCurrentIndex(3);
+    }
     setCoreUpdateProgress(coreType, tr("Checking..."));
 }
 

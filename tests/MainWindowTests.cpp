@@ -13,6 +13,7 @@
 #include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTextOption>
+#include <QToolBar>
 #include <QToolButton>
 
 #include "domain/models/Config.h"
@@ -31,6 +32,7 @@ private slots:
     void appendLogPreservesViewportWhenFilterActive();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
+    void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void sharePanelShowsSelectedServerShareLink();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
@@ -185,6 +187,21 @@ void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
+}
+
+void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
+{
+    MainWindow window;
+
+    auto* toolBar = window.findChild<QToolBar*>(QStringLiteral("mainToolBar"));
+    QVERIFY(toolBar != nullptr);
+    QCOMPARE(toolBar->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
+
+    const QMargins margins = toolBar->contentsMargins();
+    QCOMPARE(margins.left(), 0);
+    QCOMPARE(margins.top(), 2);
+    QCOMPARE(margins.right(), 0);
+    QCOMPARE(margins.bottom(), 2);
 }
 
 void MainWindowTests::sharePanelShowsSelectedServerShareLink()
