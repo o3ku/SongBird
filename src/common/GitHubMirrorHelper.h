@@ -7,9 +7,9 @@
 inline QStringList githubMirrorPrefixes()
 {
     return {
+        QStringLiteral("https://ghfast.top/"),
         QStringLiteral("https://mirror.ghproxy.com/"),
-        QStringLiteral("https://ghproxy.net/"),
-        QStringLiteral("https://ghfast.top/")
+        QStringLiteral("https://ghproxy.net/")
     };
 }
 
@@ -29,8 +29,8 @@ inline QList<QUrl> buildGitHubMirrorCandidateUrls(const QUrl& url)
         return result;
     }
 
-    result.append(url);
     if (!isGitHubOriginUrl(url)) {
+        result.append(url);
         return result;
     }
 
@@ -38,6 +38,7 @@ inline QList<QUrl> buildGitHubMirrorCandidateUrls(const QUrl& url)
     for (const QString& prefix : githubMirrorPrefixes()) {
         result.append(QUrl(prefix + encodedUrl));
     }
+    result.append(url);
 
     return result;
 }

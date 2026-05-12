@@ -17,6 +17,7 @@ public:
     using ConfirmDownloadHandler = std::function<bool(const QString& prompt)>;
     using BeforeInstallHandler = std::function<OperationResult()>;
     using ProgressHandler = std::function<void(const QString& message)>;
+    using CancelCheckHandler = std::function<bool()>;
     using VersionCommandHandler =
         std::function<OperationResult(const QString& program, const QStringList& arguments, QString* output)>;
 
@@ -32,6 +33,7 @@ public:
         ConfirmDownloadHandler confirmDownload = {},
         BeforeInstallHandler beforeInstall = {},
         ProgressHandler progressHandler = {},
+        CancelCheckHandler cancelCheck = {},
         bool skipLocalVersionCheck = false) const;
 
 private:

@@ -757,6 +757,43 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_statistics_service_tests)
 endif()
 
+set(QT_V2RAYN_CORE_UPDATE_SERVICE_TEST_SOURCES
+    CoreUpdateServiceTests.cpp
+    ../src/services/CoreUpdateService.h
+    ../src/services/CoreUpdateService.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_core_update_service_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_CORE_UPDATE_SERVICE_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_core_update_service_tests ${QT_V2RAYN_CORE_UPDATE_SERVICE_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_core_update_service_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_core_update_service_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME core-update-service COMMAND qt_v2rayn_core_update_service_tests)
+set_tests_properties(core-update-service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_core_update_service_tests)
+endif()
+
 set(QT_V2RAYN_SUBSCRIPTION_PARSER_TEST_SOURCES
     SubscriptionParserTests.cpp
     ../src/subscription/SubscriptionContentParser.h

@@ -16,6 +16,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 
 #include <utility>
@@ -30,6 +31,7 @@ namespace {
 
 constexpr int kCoreMetadataTimeoutMs = 30000;
 constexpr int kCoreDownloadTimeoutMs = 180000;
+constexpr int kCancellationPollIntervalMs = 100;
 
 struct GitHubReleaseAsset {
     QString name;
@@ -67,6 +69,22 @@ void reportProgress(const CoreUpdateService::ProgressHandler& progressHandler, c
     if (progressHandler && !message.trimmed().isEmpty()) {
         progressHandler(message);
     }
+}
+
+bool isCancellationRequested(const CoreUpdateService::CancelCheckHandler& cancelCheck)
+{
+    return cancelCheck && cancelCheck();
+}
+
+OperationResult cancelledResult()
+{
+    return OperationResult::fail(
+        QCoreApplication::translate("CoreUpdateService", "Core update was canceled."));
+}
+
+bool isCancelledResult(const OperationResult& result)
+{
+    return !result.success && result.message == cancelledResult().message;
 }
 
 QString normalizeVersionTag(QString value)
@@ -315,7 +333,8 @@ OperationResult downloadBytesWithNetwork(
     const QUrl& url,
     QByteArray* content,
     const QString& userAgent,
-    int timeoutMs)
+    int timeoutMs,
+    const CoreUpdateService::CancelCheckHandler& cancelCheck)
 {
     if (content == nullptr) {
         return OperationResult::fail(
@@ -333,9 +352,12 @@ OperationResult downloadBytesWithNetwork(
     request.setHeader(QNetworkRequest::UserAgentHeader, userAgent);
 
     bool timedOut = false;
+    bool cancelled = false;
     QEventLoop loop;
     QTimer timeoutTimer;
+    QTimer cancellationTimer;
     timeoutTimer.setSingleShot(true);
+    cancellationTimer.setInterval(kCancellationPollIntervalMs);
 
     QNetworkReply* reply = manager.get(request);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
@@ -344,11 +366,29 @@ OperationResult downloadBytesWithNetwork(
         reply->abort();
         loop.quit();
     });
+    QObject::connect(&cancellationTimer, &QTimer::timeout, &loop, [&]() {
+        if (!isCancellationRequested(cancelCheck)) {
+            return;
+        }
+
+        cancelled = true;
+        reply->abort();
+        loop.quit();
+    });
     timeoutTimer.start(timeoutMs);
+    if (cancelCheck) {
+        cancellationTimer.start();
+    }
     loop.exec();
     timeoutTimer.stop();
+    cancellationTimer.stop();
 
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (cancelled) {
+        reply->deleteLater();
+        return cancelledResult();
+    }
+
     if (timedOut) {
         reply->deleteLater();
         return OperationResult::fail(
@@ -380,7 +420,8 @@ OperationResult downloadBytesWithNetwork(
 OperationResult runVersionCommandWithProcess(
     const QString& program,
     const QStringList& arguments,
-    QString* output)
+    QString* output,
+    const CoreUpdateService::CancelCheckHandler& cancelCheck)
 {
     if (output == nullptr) {
         return OperationResult::fail(
@@ -400,11 +441,21 @@ OperationResult runVersionCommandWithProcess(
                 .arg(process.errorString()));
     }
 
-    if (!process.waitForFinished(5000)) {
-        process.kill();
-        process.waitForFinished(1500);
-        return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "The version check process timed out."));
+    int elapsedMs = 0;
+    while (!process.waitForFinished(kCancellationPollIntervalMs)) {
+        elapsedMs += kCancellationPollIntervalMs;
+        if (isCancellationRequested(cancelCheck)) {
+            process.kill();
+            process.waitForFinished(1500);
+            return cancelledResult();
+        }
+
+        if (elapsedMs >= 5000) {
+            process.kill();
+            process.waitForFinished(1500);
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "The version check process timed out."));
+        }
     }
 
     *output = QString::fromUtf8(process.readAll()).trimmed();
@@ -477,7 +528,10 @@ QString quotePowerShellLiteral(QString value)
     return value;
 }
 
-OperationResult extractArchiveWithPowerShell(const QString& archivePath, const QString& extractionDirectory)
+OperationResult extractArchiveWithPowerShell(
+    const QString& archivePath,
+    const QString& extractionDirectory,
+    const CoreUpdateService::CancelCheckHandler& cancelCheck)
 {
     QDir().mkpath(extractionDirectory);
 
@@ -509,11 +563,21 @@ OperationResult extractArchiveWithPowerShell(const QString& archivePath, const Q
                 .arg(process.errorString()));
     }
 
-    if (!process.waitForFinished(120000)) {
-        process.kill();
-        process.waitForFinished(2000);
-        return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "Archive extraction timed out."));
+    int elapsedMs = 0;
+    while (!process.waitForFinished(kCancellationPollIntervalMs)) {
+        elapsedMs += kCancellationPollIntervalMs;
+        if (isCancellationRequested(cancelCheck)) {
+            process.kill();
+            process.waitForFinished(2000);
+            return cancelledResult();
+        }
+
+        if (elapsedMs >= 120000) {
+            process.kill();
+            process.waitForFinished(2000);
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "Archive extraction timed out."));
+        }
     }
 
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
@@ -716,8 +780,13 @@ OperationResult CoreUpdateService::update(
     ConfirmDownloadHandler confirmDownload,
     BeforeInstallHandler beforeInstall,
     ProgressHandler progressHandler,
+    CancelCheckHandler cancelCheck,
     bool skipLocalVersionCheck) const
 {
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
+    }
+
     const CoreUpdateDefinition definition = resolveDefinition(coreType);
     if (definition.type == CoreType::Unknown || !definition.releasesApiUrl.isValid()) {
         return OperationResult::fail(
@@ -760,6 +829,10 @@ OperationResult CoreUpdateService::update(
 
         const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(definition.releasesApiUrl);
         for (const QUrl& candidateUrl : releaseUrls) {
+            if (isCancellationRequested(cancelCheck)) {
+                return cancelledResult();
+            }
+
             reportProgress(
                 progressHandler,
                 QCoreApplication::translate("CoreUpdateService", "Requesting release metadata: %1")
@@ -772,7 +845,11 @@ OperationResult CoreUpdateService::update(
                     candidateUrl,
                     &payload,
                     QStringLiteral("v2rayq-core-update"),
-                    kCoreMetadataTimeoutMs);
+                    kCoreMetadataTimeoutMs,
+                    cancelCheck);
+            if (isCancelledResult(downloadResult)) {
+                return downloadResult;
+            }
             if (!downloadResult.success) {
                 lastError = downloadResult.message;
                 reportProgress(
@@ -840,6 +917,10 @@ OperationResult CoreUpdateService::update(
             .arg(definition.displayName)
             .arg(asset->name));
 
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
+    }
+
     QString currentVersion;
     const QString executablePath = findFirstExistingFile(normalizedTargetDirectory, definition.executablePatterns);
     if (!skipLocalVersionCheck && !executablePath.isEmpty()) {
@@ -851,7 +932,14 @@ OperationResult CoreUpdateService::update(
         QString versionOutput;
         const OperationResult versionResult = versionCommandHandler_
             ? versionCommandHandler_(executablePath, versionCommandArguments(definition.type), &versionOutput)
-            : runVersionCommandWithProcess(executablePath, versionCommandArguments(definition.type), &versionOutput);
+            : runVersionCommandWithProcess(
+                executablePath,
+                versionCommandArguments(definition.type),
+                &versionOutput,
+                cancelCheck);
+        if (isCancelledResult(versionResult)) {
+            return versionResult;
+        }
         if (versionResult.success) {
             currentVersion = extractVersionFromOutput(definition.type, versionOutput);
             if (!currentVersion.isEmpty()) {
@@ -886,6 +974,10 @@ OperationResult CoreUpdateService::update(
         }
     }
 
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
+    }
+
     reportProgress(
         progressHandler,
         QCoreApplication::translate("CoreUpdateService", "Downloading %1 %2...")
@@ -895,6 +987,10 @@ OperationResult CoreUpdateService::update(
     QByteArray packageBytes;
     lastError.clear();
     for (const QUrl& candidateUrl : buildGitHubMirrorCandidateUrls(asset->downloadUrl)) {
+        if (isCancellationRequested(cancelCheck)) {
+            return cancelledResult();
+        }
+
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Trying download source: %1")
@@ -906,7 +1002,11 @@ OperationResult CoreUpdateService::update(
                 candidateUrl,
                 &packageBytes,
                 QStringLiteral("v2rayq-core-update"),
-                kCoreDownloadTimeoutMs);
+                kCoreDownloadTimeoutMs,
+                cancelCheck);
+        if (isCancelledResult(downloadResult)) {
+            return downloadResult;
+        }
         if (downloadResult.success && !packageBytes.isEmpty()) {
             lastError.clear();
             reportProgress(
@@ -936,6 +1036,10 @@ OperationResult CoreUpdateService::update(
                     : lastError));
     }
 
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
+    }
+
     if (beforeInstall) {
         reportProgress(
             progressHandler,
@@ -962,6 +1066,10 @@ OperationResult CoreUpdateService::update(
         return packageWriteResult;
     }
 
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
+    }
+
     OperationResult applyResult;
     if (asset->name.trimmed().toLower().endsWith(QStringLiteral(".zip"))) {
         const QString extractionDirectory = temporaryDirectory.filePath(QStringLiteral("extracted"));
@@ -971,7 +1079,10 @@ OperationResult CoreUpdateService::update(
                 .arg(asset->name));
         const OperationResult extractResult = archiveExtractor_
             ? archiveExtractor_(packagePath, extractionDirectory)
-            : extractArchiveWithPowerShell(packagePath, extractionDirectory);
+            : extractArchiveWithPowerShell(packagePath, extractionDirectory, cancelCheck);
+        if (isCancelledResult(extractResult)) {
+            return extractResult;
+        }
         if (!extractResult.success) {
             return extractResult;
         }
@@ -992,6 +1103,10 @@ OperationResult CoreUpdateService::update(
         applyResult = writeBytesToFile(
             QDir(normalizedTargetDirectory).filePath(asset->name),
             packageBytes);
+    }
+
+    if (isCancellationRequested(cancelCheck)) {
+        return cancelledResult();
     }
 
     if (!applyResult.success) {

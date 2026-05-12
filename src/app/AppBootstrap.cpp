@@ -25,6 +25,8 @@
 #include <QUrl>
 #include <QUuid>
 
+#include <memory>
+
 #if defined(Q_OS_WIN)
 #include <winsock2.h>
 #include <ws2ipdef.h>
@@ -88,6 +90,105 @@ constexpr auto ReleasePageUrl = "https://github.com/o3ku/v2rayq/releases";
 constexpr auto DocumentationUrl = "https://www.v2fly.org/";
 constexpr auto DnsObjectUrl = "https://www.v2fly.org/config/dns.html#dnsobject";
 constexpr auto RuleObjectUrl = "https://www.v2fly.org/config/routing.html#ruleobject";
+
+QString normalizeCoreVersionTag(QString value)
+{
+    value = value.trimmed().toLower();
+    if (value.startsWith(QStringLiteral("version "))) {
+        value = value.mid(QStringLiteral("version ").size()).trimmed();
+    }
+
+    if (!value.isEmpty() && value.front().isDigit()) {
+        value.prepend(QChar('v'));
+    }
+
+    return value;
+}
+
+QStringList coreVersionCommandArguments(CoreType coreType)
+{
+    switch (resolveRuntimeCoreType(coreType)) {
+    case CoreType::SingBox:
+        return QStringList{QStringLiteral("version")};
+    case CoreType::Xray:
+    case CoreType::V2Fly:
+        return QStringList{QStringLiteral("-version")};
+    case CoreType::Clash:
+    case CoreType::ClashMeta:
+        return QStringList{QStringLiteral("-v")};
+    case CoreType::Auto:
+    case CoreType::SagerNet:
+    case CoreType::V2FlyV5:
+    case CoreType::Hysteria:
+    case CoreType::NaiveProxy:
+    case CoreType::Unknown:
+    default:
+        return {};
+    }
+}
+
+QString extractCoreVersionFromOutput(CoreType coreType, const QString& output)
+{
+    if (output.trimmed().isEmpty()) {
+        return {};
+    }
+
+    const QString normalizedOutput = output.trimmed();
+    QRegularExpressionMatch match;
+
+    switch (resolveRuntimeCoreType(coreType)) {
+    case CoreType::SingBox:
+        match = QRegularExpression(QStringLiteral("\\bsing-box\\s+version\\s+([0-9A-Za-z._-]+)"))
+                    .match(normalizedOutput);
+        break;
+    case CoreType::Xray:
+    case CoreType::V2Fly:
+        match = QRegularExpression(QStringLiteral("\\b(?:Xray|V2Ray)\\s+([0-9A-Za-z._-]+)"))
+                    .match(normalizedOutput);
+        break;
+    case CoreType::Clash:
+    case CoreType::ClashMeta:
+        match = QRegularExpression(QStringLiteral("\\b(v[0-9A-Za-z._-]+)")).match(normalizedOutput);
+        break;
+    case CoreType::Auto:
+    case CoreType::SagerNet:
+    case CoreType::V2FlyV5:
+    case CoreType::Hysteria:
+    case CoreType::NaiveProxy:
+    case CoreType::Unknown:
+    default:
+        return {};
+    }
+
+    return match.hasMatch() ? normalizeCoreVersionTag(match.captured(1)) : QString();
+}
+
+QString readCoreVersion(CoreType coreType, const QString& program)
+{
+    const QStringList arguments = coreVersionCommandArguments(coreType);
+    if (program.trimmed().isEmpty() || arguments.isEmpty()) {
+        return {};
+    }
+
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.setWorkingDirectory(QFileInfo(program).absolutePath());
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start();
+
+    if (!process.waitForStarted(1500)) {
+        return {};
+    }
+
+    if (!process.waitForFinished(5000)) {
+        process.kill();
+        process.waitForFinished(1500);
+        return {};
+    }
+
+    return extractCoreVersionFromOutput(coreType, QString::fromUtf8(process.readAll()));
+}
 
 QStringList coreCandidateFileNames(const QStringList& candidates)
 {
@@ -415,6 +516,7 @@ AppBootstrap::AppBootstrap(
 AppBootstrap::~AppBootstrap()
 {
     shuttingDown_.store(true);
+    lifetimeGuard_.reset();
     cancelPendingCoreRestarts();
     waitForBackgroundThreads();
 
@@ -995,7 +1097,9 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(trayController_.get(), &TrayController::startCoreRequested, mainWindow_.get(), [this]() {
-        startCore();
+        if (reloadConfig()) {
+            startCore();
+        }
     });
 
     QObject::connect(trayController_.get(), &TrayController::stopCoreRequested, mainWindow_.get(), [this]() {
@@ -1119,7 +1223,7 @@ void AppBootstrap::syncStatusIndicators()
     const bool autoRunEnabled = autoRunService_ != nullptr && autoRunService_->isEnabled();
     const bool coreRestartPending = coreRestartTimer_ != nullptr && coreRestartTimer_->isActive();
     const bool corePending = coreStartPending_ || coreStopPending_ || coreRestartPending;
-    const bool coreRunning = coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning();
+    const bool coreRunning = isCoreReady();
     const QString currentServerName = describeServer(findServerById(config_.currentIndexId));
     const QString routingSummary = buildRoutingSummaryText();
     const QString listenSummary = buildListenSummaryText();
@@ -1145,7 +1249,7 @@ void AppBootstrap::syncStatusIndicators()
 
     if (trayController_ != nullptr) {
         trayController_->setCurrentServerName(currentServerName);
-        trayController_->setCoreRunning(coreRunning);
+        trayController_->setCoreRunning(coreRunning, corePending);
         trayController_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
         trayController_->setAutoRunEnabled(autoRunEnabled);
         trayController_->setRoutingSummary(routingSummary, config_.enableRoutingAdvanced);
@@ -1340,12 +1444,14 @@ void AppBootstrap::showOperationMessage(
 
 void AppBootstrap::startCore()
 {
-    startCore(false, std::nullopt);
+    const bool preserveProxyEnabled = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
+    startCore(false, preserveProxyEnabled);
 }
 
 void AppBootstrap::startCore(bool skipTunCleanup)
 {
-    startCore(skipTunCleanup, std::nullopt);
+    const bool preserveProxyEnabled = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
+    startCore(skipTunCleanup, preserveProxyEnabled);
 }
 
 void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupProxyEnabled)
@@ -1559,10 +1665,12 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         });
 
     coreStartPending_ = true;
+    coreReady_ = false;
     const OperationResult startResult = coreLifecycleService_->start(launchCoreInfo, coreConfigPath);
     appendResult(startResult);
     if (!startResult.success) {
         coreStartPending_ = false;
+        coreReady_ = false;
         disconnectPendingCoreStartConnection();
         stopAuxiliaryCore();
         stopStatisticsSession();
@@ -1581,6 +1689,7 @@ void AppBootstrap::handleCoreStarted(
     std::optional<bool> startupProxyEnabled)
 {
     coreStartPending_ = false;
+    coreReady_ = true;
     disconnectPendingCoreStartConnection();
     if (statisticsService_ != nullptr) {
         statisticsService_->startSession(
@@ -1636,6 +1745,7 @@ void AppBootstrap::handleCoreStartFailed(const QString& message)
 {
     coreStartPending_ = false;
     coreStopPending_ = false;
+    coreReady_ = false;
     disconnectPendingCoreStartConnection();
     appendResult(OperationResult::fail(message));
     stopAuxiliaryCore();
@@ -1677,11 +1787,24 @@ void AppBootstrap::stopCore(bool immediate)
 void AppBootstrap::stopCoreInternal(bool immediate, bool clearRestartAfterStop)
 {
     coreStartPending_ = false;
+    coreReady_ = false;
     disconnectPendingCoreStartConnection();
     cancelPendingCoreRestarts();
     resumeCoreStartAfterTunCleanup_ = false;
     if (clearRestartAfterStop) {
         restartAfterStopPending_ = false;
+    }
+    if (clearRestartAfterStop && systemProxyService_ != nullptr && systemProxyService_->isEnabled()) {
+        const bool proxyCleared = systemProxyService_->update(
+            SystemProxyMode::ForcedClear,
+            config_.localPort + 1,
+            config_.localPort,
+            buildSystemProxyExceptions(),
+            config_.systemProxyAdvancedProtocol,
+            config_.pacUrl);
+        appendResult(proxyCleared
+            ? OperationResult::ok(QStringLiteral("System proxy disabled because the core was stopped."))
+            : OperationResult::fail(QStringLiteral("Failed to disable system proxy after stopping the core.")));
     }
     stopStatisticsBackends();
     if (!immediate && coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning()) {
@@ -1772,12 +1895,16 @@ OperationResult AppBootstrap::removeStaleTunAdapterIfPresent() const
 void AppBootstrap::removeStaleTunAdapterAsync(const std::function<void(const OperationResult&)>& completion)
 {
     QPointer<QObject> mainWindowGuard(mainWindow_.get());
-    QThread* thread = QThread::create([this, mainWindowGuard, completion]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, mainWindowGuard, completion, lifetimeGuard]() {
         const OperationResult result = removeStaleTunAdapterIfPresent();
         QObject* uiContext = mainWindowGuard.isNull()
             ? static_cast<QObject*>(QCoreApplication::instance())
             : mainWindowGuard.data();
-        invokeOnUiThread(uiContext, [completion, result]() {
+        invokeOnUiThread(uiContext, [completion, result, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             if (completion) {
                 completion(result);
             }
@@ -1851,6 +1978,7 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
 {
     if (!auxiliary) {
         coreStartPending_ = false;
+        coreReady_ = false;
         disconnectPendingCoreStartConnection();
     }
 
@@ -2133,7 +2261,8 @@ void AppBootstrap::importClipboardTextAsync(const QString& text)
     QObject* uiContext = mainWindow_ == nullptr
         ? static_cast<QObject*>(QCoreApplication::instance())
         : mainWindow_.get();
-    QThread* thread = QThread::create([this, text, configPath, customConfigDirectory, uiContext]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, text, configPath, customConfigDirectory, uiContext, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         ServerService serverService(repository, customConfigDirectory);
         SubscriptionService subscriptionService(repository);
@@ -2150,7 +2279,10 @@ void AppBootstrap::importClipboardTextAsync(const QString& text)
             }
         }
 
-        invokeOnUiThread(uiContext, [this, result]() {
+        invokeOnUiThread(uiContext, [this, result, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             subscriptionUpdateRunning_ = false;
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
@@ -2206,7 +2338,8 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
     }
     const QString configPath = resolveConfigPath();
     QObject* uiContext = mainWindow_.get();
-    QThread* thread = QThread::create([this, text, configPath, activeSubscriptionId, uiContext]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, text, configPath, activeSubscriptionId, uiContext, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
@@ -2276,7 +2409,10 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
         }
 
         if (subscriptionIds.isEmpty()) {
-            invokeOnUiThread(uiContext, [this]() {
+            invokeOnUiThread(uiContext, [this, lifetimeGuard]() {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
                 subscriptionUpdateRunning_ = false;
                 if (mainWindow_ != nullptr) {
                     mainWindow_->setSubscriptionUpdateRunning(false);
@@ -2304,7 +2440,10 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
                 : OperationResult::fail(lines.join(QStringLiteral("\n")));
         }
 
-        invokeOnUiThread(uiContext, [this, result, subscriptionIds, activeSubscriptionId, lastSubscriptionId]() {
+        invokeOnUiThread(uiContext, [this, result, subscriptionIds, activeSubscriptionId, lastSubscriptionId, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             subscriptionUpdateRunning_ = false;
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
@@ -2574,11 +2713,15 @@ void AppBootstrap::runProxyAvailabilityCheck()
         QCoreApplication::translate("AppBootstrap", "Running availability check in the background..."),
         3000);
 
-    QThread* thread = QThread::create([this, workerConfig, uiContext]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, workerConfig, uiContext, lifetimeGuard]() {
         ProxyAvailabilityCheckService proxyAvailabilityCheckService;
         const OperationResult result = proxyAvailabilityCheckService.check(workerConfig);
 
-        invokeOnUiThread(uiContext, [this, result]() {
+        invokeOnUiThread(uiContext, [this, result, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             proxyAvailabilityCheckRunning_ = false;
             showOperationMessage(
                 QCoreApplication::translate("AppBootstrap", "TestMe"),
@@ -2614,8 +2757,16 @@ void AppBootstrap::updateCore(
         return;
     }
 
+    const auto notifyCompletion = [&completionObserver](const OperationResult& result) {
+        if (completionObserver) {
+            completionObserver(result);
+        }
+    };
+
     if (coreUpdateRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A core update is already running in the background.")));
+        const OperationResult result = OperationResult::fail(QStringLiteral("A core update is already running in the background."));
+        appendResult(result);
+        notifyCompletion(result);
         return;
     }
 
@@ -2644,8 +2795,11 @@ void AppBootstrap::updateCore(
                QMessageBox::Yes)
             == QMessageBox::Yes);
     if (!confirmed) {
-        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "%1 update was canceled.")
-                                             .arg(coreTypeDisplayName(coreType))));
+        const OperationResult result = OperationResult::ok(
+            QCoreApplication::translate("AppBootstrap", "%1 update was canceled.")
+                .arg(coreTypeDisplayName(coreType)));
+        appendResult(result);
+        notifyCompletion(result);
         return;
     }
 
@@ -2672,6 +2826,7 @@ void AppBootstrap::updateCore(
     mainWindow_->showTransientStatus(startupMessage, 3000);
 
     coreUpdateRunning_ = true;
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     QThread* thread = QThread::create([this,
                                        coreType,
                                        workerConfig,
@@ -2683,7 +2838,8 @@ void AppBootstrap::updateCore(
                                        progressContextGuard,
                                        dialogParentGuard,
                                        progressObserver,
-                                       completionObserver]() {
+                                       completionObserver,
+                                       lifetimeGuard]() {
         runCoreUpdateTask(
             coreType,
             workerConfig,
@@ -2691,7 +2847,10 @@ void AppBootstrap::updateCore(
             progressContextGuard,
             skipLocalVersionCheck,
             progressObserver,
-            [this, title, stoppedForInstall, startAfterSuccess, dialogParentGuard, completionObserver](const OperationResult& result) {
+            [this, title, stoppedForInstall, startAfterSuccess, dialogParentGuard, completionObserver, lifetimeGuard](const OperationResult& result) {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
                 finalizeCoreUpdate(
                     title,
                     result,
@@ -2715,14 +2874,18 @@ void AppBootstrap::runCoreUpdateTask(
     std::function<void(const OperationResult&)> completionObserver)
 {
     CoreUpdateService coreUpdateService;
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
 
-    const auto reportProgress = [this, progressContextGuard, progressObserver](const QString& message) {
+    const auto reportProgress = [this, progressContextGuard, progressObserver, lifetimeGuard](const QString& message) {
         if (message.trimmed().isEmpty()) {
             return;
         }
 
         QObject* uiTarget = progressContextGuard.isNull() ? mainWindow_.get() : progressContextGuard.data();
-        invokeOnUiThread(uiTarget, [this, message, progressObserver]() {
+        invokeOnUiThread(uiTarget, [this, message, progressObserver, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             if (mainWindow_ == nullptr) {
                 return;
             }
@@ -2742,10 +2905,18 @@ void AppBootstrap::runCoreUpdateTask(
         {},
         {},
         reportProgress,
+        [this]() {
+            QThread* currentThread = QThread::currentThread();
+            return shuttingDown_.load()
+                || (currentThread != nullptr && currentThread->isInterruptionRequested());
+        },
         skipLocalVersionCheck);
 
     QObject* uiTarget = progressContextGuard.isNull() ? mainWindow_.get() : progressContextGuard.data();
-    invokeOnUiThread(uiTarget, [completionObserver, result]() {
+    invokeOnUiThread(uiTarget, [completionObserver, result, lifetimeGuard]() {
+        if (lifetimeGuard.expired()) {
+            return;
+        }
         if (completionObserver) {
             completionObserver(result);
         }
@@ -2761,6 +2932,10 @@ void AppBootstrap::finalizeCoreUpdate(
     const std::function<void(const OperationResult&)>& completionObserver)
 {
     coreUpdateRunning_ = false;
+    if (shuttingDown_.load()) {
+        return;
+    }
+
     if (mainWindow_ != nullptr && !result.message.trimmed().isEmpty()) {
         mainWindow_->showTransientStatus(result.message, 5000);
     }
@@ -2772,7 +2947,7 @@ void AppBootstrap::finalizeCoreUpdate(
     }
 
     if (stoppedForInstall) {
-        if (result.success && result.requiresRestart) {
+        if (result.success && result.requiresRestart && startAfterSuccess) {
             const QString message = QCoreApplication::translate(
                 "AppBootstrap",
                 "Restarting the updated core...");
@@ -2845,6 +3020,7 @@ void AppBootstrap::continuePendingCoreUpdate()
     mainWindow_->showTransientStatus(startupMessage, 3000);
 
     coreUpdateRunning_ = true;
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     QThread* thread = QThread::create([this,
                                        coreType,
                                        workerConfig,
@@ -2855,7 +3031,8 @@ void AppBootstrap::continuePendingCoreUpdate()
                                        progressContextGuard,
                                        dialogParentGuard,
                                        progressObserver,
-                                       completionObserver]() {
+                                       completionObserver,
+                                       lifetimeGuard]() {
         runCoreUpdateTask(
             coreType,
             workerConfig,
@@ -2863,7 +3040,10 @@ void AppBootstrap::continuePendingCoreUpdate()
             progressContextGuard,
             skipLocalVersionCheck,
             progressObserver,
-            [this, title, startAfterSuccess, dialogParentGuard, completionObserver](const OperationResult& result) {
+            [this, title, startAfterSuccess, dialogParentGuard, completionObserver, lifetimeGuard](const OperationResult& result) {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
                 finalizeCoreUpdate(
                     title,
                     result,
@@ -2896,7 +3076,8 @@ void AppBootstrap::updateGeoResources()
     mainWindow_->appendLog(message);
     mainWindow_->showTransientStatus(message, 3000);
 
-    QThread* thread = QThread::create([this, targetDirectory, title, uiContext]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, targetDirectory, title, uiContext, lifetimeGuard]() {
         GeoResourceUpdateService geoResourceUpdateService(targetDirectory);
         const QList<OperationResult> results{
             geoResourceUpdateService.update(QStringLiteral("geosite")),
@@ -2916,7 +3097,10 @@ void AppBootstrap::updateGeoResources()
             }
         }
 
-        invokeOnUiThread(uiContext, [this, title, results, hasSuccess, failureLines, successLines]() {
+        invokeOnUiThread(uiContext, [this, title, results, hasSuccess, failureLines, successLines, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             geoUpdateRunning_ = false;
             for (const OperationResult& result : results) {
                 appendResult(result);
@@ -2996,7 +3180,8 @@ void AppBootstrap::updateSubscriptionsByIds(
     }
     const QString configPath = resolveConfigPath();
     QObject* uiContext = mainWindow_.get();
-    QThread* thread = QThread::create([this, configPath, subscriptionIds, activeSubscriptionId, uiContext, useProxy]() {
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this, configPath, subscriptionIds, activeSubscriptionId, uiContext, useProxy, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
@@ -3006,7 +3191,10 @@ void AppBootstrap::updateSubscriptionsByIds(
             ? subscriptionUpdateService.updateAll(workerConfig, useProxy)
             : subscriptionUpdateService.updateByIds(workerConfig, subscriptionIds, useProxy);
 
-        invokeOnUiThread(uiContext, [this, result, subscriptionIds, activeSubscriptionId]() {
+        invokeOnUiThread(uiContext, [this, result, subscriptionIds, activeSubscriptionId, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
             subscriptionUpdateRunning_ = false;
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
@@ -3123,8 +3311,12 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     SettingsDialog dialog(mainWindow_.get());
     QPointer<SettingsDialog> dialogGuard(&dialog);
     dialog.selectTab(initialTab);
-    dialog.setExistingCoreTypes(existingCoreTypes_);
     dialog.setConfig(config_);
+    refreshExistingCoreTypes();
+    dialog.setExistingCoreTypes(existingCoreTypes_);
+    for (const CoreType coreType : availableCoreTypes()) {
+        dialog.setCoreVersion(coreType, detectCoreVersion(coreType));
+    }
 
     QObject::connect(&dialog, &SettingsDialog::coreDownloadRequested, &dialog, [this, dialogGuard](int coreTypeValue) {
         if (dialogGuard.isNull()) {
@@ -3132,15 +3324,20 @@ void AppBootstrap::openSettingsDialog(int initialTab)
         }
 
         const CoreType requestedCoreType = static_cast<CoreType>(coreTypeValue);
+        const auto updateStarted = std::make_shared<bool>(false);
         updateCore(
             coreTypeValue,
-            true,
+            false,
             dialogGuard.data(),
             dialogGuard.data(),
             false,
             false,
-            [dialogGuard, requestedCoreType](const QString& message) {
+            [dialogGuard, requestedCoreType, updateStarted](const QString& message) {
                 if (!dialogGuard.isNull()) {
+                    if (!*updateStarted) {
+                        dialogGuard->beginCoreUpdate(requestedCoreType);
+                        *updateStarted = true;
+                    }
                     dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
                 }
             },
@@ -3151,6 +3348,7 @@ void AppBootstrap::openSettingsDialog(int initialTab)
 
                 if (result.success) {
                     dialogGuard->setExistingCoreTypes(existingCoreTypes_);
+                    dialogGuard->setCoreVersion(requestedCoreType, detectCoreVersion(requestedCoreType));
                 }
                 dialogGuard->finishCoreUpdate(requestedCoreType, result.success, result.message);
             });
@@ -3471,6 +3669,11 @@ bool AppBootstrap::isCoreRunning() const
     return coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning();
 }
 
+bool AppBootstrap::isCoreReady() const
+{
+    return isCoreRunning() && coreReady_;
+}
+
 QString AppBootstrap::resolveConfigPath() const
 {
     if (!configPath_.isEmpty()) {
@@ -3777,74 +3980,86 @@ CoreInfo AppBootstrap::resolveCoreInfo(const VmessItem& server) const
 
 QStringList AppBootstrap::resolveCoreCandidates(CoreType coreType) const
 {
+    QStringList directories;
+    const auto appendDirectory = [&directories](const QString& path) {
+        if (path.trimmed().isEmpty()) {
+            return;
+        }
+
+        const QString directory = QDir(path).absolutePath();
+        if (!directory.isEmpty() && !directories.contains(directory, Qt::CaseInsensitive)) {
+            directories.append(directory);
+        }
+    };
+
+    appendDirectory(QDir::currentPath());
+    appendDirectory(QCoreApplication::applicationDirPath());
+    appendDirectory(QFileInfo(resolveConfigPath()).dir().absolutePath());
+
+    QStringList fileNames;
     switch (resolveRuntimeCoreType(coreType)) {
     case CoreType::Clash:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("mihomo*.exe")),
-            QDir::current().filePath(QStringLiteral("clash-windows-amd64-v3.exe")),
-            QDir::current().filePath(QStringLiteral("clash-windows-amd64.exe")),
-            QDir::current().filePath(QStringLiteral("clash-windows-386.exe")),
-            QDir::current().filePath(QStringLiteral("clash.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("mihomo*.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clash-windows-amd64-v3.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clash-windows-amd64.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clash-windows-386.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clash.exe"))
+        fileNames = QStringList{
+            QStringLiteral("mihomo*.exe"),
+            QStringLiteral("clash-windows-amd64-v3.exe"),
+            QStringLiteral("clash-windows-amd64.exe"),
+            QStringLiteral("clash-windows-386.exe"),
+            QStringLiteral("clash.exe")
         };
+        break;
     case CoreType::ClashMeta:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("mihomo*.exe")),
-            QDir::current().filePath(QStringLiteral("Clash.Meta*.exe")),
-            QDir::current().filePath(QStringLiteral("clash.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("mihomo*.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("Clash.Meta*.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clash.exe"))
+        fileNames = QStringList{
+            QStringLiteral("mihomo*.exe"),
+            QStringLiteral("Clash.Meta*.exe"),
+            QStringLiteral("clash.exe")
         };
+        break;
     case CoreType::Hysteria:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("hysteria-windows-amd64.exe")),
-            QDir::current().filePath(QStringLiteral("hysteria-windows-386.exe")),
-            QDir::current().filePath(QStringLiteral("hysteria.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("hysteria-windows-amd64.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("hysteria-windows-386.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("hysteria.exe"))
+        fileNames = QStringList{
+            QStringLiteral("hysteria-windows-amd64.exe"),
+            QStringLiteral("hysteria-windows-386.exe"),
+            QStringLiteral("hysteria.exe")
         };
+        break;
     case CoreType::NaiveProxy:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("naiveproxy.exe")),
-            QDir::current().filePath(QStringLiteral("naive.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("naiveproxy.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("naive.exe"))
+        fileNames = QStringList{
+            QStringLiteral("naiveproxy.exe"),
+            QStringLiteral("naive.exe")
         };
+        break;
     case CoreType::SingBox:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("sing-box-client.exe")),
-            QDir::current().filePath(QStringLiteral("sing-box.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("sing-box-client.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("sing-box.exe"))
+        fileNames = QStringList{
+            QStringLiteral("sing-box-client.exe"),
+            QStringLiteral("sing-box.exe")
         };
+        break;
     case CoreType::V2Fly:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("wv2ray.exe")),
-            QDir::current().filePath(QStringLiteral("v2ray.exe")),
-            QDir::current().filePath(QStringLiteral("SagerNet.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("wv2ray.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("v2ray.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("SagerNet.exe"))
+        fileNames = QStringList{
+            QStringLiteral("wv2ray.exe"),
+            QStringLiteral("v2ray.exe"),
+            QStringLiteral("SagerNet.exe")
         };
+        break;
     case CoreType::Xray:
     case CoreType::Auto:
     case CoreType::SagerNet:
     case CoreType::V2FlyV5:
     case CoreType::Unknown:
     default:
-        return QStringList{
-            QDir::current().filePath(QStringLiteral("xray.exe")),
-            QDir::current().filePath(QStringLiteral("v2ray.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("xray.exe")),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("v2ray.exe"))
+        fileNames = QStringList{
+            QStringLiteral("xray.exe"),
+            QStringLiteral("v2ray.exe")
         };
+        break;
     }
+
+    QStringList candidates;
+    for (const QString& directory : directories) {
+        for (const QString& fileName : fileNames) {
+            candidates.append(QDir(directory).filePath(fileName));
+        }
+    }
+    return candidates;
 }
 
 QString AppBootstrap::locateFirstExistingFile(const QStringList& candidates) const
@@ -3890,6 +4105,12 @@ QList<CoreType> AppBootstrap::detectExistingCoreTypes() const
         }
     }
     return existingCoreTypes;
+}
+
+QString AppBootstrap::detectCoreVersion(CoreType coreType) const
+{
+    const QString program = locateFirstExistingFile(resolveCoreCandidates(coreType));
+    return readCoreVersion(coreType, program);
 }
 
 QString AppBootstrap::resolveCoreInstallDirectory(CoreType coreType) const

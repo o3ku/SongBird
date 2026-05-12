@@ -145,6 +145,7 @@ private:
     void promptRestartForLanguageChange();
     void startSpeedTest(const QStringList& indexIds);
     bool isCoreRunning() const;
+    bool isCoreReady() const;
     const VmessItem* findServerById(const QString& indexId) const;
     const VmessItem* resolveActiveServer() const;
     QString describeServer(const VmessItem* server) const;
@@ -161,6 +162,7 @@ private:
     QString locateFirstExistingFile(const QStringList& candidates) const;
     void refreshExistingCoreTypes();
     QList<CoreType> detectExistingCoreTypes() const;
+    QString detectCoreVersion(CoreType coreType) const;
     QString resolveCoreInstallDirectory(CoreType coreType) const;
     QString buildTrafficSummaryText() const;
     QString buildStatisticsSummaryText() const;
@@ -221,6 +223,7 @@ private:
     bool geoUpdateRunning_ = false;
     bool coreStartPending_ = false;
     bool coreStopPending_ = false;
+    bool coreReady_ = false;
     bool tunCleanupActive_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
@@ -234,6 +237,7 @@ private:
     std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
     QMetaObject::Connection coreStartedConnection_;
     QList<QThread*> backgroundThreads_;
+    std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();
     std::atomic_bool shuttingDown_{false};
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
