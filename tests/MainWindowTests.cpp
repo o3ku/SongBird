@@ -10,6 +10,7 @@
 #include <QPlainTextEdit>
 #include <QComboBox>
 #include <QScrollBar>
+#include <QSplitter>
 #include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTextOption>
@@ -38,6 +39,7 @@ private slots:
     void qrCodeRendererRemovesQuietZone();
     void coreToggleButtonUsesCheckedStateAndDisablesDuringTransition();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
+    void restoreAndCaptureUiStatePreservesRuntimeToggles();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
@@ -370,6 +372,31 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(disableSpy.count(), 1);
 }
 
+void MainWindowTests::restoreAndCaptureUiStatePreservesRuntimeToggles()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.mainCoreRunning = true;
+    config.mainProxyEnabled = true;
+
+    window.setConfig(config);
+    window.restoreUiState(config);
+    QCoreApplication::processEvents();
+
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(coreButton != nullptr);
+    QVERIFY(proxyButton != nullptr);
+    QVERIFY(coreButton->isChecked());
+    QVERIFY(proxyButton->isChecked());
+
+    Config captured;
+    window.captureUiState(captured);
+
+    QVERIFY(captured.mainCoreRunning);
+    QVERIFY(captured.mainProxyEnabled);
+}
+
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 {
     const QString text = QStringLiteral("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron");
@@ -608,6 +635,9 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
     auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
     auto* subscriptionTabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* subscriptionTabBarContainer = window.findChild<QWidget*>(QStringLiteral("subscriptionTabBarContainer"));
+    auto* serverHeaderRow = window.findChild<QWidget*>(QStringLiteral("serverHeaderRow"));
+    auto* rootSplitter = window.findChild<QSplitter*>(QStringLiteral("rootSplitter"));
     auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
     auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
     auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
@@ -615,6 +645,9 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(serverView != nullptr);
     QVERIFY(routingCombo != nullptr);
     QVERIFY(subscriptionTabBar != nullptr);
+    QVERIFY(subscriptionTabBarContainer != nullptr);
+    QVERIFY(serverHeaderRow != nullptr);
+    QVERIFY(rootSplitter != nullptr);
     QVERIFY(serverFilterEdit != nullptr);
     QVERIFY(logFilterEdit != nullptr);
     QVERIFY(routingStatusLabel != nullptr);
@@ -623,6 +656,23 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     const qreal serverTableFontSize = serverView->font().pointSizeF();
     QVERIFY(routingCombo->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(subscriptionTabBar->font().pointSizeF() <= serverTableFontSize);
+    QVERIFY(!subscriptionTabBar->expanding());
+    QVERIFY(!subscriptionTabBar->drawBase());
+    QVERIFY(subscriptionTabBarContainer->layout() != nullptr);
+    QCOMPARE(serverFilterEdit->parentWidget(), subscriptionTabBarContainer);
+    const QMargins subscriptionTabBarMargins = subscriptionTabBarContainer->layout()->contentsMargins();
+    QCOMPARE(subscriptionTabBarMargins.left(), 0);
+    QCOMPARE(subscriptionTabBarMargins.top(), 0);
+    QCOMPARE(subscriptionTabBarMargins.right(), 0);
+    QCOMPARE(subscriptionTabBarMargins.bottom(), 0);
+    auto* serverPanelLayout = qobject_cast<QBoxLayout*>(serverHeaderRow->parentWidget()->layout());
+    QVERIFY(serverPanelLayout != nullptr);
+    QCOMPARE(serverPanelLayout->spacing(), 0);
+    const QMargins rootSplitterMargins = rootSplitter->contentsMargins();
+    QCOMPARE(rootSplitterMargins.left(), 0);
+    QCOMPARE(rootSplitterMargins.top(), 4);
+    QCOMPARE(rootSplitterMargins.right(), 0);
+    QCOMPARE(rootSplitterMargins.bottom(), 0);
     QVERIFY(serverFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);

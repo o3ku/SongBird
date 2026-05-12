@@ -1,5 +1,8 @@
 #include "ui/mainwindow/ServerTableView.h"
 
+#include "ui/models/ServerTableModel.h"
+
+#include <QBrush>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
@@ -8,6 +11,7 @@
 #include <QPalette>
 #include <QPainter>
 #include <QStyle>
+#include <QApplication>
 #include <QStyledItemDelegate>
 
 #include <algorithm>
@@ -27,15 +31,29 @@ public:
         initStyleOption(&styledOption, index);
 
         const bool selected = (styledOption.state & QStyle::State_Selected) != 0;
-        const QColor rowDividerColor(QStringLiteral("#e6e6e6"));
-        const QColor selectedDividerColor(QStringLiteral("#000000"));
+        const auto* tableView = dynamic_cast<const ServerTableView*>(parent());
+        const bool hovered = !selected && tableView != nullptr && tableView->hoveredRow() == index.row();
+        const QColor rowDividerColor(QStringLiteral("#e1e7ee"));
+        const QColor hoveredDividerColor(QStringLiteral("#9babc5"));
+        const QColor selectedDividerColor(QStringLiteral("#b0c4e3"));
         styledOption.state &= ~QStyle::State_HasFocus;
+        styledOption.state &= ~QStyle::State_MouseOver;
         styledOption.state &= ~QStyle::State_Selected;
 
-        QStyledItemDelegate::paint(painter, styledOption, index);
+        if (selected || hovered) {
+            const QColor bgColor = selected ? QColor(QStringLiteral("#c5dbfe")) : QColor(QStringLiteral("#f2f6fc"));
+            styledOption.backgroundBrush = QBrush(bgColor);
+            painter->fillRect(option.rect, bgColor);
+        } else {
+            styledOption.backgroundBrush = QBrush(Qt::NoBrush);
+        }
+
+        const QWidget* widget = styledOption.widget;
+        QStyle* style = widget == nullptr ? QApplication::style() : widget->style();
+        style->drawControl(QStyle::CE_ItemViewItem, &styledOption, painter, widget);
 
         painter->save();
-        painter->setPen(QPen(selected ? selectedDividerColor : rowDividerColor));
+        painter->setPen(QPen(selected ? selectedDividerColor : (hovered ? hoveredDividerColor : rowDividerColor)));
         painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
         painter->restore();
     }

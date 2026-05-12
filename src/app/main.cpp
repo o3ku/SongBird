@@ -23,7 +23,7 @@
 #endif
 
 #ifndef QT_V2RAYN_APP_VERSION
-#define QT_V2RAYN_APP_VERSION "0.3.0"
+#define QT_V2RAYN_APP_VERSION "0.4.0"
 #endif
 
 namespace {

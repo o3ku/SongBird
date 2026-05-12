@@ -69,6 +69,9 @@ private slots:
     void loadReadsRoutingCustomRules();
     void savePersistsRoutingCustomRules();
     void savePersistsSettingsRoutingRuleTabKey();
+    void loadDefaultsMainRuntimeStateToOffWhenMissing();
+    void loadReadsMainRuntimeStateFromUiItem();
+    void savePersistsMainRuntimeStateToUiItem();
     void loadReadsRoutingItemDomainStrategy4Singbox();
     void savePersistsRoutingItemDomainStrategy4Singbox();
     void loadReadsGlobalHotkeys();
@@ -1366,6 +1369,67 @@ void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
     const Config reloaded = reloadedRepository.load();
 
     QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
+}
+
+void JsonConfigRepositoryTests::loadDefaultsMainRuntimeStateToOffWhenMissing()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    JsonConfigRepository repository(configPath);
+
+    const Config config = repository.load();
+
+    QVERIFY(!config.mainCoreRunning);
+    QVERIFY(!config.mainProxyEnabled);
+}
+
+void JsonConfigRepositoryTests::loadReadsMainRuntimeStateFromUiItem()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject uiItem;
+    uiItem.insert(QStringLiteral("mainCoreRunning"), true);
+    uiItem.insert(QStringLiteral("mainProxyEnabled"), true);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("uiItem"), uiItem);
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(config.mainCoreRunning);
+    QVERIFY(config.mainProxyEnabled);
+}
+
+void JsonConfigRepositoryTests::savePersistsMainRuntimeStateToUiItem()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    JsonConfigRepository repository(configPath);
+
+    Config config = repository.load();
+    config.mainCoreRunning = true;
+    config.mainProxyEnabled = true;
+
+    QVERIFY(repository.save(config));
+
+    JsonConfigRepository reloadedRepository(configPath);
+    const Config reloaded = reloadedRepository.load();
+
+    QVERIFY(reloaded.mainCoreRunning);
+    QVERIFY(reloaded.mainProxyEnabled);
 }
 
 void JsonConfigRepositoryTests::loadReadsRoutingItemDomainStrategy4Singbox()

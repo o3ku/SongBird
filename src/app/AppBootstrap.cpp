@@ -555,12 +555,15 @@ bool AppBootstrap::run()
     QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, mainWindow_.get(), [this]() {
         shuttingDown_.store(true);
         cancelPendingCoreRestarts();
+        if (!shutdownUiStatePersisted_) {
+            persistUiState();
+            shutdownUiStatePersisted_ = true;
+        }
         if (isCoreRunning()) {
             stopCore(true);
         } else {
             stopAuxiliaryCore();
         }
-        persistUiState();
         applySystemProxyModeOnExit(windowsShutdownRequested_);
     });
     if (QGuiApplication* guiApplication = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
@@ -568,6 +571,10 @@ bool AppBootstrap::run()
             windowsShutdownRequested_ = true;
             shuttingDown_.store(true);
             cancelPendingCoreRestarts();
+            if (!shutdownUiStatePersisted_) {
+                persistUiState();
+                shutdownUiStatePersisted_ = true;
+            }
             if (isCoreRunning()) {
                 stopCore(true);
             } else {
@@ -591,6 +598,18 @@ bool AppBootstrap::run()
         appendResult(OperationResult::ok(QCoreApplication::translate(
             "AppBootstrap",
             "Global hotkeys disabled by command line.")));
+    }
+    if (systemProxyService_ != nullptr && !config_.mainProxyEnabled && systemProxyService_->isEnabled()) {
+        appendResult(systemProxyService_->update(
+            SystemProxyMode::ForcedClear,
+            config_.localPort + 1,
+            config_.localPort,
+            buildSystemProxyExceptions(),
+            config_.systemProxyAdvancedProtocol,
+            config_.pacUrl)
+            ? OperationResult::ok(QStringLiteral("Restored the system proxy to OFF from the last saved state."))
+            : OperationResult::fail(QStringLiteral("Failed to restore the system proxy to OFF from the last saved state.")));
+        syncStatusIndicators();
     }
     mainWindow_->show();
     if (startHidden_ || !config_.showMainOnStartup) {
@@ -1172,7 +1191,7 @@ bool AppBootstrap::shouldStartCoreOnStartup() const
         return false;
     }
 
-    return resolveActiveServer() != nullptr;
+    return config_.mainCoreRunning && resolveActiveServer() != nullptr;
 }
 
 namespace {
@@ -1197,7 +1216,7 @@ void AppBootstrap::startCoreOnStartup()
         return;
     }
 
-    startCore();
+    startCore(false, config_.mainProxyEnabled);
 }
 
 void AppBootstrap::persistUiState()
@@ -1321,10 +1340,15 @@ void AppBootstrap::showOperationMessage(
 
 void AppBootstrap::startCore()
 {
-    startCore(false);
+    startCore(false, std::nullopt);
 }
 
 void AppBootstrap::startCore(bool skipTunCleanup)
+{
+    startCore(skipTunCleanup, std::nullopt);
+}
+
+void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupProxyEnabled)
 {
     if (coreStartPending_ || coreStopPending_) {
         appendResult(OperationResult::ok(
@@ -1354,14 +1378,14 @@ void AppBootstrap::startCore(bool skipTunCleanup)
         tunCleanupActive_ = true;
         resumeCoreStartAfterTunCleanup_ = true;
         syncStatusIndicators();
-        removeStaleTunAdapterAsync([this](const OperationResult& result) {
+        removeStaleTunAdapterAsync([this, startupProxyEnabled](const OperationResult& result) {
             tunCleanupActive_ = false;
             const bool resumeStart = resumeCoreStartAfterTunCleanup_;
             resumeCoreStartAfterTunCleanup_ = false;
             appendResult(result);
             syncStatusIndicators();
             if (resumeStart && !shuttingDown_.load() && !coreStopPending_) {
-                startCore(true);
+                startCore(true, startupProxyEnabled);
             }
         });
         return;
@@ -1527,10 +1551,11 @@ void AppBootstrap::startCore(bool skipTunCleanup)
          serverIndexId = server->indexId,
          runtimeCore,
          statisticsPort,
-         customServer = (server->configType == ConfigType::Custom)](const QString& message) mutable {
+         customServer = (server->configType == ConfigType::Custom),
+         startupProxyEnabled](const QString& message) mutable {
             disconnectPendingCoreStartConnection();
             appendResult(OperationResult::ok(message));
-            handleCoreStarted(serverIndexId, runtimeCore, statisticsPort, customServer);
+            handleCoreStarted(serverIndexId, runtimeCore, statisticsPort, customServer, startupProxyEnabled);
         });
 
     coreStartPending_ = true;
@@ -1548,7 +1573,12 @@ void AppBootstrap::startCore(bool skipTunCleanup)
     syncStatusIndicators();
 }
 
-void AppBootstrap::handleCoreStarted(const QString& serverIndexId, CoreType runtimeCore, int statisticsPort, bool customServer)
+void AppBootstrap::handleCoreStarted(
+    const QString& serverIndexId,
+    CoreType runtimeCore,
+    int statisticsPort,
+    bool customServer,
+    std::optional<bool> startupProxyEnabled)
 {
     coreStartPending_ = false;
     disconnectPendingCoreStartConnection();
@@ -1579,8 +1609,10 @@ void AppBootstrap::handleCoreStarted(const QString& serverIndexId, CoreType runt
         }
     }
 
+    const bool shouldRestoreProxy = !startupProxyEnabled.has_value() || startupProxyEnabled.value();
     if (systemProxyService_ != nullptr
-        && normalizeSystemProxyMode(config_.sysProxyType) == SystemProxyMode::ForcedChange) {
+        && normalizeSystemProxyMode(config_.sysProxyType) == SystemProxyMode::ForcedChange
+        && shouldRestoreProxy) {
         const bool wasApplied = systemProxyService_->isEnabled();
         const bool proxyUpdated = systemProxyService_->update(
             SystemProxyMode::ForcedChange,

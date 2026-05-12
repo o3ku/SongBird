@@ -794,6 +794,12 @@ void MainWindow::restoreUiState(const Config& config)
     if (qrPanel_ != nullptr) {
         qrPanel_->setVisible(qrPreviewVisible_);
     }
+    coreRunning_ = config.mainCoreRunning;
+    coreTransitionPending_ = false;
+    systemProxyApplied_ = config.mainProxyEnabled;
+    updateActionState();
+    updateStatusIndicators();
+    updateWindowTitle();
     updateQrPanelActionText();
 
     if (subscriptionTabBar_ != nullptr && serverModel_ != nullptr) {
@@ -858,6 +864,8 @@ void MainWindow::captureUiState(Config& config) const
     config.mainServerLogSplitPercent = captureSplitPercent(rootSplitter_, serverLogSplitPercent_);
     config.mainServerQrSplitPercent = captureSplitPercent(topSplitter_, serverQrSplitPercent_);
     config.mainQrPreviewVisible = false;
+    config.mainCoreRunning = coreRunning_;
+    config.mainProxyEnabled = systemProxyApplied_;
 }
 
 bool MainWindow::selectSubscriptionTab(const QString& selectionId)
@@ -1786,6 +1794,9 @@ void MainWindow::setupServerView()
     subscriptionTabBar_ = new QTabBar(this);
     subscriptionTabBar_->setObjectName(QStringLiteral("subscriptionTabBar"));
     AppTheme::applyCompactFont(subscriptionTabBar_);
+    QFont subscriptionTabFont = subscriptionTabBar_->font();
+    subscriptionTabFont.setBold(true);
+    subscriptionTabBar_->setFont(subscriptionTabFont);
     subscriptionTabBar_->setContextMenuPolicy(Qt::CustomContextMenu);
     subscriptionTabBar_->setDocumentMode(true);
     subscriptionTabBar_->setDrawBase(false);
@@ -1804,10 +1815,11 @@ void MainWindow::setupServerView()
     serverView_->viewport()->installEventFilter(this);
 
     auto* subscriptionTabBarContainer = new QWidget(this);
-    auto* subscriptionTabBarLayout = new QVBoxLayout(subscriptionTabBarContainer);
-    subscriptionTabBarLayout->setContentsMargins(0, 4, 0, 0);
-    subscriptionTabBarLayout->setSpacing(0);
-    subscriptionTabBarLayout->addWidget(subscriptionTabBar_);
+    subscriptionTabBarContainer->setObjectName(QStringLiteral("subscriptionTabBarContainer"));
+    auto* subscriptionTabBarLayout = new QHBoxLayout(subscriptionTabBarContainer);
+    subscriptionTabBarLayout->setContentsMargins(0, 0, 0, 0);
+    subscriptionTabBarLayout->setSpacing(6);
+    subscriptionTabBarLayout->addWidget(subscriptionTabBar_, 1, Qt::AlignBottom);
 
     serverFilterEdit_ = new QLineEdit(this);
     serverFilterEdit_->setObjectName(QStringLiteral("serverFilterEdit"));
@@ -1816,12 +1828,7 @@ void MainWindow::setupServerView()
     serverFilterEdit_->setPlaceholderText(tr("Filter servers"));
     configureContentSizedLineEdit(serverFilterEdit_, HeaderFilterMinimumCharacters);
 
-    auto* serverFilterContainer = new QWidget(this);
-    serverFilterContainer->setObjectName(QStringLiteral("serverFilterContainer"));
-    auto* serverFilterLayout = new QVBoxLayout(serverFilterContainer);
-    serverFilterLayout->setContentsMargins(0, 4, 0, 0);
-    serverFilterLayout->setSpacing(0);
-    serverFilterLayout->addWidget(serverFilterEdit_);
+    subscriptionTabBarLayout->addWidget(serverFilterEdit_, 0, Qt::AlignVCenter);
 
     qrPanel_ = new QWidget(this);
     qrPanel_->setObjectName(QStringLiteral("qrPanel"));
@@ -1868,9 +1875,8 @@ void MainWindow::setupServerView()
     serverHeaderRow->setObjectName(QStringLiteral("serverHeaderRow"));
     auto* serverHeaderLayout = new QHBoxLayout(serverHeaderRow);
     serverHeaderLayout->setContentsMargins(0, 0, 2, 0);
-    serverHeaderLayout->setSpacing(6);
-    serverHeaderLayout->addWidget(subscriptionTabBarContainer, 1, Qt::AlignBottom);
-    serverHeaderLayout->addWidget(serverFilterContainer, 0, Qt::AlignVCenter);
+    serverHeaderLayout->setSpacing(0);
+    serverHeaderLayout->addWidget(subscriptionTabBarContainer);
     serverPanelLayout->addWidget(serverHeaderRow);
     serverPanelLayout->addWidget(serverView_, 1);
 
@@ -1896,7 +1902,7 @@ void MainWindow::setupServerView()
     auto* logHeaderRow = new QWidget(logPanel);
     logHeaderRow->setObjectName(QStringLiteral("logHeaderRow"));
     auto* logHeaderLayout = new QHBoxLayout(logHeaderRow);
-    logHeaderLayout->setContentsMargins(10, 4, 2, 4);
+    logHeaderLayout->setContentsMargins(10, 7, 2, 3);
     logHeaderLayout->setSpacing(6);
 
     auto* logTitleLabel = new QLabel(tr("Information"), logHeaderRow);
@@ -1940,14 +1946,17 @@ void MainWindow::setupServerView()
     logView_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     logView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     logView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    logView_->setMouseTracking(true);
     logView_->setModel(logFilterModel_);
     logView_->setItemDelegate(logItemDelegate_);
     logView_->viewport()->installEventFilter(this);
+    logView_->viewport()->setMouseTracking(true);
     logView_->installEventFilter(this);
     logPanelLayout->addWidget(logView_, 1);
 
     rootSplitter_ = new QSplitter(Qt::Vertical, this);
     rootSplitter_->setObjectName(QStringLiteral("rootSplitter"));
+    rootSplitter_->setContentsMargins(0, 4, 0, 0);
     rootSplitter_->setChildrenCollapsible(false);
     rootSplitter_->addWidget(topSplitter_);
     rootSplitter_->addWidget(logPanel);

@@ -23,10 +23,20 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     QStyleOptionViewItem opt(option);
     initStyleOption(&opt, index);
     opt.text.clear();
+    const bool selected = (opt.state & QStyle::State_Selected) != 0;
+    const bool hovered = !selected && (opt.state & QStyle::State_MouseOver) != 0;
+    opt.state &= ~QStyle::State_MouseOver;
+    opt.state &= ~QStyle::State_Selected;
 
     const QWidget* widget = opt.widget;
     QStyle* style = widget == nullptr ? QApplication::style() : widget->style();
     style->drawPrimitive(QStyle::PE_PanelItemViewItem, &opt, painter, widget);
+
+    if (selected || hovered) {
+        painter->fillRect(
+            option.rect,
+            selected ? QColor(QStringLiteral("#c5dbfe")) : QColor(QStringLiteral("#f2f6fc")));
+    }
 
     const QStringList visualLines = index.data(LogListModel::VisualLinesRole).toStringList();
     if (visualLines.isEmpty()) {
@@ -38,7 +48,6 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     const int x = option.rect.left() + HorizontalPadding;
     int y = option.rect.top() + VerticalPadding;
 
-    const bool selected = (opt.state & QStyle::State_Selected) != 0;
     painter->setPen(opt.palette.color(selected ? QPalette::HighlightedText : QPalette::Text));
 
     for (const QString& line : visualLines) {

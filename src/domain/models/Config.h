@@ -47,6 +47,8 @@ struct Config {
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
     bool mainQrPreviewVisible = false;
+    bool mainCoreRunning = false;
+    bool mainProxyEnabled = false;
     QString speedPingTestUrl;
     QString defIeProxyExceptions;
     bool enableFragment = false;

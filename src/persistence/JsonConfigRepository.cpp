@@ -264,6 +264,8 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
     config.mainQrPreviewVisible = uiItem.contains(QStringLiteral("mainQrPreviewVisible"))
         ? uiItem.value(QStringLiteral("mainQrPreviewVisible")).toBool(false)
         : false;
+    config.mainCoreRunning = uiItem.value(QStringLiteral("mainCoreRunning")).toBool(false);
+    config.mainProxyEnabled = uiItem.value(QStringLiteral("mainProxyEnabled")).toBool(false);
     const QJsonObject mainLvColWidth = uiItem.value(QStringLiteral("mainLvColWidth")).toObject();
     for (auto it = mainLvColWidth.constBegin(); it != mainLvColWidth.constEnd(); ++it) {
         if (!it.value().isDouble()) {
@@ -402,6 +404,8 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     uiItem.insert(QStringLiteral("mainServerLogSplitPercent"), normalizeSplitPercent(config.mainServerLogSplitPercent, 60));
     uiItem.insert(QStringLiteral("mainServerQrSplitPercent"), normalizeSplitPercent(config.mainServerQrSplitPercent, 78));
     uiItem.insert(QStringLiteral("mainQrPreviewVisible"), config.mainQrPreviewVisible);
+    uiItem.insert(QStringLiteral("mainCoreRunning"), config.mainCoreRunning);
+    uiItem.insert(QStringLiteral("mainProxyEnabled"), config.mainProxyEnabled);
     QJsonObject mainLvColWidth;
     for (auto it = config.mainColumnWidths.constBegin(); it != config.mainColumnWidths.constEnd(); ++it) {
         if (it.value() > 0) {

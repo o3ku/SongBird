@@ -3,6 +3,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include <QList>
 #include <QMetaObject>
@@ -73,9 +74,15 @@ private:
     void persistUiState();
     void startCore();
     void startCore(bool skipTunCleanup);
+    void startCore(bool skipTunCleanup, std::optional<bool> startupProxyEnabled);
     void stopCore(bool immediate = false);
     void stopCoreInternal(bool immediate, bool clearRestartAfterStop);
-    void handleCoreStarted(const QString& serverIndexId, CoreType runtimeCore, int statisticsPort, bool customServer);
+    void handleCoreStarted(
+        const QString& serverIndexId,
+        CoreType runtimeCore,
+        int statisticsPort,
+        bool customServer,
+        std::optional<bool> startupProxyEnabled);
     void handleCoreStartFailed(const QString& message);
     void disconnectPendingCoreStartConnection();
     void restartCoreIfRunning(const QString& reason);
@@ -205,6 +212,7 @@ private:
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
     bool uiReady_ = false;
     bool uiStateRestored_ = false;
+    bool shutdownUiStatePersisted_ = false;
     bool exitProxyStateApplied_ = false;
     bool windowsShutdownRequested_ = false;
     bool subscriptionUpdateRunning_ = false;

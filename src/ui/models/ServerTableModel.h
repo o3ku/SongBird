@@ -12,6 +12,10 @@ class ServerTableModel final : public QAbstractTableModel {
     Q_OBJECT
 
 public:
+    enum Role {
+        IsCurrentServerRole = Qt::UserRole + 1
+    };
+
     explicit ServerTableModel(QObject* parent = nullptr);
 
     void setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId = {});

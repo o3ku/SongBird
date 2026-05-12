@@ -153,7 +153,11 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole && isDefault) {
-        return QBrush(QColor(QStringLiteral("#00C458")));
+        return QBrush(QColor(QStringLiteral("#007A1F")));
+    }
+
+    if (role == IsCurrentServerRole) {
+        return isDefault;
     }
 
     return {};
