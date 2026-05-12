@@ -677,13 +677,21 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(currentServerStatusLabel->font().pointSizeF() <= serverTableFontSize);
-    QCOMPARE(routingCombo->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
+    QCOMPARE(routingCombo->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
     QCOMPARE(serverFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
     QCOMPARE(logFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
-    QVERIFY(routingCombo->maximumWidth() > routingCombo->minimumWidth());
+    QCOMPARE(routingCombo->maximumWidth(), routingCombo->minimumWidth());
     QVERIFY(serverFilterEdit->maximumWidth() > serverFilterEdit->minimumWidth());
     QVERIFY(logFilterEdit->maximumWidth() > logFilterEdit->minimumWidth());
     QVERIFY(routingCombo->minimumWidth() >= QFontMetrics(routingCombo->font()).horizontalAdvance(routingCombo->currentText()));
+
+    const int routingComboWidth = routingCombo->width();
+    window.setCoreRunning(false, true);
+    QCoreApplication::processEvents();
+    QCOMPARE(routingCombo->width(), routingComboWidth);
+    window.setCoreRunning(true, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(routingCombo->width(), routingComboWidth);
 }
 
 QTEST_MAIN(MainWindowTests)

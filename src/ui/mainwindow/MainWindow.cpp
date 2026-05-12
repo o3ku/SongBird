@@ -122,6 +122,16 @@ public:
     {
     }
 
+    QSize sizeHint() const override
+    {
+        return stabilizedSizeHint(QComboBox::sizeHint());
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return stabilizedSizeHint(QComboBox::minimumSizeHint());
+    }
+
 protected:
     void paintChevronForOption(const QStyleOptionComboBox& option)
     {
@@ -136,6 +146,16 @@ protected:
 
         QPainter painter(this);
         paintChevron(painter, arrowRect, isEnabled());
+    }
+
+private:
+    QSize stabilizedSizeHint(QSize hint) const
+    {
+        const int width = property("contentSizedWidth").toInt();
+        if (width > 0) {
+            hint.setWidth(width);
+        }
+        return hint;
     }
 };
 
@@ -500,10 +520,13 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
             widestText = comboBox->itemText(index);
         }
     }
+    const int comboWidth = textControlMinimumWidth(comboBox, widestText, minimumCharacters, 48);
+    comboBox->setProperty("contentSizedWidth", comboWidth);
 
     comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    comboBox->setMinimumWidth(textControlMinimumWidth(comboBox, widestText, minimumCharacters, 48));
-    comboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    comboBox->setFixedWidth(comboWidth);
+    comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    comboBox->updateGeometry();
 }
 
 } // namespace
