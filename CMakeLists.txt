@@ -12,14 +12,47 @@ set(CMAKE_AUTORCC ON)
 include(GNUInstallDirs)
 
 option(BUILD_TEST "Build test targets." OFF)
+set(QT_V2RAYN_FORCE_MAJOR_VERSION ""
+    CACHE STRING "Force a specific Qt major version (5 or 6). Leave empty for auto-detect.")
 
-if(DEFINED Qt5_DIR AND EXISTS "${Qt5_DIR}/Qt5Config.cmake")
-    set(QT_DIR "${Qt5_DIR}" CACHE PATH "Qt package root hint" FORCE)
-elseif(DEFINED Qt6_DIR AND EXISTS "${Qt6_DIR}/Qt6Config.cmake")
-    set(QT_DIR "${Qt6_DIR}" CACHE PATH "Qt package root hint" FORCE)
+set(QT_V2RAYN_QT_PACKAGE_HINT "")
+set(QT_V2RAYN_QT5_DIR_HINT "")
+set(QT_V2RAYN_QT6_DIR_HINT "")
+
+set(QT_DEFAULT_MAJOR_VERSION 6)
+
+if(QT_V2RAYN_FORCE_MAJOR_VERSION
+    AND NOT QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "5"
+    AND NOT QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "6")
+    message(FATAL_ERROR
+        "QT_V2RAYN_FORCE_MAJOR_VERSION must be empty, 5, or 6. "
+        "Current value: ${QT_V2RAYN_FORCE_MAJOR_VERSION}")
 endif()
 
-set(QT_DEFAULT_MAJOR_VERSION 5)
+if(QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "6")
+    if(DEFINED Qt6_DIR AND EXISTS "${Qt6_DIR}/Qt6Config.cmake")
+        set(QT_V2RAYN_QT6_DIR_HINT "${Qt6_DIR}")
+        set(QT_V2RAYN_QT_PACKAGE_HINT "${Qt6_DIR}")
+    elseif(DEFINED QT_DIR AND EXISTS "${QT_DIR}/Qt6Config.cmake")
+        set(QT_V2RAYN_QT_PACKAGE_HINT "${QT_DIR}")
+    endif()
+elseif(QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "5")
+    if(DEFINED Qt5_DIR AND EXISTS "${Qt5_DIR}/Qt5Config.cmake")
+        set(QT_V2RAYN_QT5_DIR_HINT "${Qt5_DIR}")
+        set(QT_V2RAYN_QT_PACKAGE_HINT "${Qt5_DIR}")
+    elseif(DEFINED QT_DIR AND EXISTS "${QT_DIR}/Qt5Config.cmake")
+        set(QT_V2RAYN_QT_PACKAGE_HINT "${QT_DIR}")
+    endif()
+elseif(DEFINED Qt6_DIR AND EXISTS "${Qt6_DIR}/Qt6Config.cmake")
+    set(QT_V2RAYN_QT6_DIR_HINT "${Qt6_DIR}")
+    set(QT_V2RAYN_QT_PACKAGE_HINT "${Qt6_DIR}")
+elseif(DEFINED Qt5_DIR AND EXISTS "${Qt5_DIR}/Qt5Config.cmake")
+    set(QT_V2RAYN_QT5_DIR_HINT "${Qt5_DIR}")
+    set(QT_V2RAYN_QT_PACKAGE_HINT "${Qt5_DIR}")
+elseif(DEFINED QT_DIR
+    AND (EXISTS "${QT_DIR}/Qt6Config.cmake" OR EXISTS "${QT_DIR}/Qt5Config.cmake"))
+    set(QT_V2RAYN_QT_PACKAGE_HINT "${QT_DIR}")
+endif()
 
 foreach(_qt_stale_cache_var IN ITEMS
     Qt5_DIR
@@ -27,15 +60,49 @@ foreach(_qt_stale_cache_var IN ITEMS
     Qt5Gui_DIR
     Qt5Widgets_DIR
     Qt5Network_DIR
-    Qt5LinguistTools_DIR)
+    Qt5LinguistTools_DIR
+    Qt6_DIR
+    Qt6Core_DIR
+    Qt6Gui_DIR
+    Qt6Widgets_DIR
+    Qt6Network_DIR
+    Qt6LinguistTools_DIR)
     if(DEFINED ${_qt_stale_cache_var})
         unset(${_qt_stale_cache_var} CACHE)
     endif()
 endforeach()
 
-find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} QUIET COMPONENTS LinguistTools)
+if(QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "6")
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Network HINTS
+        "${QT_V2RAYN_QT6_DIR_HINT}" "${QT_V2RAYN_QT_PACKAGE_HINT}")
+    set(QT_VERSION_MAJOR 6)
+elseif(QT_V2RAYN_FORCE_MAJOR_VERSION STREQUAL "5")
+    find_package(Qt5 REQUIRED COMPONENTS Widgets Network HINTS
+        "${QT_V2RAYN_QT5_DIR_HINT}" "${QT_V2RAYN_QT_PACKAGE_HINT}")
+    set(QT_VERSION_MAJOR 5)
+elseif(QT_V2RAYN_QT6_DIR_HINT)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Network HINTS "${QT_V2RAYN_QT6_DIR_HINT}")
+    set(QT_VERSION_MAJOR 6)
+elseif(QT_V2RAYN_QT5_DIR_HINT)
+    find_package(Qt5 REQUIRED COMPONENTS Widgets Network HINTS "${QT_V2RAYN_QT5_DIR_HINT}")
+    set(QT_VERSION_MAJOR 5)
+elseif(DEFINED QT_DIR AND EXISTS "${QT_DIR}/Qt6Config.cmake")
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Network HINTS "${QT_DIR}")
+    set(QT_VERSION_MAJOR 6)
+elseif(DEFINED QT_DIR AND EXISTS "${QT_DIR}/Qt5Config.cmake")
+    find_package(Qt5 REQUIRED COMPONENTS Widgets Network HINTS "${QT_DIR}")
+    set(QT_VERSION_MAJOR 5)
+else()
+    find_package(Qt6 QUIET COMPONENTS Widgets Network HINTS "${QT_V2RAYN_QT_PACKAGE_HINT}")
+    if(Qt6_FOUND)
+        set(QT_VERSION_MAJOR 6)
+    else()
+        find_package(Qt5 REQUIRED COMPONENTS Widgets Network HINTS "${QT_V2RAYN_QT_PACKAGE_HINT}")
+        set(QT_VERSION_MAJOR 5)
+    endif()
+endif()
+
+find_package(Qt${QT_VERSION_MAJOR} QUIET COMPONENTS LinguistTools HINTS "${QT_V2RAYN_QT_PACKAGE_HINT}")
 
 set(_qt_package_name "Qt${QT_VERSION_MAJOR}")
 set(_qt_found_var "${_qt_package_name}_FOUND")
@@ -43,9 +110,12 @@ set(_qt_version_var "${_qt_package_name}_VERSION")
 set(_qt_dir_var "${_qt_package_name}_DIR")
 
 message(STATUS "Qt search prefix path: ${CMAKE_PREFIX_PATH}")
+if(QT_V2RAYN_FORCE_MAJOR_VERSION)
+    message(STATUS "Qt major version forced by preset/cache: ${QT_V2RAYN_FORCE_MAJOR_VERSION}")
+endif()
 message(STATUS "Qt package selector result: QT_VERSION_MAJOR=${QT_VERSION_MAJOR}")
-if(DEFINED QT_DIR)
-    message(STATUS "Qt package root hint QT_DIR: ${QT_DIR}")
+if(QT_V2RAYN_QT_PACKAGE_HINT)
+    message(STATUS "Qt package root hint: ${QT_V2RAYN_QT_PACKAGE_HINT}")
 endif()
 if(DEFINED ${_qt_found_var})
     message(STATUS "Qt package find result: ${_qt_package_name}_FOUND=${${_qt_found_var}}")

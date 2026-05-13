@@ -41,6 +41,16 @@
       }
     },
     {
+      "name": "msvc-release-qt5",
+      "inherits": "msvc-base",
+      "binaryDir": "${sourceDir}/build/msvc-release-qt5",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "$env{QT5_PREFIX_PATH}",
+        "QT_V2RAYN_FORCE_MAJOR_VERSION": "5"
+      }
+    },
+    {
       "name": "msvc-debug-test",
       "inherits": "msvc-debug",
       "binaryDir": "${sourceDir}/build/msvc-debug-test",
@@ -65,6 +75,10 @@
     {
       "name": "msvc-release",
       "configurePreset": "msvc-release"
+    },
+    {
+      "name": "msvc-release-qt5",
+      "configurePreset": "msvc-release-qt5"
     },
     {
       "name": "msvc-debug-test",
