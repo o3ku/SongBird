@@ -43,6 +43,7 @@
 #include "app/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "app/TunSettingsApplyDecision.h"
+#include "common/CorePidFile.h"
 #include "common/DataSizeFormatter.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
@@ -1928,6 +1929,11 @@ void AppBootstrap::removeStaleSingBoxCache()
 void AppBootstrap::cleanupOrphanCoreProcesses()
 {
 #if defined(Q_OS_WIN)
+    const QSet<qint64> recordedPids = readCorePids();
+    if (recordedPids.isEmpty()) {
+        return;
+    }
+
     static const wchar_t* kCoreProcessNames[] = {
         L"xray.exe",
         L"v2ray.exe",
@@ -1947,25 +1953,40 @@ void AppBootstrap::cleanupOrphanCoreProcesses()
     PROCESSENTRY32W entry{};
     entry.dwSize = sizeof(entry);
     QStringList terminatedProcesses;
+    QSet<qint64> remainingPids = recordedPids;
 
     if (Process32FirstW(snapshot, &entry)) {
         do {
+            if (!recordedPids.contains(static_cast<qint64>(entry.th32ProcessID))) {
+                continue;
+            }
+
+            bool nameMatches = false;
             for (const wchar_t* targetName : kCoreProcessNames) {
                 if (_wcsicmp(entry.szExeFile, targetName) == 0) {
-                    HANDLE processHandle = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION, FALSE, entry.th32ProcessID);
-                    if (processHandle != nullptr) {
-                        if (TerminateProcess(processHandle, 1)) {
-                            terminatedProcesses.append(QString::fromWCharArray(entry.szExeFile));
-                        }
-                        CloseHandle(processHandle);
-                    }
+                    nameMatches = true;
                     break;
                 }
             }
+
+            if (!nameMatches) {
+                remainingPids.remove(static_cast<qint64>(entry.th32ProcessID));
+                continue;
+            }
+
+            HANDLE processHandle = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION, FALSE, entry.th32ProcessID);
+            if (processHandle != nullptr) {
+                if (TerminateProcess(processHandle, 1)) {
+                    terminatedProcesses.append(QString::fromWCharArray(entry.szExeFile));
+                }
+                CloseHandle(processHandle);
+            }
+            remainingPids.remove(static_cast<qint64>(entry.th32ProcessID));
         } while (Process32NextW(snapshot, &entry));
     }
 
     CloseHandle(snapshot);
+    writeCorePids(QSet<qint64>());
 
     if (!terminatedProcesses.isEmpty()) {
         appendResult(OperationResult::ok(
@@ -2176,6 +2197,20 @@ void AppBootstrap::enableSystemProxy()
 
 void AppBootstrap::disableSystemProxy()
 {
+    if (serverService_ == nullptr) {
+        appendResult(OperationResult::fail(QStringLiteral("System proxy mode cannot be changed before the configuration service is ready.")));
+        return;
+    }
+
+    const int previousValue = config_.sysProxyType;
+    config_.sysProxyType = toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear);
+    if (!serverService_->save(config_)) {
+        config_.sysProxyType = previousValue;
+        appendResult(OperationResult::fail(QStringLiteral("Failed to save the system proxy mode.")));
+        syncStatusIndicators();
+        return;
+    }
+
     const bool success = systemProxyService_ == nullptr
         || systemProxyService_->update(
             SystemProxyMode::ForcedClear,
@@ -2898,19 +2933,20 @@ void AppBootstrap::runCoreUpdateTask(
         });
     };
 
+    CoreUpdateService::UpdateOptions updateOptions;
+    updateOptions.progressHandler = reportProgress;
+    updateOptions.cancelCheck = [this]() {
+        QThread* currentThread = QThread::currentThread();
+        return shuttingDown_.load()
+            || (currentThread != nullptr && currentThread->isInterruptionRequested());
+    };
+    updateOptions.skipLocalVersionCheck = skipLocalVersionCheck;
+
     const OperationResult result = coreUpdateService.update(
         coreType,
         workerConfig,
         installDirectory,
-        {},
-        {},
-        reportProgress,
-        [this]() {
-            QThread* currentThread = QThread::currentThread();
-            return shuttingDown_.load()
-                || (currentThread != nullptr && currentThread->isInterruptionRequested());
-        },
-        skipLocalVersionCheck);
+        updateOptions);
 
     QObject* uiTarget = progressContextGuard.isNull() ? mainWindow_.get() : progressContextGuard.data();
     invokeOnUiThread(uiTarget, [completionObserver, result, lifetimeGuard]() {

@@ -3683,7 +3683,22 @@ QStringList ClientConfigWriter::normalizeRuleValues(
 
 QString ClientConfigWriter::resolveSingBoxNetwork(const VmessItem& server)
 {
-    return server.network.trimmed().isEmpty() ? QStringLiteral("tcp") : server.network.trimmed();
+    const QString network = server.network.trimmed().isEmpty()
+        ? QStringLiteral("tcp")
+        : server.network.trimmed().toLower();
+
+    if (network == QStringLiteral("ws")
+        || network == QStringLiteral("grpc")
+        || network == QStringLiteral("h2")
+        || network == QStringLiteral("httpupgrade")) {
+        return QStringLiteral("tcp");
+    }
+
+    if (network == QStringLiteral("quic")) {
+        return QStringLiteral("udp");
+    }
+
+    return network;
 }
 
 QString ClientConfigWriter::resolveSingBoxOutboundType(ConfigType type)

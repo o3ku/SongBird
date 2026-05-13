@@ -21,6 +21,8 @@ private slots:
     void downloadButtonStartsInlineUpdate_data();
     void downloadButtonStartsInlineUpdate();
     void coreUpdateProgressRefreshesInlineStatus();
+    void successfulCoreUpdateFinishRestoresIdleStatus();
+    void installedCoreVersionShowsUpdateAction();
     void sniffingEnabledCheckboxRoundTripsConfig();
     void routeOnlyCheckboxRoundTripsConfig();
     void enableFragmentCheckboxRoundTripsConfig();
@@ -71,7 +73,8 @@ void SettingsDialogTests::downloadButtonStartsInlineUpdate()
     QVERIFY(dialog.wasCoreDownloadRequested());
     QCOMPARE(static_cast<int>(dialog.requestedCoreDownload()), expectedCoreType);
     QCOMPARE(dialog.result(), 0);
-    QVERIFY(!button->isVisible());
+    QVERIFY(!button->isHidden());
+    QVERIFY(button->isEnabled());
 }
 
 void SettingsDialogTests::coreUpdateProgressRefreshesInlineStatus()
@@ -94,6 +97,50 @@ void SettingsDialogTests::coreUpdateProgressRefreshesInlineStatus()
     QVERIFY(!xrayButton->isVisible());
     QCOMPARE(xrayLabel->text(), QStringLiteral("Downloading..."));
     QVERIFY(!xrayStatusLabel->isVisible());
+}
+
+void SettingsDialogTests::successfulCoreUpdateFinishRestoresIdleStatus()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.setCoreVersion(CoreType::Xray, QString());
+
+    auto* xrayButton = dialog.findChild<QPushButton*>(
+        QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(CoreType::Xray)));
+    auto* xrayLabel = dialog.findChild<QLabel*>(
+        QStringLiteral("coreVersionLabel_%1").arg(static_cast<int>(CoreType::Xray)));
+    auto* xrayStatusLabel = dialog.findChild<QLabel*>(
+        QStringLiteral("coreStatusLabel_%1").arg(static_cast<int>(CoreType::Xray)));
+    QVERIFY(xrayButton != nullptr);
+    QVERIFY(xrayLabel != nullptr);
+    QVERIFY(xrayStatusLabel != nullptr);
+
+    dialog.beginCoreUpdate(CoreType::Xray);
+    dialog.finishCoreUpdate(CoreType::Xray, true, QStringLiteral("Xray update was canceled."));
+
+    QVERIFY(!xrayButton->isHidden());
+    QVERIFY(xrayButton->isEnabled());
+    QCOMPARE(xrayLabel->text(), QStringLiteral("Not found"));
+    QVERIFY(xrayStatusLabel->isHidden());
+    QVERIFY(xrayStatusLabel->text().isEmpty());
+}
+
+void SettingsDialogTests::installedCoreVersionShowsUpdateAction()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.setExistingCoreTypes({CoreType::SingBox});
+    dialog.setCoreVersion(CoreType::SingBox, QStringLiteral("v1.11.0"));
+
+    auto* singBoxButton = dialog.findChild<QPushButton*>(
+        QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(CoreType::SingBox)));
+    auto* singBoxLabel = dialog.findChild<QLabel*>(
+        QStringLiteral("coreVersionLabel_%1").arg(static_cast<int>(CoreType::SingBox)));
+
+    QVERIFY(singBoxButton != nullptr);
+    QVERIFY(singBoxLabel != nullptr);
+    QCOMPARE(singBoxLabel->text(), QStringLiteral("v1.11.0"));
+    QCOMPARE(singBoxButton->text(), QStringLiteral("Update"));
 }
 
 void SettingsDialogTests::sniffingEnabledCheckboxRoundTripsConfig()
@@ -435,9 +482,20 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
     blockRule.domain = QStringList{
         QStringLiteral("geosite:category-ads-all"),
         QStringLiteral("domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")};
+    RoutingRule directRule;
+    directRule.type = QStringLiteral("field");
+    directRule.enabled = true;
+    directRule.outboundTag = QStringLiteral("direct");
+    directRule.ip = QStringList{QStringLiteral("geoip:private")};
+    RoutingRule proxyRule;
+    proxyRule.type = QStringLiteral("field");
+    proxyRule.enabled = true;
+    proxyRule.outboundTag = QStringLiteral("proxy");
+    proxyRule.protocol = QStringList{QStringLiteral("tls")};
+    proxyRule.port = QStringLiteral("443");
     RoutingItem routing;
     routing.remarks = QStringLiteral("Builtin");
-    routing.rules = {blockRule};
+    routing.rules = {blockRule, directRule, proxyRule};
     config.routingItems = {routing};
 
     SettingsDialog dialog;
@@ -451,10 +509,17 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
     auto* card = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_0"));
     QVERIFY(card != nullptr);
     QVERIFY(card->styleSheet().isEmpty());
-    QVERIFY(card->maximumHeight() <= 120);
     QVERIFY(card->text().contains(QStringLiteral("BLOCK: geosite:category-ads-all")));
+    QVERIFY(card->text().contains(QStringLiteral("DIRECT: geoip:private")));
+    QVERIFY(card->text().contains(QStringLiteral("PROXY: port: 443, protocol: tls")));
+    QVERIFY(card->toolTip().contains(QStringLiteral("BLOCK: geosite:category-ads-all, domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")));
+    QVERIFY(card->toolTip().contains(QStringLiteral("DIRECT: geoip:private")));
+    QVERIFY(card->toolTip().contains(QStringLiteral("PROXY: port: 443, protocol: tls")));
+    QVERIFY(card->toolTip().indexOf(QStringLiteral("BLOCK:")) < card->toolTip().indexOf(QStringLiteral("DIRECT:")));
+    QVERIFY(card->toolTip().indexOf(QStringLiteral("DIRECT:")) < card->toolTip().indexOf(QStringLiteral("PROXY:")));
     QVERIFY(card->toolTip().contains(QStringLiteral("domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")));
-    QVERIFY(!card->text().contains(QStringLiteral("\nblock\n")));
+    QVERIFY(card->minimumHeight() == 0);
+    QVERIFY(card->maximumHeight() == QWIDGETSIZE_MAX);
 
     auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
     QVERIFY(tabs != nullptr);

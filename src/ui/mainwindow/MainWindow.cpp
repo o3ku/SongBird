@@ -248,7 +248,6 @@ protected:
     void resizeEvent(QResizeEvent* event) override
     {
         QPlainTextEdit::resizeEvent(event);
-        updateGeometry();
     }
 
 private:
@@ -520,9 +519,9 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
             widestText = comboBox->itemText(index);
         }
     }
+
     const int comboWidth = textControlMinimumWidth(comboBox, widestText, minimumCharacters, 48);
     comboBox->setProperty("contentSizedWidth", comboWidth);
-
     comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     comboBox->setFixedWidth(comboWidth);
     comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -1009,14 +1008,14 @@ void MainWindow::updateActionState()
     }
 
     updateCoreToggleAction();
-    const bool startToggleEnabled = (hasServers || coreRunning_) && !coreTransitionPending_;
+    const bool startToggleEnabled = hasServers && !coreTransitionPending_;
     if (coreToggleAction_ != nullptr) {
         coreToggleAction_->setEnabled(startToggleEnabled);
     }
 
     updateProxyToggleAction();
     if (proxyToggleAction_ != nullptr) {
-        proxyToggleAction_->setEnabled(startToggleEnabled);
+        proxyToggleAction_->setEnabled(coreRunning_ && !coreTransitionPending_);
     }
 }
 
@@ -1055,6 +1054,10 @@ void MainWindow::updateQrPreview()
         return;
     }
 
+    if (!qrPreviewVisible_ || qrPanel_ == nullptr || !qrPanel_->isVisible()) {
+        return;
+    }
+
     const QList<const VmessItem*> selectedItems = selectedServers();
     if (selectedItems.isEmpty()) {
         shareLinkLabel_->clear();
@@ -1069,9 +1072,6 @@ void MainWindow::updateQrPreview()
     const QString shareText = shareLinks.join(QChar('\n'));
     shareLinkLabel_->setPlainText(shareText);
     shareLinkLabel_->setToolTip(shareText);
-    if (shareContentPanel_ != nullptr && shareContentPanel_->layout() != nullptr) {
-        shareContentPanel_->layout()->activate();
-    }
 
     if (shareLinks.isEmpty()) {
         qrPlaceholder_->setPixmap(QPixmap());
@@ -1089,9 +1089,6 @@ void MainWindow::updateQrPreview()
     if (qrExtent <= 0) {
         qrPlaceholder_->setPixmap(QPixmap());
         qrPlaceholder_->setToolTip(shareUrl);
-        QTimer::singleShot(0, this, [this]() {
-            updateQrPreview();
-        });
         return;
     }
     qrPlaceholder_->setPixmap(QrCodeRenderer::render(shareUrl, qrExtent));
@@ -2245,6 +2242,9 @@ void MainWindow::setupConnections()
         &MainWindow::openSingBoxReleasePageRequested);
     connect(openGeoReleasePageAction_, &QAction::triggered, this, &MainWindow::openGeoReleasePageRequested);
     connect(coreToggleAction_, &QAction::triggered, this, [this]() {
+        if (coreTransitionPending_) {
+            return;
+        }
         if (coreRunning_) {
             emit stopCoreRequested();
             return;
@@ -2396,13 +2396,13 @@ void MainWindow::setupConnections()
             }
 
             const QModelIndex clickedIndex = serverView_->indexAt(position);
-            if (clickedIndex.isValid() && serverView_->selectionModel() != nullptr
-                && !serverView_->selectionModel()->isRowSelected(clickedIndex.row(), QModelIndex())) {
+            if (clickedIndex.isValid() && serverView_->selectionModel() != nullptr) {
                 serverView_->clearSelection();
                 serverView_->setCurrentIndex(clickedIndex);
                 serverView_->selectRow(clickedIndex.row());
             }
 
+            updateActionState();
             if (selectedServerId().isEmpty()) {
                 return;
             }
@@ -2422,10 +2422,6 @@ void MainWindow::setupConnections()
         importClipboardAction_->setShortcut(QKeySequence::Paste);
         importClipboardAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
         serverView_->addAction(importClipboardAction_);
-
-        testAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
-        testAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        serverView_->addAction(testAction_);
 
         setDefaultServerAction_->setShortcut(QKeySequence(Qt::Key_Return));
         setDefaultServerAction_->setShortcuts({
@@ -2805,12 +2801,23 @@ void MainWindow::updateStatusIndicators()
     }
 
     if (coreStatusLabel_ != nullptr) {
-        coreStatusLabel_->setText(tr("Core: %1").arg(
-            coreRunning_ ? tr("Running") : tr("Stopped")));
+        QString coreStateText;
+        QString color;
+        if (coreTransitionPending_) {
+            coreStateText = coreRunning_ ? tr("Stopping") : tr("Starting");
+            color = AppTheme::warningStatusColor();
+        } else if (coreRunning_) {
+            coreStateText = tr("Running");
+            color = AppTheme::successStatusColor();
+        } else {
+            coreStateText = tr("Stopped");
+            color = AppTheme::errorStatusColor();
+        }
+
+        coreStatusLabel_->setText(tr("Core: %1").arg(coreStateText));
         applySemanticState(
             coreStatusLabel_,
-            AppTheme::semanticStatusProperty(
-                coreRunning_ ? AppTheme::successStatusColor() : AppTheme::errorStatusColor()));
+            AppTheme::semanticStatusProperty(color));
     }
 
     if (proxyStatusLabel_ != nullptr) {

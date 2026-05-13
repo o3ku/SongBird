@@ -9,6 +9,8 @@ private slots:
     void detectReadyProxyPrefersSocksWhenBothPortsAreReady();
     void detectReadyProxyAcceptsHttpWhenSocksIsNotReady();
     void detectReadyProxyReturnsNulloptWhenNoPortIsReady();
+    void reserveProxyPortsRejectsOverlapUntilReleased();
+    void startupSlotsEnforceConfiguredLimit();
     void makeUrlTestRuntimeConfigDisablesRoutingAndTun();
 };
 
@@ -46,6 +48,36 @@ void SpeedTestServiceInternalTests::detectReadyProxyReturnsNulloptWhenNoPortIsRe
         [](int) { return false; });
 
     QVERIFY(!readyProxy.has_value());
+}
+
+void SpeedTestServiceInternalTests::reserveProxyPortsRejectsOverlapUntilReleased()
+{
+    SpeedTestServiceInternal::resetGlobalState();
+
+    QVERIFY(SpeedTestServiceInternal::reserveProxyPorts(54910, 54911));
+    QVERIFY(!SpeedTestServiceInternal::reserveProxyPorts(54911, 54912));
+
+    SpeedTestServiceInternal::releaseProxyPorts(54910, 54911);
+
+    QVERIFY(SpeedTestServiceInternal::reserveProxyPorts(54911, 54912));
+
+    SpeedTestServiceInternal::releaseProxyPorts(54911, 54912);
+}
+
+void SpeedTestServiceInternalTests::startupSlotsEnforceConfiguredLimit()
+{
+    SpeedTestServiceInternal::resetGlobalState();
+
+    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
+    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
+    QVERIFY(!SpeedTestServiceInternal::tryAcquireStartupSlot(2));
+
+    SpeedTestServiceInternal::releaseStartupSlot();
+
+    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
+
+    SpeedTestServiceInternal::releaseStartupSlot();
+    SpeedTestServiceInternal::releaseStartupSlot();
 }
 
 void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigDisablesRoutingAndTun()

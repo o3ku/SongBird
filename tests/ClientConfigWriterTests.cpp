@@ -44,6 +44,7 @@ private slots:
     void generateClientConfigsUsesDefaultFingerprintForLegacyRealityWhenServerValueMissing();
     void generateClientConfigsAddsDefaultSingBoxWebSocketEarlyDataHeader();
     void generateClientConfigsOverridesSingBoxWebSocketEarlyDataHeaderFromEh();
+    void generateClientConfigsUsesTcpNetworkForSingBoxWebSocketTransport();
     void generateClientConfigsCreatesTunCompatSingBoxRelayForXray();
     void generateClientConfigsCreatesTunCompatSingBoxRelayForXrayWithoutLegacyProtect();
     void generateClientConfigsUsesModernLocalDnsServerForTunCompatSingBoxRelay();
@@ -1110,6 +1111,26 @@ void ClientConfigWriterTests::generateClientConfigsOverridesSingBoxWebSocketEarl
     QCOMPARE(
         transport.value(QStringLiteral("early_data_header_name")).toString(),
         QStringLiteral("X-Ed-Header"));
+}
+
+void ClientConfigWriterTests::generateClientConfigsUsesTcpNetworkForSingBoxWebSocketTransport()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.network = QStringLiteral("ws");
+    server.path = QStringLiteral("/ws");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+
+    QCOMPARE(proxyOutbound.value(QStringLiteral("network")).toString(), QStringLiteral("tcp"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("transport")).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("ws"));
 }
 
 void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayForXray()

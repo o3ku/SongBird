@@ -12,7 +12,7 @@ QString buildApplicationStyleSheet()
     return QStringLiteral(
         "QMainWindow { background: #ffffff; color: #1f1f1f; }"
         "QDialog, QMessageBox { background: #ffffff; color: #1f1f1f; }"
-        "QWidget { color: #1f1f1f; font-family: 'Microsoft YaHei'; font-size: 9pt; }"
+        "QWidget { color: #1f1f1f; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 9pt; }"
         "QToolBar#mainToolBar { background: #ffffff; border: none; border-bottom: 1px solid #222222; spacing: 0px; }"
         "QToolBar#mainToolBar::separator { width: 0px; margin: 0px; background: transparent; }"
         "QToolButton, QPushButton { background: #ffffff; border: 1px solid #bdbdbd; border-radius: 0px; padding: 4px 8px 4px 8px; color: #1f1f1f; }"
@@ -47,8 +47,6 @@ QString buildApplicationStyleSheet()
         "QComboBox, QLineEdit, QSpinBox { padding: 2px 8px; }"
         "QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QListView:hover, QTextEdit:hover { border-color: #a9a9a9; }"
         "QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QListView:focus, QTextEdit:focus { border: 1px solid #7f7f7f; }"
-        "QComboBox { padding-right: 28px; }"
-        "QSpinBox { padding-right: 22px; }"
         "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: none; border-left: 1px solid #d0d0d0; background: #f0f0f0; border-radius: 0px; }"
         "QComboBox::drop-down:hover { background: #e6e6e6; }"
         "QComboBox::down-arrow { image: url(:/app/chevron-down.svg); width: 10px; height: 10px; }"

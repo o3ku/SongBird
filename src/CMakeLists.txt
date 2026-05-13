@@ -208,6 +208,7 @@ endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(qt_v2rayn
+        MANUAL_FINALIZATION
         WIN32
         ${QT_V2RAYN_SOURCES}
     )

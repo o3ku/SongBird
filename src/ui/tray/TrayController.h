@@ -22,7 +22,7 @@ public:
     bool initialize();
     bool isAvailable() const;
     void setCurrentServerName(const QString& name);
-    void setCoreRunning(bool enabled);
+    void setCoreRunning(bool enabled, bool pending = false);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
     void setAutoRunEnabled(bool enabled);
@@ -52,6 +52,7 @@ public slots:
 
 private:
     void updateMenuText();
+    void updateToolTip();
     void updateTrayIcon();
     void rebuildServerMenu();
     void rebuildRoutingMenu();
@@ -87,6 +88,7 @@ private:
     int currentRoutingIndex_ = -1;
     int serverMenuLimit_ = 0;
     bool coreRunning_ = false;
+    bool coreTransitionPending_ = false;
     bool systemProxyApplied_ = false;
     bool autoRunEnabled_ = false;
     bool advancedRoutingEnabled_ = false;

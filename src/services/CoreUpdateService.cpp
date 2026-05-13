@@ -78,13 +78,13 @@ bool isCancellationRequested(const CoreUpdateService::CancelCheckHandler& cancel
 
 OperationResult cancelledResult()
 {
-    return OperationResult::fail(
+    return OperationResult::cancel(
         QCoreApplication::translate("CoreUpdateService", "Core update was canceled."));
 }
 
 bool isCancelledResult(const OperationResult& result)
 {
-    return !result.success && result.message == cancelledResult().message;
+    return result.cancelled;
 }
 
 QString normalizeVersionTag(QString value)
@@ -99,6 +99,45 @@ QString normalizeVersionTag(QString value)
     }
 
     return value;
+}
+
+QList<int> parseVersionParts(const QString& version)
+{
+    QString stripped = version;
+    if (stripped.startsWith(QChar('v'))) {
+        stripped = stripped.mid(1);
+    }
+    const int dashIndex = stripped.indexOf(QChar('-'));
+    if (dashIndex >= 0) {
+        stripped = stripped.left(dashIndex);
+    }
+
+    QList<int> parts;
+    for (const QString& segment : stripped.split(QChar('.'))) {
+        bool ok = false;
+        const int value = segment.toInt(&ok);
+        parts.append(ok ? value : 0);
+    }
+    return parts;
+}
+
+bool isVersionNewerThan(const QString& candidate, const QString& current)
+{
+    const QList<int> candidateParts = parseVersionParts(candidate);
+    const QList<int> currentParts = parseVersionParts(current);
+    const int maxLen = qMax(candidateParts.size(), currentParts.size());
+
+    for (int i = 0; i < maxLen; ++i) {
+        const int c = i < candidateParts.size() ? candidateParts[i] : 0;
+        const int r = i < currentParts.size() ? currentParts[i] : 0;
+        if (c > r) {
+            return true;
+        }
+        if (c < r) {
+            return false;
+        }
+    }
+    return false;
 }
 
 bool is64BitOperatingSystem()
@@ -777,12 +816,14 @@ OperationResult CoreUpdateService::update(
     CoreType coreType,
     const Config& config,
     const QString& targetDirectory,
-    ConfirmDownloadHandler confirmDownload,
-    BeforeInstallHandler beforeInstall,
-    ProgressHandler progressHandler,
-    CancelCheckHandler cancelCheck,
-    bool skipLocalVersionCheck) const
+    const UpdateOptions& options) const
 {
+    const auto& confirmDownload = options.confirmDownload;
+    const auto& beforeInstall = options.beforeInstall;
+    const auto& progressHandler = options.progressHandler;
+    const auto& cancelCheck = options.cancelCheck;
+    const bool skipLocalVersionCheck = options.skipLocalVersionCheck;
+
     if (isCancellationRequested(cancelCheck)) {
         return cancelledResult();
     }
@@ -955,7 +996,7 @@ OperationResult CoreUpdateService::update(
     const QString normalizedReleaseTag = normalizeVersionTag(release.tagName);
     if (!currentVersion.isEmpty()
         && !normalizedReleaseTag.startsWith(QStringLiteral("prerelease"))
-        && currentVersion == normalizedReleaseTag) {
+        && !isVersionNewerThan(normalizedReleaseTag, currentVersion)) {
         return OperationResult::ok(
             QCoreApplication::translate("CoreUpdateService", "%1 is already up to date: %2.")
                 .arg(definition.displayName)

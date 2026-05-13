@@ -20,17 +20,21 @@
 #include <QFile>
 
 #include <algorithm>
+#include <future>
 #include <functional>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "runtime/ClientConfigWriter.h"
 #include "services/SpeedTestServiceInternal.h"
 
 namespace {
 
-constexpr int kRuntimeStartupTimeoutMs = 5000;
+constexpr int kRuntimeStartupTimeoutMs = 10000;
 constexpr int kRuntimeRequestTimeoutMs = 8000;
+constexpr int kUrlTestMaxConcurrency = 10;
+constexpr int kUrlTestMaxStartupConcurrency = 4;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 const QString kDefaultUrlTestUrl = QStringLiteral("https://www.gstatic.com/generate_204");
 
@@ -139,7 +143,9 @@ int takeAvailablePortBase()
 
         socksProbe.close();
         httpProbe.close();
-        return candidate;
+        if (SpeedTestServiceInternal::reserveProxyPorts(candidate, candidate + 1)) {
+            return candidate;
+        }
     }
 
     return 0;
@@ -229,11 +235,45 @@ QString runUrlTest(
         return QStringLiteral("Core missing");
     }
 
+    while (!cancelled.load() && !SpeedTestServiceInternal::tryAcquireStartupSlot(kUrlTestMaxStartupConcurrency)) {
+        QThread::msleep(25);
+    }
+    if (cancelled.load()) {
+        return QStringLiteral("Cancelled");
+    }
+    struct ScopedStartupSlotRelease
+    {
+        bool active = true;
+
+        void release()
+        {
+            if (!active) {
+                return;
+            }
+            SpeedTestServiceInternal::releaseStartupSlot();
+            active = false;
+        }
+
+        ~ScopedStartupSlotRelease()
+        {
+            release();
+        }
+    } startupSlot;
     const int socksPort = takeAvailablePortBase();
     if (socksPort <= 0) {
         return QStringLiteral("Port busy");
     }
     const int httpPort = socksPort + 1;
+    struct ScopedProxyPortRelease
+    {
+        int socksPort = 0;
+        int httpPort = 0;
+
+        ~ScopedProxyPortRelease()
+        {
+            SpeedTestServiceInternal::releaseProxyPorts(socksPort, httpPort);
+        }
+    } reservedPorts{socksPort, httpPort};
 
     QTemporaryDir temporaryDirectory;
     if (!temporaryDirectory.isValid()) {
@@ -333,6 +373,7 @@ QString runUrlTest(
             ? QStringLiteral("Proxy startup timeout (no core output)")
             : QStringLiteral("Proxy startup timeout: %1").arg(normalizeErrorText(output));
     }
+    startupSlot.release();
 
     const QString url = defaultUrlTestUrl(item.runtimeConfig);
     log(QStringLiteral("URL Test proxy ready | %1 | type=%2 | port=%3 | url=%4")
@@ -403,32 +444,85 @@ public:
     void runBatch(const Config& config, const QList<SpeedTestRequestItem>& items)
     {
         int completed = 0;
+        struct PendingItem {
+            QString indexId;
+            QString serverName;
+            std::future<QString> future;
+        };
+
+        const int itemCount = static_cast<int>(items.size());
+        const int maxConcurrency = std::max(1, std::min(kUrlTestMaxConcurrency, itemCount));
+        std::vector<PendingItem> pending;
+        pending.reserve(static_cast<std::size_t>(maxConcurrency));
+
+        auto emitCompletedResult = [this, &completed](PendingItem& pendingItem) {
+            QString result;
+            try {
+                result = pendingItem.future.get();
+            } catch (...) {
+                result = QStringLiteral("Failed");
+            }
+
+            if (result.trimmed().isEmpty()) {
+                result = QStringLiteral("Failed");
+            }
+
+            ++completed;
+            if (!cancelled_.load()) {
+                emit testResultReady(pendingItem.indexId, result);
+                emit logGenerated(QStringLiteral("URL Test result | %1 -> %2")
+                                      .arg(pendingItem.serverName, result));
+            }
+        };
+
+        auto flushReadyTasks = [&pending, &emitCompletedResult]() {
+            for (auto it = pending.begin(); it != pending.end();) {
+                if (it->future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                    emitCompletedResult(*it);
+                    it = pending.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        };
 
         for (const SpeedTestRequestItem& item : items) {
             if (cancelled_.load()) {
                 break;
             }
+
             const QString serverName = describeServer(item.server);
             emit logGenerated(QStringLiteral("URL Test: %1").arg(serverName));
 
-            QString result;
-            if (item.server.configType == ConfigType::Custom) {
-                result = QStringLiteral("Unsupported");
-            } else if (cancelled_.load()) {
-                break;
-            } else {
-                result = runUrlTest(item, customConfigDirectory_, cancelled_, [this](const QString& message) {
-                    emit logGenerated(message);
-                });
+            pending.push_back(PendingItem{
+                item.server.indexId,
+                serverName,
+                std::async(std::launch::async, [this, item]() -> QString {
+                    if (item.server.configType == ConfigType::Custom) {
+                        return QStringLiteral("Unsupported");
+                    }
+                    if (cancelled_.load()) {
+                        return QStringLiteral("Cancelled");
+                    }
+                    return runUrlTest(item, customConfigDirectory_, cancelled_, [this](const QString& message) {
+                        QMetaObject::invokeMethod(this, [this, message]() {
+                            emit logGenerated(message);
+                        }, Qt::QueuedConnection);
+                    });
+                })});
+
+            while (!cancelled_.load() && pending.size() >= static_cast<std::size_t>(maxConcurrency)) {
+                flushReadyTasks();
+                if (pending.size() >= static_cast<std::size_t>(maxConcurrency)) {
+                    QThread::msleep(25);
+                }
             }
-            if (result.trimmed().isEmpty()) {
-                result = QStringLiteral("Failed");
-            }
-            ++completed;
-            if (!cancelled_.load()) {
-                emit testResultReady(item.server.indexId, result);
-                emit logGenerated(QStringLiteral("URL Test result | %1 -> %2")
-                                      .arg(serverName, result));
+        }
+
+        while (!pending.empty()) {
+            flushReadyTasks();
+            if (!pending.empty()) {
+                QThread::msleep(25);
             }
         }
 
@@ -486,8 +580,8 @@ OperationResult SpeedTestService::start(const Config& config, const QList<SpeedT
         return OperationResult::fail(QStringLiteral("Speed test worker thread is unavailable."));
     }
 
-    running_ = true;
     cancelled_ = false;
+    running_ = true;
     const QString message = QStringLiteral("URL Test started for %1 server(s).")
                                 .arg(items.size());
     emit runningChanged(true);
@@ -532,4 +626,3 @@ SpeedTestService::~SpeedTestService()
 }
 
 #include "SpeedTestService.moc"
-

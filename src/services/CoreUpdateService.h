@@ -21,6 +21,14 @@ public:
     using VersionCommandHandler =
         std::function<OperationResult(const QString& program, const QStringList& arguments, QString* output)>;
 
+    struct UpdateOptions {
+        ConfirmDownloadHandler confirmDownload;
+        BeforeInstallHandler beforeInstall;
+        ProgressHandler progressHandler;
+        CancelCheckHandler cancelCheck;
+        bool skipLocalVersionCheck = false;
+    };
+
     explicit CoreUpdateService(
         DownloadHandler downloadHandler = {},
         ArchiveExtractor archiveExtractor = {},
@@ -30,11 +38,7 @@ public:
         CoreType coreType,
         const Config& config,
         const QString& targetDirectory,
-        ConfirmDownloadHandler confirmDownload = {},
-        BeforeInstallHandler beforeInstall = {},
-        ProgressHandler progressHandler = {},
-        CancelCheckHandler cancelCheck = {},
-        bool skipLocalVersionCheck = false) const;
+        const UpdateOptions& options = {}) const;
 
 private:
     DownloadHandler downloadHandler_;

@@ -58,21 +58,21 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
         cancelled.store(true);
     });
 
+    CoreUpdateService::UpdateOptions options;
+    options.cancelCheck = [&cancelled]() {
+        return cancelled.load();
+    };
+    options.skipLocalVersionCheck = true;
+
     const OperationResult result = service.update(
         CoreType::SingBox,
         config,
         targetDirectory.path(),
-        {},
-        {},
-        {},
-        [&cancelled]() {
-            return cancelled.load();
-        },
-        true);
+        options);
     cancellationThread.join();
 
     QVERIFY(!result.success);
-    QCOMPARE(result.message, QStringLiteral("Core update was canceled."));
+    QVERIFY(result.cancelled);
     QVERIFY(timer.elapsed() < 1500);
     QVERIFY(downloadAttempts >= 2);
 }

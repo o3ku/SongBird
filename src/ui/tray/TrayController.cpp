@@ -189,19 +189,34 @@ bool TrayController::isAvailable() const
 
 void TrayController::setCurrentServerName(const QString& name)
 {
-    currentServerName_ = name.trimmed();
+    const QString trimmed = name.trimmed();
+    if (currentServerName_ == trimmed) {
+        return;
+    }
+
+    currentServerName_ = trimmed;
     updateMenuText();
 }
 
-void TrayController::setCoreRunning(bool enabled)
+void TrayController::setCoreRunning(bool enabled, bool pending)
 {
+    if (coreRunning_ == enabled && coreTransitionPending_ == pending) {
+        return;
+    }
+
     coreRunning_ = enabled;
+    coreTransitionPending_ = pending;
     updateMenuText();
 }
 
 void TrayController::setSystemProxyState(int mode, bool enabled)
 {
-    systemProxyMode_ = normalizeSystemProxyMode(mode);
+    const SystemProxyMode normalizedMode = normalizeSystemProxyMode(mode);
+    if (systemProxyMode_ == normalizedMode && systemProxyApplied_ == enabled) {
+        return;
+    }
+
+    systemProxyMode_ = normalizedMode;
     systemProxyApplied_ = enabled;
     updateMenuText();
 }
@@ -216,27 +231,46 @@ void TrayController::setProxyEnabled(bool enabled)
 
 void TrayController::setAutoRunEnabled(bool enabled)
 {
+    if (autoRunEnabled_ == enabled) {
+        return;
+    }
+
     autoRunEnabled_ = enabled;
     updateMenuText();
 }
 
 void TrayController::setRoutingSummary(const QString& value, bool advancedEnabled)
 {
-    routingSummary_ = value.trimmed();
+    const QString trimmed = value.trimmed();
+    if (routingSummary_ == trimmed && advancedRoutingEnabled_ == advancedEnabled) {
+        return;
+    }
+
+    routingSummary_ = trimmed;
     advancedRoutingEnabled_ = advancedEnabled;
     updateMenuText();
 }
 
 void TrayController::setStatisticsSummary(const QString& value)
 {
-    statisticsSummary_ = value.trimmed();
-    updateMenuText();
+    const QString trimmed = value.trimmed();
+    if (statisticsSummary_ == trimmed) {
+        return;
+    }
+
+    statisticsSummary_ = trimmed;
+    updateToolTip();
 }
 
 void TrayController::setTrafficSummary(const QString& value)
 {
-    trafficSummary_ = value.trimmed();
-    updateMenuText();
+    const QString trimmed = value.trimmed();
+    if (trafficSummary_ == trimmed) {
+        return;
+    }
+
+    trafficSummary_ = trimmed;
+    updateToolTip();
 }
 
 void TrayController::showMessage(const QString& title, const QString& message, bool error, int timeoutMs)
@@ -326,11 +360,11 @@ void TrayController::updateMenuText()
     }
 
     if (startCoreAction_ != nullptr) {
-        startCoreAction_->setEnabled(!coreRunning_);
+        startCoreAction_->setEnabled(!coreRunning_ && !coreTransitionPending_);
     }
 
     if (stopCoreAction_ != nullptr) {
-        stopCoreAction_->setEnabled(coreRunning_);
+        stopCoreAction_->setEnabled(coreRunning_ && !coreTransitionPending_);
     }
 
     if (clearProxyAction_ != nullptr) {
@@ -364,31 +398,37 @@ void TrayController::updateMenuText()
         routingsMenu_->setEnabled(advancedRoutingEnabled_ && !routings_.isEmpty());
     }
 
-    if (trayIcon_ != nullptr) {
-        QString proxyText = systemProxyModeDisplayName(systemProxyMode_);
-        const bool expectedApplied = expectedSystemProxyEnabled(systemProxyMode_);
-        if (systemProxyMode_ != SystemProxyMode::Unchanged && systemProxyApplied_ != expectedApplied) {
-            proxyText += QStringLiteral(" (not applied)");
-        }
+    updateToolTip();
+    updateTrayIcon();
+}
 
-        QString tooltip = QStringLiteral("v2rayq | %1 | Core %2 | Proxy %3 | Auto Run %4")
-                              .arg(currentServerName_.isEmpty() ? QStringLiteral("No default server") : currentServerName_)
-                              .arg(coreRunning_ ? QStringLiteral("Running") : QStringLiteral("Stopped"))
-                              .arg(proxyText)
-                              .arg(autoRunEnabled_ ? QStringLiteral("Enabled") : QStringLiteral("Disabled"));
-        if (!routingSummary_.isEmpty()) {
-            tooltip += QStringLiteral(" | Routing %1").arg(routingSummary_);
-        }
-        if (!statisticsSummary_.isEmpty()) {
-            tooltip += QStringLiteral(" | ") + statisticsSummary_;
-        }
-        if (!trafficSummary_.isEmpty()) {
-            tooltip += QStringLiteral(" | ") + trafficSummary_;
-        }
-        trayIcon_->setToolTip(tooltip);
+void TrayController::updateToolTip()
+{
+    if (trayIcon_ == nullptr) {
+        return;
     }
 
-    updateTrayIcon();
+    QString proxyText = systemProxyModeDisplayName(systemProxyMode_);
+    const bool expectedApplied = expectedSystemProxyEnabled(systemProxyMode_);
+    if (systemProxyMode_ != SystemProxyMode::Unchanged && systemProxyApplied_ != expectedApplied) {
+        proxyText += QStringLiteral(" (not applied)");
+    }
+
+    QString tooltip = QStringLiteral("v2rayq | %1 | Core %2 | Proxy %3 | Auto Run %4")
+                          .arg(currentServerName_.isEmpty() ? QStringLiteral("No default server") : currentServerName_)
+                          .arg(coreRunning_ ? QStringLiteral("Running") : QStringLiteral("Stopped"))
+                          .arg(proxyText)
+                          .arg(autoRunEnabled_ ? QStringLiteral("Enabled") : QStringLiteral("Disabled"));
+    if (!routingSummary_.isEmpty()) {
+        tooltip += QStringLiteral(" | Routing %1").arg(routingSummary_);
+    }
+    if (!statisticsSummary_.isEmpty()) {
+        tooltip += QStringLiteral(" | ") + statisticsSummary_;
+    }
+    if (!trafficSummary_.isEmpty()) {
+        tooltip += QStringLiteral(" | ") + trafficSummary_;
+    }
+    trayIcon_->setToolTip(tooltip);
 }
 
 void TrayController::updateTrayIcon()

@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "common/CorePidFile.h"
+
 namespace {
 const QRegularExpression kAnsiEscape(QStringLiteral("\x1b\\[[0-9;]*[a-zA-Z]"));
 }
@@ -147,6 +149,8 @@ void QtCoreProcessHost::bindOutputSignals()
         &QProcess::started,
         process_.get(),
         [this]() {
+            recordCorePid(process_->processId());
+
             if (startNotified_) {
                 return;
             }
@@ -179,6 +183,7 @@ void QtCoreProcessHost::bindOutputSignals()
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
         process_.get(),
         [this](int exitCode, QProcess::ExitStatus status) {
+            removeCorePid(process_->processId());
             if (forcedKillTimer_ != nullptr) {
                 forcedKillTimer_->stop();
             }
