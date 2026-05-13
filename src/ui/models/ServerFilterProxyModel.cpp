@@ -177,8 +177,7 @@ QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
             return QStringLiteral(">");
         }
 
-        const int ordinal = visibleOrdinalForSourceRow(sourceIndex.row());
-        return ordinal > 0 ? QVariant(QString::number(ordinal)) : QVariant();
+        return QVariant(QString::number(index.row() + 1));
     }
 
     return QSortFilterProxyModel::data(index, role);
@@ -287,25 +286,4 @@ bool ServerFilterProxyModel::matchesTextFilter(int sourceRow, const QModelIndex&
     }
 
     return false;
-}
-
-int ServerFilterProxyModel::visibleOrdinalForSourceRow(int sourceRow) const
-{
-    if (sourceModel() == nullptr || sourceRow < 0) {
-        return -1;
-    }
-
-    int ordinal = 0;
-    for (int row = 0; row < sourceModel()->rowCount(); ++row) {
-        if (!filterAcceptsRow(row, QModelIndex())) {
-            continue;
-        }
-
-        ++ordinal;
-        if (row == sourceRow) {
-            return ordinal;
-        }
-    }
-
-    return -1;
 }

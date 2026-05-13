@@ -29,7 +29,6 @@ protected:
 private:
     bool matchesSubscriptionFilter(const QString& subscriptionId) const;
     bool matchesTextFilter(int sourceRow, const QModelIndex& sourceParent) const;
-    int visibleOrdinalForSourceRow(int sourceRow) const;
 
     QSet<QString> knownSubscriptionIds_;
     SubscriptionFilterMode subscriptionFilterMode_ = SubscriptionFilterMode::All;

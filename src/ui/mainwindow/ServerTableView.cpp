@@ -212,6 +212,23 @@ void ServerTableView::setHoveredRow(int row)
         return;
     }
 
+    const int previousRow = hoveredRow_;
     hoveredRow_ = row;
-    viewport()->update();
+
+    if (model() == nullptr) {
+        viewport()->update();
+        return;
+    }
+
+    const int columnCount = model()->columnCount();
+    if (previousRow >= 0) {
+        for (int col = 0; col < columnCount; ++col) {
+            update(model()->index(previousRow, col));
+        }
+    }
+    if (hoveredRow_ >= 0) {
+        for (int col = 0; col < columnCount; ++col) {
+            update(model()->index(hoveredRow_, col));
+        }
+    }
 }
