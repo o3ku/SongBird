@@ -31,6 +31,8 @@ public:
     void setTrafficSummary(const QString& value);
     void setServers(const QList<VmessItem>& servers, const QString& currentIndexId, int limit);
     void setRoutings(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedEnabled);
+    void setBackgroundTaskRunning(bool running);
+    void setBackgroundTaskDescription(const QString& description);
     void showMessage(const QString& title, const QString& message, bool error = false, int timeoutMs = 5000);
 
 signals:
@@ -89,6 +91,8 @@ private:
     int serverMenuLimit_ = 0;
     bool coreRunning_ = false;
     bool coreTransitionPending_ = false;
+    bool backgroundTaskRunning_ = false;
+    QString backgroundTaskDescription_;
     bool systemProxyApplied_ = false;
     bool autoRunEnabled_ = false;
     bool advancedRoutingEnabled_ = false;

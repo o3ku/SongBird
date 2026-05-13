@@ -31,6 +31,7 @@ private slots:
     void appendLogKeepsBottomWhenCursorAtLastLine();
     void appendLogPreservesViewportWhenCursorNotAtLastLine();
     void appendLogPreservesViewportWhenFilterActive();
+    void logStickToBottomButtonMatchesFilterHeight();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
@@ -38,6 +39,8 @@ private slots:
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
     void coreToggleButtonUsesCheckedStateAndDisablesDuringTransition();
+    void coreToggleButtonShowsNoServerTooltipWhenNoServersExist();
+    void coreToggleButtonShowsMissingCoreTooltipWhenRequiredCoreIsUnavailable();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
     void restoreAndCaptureUiStatePreservesRuntimeToggles();
     void logDelegateUsesViewportWidthForSingleLineHeight();
@@ -165,6 +168,22 @@ void MainWindowTests::appendLogPreservesViewportWhenFilterActive()
     QTRY_COMPARE(scrollBar->value(), preservedValue);
 }
 
+void MainWindowTests::logStickToBottomButtonMatchesFilterHeight()
+{
+    MainWindow window;
+    window.resize(1000, 640);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* filterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
+    auto* stickButton = window.findChild<QToolButton*>(QStringLiteral("logStickToBottomButton"));
+    QVERIFY(filterEdit != nullptr);
+    QVERIFY(stickButton != nullptr);
+
+    QCOMPARE(stickButton->height(), filterEdit->height());
+    QCOMPARE(stickButton->width(), stickButton->height());
+}
+
 void MainWindowTests::globalHotkeySettingsActionEmitsSignal()
 {
     MainWindow window;
@@ -247,10 +266,9 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QCOMPARE(qrPlaceholder->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
     QCOMPARE(qrPlaceholder->margin(), 10);
     QVERIFY(qrPlaceholder->height() <= qrPlaceholder->width());
-    QTRY_VERIFY(qrPlaceholder->pixmap() != nullptr);
-    QTRY_VERIFY(!qrPlaceholder->pixmap()->isNull());
-    QVERIFY(qrPlaceholder->pixmap()->width() <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
-    QVERIFY(qrPlaceholder->pixmap()->height() <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
+    QTRY_VERIFY(!qrPlaceholder->pixmap().isNull());
+    QVERIFY(qrPlaceholder->pixmap().width() <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
+    QVERIFY(qrPlaceholder->pixmap().height() <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
     QCOMPARE(shareLinkLabel->sizePolicy().verticalPolicy(), QSizePolicy::Preferred);
     QCOMPARE(shareLinkLabel->wordWrapMode(), QTextOption::WrapAnywhere);
     QCOMPARE(shareLinkLabel->property("shareLinkBottomPadding").toInt(), 10);
@@ -340,11 +358,40 @@ void MainWindowTests::coreToggleButtonUsesCheckedStateAndDisablesDuringTransitio
     QCOMPARE(stopSpy.count(), 1);
 }
 
+void MainWindowTests::coreToggleButtonShowsNoServerTooltipWhenNoServersExist()
+{
+    MainWindow window;
+    window.setConfig(Config());
+
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    QVERIFY(coreButton != nullptr);
+    QVERIFY(!coreButton->isEnabled());
+    QCOMPARE(coreButton->toolTip(), QStringLiteral("No available server. Add or import a server first."));
+}
+
+void MainWindowTests::coreToggleButtonShowsMissingCoreTooltipWhenRequiredCoreIsUnavailable()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.coreTypeItems = {
+        CoreTypeItem{static_cast<int>(ConfigType::VMess), static_cast<int>(CoreType::Xray)}};
+    window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
+
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    QVERIFY(coreButton != nullptr);
+    QVERIFY(coreButton->isEnabled());
+    QVERIFY(coreButton->toolTip().contains(QStringLiteral("No compatible Xray core is installed")));
+    QVERIFY(coreButton->toolTip().contains(QStringLiteral("First")));
+}
+
 void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setCoreRunning(true, false);
+    QCoreApplication::processEvents();
 
     QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
     QSignalSpy disableSpy(&window, SIGNAL(disableSystemProxyRequested()));
@@ -355,7 +402,6 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QVERIFY(proxyButton != nullptr);
     QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
     QVERIFY(!proxyButton->isChecked());
-
     QVERIFY(proxyButton->isEnabled());
 
     proxyButton->click();

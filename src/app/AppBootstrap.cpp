@@ -191,6 +191,121 @@ QString readCoreVersion(CoreType coreType, const QString& program)
     return extractCoreVersionFromOutput(coreType, QString::fromUtf8(process.readAll()));
 }
 
+QStringList buildCoreCandidateDirectories(const QString& configPath)
+{
+    QStringList directories;
+    const auto appendDirectory = [&directories](const QString& path) {
+        if (path.trimmed().isEmpty()) {
+            return;
+        }
+
+        const QString directory = QDir(path).absolutePath();
+        if (!directory.isEmpty() && !directories.contains(directory, Qt::CaseInsensitive)) {
+            directories.append(directory);
+        }
+    };
+
+    appendDirectory(QDir::currentPath());
+    appendDirectory(QCoreApplication::applicationDirPath());
+    appendDirectory(QFileInfo(configPath).dir().absolutePath());
+    return directories;
+}
+
+QStringList coreExecutableCandidateNames(CoreType coreType)
+{
+    switch (resolveRuntimeCoreType(coreType)) {
+    case CoreType::Clash:
+        return QStringList{
+            QStringLiteral("mihomo*.exe"),
+            QStringLiteral("clash-windows-amd64-v3.exe"),
+            QStringLiteral("clash-windows-amd64.exe"),
+            QStringLiteral("clash-windows-386.exe"),
+            QStringLiteral("clash.exe")
+        };
+    case CoreType::ClashMeta:
+        return QStringList{
+            QStringLiteral("mihomo*.exe"),
+            QStringLiteral("Clash.Meta*.exe"),
+            QStringLiteral("clash.exe")
+        };
+    case CoreType::Hysteria:
+        return QStringList{
+            QStringLiteral("hysteria-windows-amd64.exe"),
+            QStringLiteral("hysteria-windows-386.exe"),
+            QStringLiteral("hysteria.exe")
+        };
+    case CoreType::NaiveProxy:
+        return QStringList{
+            QStringLiteral("naiveproxy.exe"),
+            QStringLiteral("naive.exe")
+        };
+    case CoreType::SingBox:
+        return QStringList{
+            QStringLiteral("sing-box-client.exe"),
+            QStringLiteral("sing-box.exe")
+        };
+    case CoreType::V2Fly:
+        return QStringList{
+            QStringLiteral("wv2ray.exe"),
+            QStringLiteral("v2ray.exe"),
+            QStringLiteral("SagerNet.exe")
+        };
+    case CoreType::Xray:
+    case CoreType::Auto:
+    case CoreType::SagerNet:
+    case CoreType::V2FlyV5:
+    case CoreType::Unknown:
+    default:
+        return QStringList{
+            QStringLiteral("xray.exe"),
+            QStringLiteral("v2ray.exe")
+        };
+    }
+}
+
+QStringList resolveCoreCandidatesForConfigPath(CoreType coreType, const QString& configPath)
+{
+    const QStringList directories = buildCoreCandidateDirectories(configPath);
+    const QStringList fileNames = coreExecutableCandidateNames(coreType);
+
+    QStringList candidates;
+    for (const QString& directory : directories) {
+        for (const QString& fileName : fileNames) {
+            candidates.append(QDir(directory).filePath(fileName));
+        }
+    }
+    return candidates;
+}
+
+QString locateFirstExistingFileInCandidates(const QStringList& candidates)
+{
+    for (const QString& candidate : candidates) {
+        const QFileInfo candidateInfo(candidate);
+        const QString fileName = candidateInfo.fileName();
+        if (fileName.contains(QChar('*')) || fileName.contains(QChar('?'))) {
+            QDir candidateDir(candidateInfo.path());
+            if (!candidateDir.exists()) {
+                continue;
+            }
+
+            const QFileInfoList matches = candidateDir.entryInfoList(
+                QStringList{fileName},
+                QDir::Files | QDir::NoSymLinks | QDir::Readable,
+                QDir::Name | QDir::IgnoreCase);
+            if (!matches.isEmpty()) {
+                return QDir::toNativeSeparators(matches.constFirst().absoluteFilePath());
+            }
+            continue;
+        }
+
+        if (QFileInfo::exists(candidate)) {
+            return QDir::toNativeSeparators(QFileInfo(candidate).absoluteFilePath());
+        }
+    }
+
+    return {};
+}
+
 QStringList coreCandidateFileNames(const QStringList& candidates)
 {
     QStringList candidateNames;
@@ -581,6 +696,11 @@ bool AppBootstrap::run()
     QObject::connect(speedTestService_.get(), &SpeedTestService::runningChanged, mainWindow_.get(), [this](bool running) {
         if (mainWindow_ != nullptr) {
             mainWindow_->setSpeedTestRunning(running);
+        }
+        if (!running) {
+            finishBackgroundTask(BackgroundTaskKind::SpeedTest);
+        } else {
+            syncBackgroundTaskState();
         }
     });
     QObject::connect(speedTestService_.get(), &SpeedTestService::logGenerated, mainWindow_.get(), [this](const QString& message) {
@@ -1217,6 +1337,64 @@ void AppBootstrap::syncWindow()
     syncStatusIndicators();
 }
 
+bool AppBootstrap::tryBeginBackgroundTask(BackgroundTaskKind kind)
+{
+    if (kind == BackgroundTaskKind::None) {
+        return false;
+    }
+
+    if (activeBackgroundTask_ != BackgroundTaskKind::None) {
+        return false;
+    }
+
+    activeBackgroundTask_ = kind;
+    syncBackgroundTaskState();
+    return true;
+}
+
+QString AppBootstrap::backgroundTaskDescription(BackgroundTaskKind kind) const
+{
+    switch (kind) {
+    case BackgroundTaskKind::SpeedTest:
+        return QCoreApplication::translate("AppBootstrap", "Running URL Test");
+    case BackgroundTaskKind::SubscriptionUpdate:
+        return QCoreApplication::translate("AppBootstrap", "Updating subscriptions");
+    case BackgroundTaskKind::ProxyAvailabilityCheck:
+        return QCoreApplication::translate("AppBootstrap", "Checking proxy availability");
+    case BackgroundTaskKind::CoreUpdate:
+        return QCoreApplication::translate("AppBootstrap", "Updating core");
+    case BackgroundTaskKind::GeoUpdate:
+        return QCoreApplication::translate("AppBootstrap", "Updating Geo resources");
+    case BackgroundTaskKind::None:
+    default:
+        return {};
+    }
+}
+
+void AppBootstrap::finishBackgroundTask(BackgroundTaskKind kind)
+{
+    if (activeBackgroundTask_ != kind) {
+        return;
+    }
+
+    activeBackgroundTask_ = BackgroundTaskKind::None;
+    syncBackgroundTaskState();
+}
+
+void AppBootstrap::syncBackgroundTaskState()
+{
+    const bool running = activeBackgroundTask_ != BackgroundTaskKind::None;
+    const QString description = backgroundTaskDescription(activeBackgroundTask_);
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setBackgroundTaskRunning(running);
+        mainWindow_->setBackgroundTaskDescription(description);
+    }
+    if (trayController_ != nullptr) {
+        trayController_->setBackgroundTaskRunning(running);
+        trayController_->setBackgroundTaskDescription(description);
+    }
+}
+
 void AppBootstrap::syncStatusIndicators()
 {
     systemProxyMode_ = normalizeSystemProxyMode(config_.sysProxyType);
@@ -1237,11 +1415,14 @@ void AppBootstrap::syncStatusIndicators()
     }
 
     if (mainWindow_ != nullptr) {
+        mainWindow_->setExistingCoreTypes(existingCoreTypes_);
         mainWindow_->setCurrentServerName(currentServerName);
         mainWindow_->setRoutingSummary(routingSummary, listenSummary);
         mainWindow_->setCoreRunning(coreRunning, corePending);
         mainWindow_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
         mainWindow_->setAutoRunEnabled(autoRunEnabled);
+        mainWindow_->setBackgroundTaskRunning(activeBackgroundTask_ != BackgroundTaskKind::None);
+        mainWindow_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
         if (statisticsService_ != nullptr) {
             mainWindow_->setStatisticsSessionState(statisticsState);
             mainWindow_->setTrafficSummary(buildTrafficSummaryText());
@@ -1256,6 +1437,8 @@ void AppBootstrap::syncStatusIndicators()
         trayController_->setRoutingSummary(routingSummary, config_.enableRoutingAdvanced);
         trayController_->setStatisticsSummary(buildStatisticsSummaryText());
         trayController_->setTrafficSummary(buildTrafficSummaryText());
+        trayController_->setBackgroundTaskRunning(activeBackgroundTask_ != BackgroundTaskKind::None);
+        trayController_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
     }
 }
 
@@ -2272,13 +2455,8 @@ void AppBootstrap::importClipboardTextAsync(const QString& text)
         return;
     }
 
-    if (subscriptionUpdateRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A subscription update is already running in the background.")));
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::SubscriptionUpdate)) {
         return;
-    }
-
-    if (speedTestService_ != nullptr && speedTestService_->isRunning()) {
-        speedTestService_->cancel();
     }
 
     const QString startupMessage = QCoreApplication::translate(
@@ -2319,6 +2497,7 @@ void AppBootstrap::importClipboardTextAsync(const QString& text)
                 return;
             }
             subscriptionUpdateRunning_ = false;
+            finishBackgroundTask(BackgroundTaskKind::SubscriptionUpdate);
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
             }
@@ -2342,13 +2521,8 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
         return;
     }
 
-    if (subscriptionUpdateRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A subscription update is already running in the background.")));
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::SubscriptionUpdate)) {
         return;
-    }
-
-    if (speedTestService_ != nullptr && speedTestService_->isRunning()) {
-        speedTestService_->cancel();
     }
 
     const QString activeSubscriptionId = resolveActiveServer() == nullptr
@@ -2449,6 +2623,7 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
                     return;
                 }
                 subscriptionUpdateRunning_ = false;
+                finishBackgroundTask(BackgroundTaskKind::SubscriptionUpdate);
                 if (mainWindow_ != nullptr) {
                     mainWindow_->setSubscriptionUpdateRunning(false);
                 }
@@ -2480,6 +2655,7 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
                 return;
             }
             subscriptionUpdateRunning_ = false;
+            finishBackgroundTask(BackgroundTaskKind::SubscriptionUpdate);
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
             }
@@ -2736,8 +2912,7 @@ void AppBootstrap::runProxyAvailabilityCheck()
         return;
     }
 
-    if (proxyAvailabilityCheckRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A proxy availability check is already running in the background.")));
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::ProxyAvailabilityCheck)) {
         return;
     }
 
@@ -2758,6 +2933,7 @@ void AppBootstrap::runProxyAvailabilityCheck()
                 return;
             }
             proxyAvailabilityCheckRunning_ = false;
+            finishBackgroundTask(BackgroundTaskKind::ProxyAvailabilityCheck);
             showOperationMessage(
                 QCoreApplication::translate("AppBootstrap", "TestMe"),
                 result,
@@ -2798,10 +2974,7 @@ void AppBootstrap::updateCore(
         }
     };
 
-    if (coreUpdateRunning_) {
-        const OperationResult result = OperationResult::fail(QStringLiteral("A core update is already running in the background."));
-        appendResult(result);
-        notifyCompletion(result);
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::CoreUpdate)) {
         return;
     }
 
@@ -2830,6 +3003,7 @@ void AppBootstrap::updateCore(
                QMessageBox::Yes)
             == QMessageBox::Yes);
     if (!confirmed) {
+        finishBackgroundTask(BackgroundTaskKind::CoreUpdate);
         const OperationResult result = OperationResult::ok(
             QCoreApplication::translate("AppBootstrap", "%1 update was canceled.")
                 .arg(coreTypeDisplayName(coreType)));
@@ -2968,6 +3142,7 @@ void AppBootstrap::finalizeCoreUpdate(
     const std::function<void(const OperationResult&)>& completionObserver)
 {
     coreUpdateRunning_ = false;
+    finishBackgroundTask(BackgroundTaskKind::CoreUpdate);
     if (shuttingDown_.load()) {
         return;
     }
@@ -3099,8 +3274,7 @@ void AppBootstrap::updateGeoResources()
         return;
     }
 
-    if (geoUpdateRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A Geo resource update is already running in the background.")));
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::GeoUpdate)) {
         return;
     }
 
@@ -3138,6 +3312,7 @@ void AppBootstrap::updateGeoResources()
                 return;
             }
             geoUpdateRunning_ = false;
+            finishBackgroundTask(BackgroundTaskKind::GeoUpdate);
             for (const OperationResult& result : results) {
                 appendResult(result);
             }
@@ -3186,14 +3361,8 @@ void AppBootstrap::updateSubscriptionsByIds(
     bool useProxy,
     const QString& startupMessage)
 {
-    if (subscriptionUpdateRunning_) {
-        appendResult(OperationResult::fail(QStringLiteral("A subscription update is already running in the background.")));
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::SubscriptionUpdate)) {
         return;
-    }
-
-    // Cancel any running speed test before updating subscriptions.
-    if (speedTestService_ != nullptr && speedTestService_->isRunning()) {
-        speedTestService_->cancel();
     }
 
     const QString activeSubscriptionId = resolveActiveServer() == nullptr
@@ -3232,6 +3401,7 @@ void AppBootstrap::updateSubscriptionsByIds(
                 return;
             }
             subscriptionUpdateRunning_ = false;
+            finishBackgroundTask(BackgroundTaskKind::SubscriptionUpdate);
             if (mainWindow_ != nullptr) {
                 mainWindow_->setSubscriptionUpdateRunning(false);
             }
@@ -3350,8 +3520,27 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     dialog.setConfig(config_);
     refreshExistingCoreTypes();
     dialog.setExistingCoreTypes(existingCoreTypes_);
+    const QString configPath = resolveConfigPath();
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+
     for (const CoreType coreType : availableCoreTypes()) {
-        dialog.setCoreVersion(coreType, detectCoreVersion(coreType));
+        const QStringList candidates = resolveCoreCandidatesForConfigPath(coreType, configPath);
+        auto* thread = QThread::create([coreType, candidates, dialogGuard, lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
+
+            const QString version = readCoreVersion(coreType, locateFirstExistingFileInCandidates(candidates));
+            if (!dialogGuard.isNull()) {
+                QMetaObject::invokeMethod(dialogGuard.data(), [dialogGuard, coreType, version]() {
+                    if (!dialogGuard.isNull()) {
+                        dialogGuard->setCoreVersion(coreType, version);
+                    }
+                }, Qt::QueuedConnection);
+            }
+        });
+        trackBackgroundThread(thread);
+        thread->start();
     }
 
     QObject::connect(&dialog, &SettingsDialog::coreDownloadRequested, &dialog, [this, dialogGuard](int coreTypeValue) {
@@ -3619,6 +3808,10 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
         return;
     }
 
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::SpeedTest)) {
+        return;
+    }
+
     QStringList uniqueIds;
     for (const QString& indexId : indexIds) {
         const QString trimmed = indexId.trimmed();
@@ -3648,6 +3841,10 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
 
     const OperationResult startResult = speedTestService_->start(config_, items);
     appendResult(startResult);
+
+    if (!startResult.success) {
+        finishBackgroundTask(BackgroundTaskKind::SpeedTest);
+    }
 
     if (startResult.success) {
         static const QString pending = QStringLiteral("...");
@@ -4016,115 +4213,12 @@ CoreInfo AppBootstrap::resolveCoreInfo(const VmessItem& server) const
 
 QStringList AppBootstrap::resolveCoreCandidates(CoreType coreType) const
 {
-    QStringList directories;
-    const auto appendDirectory = [&directories](const QString& path) {
-        if (path.trimmed().isEmpty()) {
-            return;
-        }
-
-        const QString directory = QDir(path).absolutePath();
-        if (!directory.isEmpty() && !directories.contains(directory, Qt::CaseInsensitive)) {
-            directories.append(directory);
-        }
-    };
-
-    appendDirectory(QDir::currentPath());
-    appendDirectory(QCoreApplication::applicationDirPath());
-    appendDirectory(QFileInfo(resolveConfigPath()).dir().absolutePath());
-
-    QStringList fileNames;
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Clash:
-        fileNames = QStringList{
-            QStringLiteral("mihomo*.exe"),
-            QStringLiteral("clash-windows-amd64-v3.exe"),
-            QStringLiteral("clash-windows-amd64.exe"),
-            QStringLiteral("clash-windows-386.exe"),
-            QStringLiteral("clash.exe")
-        };
-        break;
-    case CoreType::ClashMeta:
-        fileNames = QStringList{
-            QStringLiteral("mihomo*.exe"),
-            QStringLiteral("Clash.Meta*.exe"),
-            QStringLiteral("clash.exe")
-        };
-        break;
-    case CoreType::Hysteria:
-        fileNames = QStringList{
-            QStringLiteral("hysteria-windows-amd64.exe"),
-            QStringLiteral("hysteria-windows-386.exe"),
-            QStringLiteral("hysteria.exe")
-        };
-        break;
-    case CoreType::NaiveProxy:
-        fileNames = QStringList{
-            QStringLiteral("naiveproxy.exe"),
-            QStringLiteral("naive.exe")
-        };
-        break;
-    case CoreType::SingBox:
-        fileNames = QStringList{
-            QStringLiteral("sing-box-client.exe"),
-            QStringLiteral("sing-box.exe")
-        };
-        break;
-    case CoreType::V2Fly:
-        fileNames = QStringList{
-            QStringLiteral("wv2ray.exe"),
-            QStringLiteral("v2ray.exe"),
-            QStringLiteral("SagerNet.exe")
-        };
-        break;
-    case CoreType::Xray:
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Unknown:
-    default:
-        fileNames = QStringList{
-            QStringLiteral("xray.exe"),
-            QStringLiteral("v2ray.exe")
-        };
-        break;
-    }
-
-    QStringList candidates;
-    for (const QString& directory : directories) {
-        for (const QString& fileName : fileNames) {
-            candidates.append(QDir(directory).filePath(fileName));
-        }
-    }
-    return candidates;
+    return resolveCoreCandidatesForConfigPath(coreType, resolveConfigPath());
 }
 
 QString AppBootstrap::locateFirstExistingFile(const QStringList& candidates) const
 {
-    for (const QString& candidate : candidates) {
-        const QFileInfo candidateInfo(candidate);
-        const QString fileName = candidateInfo.fileName();
-        if (fileName.contains(QChar('*')) || fileName.contains(QChar('?'))) {
-            QDir candidateDir(candidateInfo.path());
-            if (!candidateDir.exists()) {
-                continue;
-            }
-
-            const QFileInfoList matches = candidateDir.entryInfoList(
-                QStringList{fileName},
-                QDir::Files | QDir::NoSymLinks | QDir::Readable,
-                QDir::Name | QDir::IgnoreCase);
-            if (!matches.isEmpty()) {
-                return QDir::toNativeSeparators(matches.constFirst().absoluteFilePath());
-            }
-            continue;
-        }
-
-        if (QFileInfo::exists(candidate)) {
-            return QDir::toNativeSeparators(QFileInfo(candidate).absoluteFilePath());
-        }
-    }
-
-    return {};
+    return locateFirstExistingFileInCandidates(candidates);
 }
 
 void AppBootstrap::refreshExistingCoreTypes()

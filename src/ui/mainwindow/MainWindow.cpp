@@ -269,6 +269,19 @@ private:
     }
 };
 
+const VmessItem* resolveActiveServerForWindow(const Config& config)
+{
+    if (!config.currentIndexId.trimmed().isEmpty()) {
+        for (const VmessItem& item : config.servers) {
+            if (item.indexId == config.currentIndexId) {
+                return &item;
+            }
+        }
+    }
+
+    return config.servers.isEmpty() ? nullptr : &config.servers.constFirst();
+}
+
 void configureStyledComboBox(QComboBox* comboBox)
 {
     if (comboBox == nullptr) {
@@ -512,6 +525,15 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
         return;
     }
 
+    // Always set the policy so tests can verify it before the window is shown.
+    comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    // Defer the actual width calculation until after the first show — font
+    // metrics differ before the style has fully resolved.
+    if (!comboBox->window()->isVisible()) {
+        return;
+    }
+
     QString widestText = comboBox->currentText();
     for (int index = 0; index < comboBox->count(); ++index) {
         if (comboBox->fontMetrics().horizontalAdvance(comboBox->itemText(index))
@@ -520,11 +542,10 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
         }
     }
 
-    const int comboWidth = textControlMinimumWidth(comboBox, widestText, minimumCharacters, 48);
+    const int comboWidth = textControlMinimumWidth(comboBox, widestText, minimumCharacters, 16);
     comboBox->setProperty("contentSizedWidth", comboWidth);
     comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     comboBox->setFixedWidth(comboWidth);
-    comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     comboBox->updateGeometry();
 }
 
@@ -539,6 +560,7 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& statistics)
 {
+    config_ = config;
     const QString preferredSelectedId = selectedServerId().trimmed();
     if (!preferredSelectedId.isEmpty()) {
         lastSelectedServerId_ = preferredSelectedId;
@@ -566,6 +588,12 @@ void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& st
     updateWindowTitle();
 }
 
+void MainWindow::setExistingCoreTypes(const QList<CoreType>& coreTypes)
+{
+    existingCoreTypes_ = coreTypes;
+    updateActionState();
+}
+
 void MainWindow::updateServerTestResult(const QString& indexId, const QString& result)
 {
     if (serverModel_ == nullptr) {
@@ -581,8 +609,17 @@ void MainWindow::updateServerTestResults(const QStringList& indexIds, const QStr
         return;
     }
 
+    if (serverFilterModel_ != nullptr && indexIds.size() > 1) {
+        serverFilterModel_->setDynamicSortFilter(false);
+    }
+
     for (const QString& indexId : indexIds) {
         serverModel_->updateTestResult(indexId, result);
+    }
+
+    if (serverFilterModel_ != nullptr && indexIds.size() > 1) {
+        serverFilterModel_->setDynamicSortFilter(true);
+        serverFilterModel_->invalidate();
     }
 }
 
@@ -624,34 +661,13 @@ void MainWindow::appendLog(const QString& message)
 
 void MainWindow::showTransientStatus(const QString& message, int timeoutMs)
 {
-    if (transientStatusLabel_ == nullptr) {
-        return;
-    }
-
-    transientStatusLabel_->setText(message.trimmed());
-
-    if (transientStatusTimer_ == nullptr) {
-        transientStatusTimer_ = new QTimer(this);
-        transientStatusTimer_->setSingleShot(true);
-        connect(transientStatusTimer_, &QTimer::timeout, this, &MainWindow::clearTransientStatus);
-    }
-
-    if (timeoutMs > 0 && !message.trimmed().isEmpty()) {
-        transientStatusTimer_->start(timeoutMs);
-    } else if (transientStatusTimer_->isActive()) {
-        transientStatusTimer_->stop();
-    }
+    Q_UNUSED(message)
+    Q_UNUSED(timeoutMs)
 }
 
 void MainWindow::clearTransientStatus()
 {
-    if (transientStatusTimer_ != nullptr && transientStatusTimer_->isActive()) {
-        transientStatusTimer_->stop();
-    }
-
-    if (transientStatusLabel_ != nullptr) {
-        transientStatusLabel_->clear();
-    }
+    updateStatusIndicators();
 }
 
 void MainWindow::setHideToTrayEnabled(bool enabled)
@@ -731,6 +747,30 @@ void MainWindow::updateCoreToggleAction()
     coreToggleAction_->setText(tr("START"));
     coreToggleAction_->setCheckable(true);
     coreToggleAction_->setChecked(coreRunning_ && !coreTransitionPending_);
+
+    QString toolTip = tr("Start or stop the core.");
+    const VmessItem* activeServer = resolveActiveServerForWindow(config_);
+    if (coreTransitionPending_) {
+        toolTip = coreRunning_
+            ? tr("Core start/stop is in progress.")
+            : tr("Core start is in progress.");
+    } else if (activeServer == nullptr) {
+        toolTip = tr("No available server. Add or import a server first.");
+    } else {
+        const CoreType requiredCore = resolveSelectedCoreType(config_, *activeServer, existingCoreTypes_);
+        if (!existingCoreTypes_.contains(requiredCore)) {
+            toolTip = tr("No compatible %1 core is installed for the active server \"%2\".")
+                          .arg(coreTypeDisplayName(requiredCore))
+                          .arg(activeServer->remarks.trimmed().isEmpty()
+                                   ? tr("Unnamed server")
+                                   : activeServer->remarks.trimmed());
+        } else if (coreRunning_) {
+            toolTip = tr("Stop the running core.");
+        } else {
+            toolTip = tr("Start the core with the active server.");
+        }
+    }
+    coreToggleAction_->setToolTip(toolTip);
 }
 
 void MainWindow::updateProxyToggleAction()
@@ -781,19 +821,32 @@ void MainWindow::setSpeedTestRunning(bool running)
 
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
-    if (loadingOverlay_ == nullptr) {
-        return;
+    if (loadingOverlay_ != nullptr) {
+        if (running) {
+            loadingOverlay_->setGeometry(serverView_->viewport()->rect());
+            loadingOverlay_->raise();
+            loadingOverlay_->show();
+            serverView_->setEnabled(false);
+        } else {
+            loadingOverlay_->hide();
+            serverView_->setEnabled(true);
+        }
     }
 
-    if (running) {
-        loadingOverlay_->setGeometry(serverView_->viewport()->rect());
-        loadingOverlay_->raise();
-        loadingOverlay_->show();
-        serverView_->setEnabled(false);
-    } else {
-        loadingOverlay_->hide();
-        serverView_->setEnabled(true);
-    }
+    updateActionState();
+}
+
+void MainWindow::setBackgroundTaskRunning(bool running)
+{
+    backgroundTaskRunning_ = running;
+    updateActionState();
+    updateStatusIndicators();
+}
+
+void MainWindow::setBackgroundTaskDescription(const QString& description)
+{
+    backgroundTaskDescription_ = description.trimmed();
+    updateStatusIndicators();
 }
 
 void MainWindow::restoreUiState(const Config& config)
@@ -947,10 +1000,17 @@ void MainWindow::updateActionState()
     const bool hasServerConfigSelection = hasSingleSelection
         && (selectedItem->configType == ConfigType::VMess || selectedItem->configType == ConfigType::VLESS)
         && selectedItem->streamSecurity.trimmed().compare(QStringLiteral("reality"), Qt::CaseInsensitive) != 0;
-    const bool hasShareExports = !buildShareLinks(selectedItems).isEmpty();
+    bool hasShareExports = false;
+    for (const VmessItem* item : selectedItems) {
+        if (item != nullptr && item->configType != ConfigType::Custom && item->configType != ConfigType::Unknown) {
+            hasShareExports = true;
+            break;
+        }
+    }
     const bool hasServers = serverModel_ != nullptr && serverModel_->rowCount() > 0;
     const bool canReorder = hasSelection && hasServers && serverModel_->rowCount() > 1;
-    const bool canSpeedTest = hasSelection && !speedTestRunning_;
+    const bool canStartTask = canStartBackgroundTask();
+    const bool canSpeedTest = hasSelection && canStartTask;
     if (editServerAction_ != nullptr) {
         editServerAction_->setEnabled(hasSelection);
     }
@@ -1005,6 +1065,50 @@ void MainWindow::updateActionState()
 
     if (testAction_ != nullptr) {
         testAction_->setEnabled(canSpeedTest);
+    }
+
+    if (importClipboardAction_ != nullptr) {
+        importClipboardAction_->setEnabled(canStartTask);
+    }
+
+    if (updateSubscriptionsAction_ != nullptr) {
+        updateSubscriptionsAction_->setEnabled(canStartTask);
+    }
+
+    if (updateCurrentSubscriptionAction_ != nullptr) {
+        updateCurrentSubscriptionAction_->setEnabled(canStartTask);
+    }
+
+    if (testMeAction_ != nullptr) {
+        testMeAction_->setEnabled(canStartTask);
+    }
+
+    if (updateV2RayCoreAction_ != nullptr) {
+        updateV2RayCoreAction_->setEnabled(canStartTask);
+    }
+
+    if (updateXrayCoreAction_ != nullptr) {
+        updateXrayCoreAction_->setEnabled(canStartTask);
+    }
+
+    if (updateSingBoxCoreAction_ != nullptr) {
+        updateSingBoxCoreAction_->setEnabled(canStartTask);
+    }
+
+    if (updateClashCoreAction_ != nullptr) {
+        updateClashCoreAction_->setEnabled(canStartTask);
+    }
+
+    if (updateClashMetaCoreAction_ != nullptr) {
+        updateClashMetaCoreAction_->setEnabled(canStartTask);
+    }
+
+    if (updateGeoResourcesAction_ != nullptr) {
+        updateGeoResourcesAction_->setEnabled(canStartTask);
+    }
+
+    if (updateCurrentSubscriptionShortcutAction_ != nullptr) {
+        updateCurrentSubscriptionShortcutAction_->setEnabled(canStartTask);
     }
 
     updateCoreToggleAction();
@@ -1068,19 +1172,26 @@ void MainWindow::updateQrPreview()
         return;
     }
 
-    const QStringList shareLinks = buildShareLinks(selectedItems);
-    const QString shareText = shareLinks.join(QChar('\n'));
-    shareLinkLabel_->setPlainText(shareText);
-    shareLinkLabel_->setToolTip(shareText);
+    const VmessItem* firstItem = selectedItems.constFirst();
+    const QString firstShareUrl = firstItem != nullptr ? ShareUrlBuilder::build(*firstItem).trimmed() : QString();
 
-    if (shareLinks.isEmpty()) {
+    if (selectedItems.size() == 1) {
+        shareLinkLabel_->setPlainText(firstShareUrl);
+        shareLinkLabel_->setToolTip(firstShareUrl);
+    } else {
+        const QStringList shareLinks = buildShareLinks(selectedItems);
+        const QString shareText = shareLinks.join(QChar('\n'));
+        shareLinkLabel_->setPlainText(shareText);
+        shareLinkLabel_->setToolTip(shareText);
+    }
+
+    if (firstShareUrl.isEmpty()) {
         qrPlaceholder_->setPixmap(QPixmap());
         qrPlaceholder_->setText(tr("QR preview unavailable for this server."));
         qrPlaceholder_->setToolTip(QString());
         return;
     }
 
-    const QString shareUrl = shareLinks.constFirst();
     const int qrMargin = qrPlaceholder_->margin() * 2;
     const int qrExtent = qMin(
         qMax(0, qrPlaceholder_->width() - qrMargin),
@@ -1088,11 +1199,11 @@ void MainWindow::updateQrPreview()
     qrPlaceholder_->setText(QString());
     if (qrExtent <= 0) {
         qrPlaceholder_->setPixmap(QPixmap());
-        qrPlaceholder_->setToolTip(shareUrl);
+        qrPlaceholder_->setToolTip(firstShareUrl);
         return;
     }
-    qrPlaceholder_->setPixmap(QrCodeRenderer::render(shareUrl, qrExtent));
-    qrPlaceholder_->setToolTip(shareUrl);
+    qrPlaceholder_->setPixmap(QrCodeRenderer::render(firstShareUrl, qrExtent));
+    qrPlaceholder_->setToolTip(firstShareUrl);
 }
 
 void MainWindow::updateQrPanelActionText()
@@ -1301,6 +1412,11 @@ void MainWindow::updateSubscriptionFilter()
     updateSelectionForVisibleRows();
     updateActionState();
     updateQrPreview();
+}
+
+bool MainWindow::canStartBackgroundTask() const
+{
+    return !backgroundTaskRunning_ && !speedTestRunning_;
 }
 
 QString MainWindow::currentSubscriptionTabKey() const
@@ -1595,9 +1711,9 @@ void MainWindow::setupToolbar()
     toggleQrPanelAction_->setCheckable(true);
     toggleQrPanelAction_->setChecked(qrPreviewVisible_);
 
-    auto* updateCurrentSubscriptionAction = new QAction(tr("Update Current Subscription"), this);
-    updateCurrentSubscriptionAction->setObjectName(QStringLiteral("updateCurrentSubscriptionMenuAction"));
-    connect(updateCurrentSubscriptionAction, &QAction::triggered, this, [this]() {
+    updateCurrentSubscriptionAction_ = new QAction(tr("Update Current Subscription"), this);
+    updateCurrentSubscriptionAction_->setObjectName(QStringLiteral("updateCurrentSubscriptionMenuAction"));
+    connect(updateCurrentSubscriptionAction_, &QAction::triggered, this, [this]() {
         const QString tabKey = currentSubscriptionTabKey();
         emit updateCurrentSubscriptionRequested(
             tabKey.startsWith(QStringLiteral("sub:"))
@@ -1657,7 +1773,7 @@ void MainWindow::setupToolbar()
     updateMenu->addAction(updateClashMetaCoreAction_);
     updateMenu->addAction(updateGeoResourcesAction_);
     updateMenu->addSeparator();
-    updateMenu->addAction(updateCurrentSubscriptionAction);
+    updateMenu->addAction(updateCurrentSubscriptionAction_);
     updateMenu->addAction(updateSubscriptionsAction_);
     updateMenu->addSeparator();
     updateMenu->addAction(openReleasePageAction_);
@@ -1938,8 +2054,6 @@ void MainWindow::setupServerView()
     logStickToBottomButton_->setCheckable(true);
     logStickToBottomButton_->setToolTip(tr("Stick to bottom"));
     logStickToBottomButton_->setText(QString(QChar(0x2193)));
-    const int filterButtonSize = logStickToBottomButton_->fontMetrics().height() + 11;
-    logStickToBottomButton_->setFixedSize(filterButtonSize, filterButtonSize);
     logStickToBottomButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
@@ -1949,6 +2063,8 @@ void MainWindow::setupServerView()
     logFilterEdit_->setClearButtonEnabled(true);
     logFilterEdit_->setPlaceholderText(tr("Filter logs"));
     configureContentSizedLineEdit(logFilterEdit_, HeaderFilterMinimumCharacters);
+    const int logFilterHeight = logFilterEdit_->sizeHint().height();
+    logStickToBottomButton_->setFixedSize(logFilterHeight, logFilterHeight);
     logHeaderLayout->addWidget(logFilterEdit_);
 
     logPanelLayout->addWidget(logHeaderRow);
@@ -2044,7 +2160,6 @@ void MainWindow::setupDiagnosticsPanel()
     autoRunStatusLabel_->hide();
     statisticsStatusLabel_->hide();
 
-    showTransientStatus(tr("Ready"), 3000);
     updateStatusIndicators();
     updateActionState();
     updateLogContextActions();
@@ -2493,18 +2608,18 @@ void MainWindow::setupConnections()
     updateSubscriptionsAction_->setShortcutContext(Qt::WindowShortcut);
     addAction(updateSubscriptionsAction_);
 
-    auto* updateCurrentSubscriptionShortcutAction = new QAction(this);
-    updateCurrentSubscriptionShortcutAction->setObjectName(QStringLiteral("updateCurrentSubscriptionShortcutAction"));
-    updateCurrentSubscriptionShortcutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    updateCurrentSubscriptionShortcutAction->setShortcutContext(Qt::WindowShortcut);
-    connect(updateCurrentSubscriptionShortcutAction, &QAction::triggered, this, [this]() {
+    updateCurrentSubscriptionShortcutAction_ = new QAction(this);
+    updateCurrentSubscriptionShortcutAction_->setObjectName(QStringLiteral("updateCurrentSubscriptionShortcutAction"));
+    updateCurrentSubscriptionShortcutAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
+    updateCurrentSubscriptionShortcutAction_->setShortcutContext(Qt::WindowShortcut);
+    connect(updateCurrentSubscriptionShortcutAction_, &QAction::triggered, this, [this]() {
         const QString tabKey = currentSubscriptionTabKey();
         emit updateCurrentSubscriptionRequested(
             tabKey.startsWith(QStringLiteral("sub:"))
                 ? tabKey.mid(QStringLiteral("sub:").size())
                 : QString());
     });
-    addAction(updateCurrentSubscriptionShortcutAction);
+    addAction(updateCurrentSubscriptionShortcutAction_);
 
     auto* exitShortcutAction = new QAction(this);
     exitShortcutAction->setObjectName(QStringLiteral("exitShortcutAction"));
@@ -2553,11 +2668,13 @@ void MainWindow::showSubscriptionTabContextMenu(const QPoint& position)
 
     if (!subscriptionId.isEmpty()) {
         auto* updateAction = menu.addAction(tr("Update Subscription"));
+        updateAction->setEnabled(canStartBackgroundTask());
         connect(updateAction, &QAction::triggered, &menu, [this, subscriptionId]() {
             emit updateCurrentSubscriptionRequested(subscriptionId);
         });
 
         auto* updateViaProxyAction = menu.addAction(tr("Update Subscription via Proxy"));
+        updateViaProxyAction->setEnabled(canStartBackgroundTask());
         connect(updateViaProxyAction, &QAction::triggered, &menu, [this, subscriptionId]() {
             emit updateCurrentSubscriptionViaProxyRequested(subscriptionId);
         });
@@ -2888,6 +3005,13 @@ void MainWindow::updateStatusIndicators()
         applySemanticState(statisticsStatusLabel_, AppTheme::semanticStatusProperty(color));
     }
 
+    if (transientStatusLabel_ != nullptr) {
+        const QString statusText = backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()
+            ? tr("Task: %1").arg(backgroundTaskDescription_)
+            : tr("Ready");
+        transientStatusLabel_->setText(statusText);
+    }
+
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -3047,6 +3171,7 @@ void MainWindow::showEvent(QShowEvent* event)
     QMainWindow::showEvent(event);
     applyFrameAdjustedWindowMetrics();
     QTimer::singleShot(0, this, [this]() {
+        updateRoutingModeOptions(config_);
         updateQrPreview();
     });
     if (uiStateRestorePending_) {

@@ -43,6 +43,7 @@ public:
     ~MainWindow() override = default;
 
     void setConfig(const Config& config, const QList<ServerStatItem>& statistics = {});
+    void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void appendLog(const QString& message);
     void showTransientStatus(const QString& message, int timeoutMs = 5000);
     void setHideToTrayEnabled(bool enabled);
@@ -57,6 +58,8 @@ public:
     void setTrafficSummary(const QString& text);
     void setSpeedTestRunning(bool running);
     void setSubscriptionUpdateRunning(bool running);
+    void setBackgroundTaskRunning(bool running);
+    void setBackgroundTaskDescription(const QString& description);
     void restoreUiState(const Config& config);
     void captureUiState(Config& config) const;
     bool selectSubscriptionTab(const QString& selectionId);
@@ -142,6 +145,7 @@ private:
     void updateSelectionForVisibleRows();
     void updateServerReorderAvailability();
     void updateSubscriptionFilter();
+    bool canStartBackgroundTask() const;
     void showSubscriptionTabContextMenu(const QPoint& position);
     void clearTransientStatus();
     void applyDeferredUiState();
@@ -218,6 +222,8 @@ private:
     QAction* moveServerBottomAction_ = nullptr;
     QAction* testAction_ = nullptr;
     QAction* setDefaultServerAction_ = nullptr;
+    QAction* updateCurrentSubscriptionAction_ = nullptr;
+    QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
     QAction* clearProxyAction_ = nullptr;
     QAction* globalProxyAction_ = nullptr;
     QAction* unchangedProxyAction_ = nullptr;
@@ -254,7 +260,6 @@ private:
     QLineEdit* serverFilterEdit_ = nullptr;
     QLineEdit* logFilterEdit_ = nullptr;
     QToolButton* logStickToBottomButton_ = nullptr;
-    QTimer* transientStatusTimer_ = nullptr;
     bool logStickToBottomEnabled_ = false;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
@@ -263,10 +268,14 @@ private:
     bool coreRunning_ = false;
     bool coreTransitionPending_ = false;
     bool speedTestRunning_ = false;
+    bool backgroundTaskRunning_ = false;
     bool qrPreviewVisible_ = false;
     bool uiStateRestorePending_ = false;
     bool initialServerColumnLayoutPending_ = true;
     bool frameAdjustedWindowMetricsApplied_ = false;
+    QString backgroundTaskDescription_;
+    Config config_;
+    QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;
     QString lastSelectedServerId_;
     QString currentServerName_;

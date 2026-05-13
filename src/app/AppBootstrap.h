@@ -47,6 +47,15 @@ class WindowsSystemProxyService;
 
 class AppBootstrap {
 public:
+    enum class BackgroundTaskKind {
+        None,
+        SpeedTest,
+        SubscriptionUpdate,
+        ProxyAvailabilityCheck,
+        CoreUpdate,
+        GeoUpdate
+    };
+
     explicit AppBootstrap(
         QString configPath = {},
         bool autoStartCore = false,
@@ -171,6 +180,10 @@ private:
     QString buildSystemProxyExceptions() const;
     void stopStatisticsBackends();
     void stopStatisticsSession();
+    QString backgroundTaskDescription(BackgroundTaskKind kind) const;
+    bool tryBeginBackgroundTask(BackgroundTaskKind kind);
+    void finishBackgroundTask(BackgroundTaskKind kind);
+    void syncBackgroundTaskState();
     void trackBackgroundThread(QThread* thread);
     void waitForBackgroundThreads();
     void stopAuxiliaryCore();
@@ -228,6 +241,7 @@ private:
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;
+    BackgroundTaskKind activeBackgroundTask_ = BackgroundTaskKind::None;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;
     bool pendingCoreUpdateStartAfterSuccess_ = false;
     bool pendingCoreUpdateSkipLocalVersionCheck_ = false;

@@ -229,6 +229,27 @@ void TrayController::setProxyEnabled(bool enabled)
         enabled);
 }
 
+void TrayController::setBackgroundTaskRunning(bool running)
+{
+    if (backgroundTaskRunning_ == running) {
+        return;
+    }
+
+    backgroundTaskRunning_ = running;
+    updateMenuText();
+}
+
+void TrayController::setBackgroundTaskDescription(const QString& description)
+{
+    const QString trimmed = description.trimmed();
+    if (backgroundTaskDescription_ == trimmed) {
+        return;
+    }
+
+    backgroundTaskDescription_ = trimmed;
+    updateToolTip();
+}
+
 void TrayController::setAutoRunEnabled(bool enabled)
 {
     if (autoRunEnabled_ == enabled) {
@@ -389,6 +410,14 @@ void TrayController::updateMenuText()
             : QStringLiteral("Enable Auto Run"));
     }
 
+    if (updateSubscriptionsAction_ != nullptr) {
+        updateSubscriptionsAction_->setEnabled(!backgroundTaskRunning_);
+    }
+
+    if (importClipboardAction_ != nullptr) {
+        importClipboardAction_->setEnabled(!backgroundTaskRunning_);
+    }
+
     if (serversMenu_ != nullptr) {
         serversMenu_->setEnabled(!servers_.isEmpty());
     }
@@ -427,6 +456,9 @@ void TrayController::updateToolTip()
     }
     if (!trafficSummary_.isEmpty()) {
         tooltip += QStringLiteral(" | ") + trafficSummary_;
+    }
+    if (backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()) {
+        tooltip += QStringLiteral(" | Task %1").arg(backgroundTaskDescription_);
     }
     trayIcon_->setToolTip(tooltip);
 }
