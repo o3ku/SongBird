@@ -220,6 +220,40 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_startup_admin_elevation_tests)
 endif()
 
+set(QT_V2RAYN_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
+    AppBootstrapTunRuntimeTests.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_app_bootstrap_tun_runtime_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_app_bootstrap_tun_runtime_tests ${QT_V2RAYN_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_app_bootstrap_tun_runtime_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_app_bootstrap_tun_runtime_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+add_test(NAME app-bootstrap-tun-runtime COMMAND qt_v2rayn_app_bootstrap_tun_runtime_tests)
+set_tests_properties(app-bootstrap-tun-runtime PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_app_bootstrap_tun_runtime_tests)
+endif()
+
 set(QT_V2RAYN_GLOBAL_HOTKEY_DIALOG_TEST_SOURCES
     GlobalHotkeyDialogTests.cpp
     ../src/platform/windows/WindowsGlobalHotkeyKeyInterop.h

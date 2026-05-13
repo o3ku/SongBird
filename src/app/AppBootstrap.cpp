@@ -43,6 +43,7 @@
 #include "app/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "app/TunSettingsApplyDecision.h"
+#include "app/TunRuntimeState.h"
 #include "common/CorePidFile.h"
 #include "common/DataSizeFormatter.h"
 #include "common/SystemProxyMode.h"
@@ -475,26 +476,6 @@ QString tunAdminRestartFailureMessage()
     return QCoreApplication::translate(
         "AppBootstrap",
         "Failed to restart v2rayq with administrator privileges.");
-}
-
-bool restartAsAdministrator(const QString& program, const QStringList& arguments)
-{
-#if defined(Q_OS_WIN)
-    const QString nativeProgram = QDir::toNativeSeparators(program);
-    const QString parameters = buildWindowsShellExecuteParameters(arguments);
-    const HINSTANCE result = ShellExecuteW(
-        nullptr,
-        L"runas",
-        reinterpret_cast<LPCWSTR>(nativeProgram.utf16()),
-        parameters.isEmpty() ? nullptr : reinterpret_cast<LPCWSTR>(parameters.utf16()),
-        nullptr,
-        SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(result) > 32;
-#else
-    Q_UNUSED(program);
-    Q_UNUSED(arguments);
-    return false;
-#endif
 }
 
 QString sanitizeFileNameSegment(QString value)
@@ -1850,11 +1831,13 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
 
     coreStartPending_ = true;
     coreReady_ = false;
+    coreTunEnabledAtStart_ = runtimeConfig.tunModeItem.enableTun;
     const OperationResult startResult = coreLifecycleService_->start(launchCoreInfo, coreConfigPath);
     appendResult(startResult);
     if (!startResult.success) {
         coreStartPending_ = false;
         coreReady_ = false;
+        coreTunEnabledAtStart_ = false;
         disconnectPendingCoreStartConnection();
         stopAuxiliaryCore();
         stopStatisticsSession();
@@ -1930,6 +1913,7 @@ void AppBootstrap::handleCoreStartFailed(const QString& message)
     coreStartPending_ = false;
     coreStopPending_ = false;
     coreReady_ = false;
+    coreTunEnabledAtStart_ = false;
     disconnectPendingCoreStartConnection();
     appendResult(OperationResult::fail(message));
     stopAuxiliaryCore();
@@ -1998,7 +1982,7 @@ void AppBootstrap::stopCoreInternal(bool immediate, bool clearRestartAfterStop)
     }
     appendResult(coreLifecycleService_->stop(immediate));
     stopAuxiliaryCore();
-    if (immediate && config_.tunModeItem.enableTun) {
+    if (immediate && shouldCleanupTunAfterCoreStop(isWindowsPlatform(), coreTunEnabledAtStart_)) {
         tunCleanupActive_ = false;
         removeStaleTunAdapter();
     }
@@ -2192,13 +2176,20 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         stopStatisticsBackends();
     }
 
+    const bool cleanupTunAfterStop = !auxiliary && shouldCleanupTunAfterCoreStop(
+        isWindowsPlatform(),
+        coreTunEnabledAtStart_);
+    if (!auxiliary) {
+        coreTunEnabledAtStart_ = false;
+    }
+
     const bool restartAfterStop = !auxiliary && stopRequested && restartAfterStopPending_;
     if (restartAfterStop) {
         restartAfterStopPending_ = false;
     }
 
     syncStatusIndicators();
-    if (!auxiliary && stopRequested && config_.tunModeItem.enableTun) {
+    if (cleanupTunAfterStop && stopRequested) {
         if (tunCleanupActive_) {
             return;
         }
@@ -3739,16 +3730,12 @@ bool AppBootstrap::promptRestartAsAdministratorForTun()
         return false;
     }
 
-    const QStringList arguments =
-        startupAdminRelaunchArgumentsForRunningInstance(QCoreApplication::arguments());
     persistUiState();
-    if (!restartAsAdministrator(QCoreApplication::applicationFilePath(), arguments)) {
+    if (!restartApplication(true)) {
         appendResult(OperationResult::fail(tunAdminRestartFailureMessage()));
         return false;
     }
 
-    mainWindow_->setAllowClose(true);
-    QCoreApplication::quit();
     return true;
 }
 
@@ -3772,33 +3759,40 @@ void AppBootstrap::promptRestartForLanguageChange()
     }
 
     persistUiState();
-
-    QStringList arguments = startupAdminRelaunchArguments(QCoreApplication::arguments());
-    arguments.removeAll(QStringLiteral("--admin-relaunch"));
-
     const bool requiresAdminRestart =
         isWindowsPlatform() && !isProcessElevated() && config_.tunModeItem.enableTun;
+    if (!restartApplication(requiresAdminRestart)) {
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate("AppBootstrap", "Failed to restart the application.")));
+    }
+}
+
+bool AppBootstrap::restartApplication(bool requireAdministrator)
+{
+    const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
+        QCoreApplication::arguments(),
+        requireAdministrator,
+        QCoreApplication::applicationPid());
 
     SingleInstanceBootstrap::releaseCurrentInstance();
 
     bool restarted = false;
-    if (requiresAdminRestart) {
-        const QStringList adminArguments = startupAdminRelaunchArgumentsForRunningInstance(
-            QStringList{QCoreApplication::applicationFilePath()} + arguments);
-        restarted = restartAsAdministrator(QCoreApplication::applicationFilePath(), adminArguments);
+    if (requireAdministrator) {
+        restarted = restartProcessAsAdministrator(QCoreApplication::applicationFilePath(), arguments);
     } else {
         restarted = QProcess::startDetached(QCoreApplication::applicationFilePath(), arguments);
     }
 
     if (!restarted) {
         SingleInstanceBootstrap::reacquireCurrentInstance();
-        appendResult(OperationResult::fail(
-            QCoreApplication::translate("AppBootstrap", "Failed to restart the application.")));
-        return;
+        return false;
     }
 
-    mainWindow_->setAllowClose(true);
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setAllowClose(true);
+    }
     QCoreApplication::quit();
+    return true;
 }
 
 void AppBootstrap::startSpeedTest(const QStringList& indexIds)

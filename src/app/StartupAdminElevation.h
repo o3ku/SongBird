@@ -1,9 +1,15 @@
 #pragma once
 
+#include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 struct StartupAdminElevationDecision {
     bool shouldPromptForElevation = false;
@@ -25,8 +31,29 @@ inline QStringList startupAdminRelaunchArguments(const QStringList& applicationA
 
 inline QStringList startupAdminRelaunchArgumentsForRunningInstance(const QStringList& applicationArguments)
 {
+    return applicationArguments.size() > 1
+        ? applicationArguments.mid(1)
+        : QStringList();
+}
+
+inline QStringList startupRelaunchArgumentsForRunningInstance(
+    const QStringList& applicationArguments,
+    bool adminRelaunch,
+    qint64 currentPid)
+{
     QStringList arguments = startupAdminRelaunchArguments(applicationArguments);
-    if (!arguments.contains(QStringLiteral("--admin-relaunch"))) {
+
+    for (int index = arguments.size() - 1; index >= 0; --index) {
+        const QString argument = arguments.at(index);
+        if (argument == QStringLiteral("--admin-relaunch")
+            || argument == QStringLiteral("--restart-handoff")
+            || argument.startsWith(QStringLiteral("--restart-wait-pid="))) {
+            arguments.removeAt(index);
+        }
+    }
+
+    arguments.append(QStringLiteral("--restart-wait-pid=%1").arg(currentPid));
+    if (adminRelaunch) {
         arguments.append(QStringLiteral("--admin-relaunch"));
     }
 
@@ -70,16 +97,45 @@ inline StartupAdminElevationDecision evaluateStartupAdminElevation(
 
 inline StartupSingleInstanceAcquireDecision evaluateStartupSingleInstanceAcquireDecision(
     bool disableSingleInstance,
-    bool adminRelaunch)
+    bool restartContextDetected)
 {
     StartupSingleInstanceAcquireDecision decision;
     decision.shouldBypassSingleInstance = disableSingleInstance;
-    if (!disableSingleInstance && adminRelaunch) {
-        decision.maxAcquireAttempts = 50;
+    if (!disableSingleInstance && restartContextDetected) {
+        decision.maxAcquireAttempts = 100;
         decision.retryIntervalMs = 100;
     }
 
     return decision;
+}
+
+inline qint64 parseRestartWaitPidArgument(const QString& value)
+{
+    bool ok = false;
+    const qint64 pid = value.toLongLong(&ok);
+    return ok && pid > 0 ? pid : 0;
+}
+
+inline bool waitForProcessExit(qint64 pid, int timeoutMs)
+{
+#if defined(Q_OS_WIN)
+    if (pid <= 0) {
+        return true;
+    }
+
+    HANDLE processHandle = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    if (processHandle == nullptr) {
+        return true;
+    }
+
+    const DWORD waitResult = WaitForSingleObject(processHandle, timeoutMs < 0 ? INFINITE : static_cast<DWORD>(timeoutMs));
+    CloseHandle(processHandle);
+    return waitResult == WAIT_OBJECT_0 || waitResult == WAIT_FAILED;
+#else
+    Q_UNUSED(pid);
+    Q_UNUSED(timeoutMs);
+    return true;
+#endif
 }
 
 template <typename TryAcquire, typename SleepFor>
@@ -173,4 +229,24 @@ inline QString buildWindowsShellExecuteParameters(const QStringList& arguments)
     }
 
     return quotedArguments.join(QChar(' '));
+}
+
+inline bool restartProcessAsAdministrator(const QString& program, const QStringList& arguments)
+{
+#if defined(Q_OS_WIN)
+    const QString nativeProgram = QDir::toNativeSeparators(program);
+    const QString parameters = buildWindowsShellExecuteParameters(arguments);
+    const HINSTANCE result = ShellExecuteW(
+        nullptr,
+        L"runas",
+        reinterpret_cast<LPCWSTR>(nativeProgram.utf16()),
+        parameters.isEmpty() ? nullptr : reinterpret_cast<LPCWSTR>(parameters.utf16()),
+        nullptr,
+        SW_SHOWNORMAL);
+    return reinterpret_cast<INT_PTR>(result) > 32;
+#else
+    Q_UNUSED(program);
+    Q_UNUSED(arguments);
+    return false;
+#endif
 }

@@ -1937,6 +1937,7 @@ void MainWindow::setupServerView()
     subscriptionTabBar_->setDocumentMode(true);
     subscriptionTabBar_->setDrawBase(false);
     subscriptionTabBar_->setExpanding(false);
+    subscriptionTabBar_->setAutoHide(false);
     subscriptionTabBar_->setUsesScrollButtons(true);
     updateServerReorderAvailability();
 
@@ -3023,7 +3024,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
         return;
     }
 
-    if (!confirmExit()) {
+    if (!allowClose_ && !confirmExit()) {
         allowClose_ = false;
         event->ignore();
         return;

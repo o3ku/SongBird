@@ -152,6 +152,7 @@ private:
     void openLoopbackTool();
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
+    bool restartApplication(bool requireAdministrator);
     void startSpeedTest(const QStringList& indexIds);
     bool isCoreRunning() const;
     bool isCoreReady() const;
@@ -237,6 +238,7 @@ private:
     bool coreStartPending_ = false;
     bool coreStopPending_ = false;
     bool coreReady_ = false;
+    bool coreTunEnabledAtStart_ = false;
     bool tunCleanupActive_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;

@@ -184,26 +184,6 @@ QString startupAdminRestartFailureMessage()
         "Failed to restart v2rayq with administrator privileges.");
 }
 
-bool restartAsAdministrator(const QString& program, const QStringList& arguments)
-{
-#if defined(Q_OS_WIN)
-    const QString nativeProgram = QDir::toNativeSeparators(program);
-    const QString parameters = buildWindowsShellExecuteParameters(arguments);
-    const HINSTANCE result = ShellExecuteW(
-        nullptr,
-        L"runas",
-        reinterpret_cast<LPCWSTR>(nativeProgram.utf16()),
-        parameters.isEmpty() ? nullptr : reinterpret_cast<LPCWSTR>(parameters.utf16()),
-        nullptr,
-        SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(result) > 32;
-#else
-    Q_UNUSED(program);
-    Q_UNUSED(arguments);
-    return false;
-#endif
-}
-
 } // namespace
 
 int main(int argc, char* argv[])
@@ -248,6 +228,11 @@ int main(int argc, char* argv[])
         QCoreApplication::translate("main", "Skip the single-instance guard for automation or testing."));
     QCommandLineOption adminRelaunchOption(QStringList{QStringLiteral("admin-relaunch")});
     adminRelaunchOption.setFlags(QCommandLineOption::HiddenFromHelp);
+    QCommandLineOption restartWaitPidOption(
+        QStringList{QStringLiteral("restart-wait-pid")},
+        QString(),
+        QStringLiteral("pid"));
+    restartWaitPidOption.setFlags(QCommandLineOption::HiddenFromHelp);
     const QCommandLineOption disableGlobalHotkeysOption(
         QStringList{QStringLiteral("disable-global-hotkeys")},
         QCoreApplication::translate("main", "Do not register Windows global hotkeys on startup."));
@@ -267,6 +252,7 @@ int main(int argc, char* argv[])
     parser.addOption(startHiddenOption);
     parser.addOption(disableSingleInstanceOption);
     parser.addOption(adminRelaunchOption);
+    parser.addOption(restartWaitPidOption);
     parser.addOption(disableGlobalHotkeysOption);
     parser.addOption(skipCoreOption);
     parser.addOption(nonInteractiveOption);
@@ -285,6 +271,13 @@ int main(int argc, char* argv[])
         qputenv("QT_V2RAYN_NONINTERACTIVE", QByteArrayLiteral("1"));
     }
 
+    const qint64 restartWaitPid = parser.isSet(restartWaitPidOption)
+        ? parseRestartWaitPidArgument(parser.value(restartWaitPidOption))
+        : 0;
+    if (restartWaitPid > 0) {
+        waitForProcessExit(restartWaitPid, 10000);
+    }
+
     const bool interactivePromptsEnabled = startupAdminInteractivePromptsEnabled(
         parser.isSet(nonInteractiveOption),
         qEnvironmentVariableIsSet("QT_V2RAYN_NONINTERACTIVE"));
@@ -296,7 +289,9 @@ int main(int argc, char* argv[])
         configuredTunEnabled,
         QCoreApplication::arguments());
     if (startupAdminElevation.shouldPromptForElevation) {
-        if (restartAsAdministrator(QCoreApplication::applicationFilePath(), startupAdminElevation.relaunchArguments)) {
+        if (restartProcessAsAdministrator(
+                QCoreApplication::applicationFilePath(),
+                startupAdminElevation.relaunchArguments)) {
             return 0;
         }
     }
@@ -305,7 +300,7 @@ int main(int argc, char* argv[])
     const StartupSingleInstanceAcquireDecision singleInstanceDecision =
         evaluateStartupSingleInstanceAcquireDecision(
             parser.isSet(disableSingleInstanceOption),
-            parser.isSet(adminRelaunchOption));
+            parser.isSet(adminRelaunchOption) || restartWaitPid > 0);
     if (!tryAcquireStartupSingleInstance(
             singleInstanceDecision,
             [&singleInstanceBootstrap]() {

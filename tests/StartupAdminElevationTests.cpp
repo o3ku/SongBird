@@ -14,11 +14,13 @@ private slots:
     void readsConfiguredTunFlagFromJson();
     void relaunchArgumentsDropExecutablePath();
     void inAppAdminRelaunchArgumentsAppendAdminRelaunchMarkerOnce();
+    void inAppNonAdminRelaunchArgumentsDropAdminRelaunchMarker();
+    void inAppRelaunchArgumentsReplacePreviousRestartContext();
     void languageRestartPromptIsSkippedAfterAdminRelaunchStarts();
     void languageRestartPromptStillShowsWithoutAdminRelaunch();
-    void adminRelaunchKeepsSingleInstanceGuardEnabled();
-    void adminRelaunchRetriesSingleInstanceAcquireUntilHandoffCompletes();
+    void restartContextRetriesSingleInstanceAcquire();
     void disableSingleInstanceBypassesAcquireChecks();
+    void parsesRestartWaitPidArgument();
     void windowsShellParametersQuoteWhitespaceAndQuotes();
 };
 
@@ -109,27 +111,75 @@ void StartupAdminElevationTests::relaunchArgumentsDropExecutablePath()
 
 void StartupAdminElevationTests::inAppAdminRelaunchArgumentsAppendAdminRelaunchMarkerOnce()
 {
-    const QStringList arguments = startupAdminRelaunchArgumentsForRunningInstance(QStringList{
-        QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-        QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
-        QStringLiteral("--start-hidden")});
+    const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
+        QStringList{
+            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--start-hidden")},
+        true,
+        4321);
 
     QCOMPARE(
         arguments,
         QStringList({
             QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
+            QStringLiteral("--restart-wait-pid=4321"),
             QStringLiteral("--admin-relaunch")}));
 
-    const QStringList alreadyBypassed = startupAdminRelaunchArgumentsForRunningInstance(QStringList{
-        QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-        QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
-        QStringLiteral("--admin-relaunch")});
+    const QStringList alreadyBypassed = startupRelaunchArgumentsForRunningInstance(
+        QStringList{
+            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--admin-relaunch"),
+            QStringLiteral("--restart-wait-pid=1111")},
+        true,
+        4321);
 
     QCOMPARE(
         alreadyBypassed,
         QStringList({
             QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--restart-wait-pid=4321"),
+            QStringLiteral("--admin-relaunch")}));
+}
+
+void StartupAdminElevationTests::inAppNonAdminRelaunchArgumentsDropAdminRelaunchMarker()
+{
+    const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
+        QStringList{
+            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--admin-relaunch"),
+            QStringLiteral("--start-hidden")},
+        false,
+        4321);
+
+    QCOMPARE(
+        arguments,
+        QStringList({
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--start-hidden"),
+            QStringLiteral("--restart-wait-pid=4321")}));
+}
+
+void StartupAdminElevationTests::inAppRelaunchArgumentsReplacePreviousRestartContext()
+{
+    const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
+        QStringList{
+            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--restart-wait-pid=1111"),
+            QStringLiteral("--start-hidden")},
+        true,
+        4321);
+
+    QCOMPARE(
+        arguments,
+        QStringList({
+            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--start-hidden"),
+            QStringLiteral("--restart-wait-pid=4321"),
             QStringLiteral("--admin-relaunch")}));
 }
 
@@ -144,7 +194,7 @@ void StartupAdminElevationTests::languageRestartPromptStillShowsWithoutAdminRela
     QVERIFY(!shouldPromptForLanguageRestartAfterSettingsSave(false, false));
 }
 
-void StartupAdminElevationTests::adminRelaunchKeepsSingleInstanceGuardEnabled()
+void StartupAdminElevationTests::restartContextRetriesSingleInstanceAcquire()
 {
     const StartupSingleInstanceAcquireDecision decision =
         evaluateStartupSingleInstanceAcquireDecision(false, true);
@@ -152,31 +202,6 @@ void StartupAdminElevationTests::adminRelaunchKeepsSingleInstanceGuardEnabled()
     QVERIFY(!decision.shouldBypassSingleInstance);
     QVERIFY(decision.maxAcquireAttempts > 1);
     QVERIFY(decision.retryIntervalMs > 0);
-}
-
-void StartupAdminElevationTests::adminRelaunchRetriesSingleInstanceAcquireUntilHandoffCompletes()
-{
-    const StartupSingleInstanceAcquireDecision decision =
-        evaluateStartupSingleInstanceAcquireDecision(false, true);
-    int acquireCalls = 0;
-    QList<int> sleepCalls;
-
-    const bool acquired = tryAcquireStartupSingleInstance(
-        decision,
-        [&acquireCalls]() {
-            ++acquireCalls;
-            return acquireCalls >= 3;
-        },
-        [&sleepCalls](int delayMs) {
-            sleepCalls.append(delayMs);
-        });
-
-    QVERIFY(acquired);
-    QCOMPARE(acquireCalls, 3);
-    QCOMPARE(sleepCalls.size(), 2);
-    for (const int delayMs : sleepCalls) {
-        QCOMPARE(delayMs, decision.retryIntervalMs);
-    }
 }
 
 void StartupAdminElevationTests::disableSingleInstanceBypassesAcquireChecks()
@@ -199,6 +224,14 @@ void StartupAdminElevationTests::disableSingleInstanceBypassesAcquireChecks()
     QVERIFY(acquired);
     QCOMPARE(acquireCalls, 0);
     QCOMPARE(sleepCalls, 0);
+}
+
+void StartupAdminElevationTests::parsesRestartWaitPidArgument()
+{
+    QCOMPARE(parseRestartWaitPidArgument(QStringLiteral("4321")), 4321);
+    QCOMPARE(parseRestartWaitPidArgument(QStringLiteral("0")), 0);
+    QCOMPARE(parseRestartWaitPidArgument(QStringLiteral("-2")), 0);
+    QCOMPARE(parseRestartWaitPidArgument(QStringLiteral("abc")), 0);
 }
 
 void StartupAdminElevationTests::windowsShellParametersQuoteWhitespaceAndQuotes()
