@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <atomic>
 #include <thread>
 
@@ -14,6 +15,8 @@ class CoreUpdateServiceTests : public QObject {
 
 private slots:
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
+    void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
+    void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
 };
 
 void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDuringDownload()
@@ -75,6 +78,102 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
     QVERIFY(result.cancelled);
     QVERIFY(timer.elapsed() < 1500);
     QVERIFY(downloadAttempts >= 2);
+}
+
+void CoreUpdateServiceTests::updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled()
+{
+    QStringList requestedUrls;
+
+    CoreUpdateService service(
+        [&](const QUrl& url, QByteArray* content) {
+            requestedUrls.append(url.toString(QUrl::FullyEncoded));
+            if (url.toString().contains(QStringLiteral("api.github.com/repos/SagerNet/sing-box/releases"))) {
+                return OperationResult::fail(QStringLiteral("GitHub API unavailable"));
+            }
+            if (url.toString().contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-windows-amd64.zip"))) {
+                *content = QByteArray("dummy-package");
+                return OperationResult::ok();
+            }
+            return OperationResult::fail(QStringLiteral("Unexpected URL"));
+        },
+        [](const QString&, const QString&) {
+            return OperationResult::ok();
+        });
+
+    Config config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY(result.success);
+    QVERIFY(requestedUrls.contains(QStringLiteral("https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20")));
+    QVERIFY(std::any_of(
+        requestedUrls.cbegin(),
+        requestedUrls.cend(),
+        [](const QString& url) {
+            return url.contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-windows-amd64.zip"));
+        }));
+    QVERIFY(result.message.contains(QStringLiteral("v1.13.11")));
+}
+
+void CoreUpdateServiceTests::updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled()
+{
+    QStringList requestedUrls;
+
+    CoreUpdateService service(
+        [&](const QUrl& url, QByteArray* content) {
+            requestedUrls.append(url.toString(QUrl::FullyEncoded));
+            if (url.toString().contains(QStringLiteral("/XTLS/Xray-core/releases/download/v26.3.27/Xray-windows-64.zip"))) {
+                *content = QByteArray("dummy-package");
+                return OperationResult::ok();
+            }
+            return OperationResult::fail(QStringLiteral("Unexpected URL"));
+        },
+        [](const QString&, const QString&) {
+            return OperationResult::ok();
+        });
+
+    Config config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::Xray,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY(result.success);
+    QVERIFY(std::any_of(
+        requestedUrls.cbegin(),
+        requestedUrls.cend(),
+        [](const QString& url) {
+            return url.contains(QStringLiteral("/XTLS/Xray-core/releases/download/v26.3.27/Xray-windows-64.zip"));
+        }));
+    QVERIFY(result.message.contains(QStringLiteral("v26.3.27")));
+    QVERIFY(!std::any_of(
+        requestedUrls.cbegin(),
+        requestedUrls.cend(),
+        [](const QString& url) {
+            return url.contains(QStringLiteral("/releases/latest/download/"));
+        }));
 }
 
 QTEST_MAIN(CoreUpdateServiceTests)

@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "common/GitHubMirrorHelper.h"
+#include "runtime/ProtocolCoreCompat.h"
 
 #if defined(Q_OS_WIN)
 #include <windows.h>
@@ -51,6 +52,13 @@ struct CoreUpdateDefinition {
     QStringList executablePatterns;
 };
 
+struct BuiltInFallbackReleaseDefinition {
+    QString tagName;
+    QString assetName64;
+    QString assetName32;
+    QString repositoryPath;
+};
+
 QString xrayLatestAssetName(bool prefer64Bit)
 {
     return prefer64Bit
@@ -62,6 +70,58 @@ QUrl xrayLatestDownloadUrl(bool prefer64Bit)
 {
     return QUrl(QStringLiteral("https://github.com/XTLS/Xray-core/releases/latest/download/%1")
                     .arg(xrayLatestAssetName(prefer64Bit)));
+}
+
+BuiltInFallbackReleaseDefinition resolveBuiltInFallbackReleaseDefinition(CoreType coreType)
+{
+    switch (resolveRuntimeCoreType(coreType)) {
+    case CoreType::Xray:
+        return BuiltInFallbackReleaseDefinition{
+            QStringLiteral("v26.3.27"),
+            QStringLiteral("Xray-windows-64.zip"),
+            QStringLiteral("Xray-windows-32.zip"),
+            QStringLiteral("XTLS/Xray-core")};
+    case CoreType::SingBox:
+        return BuiltInFallbackReleaseDefinition{
+            QStringLiteral("v1.13.11"),
+            QStringLiteral("sing-box-1.13.11-windows-amd64.zip"),
+            QStringLiteral("sing-box-1.13.11-windows-386.zip"),
+            QStringLiteral("SagerNet/sing-box")};
+    case CoreType::V2Fly:
+    case CoreType::Clash:
+    case CoreType::ClashMeta:
+    case CoreType::Auto:
+    case CoreType::SagerNet:
+    case CoreType::V2FlyV5:
+    case CoreType::Hysteria:
+    case CoreType::NaiveProxy:
+    case CoreType::Unknown:
+    default:
+        return {};
+    }
+}
+
+GitHubRelease buildBuiltInFallbackRelease(CoreType coreType, bool prefer64Bit)
+{
+    const BuiltInFallbackReleaseDefinition definition = resolveBuiltInFallbackReleaseDefinition(coreType);
+    if (definition.tagName.isEmpty() || definition.repositoryPath.isEmpty()) {
+        return {};
+    }
+
+    const QString assetName = prefer64Bit ? definition.assetName64 : definition.assetName32;
+    if (assetName.isEmpty()) {
+        return {};
+    }
+
+    GitHubRelease release;
+    release.tagName = definition.tagName;
+    release.assets.append(GitHubReleaseAsset{
+        assetName,
+        QUrl(QStringLiteral("https://github.com/%1/releases/download/%2/%3")
+                 .arg(definition.repositoryPath)
+                 .arg(definition.tagName)
+                 .arg(assetName))});
+    return release;
 }
 
 void reportProgress(const CoreUpdateService::ProgressHandler& progressHandler, const QString& message)
@@ -246,6 +306,22 @@ CoreUpdateDefinition resolveDefinition(CoreType coreType)
     default:
         return {};
     }
+}
+
+bool hasAnyInstalledCore(const QString& targetDirectory)
+{
+    for (const CoreType coreType : availableCoreTypes()) {
+        const CoreUpdateDefinition definition = resolveDefinition(coreType);
+        if (definition.executablePatterns.isEmpty()) {
+            continue;
+        }
+
+        if (!findFirstExistingFile(targetDirectory, definition.executablePatterns).isEmpty()) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool isGeoDataFile(const QString& fileName)
@@ -850,8 +926,23 @@ OperationResult CoreUpdateService::update(
 
     GitHubRelease release;
     QString lastError;
-    if (definition.type == CoreType::Xray) {
-        const bool prefer64Bit = is64BitOperatingSystem();
+    const bool prefer64Bit = is64BitOperatingSystem();
+    const bool noInstalledCore = !hasAnyInstalledCore(normalizedTargetDirectory);
+    const GitHubRelease builtInFallbackRelease = noInstalledCore
+        ? buildBuiltInFallbackRelease(definition.type, prefer64Bit)
+        : GitHubRelease{};
+
+    if (definition.type == CoreType::Xray && !builtInFallbackRelease.tagName.trimmed().isEmpty()) {
+        release = builtInFallbackRelease;
+        reportProgress(
+            progressHandler,
+            QCoreApplication::translate(
+                "CoreUpdateService",
+                "No local core installation was found. Using built-in bootstrap %1 package: %2 (%3).")
+                .arg(definition.displayName)
+                .arg(release.assets.constFirst().name)
+                .arg(release.tagName));
+    } else if (definition.type == CoreType::Xray) {
         const QString assetName = xrayLatestAssetName(prefer64Bit);
         release.tagName = QStringLiteral("latest");
         release.assets.append(GitHubReleaseAsset{
@@ -934,6 +1025,20 @@ OperationResult CoreUpdateService::update(
         }
 
         if (release.tagName.trimmed().isEmpty()) {
+            if (!builtInFallbackRelease.tagName.trimmed().isEmpty()) {
+                release = builtInFallbackRelease;
+                reportProgress(
+                    progressHandler,
+                    QCoreApplication::translate(
+                        "CoreUpdateService",
+                        "GitHub release metadata was unavailable and no local core installation was found. Falling back to built-in %1 package: %2 (%3).")
+                        .arg(definition.displayName)
+                        .arg(release.assets.constFirst().name)
+                        .arg(release.tagName));
+            }
+        }
+
+        if (release.tagName.trimmed().isEmpty()) {
             return OperationResult::fail(
                 QCoreApplication::translate("CoreUpdateService", "Failed to resolve the latest %1 release: %2")
                     .arg(definition.displayName)
@@ -943,7 +1048,6 @@ OperationResult CoreUpdateService::update(
         }
     }
 
-    const bool prefer64Bit = is64BitOperatingSystem();
     const GitHubReleaseAsset* asset = selectBestAsset(definition.type, release.assets, prefer64Bit);
     if (asset == nullptr) {
         return OperationResult::fail(
