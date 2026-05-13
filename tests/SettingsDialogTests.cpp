@@ -41,6 +41,8 @@ private slots:
     void routingBaseRouteCardsCollapseAroundSelectedCard();
     void settingsDialogUsesCompactUiFontBaseline();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
+    void settingsDialogSelectedTabReservesBoldTextWidth();
+    void settingsDialogHasMinimumWidth720();
 };
 
 void SettingsDialogTests::downloadButtonStartsInlineUpdate_data()
@@ -674,6 +676,38 @@ void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()
     QVERIFY(settingsTabBar->width() <= settingsTabBarContainer->contentsRect().width());
     QVERIFY(settingsTabBar->tabRect(settingsTabBar->count() - 1).right() < settingsTabBar->width());
     QVERIFY(settingsActionBar->layout() != nullptr);
+}
+
+void SettingsDialogTests::settingsDialogSelectedTabReservesBoldTextWidth()
+{
+    SettingsDialog dialog;
+    dialog.resize(880, 540);
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* settingsTabBar = dialog.findChild<QTabBar*>(QStringLiteral("settingsTabBar"));
+    QVERIFY(settingsTabBar != nullptr);
+
+    for (int index = 0; index < settingsTabBar->count(); ++index) {
+        settingsTabBar->setCurrentIndex(index);
+        QCoreApplication::processEvents();
+
+        QFont selectedFont = settingsTabBar->font();
+        selectedFont.setWeight(QFont::DemiBold);
+        const int selectedTextWidth = QFontMetrics(selectedFont).horizontalAdvance(settingsTabBar->tabText(index));
+        const int horizontalPadding = settingsTabBar->tabRect(index).width()
+            - QFontMetrics(settingsTabBar->font()).horizontalAdvance(settingsTabBar->tabText(index));
+
+        QVERIFY(settingsTabBar->tabRect(index).width() >= selectedTextWidth);
+        QVERIFY(horizontalPadding >= 0);
+    }
+}
+
+void SettingsDialogTests::settingsDialogHasMinimumWidth720()
+{
+    SettingsDialog dialog;
+    QCOMPARE(dialog.minimumWidth(), 720);
 }
 
 QTEST_MAIN(SettingsDialogTests)

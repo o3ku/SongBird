@@ -130,6 +130,32 @@ private:
     }
 };
 
+class SettingsTabBar final : public QTabBar
+{
+public:
+    explicit SettingsTabBar(QWidget* parent = nullptr)
+        : QTabBar(parent)
+    {
+    }
+
+    QSize tabSizeHint(int index) const override
+    {
+        QSize hint = QTabBar::tabSizeHint(index);
+        constexpr int boldTextSafetyPadding = 8;
+
+        QFont baseFont = font();
+        QFont boldFont = baseFont;
+        boldFont.setWeight(QFont::DemiBold);
+
+        const QString label = tabText(index);
+        const int baseWidth = QFontMetrics(baseFont).horizontalAdvance(label);
+        const int boldWidth = QFontMetrics(boldFont).horizontalAdvance(label);
+        hint.rwidth() += qMax(0, boldWidth - baseWidth) + boldTextSafetyPadding;
+
+        return hint;
+    }
+};
+
 QStringList singBoxMuxProtocolOptions()
 {
     return {
@@ -178,6 +204,7 @@ QString normalizedRoutingCustomRuleTabKey(QString key)
 SettingsDialog::SettingsDialog(QWidget* parent)
     : QDialog(parent)
 {
+    setMinimumWidth(720);
     setupUi();
     updateFieldState();
 }
@@ -344,7 +371,7 @@ Config SettingsDialog::config() const
 void SettingsDialog::setupUi()
 {
     setWindowTitle(tr("Settings"));
-    resize(620, 540);
+    resize(720, 540);
     AppTheme::applyCompactFont(this);
 
     // === General Tab ===
@@ -878,7 +905,7 @@ void SettingsDialog::setupUi()
     dnsLayout->addRow(tr("DNS Hosts"), dnsHostsEdit_);
 
     // === Settings Pages ===
-    settingsTabBar_ = new QTabBar(this);
+    settingsTabBar_ = new SettingsTabBar(this);
     settingsTabBar_->setObjectName(QStringLiteral("settingsTabBar"));
     settingsTabBar_->setExpanding(false);
     settingsTabBar_->setDrawBase(false);
