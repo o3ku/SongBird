@@ -21,7 +21,17 @@ cmake --preset msvc-debug
 cmake --build --preset msvc-debug --parallel
 ```
 
-Requirements: CMake 3.24+, Ninja, C++20 (MSVC), Qt 5 or 6 (Widgets, Network), vcpkg (`D:/vcpkg`).
+Both checked-in presets (`msvc-debug`, `msvc-release`) are pinned to Qt5 and expect `QT5_PREFIX_PATH` to be set.
+
+Requirements: CMake 3.24+, Ninja, C++20 (MSVC), Qt 5 (Widgets, Network), vcpkg (`D:/vcpkg`).
+
+## Test
+
+```bash
+cmake --preset msvc-debug -DBUILD_TEST=ON
+cmake --build --preset msvc-debug --parallel
+ctest --test-dir build/msvc-debug --output-on-failure
+```
 
 ## Package
 

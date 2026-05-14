@@ -239,13 +239,17 @@ bool ConfigFileImportParser::parseServerEndpoint(const QJsonObject& settings, Vm
     }
 
     if (item.configType == ConfigType::Socks) {
-        const QString socksUser = server.value(QStringLiteral("users")).toArray().at(0).toObject().value(QStringLiteral("user")).toString().trimmed();
-        const QString socksPass = server.value(QStringLiteral("users")).toArray().at(0).toObject().value(QStringLiteral("pass")).toString().trimmed();
-        if (item.id.isEmpty() && !socksPass.isEmpty()) {
-            item.id = socksPass;
-        }
-        if (item.security.isEmpty() && !socksUser.isEmpty()) {
-            item.security = socksUser;
+        const QJsonArray users = server.value(QStringLiteral("users")).toArray();
+        if (!users.isEmpty() && users.at(0).isObject()) {
+            const QJsonObject user = users.at(0).toObject();
+            const QString socksUser = user.value(QStringLiteral("user")).toString().trimmed();
+            const QString socksPass = user.value(QStringLiteral("pass")).toString().trimmed();
+            if (item.id.isEmpty() && !socksPass.isEmpty()) {
+                item.id = socksPass;
+            }
+            if (item.security.isEmpty() && !socksUser.isEmpty()) {
+                item.security = socksUser;
+            }
         }
     }
 

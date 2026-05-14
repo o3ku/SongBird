@@ -821,7 +821,7 @@ void MainWindow::setSpeedTestRunning(bool running)
 
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
-    if (loadingOverlay_ != nullptr) {
+    if (loadingOverlay_ != nullptr && serverView_ != nullptr && serverView_->viewport() != nullptr) {
         if (running) {
             loadingOverlay_->setGeometry(serverView_->viewport()->rect());
             loadingOverlay_->raise();
@@ -1693,6 +1693,7 @@ void MainWindow::setupToolbar()
     pacProxyAction_ = new QAction(tr("PAC Proxy"), this);
     pacProxyAction_->setObjectName(QStringLiteral("pacProxyAction"));
     pacProxyAction_->setCheckable(true);
+    pacProxyAction_->setVisible(false);
     toggleAutoRunAction_ = new QAction(tr("Enable Auto Run"), this);
     reloadConfigAction_ = new QAction(tr("Reload Config"), this);
     restoreBackupAction_ = new QAction(tr("Restore Backup"), this);
@@ -3104,7 +3105,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         }
     }
 
-    if (watched == serverView_->viewport() && event != nullptr && event->type() == QEvent::Resize) {
+    if (serverView_ != nullptr
+        && serverView_->viewport() != nullptr
+        && watched == serverView_->viewport()
+        && event != nullptr
+        && event->type() == QEvent::Resize) {
         if (loadingOverlay_ != nullptr && loadingOverlay_->isVisible()) {
             loadingOverlay_->setGeometry(serverView_->viewport()->rect());
         }

@@ -609,16 +609,15 @@ void SettingsDialog::setupUi()
     auto* coreLayout = new QVBoxLayout(coreTab);
 
     // EConfigType values: VMess=1, Custom=2, Shadowsocks=3, Socks=4, VLESS=5, Trojan=6, HTTP=11
-    const QStringList protocolNames = {
-        QStringLiteral("VMess"),
-        QStringLiteral("Custom"),
-        QStringLiteral("Shadowsocks"),
-        QStringLiteral("Socks"),
-        QStringLiteral("VLESS"),
-        QStringLiteral("Trojan"),
-        QStringLiteral("HTTP")
+    coreProtocolEntries_ = {
+        {QStringLiteral("VMess"), ConfigType::VMess},
+        {QStringLiteral("Custom"), ConfigType::Custom},
+        {QStringLiteral("Shadowsocks"), ConfigType::Shadowsocks},
+        {QStringLiteral("Socks"), ConfigType::Socks},
+        {QStringLiteral("VLESS"), ConfigType::VLESS},
+        {QStringLiteral("Trojan"), ConfigType::Trojan},
+        {QStringLiteral("HTTP"), ConfigType::HTTP}
     };
-    const QList<int> configTypes = { 1, 2, 3, 4, 5, 6, 11 };
     const QList<CoreType> allCores = availableCoreTypes();
 
     // Per-protocol core selection
@@ -626,25 +625,23 @@ void SettingsDialog::setupUi()
     auto* coreTypeForm = new QFormLayout(coreTypeWidget);
     coreTypeForm->setContentsMargins(0, 0, 0, 0);
 
-    for (int i = 0; i < protocolNames.size(); ++i) {
-        const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configTypes.at(i)));
+    for (const CoreProtocolEntry& entry : coreProtocolEntries_) {
+        const QList<CoreType> cores = supportedCoreTypes(entry.configType);
         if (cores.size() > 1) {
             auto* coreCombo = new QComboBox(coreTab);
             for (const CoreType core : cores) {
                 coreCombo->addItem(coreTypeDisplayName(core), static_cast<int>(core));
             }
-            coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(entry.configType)));
             AppTheme::applyCompactFont(coreCombo);
-            coreTypeForm->addRow(protocolNames.at(i), coreCombo);
+            coreTypeForm->addRow(entry.name, coreCombo);
             coreTypeCombos_.append(coreCombo);
-            coreTypeComboConfigTypes_.append(configTypes.at(i));
         } else if (cores.size() == 1) {
             auto* fixedLabel = new QLabel(coreTypeDisplayName(cores.first()), coreTab);
-            fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(configTypes.at(i)));
+            fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(entry.configType)));
             AppTheme::applyCompactFont(fixedLabel);
-            coreTypeForm->addRow(protocolNames.at(i), fixedLabel);
+            coreTypeForm->addRow(entry.name, fixedLabel);
             coreTypeCombos_.append(nullptr);
-            coreTypeComboConfigTypes_.append(configTypes.at(i));
         }
     }
 
@@ -668,11 +665,11 @@ void SettingsDialog::setupUi()
         row.setAllButton = new QPushButton(tr("Set All"), coreTab);
         row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
         AppTheme::applyCompactFont(row.setAllButton);
-        connect(row.setAllButton, &QPushButton::clicked, this, [this, configTypes, core]() {
-            for (int i = 0; i < coreTypeCombos_.size() && i < configTypes.size(); ++i) {
+        connect(row.setAllButton, &QPushButton::clicked, this, [this, core]() {
+            for (int i = 0; i < coreTypeCombos_.size() && i < coreProtocolEntries_.size(); ++i) {
                 auto* combo = coreTypeCombos_.at(i);
                 if (combo == nullptr) continue;
-                if (protocolSupportsCore(static_cast<ConfigType>(configTypes.at(i)), core)) {
+                if (protocolSupportsCore(coreProtocolEntries_.at(i).configType, core)) {
                     const int idx = combo->findData(static_cast<int>(core));
                     if (idx >= 0) combo->setCurrentIndex(idx);
                 }
@@ -729,7 +726,7 @@ void SettingsDialog::setupUi()
     pacUrlEdit_ = new QLineEdit(proxyTab);
     pacUrlEdit_->setObjectName(QStringLiteral("settingsPacUrlEdit"));
     pacUrlEdit_->setPlaceholderText(tr("Leave empty to use built-in PAC server (http://127.0.0.1:10870/pac)"));
-    proxyLayout->addRow(tr("Custom PAC URL"), pacUrlEdit_);
+    pacUrlEdit_->setVisible(false);
 
     // === Update Tab ===
     auto* updateTab = new QWidget(this);
@@ -1553,17 +1550,17 @@ QList<SubItem> SettingsDialog::collectSubItems() const
 
 void SettingsDialog::reloadCoreTypeTable()
 {
-    for (int i = 0; i < coreTypeCombos_.size() && i < coreTypeComboConfigTypes_.size(); ++i) {
+    for (int i = 0; i < coreTypeCombos_.size() && i < coreProtocolEntries_.size(); ++i) {
         auto* combo = coreTypeCombos_.at(i);
         if (combo == nullptr) {
             continue;
         }
 
-        int configType = coreTypeComboConfigTypes_.at(i);
-        int coreType = static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
+        const ConfigType configType = coreProtocolEntries_.at(i).configType;
+        int coreType = static_cast<int>(defaultCoreTypeForProtocol(configType));
 
         for (const CoreTypeItem& item : coreTypeItems_) {
-            if (item.configType == configType) {
+            if (item.configType == static_cast<int>(configType)) {
                 coreType = item.coreType;
                 break;
             }
@@ -1580,22 +1577,22 @@ QList<CoreTypeItem> SettingsDialog::collectCoreTypeItems() const
 {
     QList<CoreTypeItem> items;
 
-    for (int i = 0; i < coreTypeCombos_.size() && i < coreTypeComboConfigTypes_.size(); ++i) {
-        const int configType = coreTypeComboConfigTypes_.at(i);
+    for (int i = 0; i < coreTypeCombos_.size() && i < coreProtocolEntries_.size(); ++i) {
+        const ConfigType configType = coreProtocolEntries_.at(i).configType;
         auto* combo = coreTypeCombos_.at(i);
 
         CoreTypeItem item;
-        item.configType = configType;
+        item.configType = static_cast<int>(configType);
         if (combo != nullptr) {
             bool ok = false;
             const int coreTypeValue = combo->currentData().toInt(&ok);
             item.coreType = ok
                 ? coreTypeValue
-                : static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)));
+                : static_cast<int>(defaultCoreTypeForProtocol(configType));
         } else {
-            const QList<CoreType> cores = supportedCoreTypes(static_cast<ConfigType>(configType));
+            const QList<CoreType> cores = supportedCoreTypes(configType);
             item.coreType = cores.isEmpty()
-                ? static_cast<int>(defaultCoreTypeForProtocol(static_cast<ConfigType>(configType)))
+                ? static_cast<int>(defaultCoreTypeForProtocol(configType))
                 : static_cast<int>(cores.first());
         }
         items.append(item);

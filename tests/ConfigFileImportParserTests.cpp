@@ -57,6 +57,7 @@ private slots:
     void parseClientConfigReadsVlessOutbound();
     void parseClientConfigReadsTrojanOutbound();
     void parseClientConfigReadsShadowsocksOutbound();
+    void parseClientConfigReadsSocksOutboundWithoutUsers();
     void parseServerConfigReadsVlessInbound();
 };
 
@@ -364,6 +365,31 @@ QString buildShadowsocksClientConfigJson()
     return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 
+QString buildSocksClientConfigJson(bool includeUsers)
+{
+    QJsonObject server;
+    server.insert(QStringLiteral("address"), QStringLiteral("socks.example.com"));
+    server.insert(QStringLiteral("port"), 1080);
+    if (includeUsers) {
+        server.insert(QStringLiteral("users"), QJsonArray{
+            QJsonObject{
+                {QStringLiteral("user"), QStringLiteral("demo-user")},
+                {QStringLiteral("pass"), QStringLiteral("demo-pass")}
+            }});
+    }
+
+    QJsonObject settings;
+    settings.insert(QStringLiteral("servers"), QJsonArray{server});
+
+    QJsonObject outbound;
+    outbound.insert(QStringLiteral("protocol"), QStringLiteral("socks"));
+    outbound.insert(QStringLiteral("settings"), settings);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("outbounds"), QJsonArray{outbound});
+    return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
+}
+
 } // namespace
 
 void ConfigFileImportParserTests::parseClientConfigReadsVlessOutbound()
@@ -424,6 +450,20 @@ void ConfigFileImportParserTests::parseClientConfigReadsShadowsocksOutbound()
     QCOMPARE(item.port, 8388);
     QCOMPARE(item.id, QStringLiteral("ss-password-456"));
     QCOMPARE(item.security, QStringLiteral("aes-256-gcm"));
+}
+
+void ConfigFileImportParserTests::parseClientConfigReadsSocksOutboundWithoutUsers()
+{
+    VmessItem item;
+    const OperationResult result =
+        ConfigFileImportParser::parseClientConfig(buildSocksClientConfigJson(false), &item);
+
+    QVERIFY(result.success);
+    QCOMPARE(item.configType, ConfigType::Socks);
+    QCOMPARE(item.address, QStringLiteral("socks.example.com"));
+    QCOMPARE(item.port, 1080);
+    QVERIFY(item.id.isEmpty());
+    QVERIFY(item.security.isEmpty());
 }
 
 void ConfigFileImportParserTests::parseServerConfigReadsVlessInbound()

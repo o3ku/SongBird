@@ -161,9 +161,14 @@ private:
     QPushButton* removeSubButton_ = nullptr;
     QPushButton* updateSubButton_ = nullptr;
 
+    struct CoreProtocolEntry {
+        QString name;
+        ConfigType configType = ConfigType::VMess;
+    };
+
     QList<CoreTypeItem> coreTypeItems_;
     QList<QComboBox*> coreTypeCombos_;
-    QList<int> coreTypeComboConfigTypes_;
+    QList<CoreProtocolEntry> coreProtocolEntries_;
     QList<CoreType> existingCoreTypes_;
     QMap<int, CoreStatusRow> coreStatusRows_;
 

@@ -14,15 +14,15 @@ cmake --preset msvc-debug
 cmake --build --preset msvc-debug --parallel
 
 # Configure + build with tests
-cmake --preset msvc-debug-test
-cmake --build --preset msvc-debug-test --parallel
+cmake --preset msvc-debug -DBUILD_TEST=ON
+cmake --build --preset msvc-debug --parallel
 
 # Run all tests
-ctest --preset msvc-debug-test
+ctest --test-dir build/msvc-debug --output-on-failure
 
 # Run a single test by name
-ctest --preset msvc-debug-test -R share-url-transports
-ctest --preset msvc-debug-test -R clash-config-writer
+ctest --test-dir build/msvc-debug -R share-url-transports --output-on-failure
+ctest --test-dir build/msvc-debug -R clash-config-writer --output-on-failure
 
 # Manual configure without presets (requires Qt prefix path)
 cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=<Qt-path>
@@ -32,12 +32,16 @@ cmake --build build --target qt_v2rayn --parallel
 pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>
 ```
 
-Output binary is named `v2rayq.exe`. Tests are opt-in via `-DBUILD_TEST=ON`.
+The CMake target is `qt_v2rayn` with `OUTPUT_NAME` set to `v2rayq`, so the binary is `v2rayq.exe`. Tests are opt-in via `-DBUILD_TEST=ON`.
+
+Available presets: `msvc-debug` and `msvc-release`. Both force Qt5 via `QT_V2RAYN_FORCE_MAJOR_VERSION=5`, expect the `QT5_PREFIX_PATH` environment variable, and pin MSVC 2019 (`14.29.30133`) plus the `x64-windows-static-md` vcpkg triplet.
 
 ## Test Names
 
 Each test is a separate executable using QtTest. CTest names (for `-R` filter):
-`share-url-transports`, `clash-config-writer`, `client-config-writer-tun-compat`, `add-server-dialog-roundtrip`, `settings-dialog-download`, `tun-settings-apply-decision`, `startup-admin-elevation`, `global-hotkey-dialog-roundtrip`, `windows-global-hotkey-binding-mapping`, `windows-global-hotkey-service-pause`, `main-window-log-scroll`, `tun-compat-core-requirement`, `json-config-repository-defaults`, `config-file-import-parser-stream-settings`
+`share-url-transports`, `clash-config-writer`, `add-server-dialog-roundtrip`, `settings-dialog-download`, `tun-settings-apply-decision`, `startup-admin-elevation`, `app-bootstrap-tun-runtime`, `global-hotkey-dialog-roundtrip`, `windows-global-hotkey-binding-mapping`, `windows-global-hotkey-service-pause`, `main-window-log-scroll`, `client-config-writer-tun-compat`, `tun-compat-core-requirement`, `json-config-repository-defaults`, `config-file-import-parser-stream-settings`, `server-config-writer`, `proxy-availability-check`, `speed-test-service-internal`, `subscription-service`, `routing-service`, `statistics-service`, `core-update-service`, `subscription-parser`, `server-service`, `protocol-core-compat`.
+
+The authoritative list lives in `tests/CMakeLists.txt` (search for `add_test(NAME ...)`); update this paragraph when adding or removing tests.
 
 ## Architecture
 
@@ -101,6 +105,10 @@ The app supports `--config <path>`, `--auto-start`, `--start-hidden`, `--skip-co
 
 When adding a new test, create a standalone `.cpp` file in `tests/`, list only the source files it needs in `tests/CMakeLists.txt`, and register it with `add_test(NAME <name> COMMAND <executable>)`. Use the `QT_QPA_PLATFORM=windows` environment property. Follow the existing pattern for the Qt version conditional (`qt_add_executable` vs `add_executable`).
 
+### Coding Style
+
+4-space indentation, braces on their own line, `PascalCase` for classes (`CoreLifecycleService`), `camelCase` for functions and locals, test files named `*Tests.cpp`. There is no repo-local formatter — match surrounding code exactly. `AGENTS.md` covers the same conventions in more detail (it is the canonical contributor guide; this file is the subset Claude Code loads automatically).
+
 ### Upstream Parity
 
 The `.codexpotter/kb/` directory tracks parity gaps between this Qt rewrite and the upstream C# v2rayN. When adding or fixing features, check the KB for known gaps in the relevant area. The `ref/v2rayn/` directory contains the upstream reference implementation for comparison.
@@ -108,6 +116,6 @@ The `.codexpotter/kb/` directory tracks parity gaps between this Qt rewrite and 
 ## Build Requirements
 
 - CMake 3.24+, Ninja, C++20 (MSVC on Windows)
-- Qt 5 or Qt 6 (Widgets, Network)
+- Qt 5 (Widgets, Network)
 - vcpkg with triplet `x64-windows-static-md` (presets expect `D:/vcpkg`)
 - Protobuf + gRPC (optional, for statistics backend)
