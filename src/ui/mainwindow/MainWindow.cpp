@@ -1035,6 +1035,10 @@ void MainWindow::updateActionState()
         copySubscriptionContentAction_->setEnabled(hasShareExports);
     }
 
+    if (copySubscriptionUrlAction_ != nullptr) {
+        copySubscriptionUrlAction_->setEnabled(!currentSubscriptionUrl().isEmpty());
+    }
+
     if (openCustomConfigAction_ != nullptr) {
         openCustomConfigAction_->setEnabled(hasCustomSelection);
     }
@@ -1419,6 +1423,11 @@ bool MainWindow::canStartBackgroundTask() const
     return !backgroundTaskRunning_ && !speedTestRunning_;
 }
 
+bool MainWindow::isUngroupedSubscriptionTabSelected() const
+{
+    return currentSubscriptionTabKey() == QStringLiteral("ungrouped");
+}
+
 QString MainWindow::currentSubscriptionTabKey() const
 {
     if (subscriptionTabBar_ == nullptr || subscriptionTabBar_->currentIndex() < 0) {
@@ -1426,6 +1435,22 @@ QString MainWindow::currentSubscriptionTabKey() const
     }
 
     return subscriptionTabBar_->tabData(subscriptionTabBar_->currentIndex()).toString();
+}
+
+QString MainWindow::currentSubscriptionUrl() const
+{
+    const QString subscriptionId = resolveSubscriptionIdFromTabKey(currentSubscriptionTabKey());
+    if (subscriptionId.isEmpty()) {
+        return {};
+    }
+
+    for (const SubItem& item : config_.subscriptions) {
+        if (item.id.trimmed() == subscriptionId) {
+            return item.url.trimmed();
+        }
+    }
+
+    return {};
 }
 
 QString MainWindow::describeSubscription(const SubItem& item)
@@ -1616,6 +1641,8 @@ void MainWindow::setupToolbar()
     copyShareLinkAction_->setObjectName(QStringLiteral("copyShareLinkAction"));
     copySubscriptionContentAction_ = new QAction(tr("Copy Subscription Content"), this);
     copySubscriptionContentAction_->setObjectName(QStringLiteral("copySubscriptionContentAction"));
+    copySubscriptionUrlAction_ = new QAction(tr("Copy Subscription Url"), this);
+    copySubscriptionUrlAction_->setObjectName(QStringLiteral("copySubscriptionUrlAction"));
     openCustomConfigAction_ = new QAction(tr("Open Config"), this);
     importClipboardAction_ = new QAction(tr("Import Clipboard"), this);
     importClipboardAction_->setObjectName(QStringLiteral("importClipboardAction"));
@@ -1721,46 +1748,6 @@ void MainWindow::setupToolbar()
                 : QString());
     });
 
-    auto* serverMenu = new QMenu(toolBar);
-    serverMenu->setObjectName(QStringLiteral("serverMenu"));
-    serverMenu->addAction(addServerAction_);
-    serverMenu->addAction(addCustomServerAction_);
-    serverMenu->addAction(importClientConfigAction_);
-    serverMenu->addAction(importServerConfigAction_);
-    serverMenu->addAction(importClipboardAction_);
-    serverMenu->addSeparator();
-    serverMenu->addAction(editServerAction_);
-    serverMenu->addAction(duplicateServerAction_);
-    serverMenu->addAction(removeServerAction_);
-    serverMenu->addAction(setDefaultServerAction_);
-    serverMenu->addSeparator();
-
-    auto* moveMenu = new QMenu(tr("Move"), serverMenu);
-    moveMenu->setObjectName(QStringLiteral("moveServerMenu"));
-    moveMenu->addAction(moveServerTopAction_);
-    moveMenu->addAction(moveServerUpAction_);
-    moveMenu->addAction(moveServerDownAction_);
-    moveMenu->addAction(moveServerBottomAction_);
-    serverMenu->addMenu(moveMenu);
-    serverMenu->addSeparator();
-
-    serverMenu->addAction(testAction_);
-    serverMenu->addAction(testMeAction_);
-    serverMenu->addAction(clearStatisticsAction_);
-    serverMenu->addSeparator();
-
-    auto* exportMenu = new QMenu(tr("Export"), serverMenu);
-    exportMenu->setObjectName(QStringLiteral("serverExportMenu"));
-    exportMenu->addAction(exportClientConfigAction_);
-    exportMenu->addAction(exportServerConfigAction_);
-    exportMenu->addSeparator();
-    exportMenu->addAction(copyShareLinkAction_);
-    exportMenu->addAction(copySubscriptionContentAction_);
-    serverMenu->addMenu(exportMenu);
-    serverMenu->addSeparator();
-
-    serverMenu->addAction(openCustomConfigAction_);
-
     // Sub button now opens Settings at Subscriptions tab
     // updateCurrentSubscriptionAction and updateSubscriptionsAction_ are moved to Update menu
 
@@ -1811,13 +1798,6 @@ void MainWindow::setupToolbar()
     helpMenu->addAction(openRuleObjectDocumentationAction_);
     helpMenu->addAction(openLoopbackToolAction_);
 
-    createToolbarMenuButton(
-        toolBar,
-        QStringLiteral("serverButton"),
-        tr("Server"),
-        loadToolbarIcon(QStringLiteral("server.png")),
-        serverMenu);
-    toolBar->addSeparator();
     createToolbarActionButton(
         toolBar,
         QStringLiteral("subButton"),
@@ -2223,6 +2203,7 @@ void MainWindow::setupConnections()
         appendLog(message);
         showTransientStatus(message, 3000);
     });
+    connect(copySubscriptionUrlAction_, &QAction::triggered, this, &MainWindow::copyCurrentSubscriptionUrlToClipboard);
     connect(openCustomConfigAction_, &QAction::triggered, this, [this]() {
         const QString indexId = selectedServerId();
         if (!indexId.isEmpty()) {
@@ -2506,30 +2487,7 @@ void MainWindow::setupConnections()
 
     if (serverView_ != nullptr) {
         serverView_->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(serverView_, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
-            if (serverView_ == nullptr) {
-                return;
-            }
-
-            const QModelIndex clickedIndex = serverView_->indexAt(position);
-            if (clickedIndex.isValid() && serverView_->selectionModel() != nullptr) {
-                serverView_->clearSelection();
-                serverView_->setCurrentIndex(clickedIndex);
-                serverView_->selectRow(clickedIndex.row());
-            }
-
-            updateActionState();
-            if (selectedServerId().isEmpty()) {
-                return;
-            }
-
-            QMenu menu(serverView_);
-            menu.addAction(setDefaultServerAction_);
-            menu.addAction(editServerAction_);
-            menu.addSeparator();
-            menu.addAction(testAction_);
-            menu.exec(serverView_->viewport()->mapToGlobal(position));
-        });
+        connect(serverView_, &QWidget::customContextMenuRequested, this, &MainWindow::showServerContextMenu);
 
         copyShareLinkAction_->setShortcut(QKeySequence::Copy);
         copyShareLinkAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -2668,6 +2626,14 @@ void MainWindow::showSubscriptionTabContextMenu(const QPoint& position)
     QMenu menu(subscriptionTabBar_);
 
     if (!subscriptionId.isEmpty()) {
+        auto* copySubscriptionUrlAction = menu.addAction(tr("Copy Subscription Url"));
+        copySubscriptionUrlAction->setEnabled(!currentSubscriptionUrl().isEmpty());
+        connect(copySubscriptionUrlAction, &QAction::triggered, &menu, [this]() {
+            copyCurrentSubscriptionUrlToClipboard();
+        });
+
+        menu.addSeparator();
+
         auto* updateAction = menu.addAction(tr("Update Subscription"));
         updateAction->setEnabled(canStartBackgroundTask());
         connect(updateAction, &QAction::triggered, &menu, [this, subscriptionId]() {
@@ -2707,6 +2673,70 @@ void MainWindow::showSubscriptionTabContextMenu(const QPoint& position)
     });
 
     menu.exec(subscriptionTabBar_->mapToGlobal(position));
+}
+
+void MainWindow::showServerContextMenu(const QPoint& position)
+{
+    if (serverView_ == nullptr || serverView_->selectionModel() == nullptr) {
+        return;
+    }
+
+    const QModelIndex clickedIndex = serverView_->indexAt(position);
+    if (clickedIndex.isValid() && !serverView_->selectionModel()->isRowSelected(clickedIndex.row(), QModelIndex())) {
+        serverView_->clearSelection();
+        serverView_->setCurrentIndex(clickedIndex);
+        serverView_->selectRow(clickedIndex.row());
+    }
+
+    updateActionState();
+    const QStringList selectedIds = selectedServerIds();
+    if (selectedIds.isEmpty()) {
+        return;
+    }
+
+    const bool singleSelection = selectedIds.size() == 1;
+    const bool ungroupedTabSelected = isUngroupedSubscriptionTabSelected();
+    QMenu menu(serverView_);
+
+    if (singleSelection) {
+        menu.addAction(setDefaultServerAction_);
+
+        if (ungroupedTabSelected) {
+            menu.addAction(editServerAction_);
+            menu.addAction(removeServerAction_);
+            menu.addSeparator();
+            menu.addAction(testAction_);
+            menu.addSeparator();
+            menu.addAction(addServerAction_);
+        } else {
+            menu.addSeparator();
+            menu.addAction(testAction_);
+        }
+    } else {
+        menu.addAction(testAction_);
+        if (ungroupedTabSelected) {
+            menu.addSeparator();
+            menu.addAction(removeServerAction_);
+        }
+    }
+
+    menu.exec(serverView_->viewport()->mapToGlobal(position));
+}
+
+void MainWindow::copyCurrentSubscriptionUrlToClipboard()
+{
+    const QString url = currentSubscriptionUrl();
+    if (url.isEmpty()) {
+        showTransientStatus(tr("Subscription URL unavailable for the current tab."), 4000);
+        return;
+    }
+
+    if (QApplication::clipboard() != nullptr) {
+        QApplication::clipboard()->setText(url);
+    }
+
+    appendLog(tr("Copied subscription URL to the clipboard."));
+    showTransientStatus(tr("Copied subscription URL to the clipboard."), 3000);
 }
 
 void MainWindow::applyDeferredUiState()

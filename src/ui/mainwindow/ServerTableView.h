@@ -9,6 +9,7 @@ class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class QEvent;
+class QMouseEvent;
 
 class ServerTableView final : public QTableView {
 public:
@@ -25,6 +26,8 @@ protected:
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     void leaveEvent(QEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
     int resolveDropRow(const QPoint& viewportPosition) const;

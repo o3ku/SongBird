@@ -1,7 +1,9 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QApplication>
 #include <QBoxLayout>
+#include <QClipboard>
 #include <QFontMetrics>
 #include <QLabel>
 #include <QLayout>
@@ -9,6 +11,7 @@
 #include <QListView>
 #include <QPlainTextEdit>
 #include <QComboBox>
+#include <QMenu>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyleOptionViewItem>
@@ -34,6 +37,7 @@ private slots:
     void logStickToBottomButtonMatchesFilterHeight();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
+    void toolbarRemovesServerButton();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void sharePanelShowsSelectedServerShareLink();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
@@ -49,6 +53,9 @@ private slots:
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
+    void serverContextMenuKeepsExistingMultiSelection();
+    void serverContextMenuSelectsClickedUnselectedRow();
+    void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
     void compactUiZonesDoNotExceedServerTableFont();
 };
@@ -208,6 +215,13 @@ void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
+}
+
+void MainWindowTests::toolbarRemovesServerButton()
+{
+    MainWindow window;
+
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("serverButton")) == nullptr);
 }
 
 void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
@@ -636,6 +650,129 @@ void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted(
     QVERIFY(currentIndex.isValid());
     QCOMPARE(currentIndex.data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
     QVERIFY(serverView->selectionModel()->isRowSelected(currentIndex.row(), QModelIndex()));
+}
+
+void MainWindowTests::serverContextMenuKeepsExistingMultiSelection()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    const QModelIndex firstIndex = serverView->model()->index(0, 0);
+    const QModelIndex secondIndex = serverView->model()->index(1, 0);
+    QVERIFY(firstIndex.isValid());
+    QVERIFY(secondIndex.isValid());
+
+    serverView->selectionModel()->select(
+        QItemSelection(firstIndex, secondIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+
+    const QPoint menuPoint = serverView->visualRect(secondIndex).center();
+
+    QTimer::singleShot(0, []() {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* menu = qobject_cast<QMenu*>(widget)) {
+                menu->close();
+            }
+        }
+    });
+
+    QMetaObject::invokeMethod(
+        &window,
+        "showServerContextMenu",
+        Qt::DirectConnection,
+        Q_ARG(QPoint, menuPoint));
+    QCoreApplication::processEvents();
+
+    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    QCOMPARE(serverView->selectionModel()->selectedRows().size(), 2);
+}
+
+void MainWindowTests::serverContextMenuSelectsClickedUnselectedRow()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    const QModelIndex firstIndex = serverView->model()->index(0, 0);
+    const QModelIndex secondIndex = serverView->model()->index(1, 0);
+    QVERIFY(firstIndex.isValid());
+    QVERIFY(secondIndex.isValid());
+
+    serverView->selectionModel()->select(
+        QItemSelection(firstIndex, firstIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
+    QVERIFY(!serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+
+    const QPoint menuPoint = serverView->visualRect(secondIndex).center();
+
+    QTimer::singleShot(0, []() {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* menu = qobject_cast<QMenu*>(widget)) {
+                menu->close();
+            }
+        }
+    });
+
+    QMetaObject::invokeMethod(
+        &window,
+        "showServerContextMenu",
+        Qt::DirectConnection,
+        Q_ARG(QPoint, menuPoint));
+    QCoreApplication::processEvents();
+
+    QVERIFY(!serverView->selectionModel()->isRowSelected(0, QModelIndex()));
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    QCOMPARE(serverView->selectionModel()->selectedRows().size(), 1);
+}
+
+void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.subscriptions = {SubItem{
+        QStringLiteral("sub-1"),
+        QStringLiteral("Test Sub"),
+        QStringLiteral("https://example.com/subscription"),
+        true,
+        QStringLiteral("test-agent")}};
+    config.mainSelectedSubId = QStringLiteral("sub-1");
+    window.restoreUiState(config);
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+
+    auto* action = window.findChild<QAction*>(QStringLiteral("copySubscriptionUrlAction"));
+    QVERIFY(action != nullptr);
+    QVERIFY(QApplication::clipboard() != nullptr);
+
+    QApplication::clipboard()->clear();
+    action->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://example.com/subscription"));
 }
 
 void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()

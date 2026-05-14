@@ -122,6 +122,7 @@ private slots:
     void onServerFilterTextChanged(const QString& text);
     void toggleServerSorting(int logicalIndex);
     void updateActionState();
+    void showServerContextMenu(const QPoint& position);
 
 private:
     void closeEvent(QCloseEvent* event) override;
@@ -146,7 +147,9 @@ private:
     void updateServerReorderAvailability();
     void updateSubscriptionFilter();
     bool canStartBackgroundTask() const;
+    bool isUngroupedSubscriptionTabSelected() const;
     void showSubscriptionTabContextMenu(const QPoint& position);
+    void copyCurrentSubscriptionUrlToClipboard();
     void clearTransientStatus();
     void applyDeferredUiState();
     void applyFrameAdjustedWindowMetrics();
@@ -162,6 +165,7 @@ private:
     static int clampSplitPercent(int value, int fallback);
     static QStringList serverColumnKeys();
     QString currentSubscriptionTabKey() const;
+    QString currentSubscriptionUrl() const;
     static QString describeSubscription(const SubItem& item);
     static QString describeRoutingMode(const RoutingItem& item, int index);
     static QStringList buildShareLinks(const QList<const VmessItem*>& items);
@@ -202,6 +206,7 @@ private:
     QAction* exportServerConfigAction_ = nullptr;
     QAction* copyShareLinkAction_ = nullptr;
     QAction* copySubscriptionContentAction_ = nullptr;
+    QAction* copySubscriptionUrlAction_ = nullptr;
     QAction* openCustomConfigAction_ = nullptr;
     QAction* importClipboardAction_ = nullptr;
     QAction* importClientConfigAction_ = nullptr;

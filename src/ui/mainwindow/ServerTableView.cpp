@@ -8,6 +8,7 @@
 #include <QDropEvent>
 #include <QEvent>
 #include <QItemSelectionModel>
+#include <QMouseEvent>
 #include <QPalette>
 #include <QPainter>
 #include <QStyle>
@@ -151,6 +152,26 @@ void ServerTableView::leaveEvent(QEvent* event)
 {
     setHoveredRow(-1);
     QTableView::leaveEvent(event);
+}
+
+void ServerTableView::mousePressEvent(QMouseEvent* event)
+{
+    if (event != nullptr && event->button() == Qt::RightButton) {
+        event->accept();
+        return;
+    }
+
+    QTableView::mousePressEvent(event);
+}
+
+void ServerTableView::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event != nullptr && event->button() == Qt::RightButton) {
+        event->accept();
+        return;
+    }
+
+    QTableView::mouseReleaseEvent(event);
 }
 
 int ServerTableView::resolveDropRow(const QPoint& viewportPosition) const
