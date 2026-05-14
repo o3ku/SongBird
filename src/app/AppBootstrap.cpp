@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QFile>
@@ -1539,7 +1540,7 @@ void AppBootstrap::appendStartupResourceCheckResults()
                                  .arg(expectedCoreFilesText(candidates)));
             }
 
-            for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(config_, *activeServer)) {
+            for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(config_, *activeServer, existingCoreTypes_)) {
                 const QStringList candidates = resolveCoreCandidates(auxiliaryCoreType);
                 if (locateFirstExistingFile(candidates).isEmpty()) {
                     lines.append(QStringLiteral("Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.")
@@ -1706,7 +1707,7 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         return;
     }
 
-    for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(runtimeConfig, runtimeServer)) {
+    for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(runtimeConfig, runtimeServer, existingCoreTypes_)) {
         const QStringList auxiliaryCandidates = resolveCoreCandidates(auxiliaryCoreType);
         const QString auxiliaryProgram = locateFirstExistingFile(auxiliaryCandidates);
         if (!auxiliaryProgram.isEmpty()) {
@@ -1772,6 +1773,7 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
 
     QStringList auxiliaryConfigPaths;
     removeStaleSingBoxCache();
+    clientConfigWriter_->setExistingCoreTypes(existingCoreTypes_);
     const OperationResult writeResult = clientConfigWriter_->writeClientConfigs(
         runtimeConfig,
         runtimeServer,
@@ -2304,6 +2306,13 @@ void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
         return;
     }
 
+    // PAC mode is disabled until the built-in PAC server is wired up. Treat
+    // any attempt to activate it (including stale configs) as ForcedClear so
+    // the registry never points to a non-existent local PAC endpoint.
+    if (mode == SystemProxyMode::Pac) {
+        mode = SystemProxyMode::ForcedClear;
+    }
+
     const int previousValue = config_.sysProxyType;
     config_.sysProxyType = toLegacySystemProxyModeValue(mode);
     if (!serverService_->save(config_)) {
@@ -2355,13 +2364,16 @@ void AppBootstrap::applySystemProxyModeOnExit(bool windowsShutdown)
         return;
     }
 
-    const SystemProxyMode mode = resolveSystemProxyModeOnExit(normalizeSystemProxyMode(config_.sysProxyType), false);
+    const SystemProxyMode mode = resolveSystemProxyModeOnExit(
+        normalizeSystemProxyMode(config_.sysProxyType),
+        windowsShutdown);
     systemProxyService_->update(
         mode,
         config_.localPort + 1,
         config_.localPort,
         buildSystemProxyExceptions(),
-        config_.systemProxyAdvancedProtocol);
+        config_.systemProxyAdvancedProtocol,
+        config_.pacUrl);
 }
 
 void AppBootstrap::enableSystemProxy()
@@ -3879,6 +3891,13 @@ void AppBootstrap::trackBackgroundThread(QThread* thread)
 
 void AppBootstrap::waitForBackgroundThreads()
 {
+    // Workers cooperatively check QThread::isInterruptionRequested() at their
+    // iteration boundaries (subscription update, geo update) or via service-level
+    // cancel flags. With a healthy worker they should bail within a few seconds;
+    // the soft cap below catches a stuck worker so app shutdown is not blocked
+    // indefinitely. We do NOT terminate() -- that would leak QNetworkAccessManager
+    // / temp dir state -- the OS reaps the thread on process exit.
+    constexpr unsigned long kShutdownWaitMs = 15000;
     const QList<QThread*> threads = backgroundThreads_;
     for (QThread* thread : threads) {
         if (thread == nullptr) {
@@ -3886,7 +3905,10 @@ void AppBootstrap::waitForBackgroundThreads()
         }
 
         thread->requestInterruption();
-        thread->wait();
+        if (!thread->wait(kShutdownWaitMs)) {
+            qWarning("AppBootstrap: background thread did not honor interruption within %lums; leaving it to the OS",
+                kShutdownWaitMs);
+        }
     }
     backgroundThreads_.clear();
 }

@@ -17,6 +17,7 @@ QtCoreProcessHost::QtCoreProcessHost() = default;
 QtCoreProcessHost::~QtCoreProcessHost()
 {
     stop(true);
+    resetProcessState();
 }
 
 OperationResult QtCoreProcessHost::start(
@@ -290,11 +291,12 @@ void QtCoreProcessHost::scheduleForcedKill()
     }
 
     if (forcedKillTimer_ == nullptr) {
-        forcedKillTimer_ = new QTimer();
+        forcedKillTimer_ = new QTimer(process_.get());
         forcedKillTimer_->setSingleShot(true);
-        QObject::connect(forcedKillTimer_, &QTimer::timeout, forcedKillTimer_, [this]() {
-            if (process_ && process_->state() != QProcess::NotRunning) {
-                process_->kill();
+        QProcess* process = process_.get();
+        QObject::connect(forcedKillTimer_, &QTimer::timeout, process, [process]() {
+            if (process->state() != QProcess::NotRunning) {
+                process->kill();
             }
         });
     }

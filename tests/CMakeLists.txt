@@ -755,6 +755,41 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_routing_service_tests)
 endif()
 
+set(QT_V2RAYN_SYSTEM_PROXY_MODE_TEST_SOURCES
+    SystemProxyModeTests.cpp
+    ../src/common/SystemProxyMode.h
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_system_proxy_mode_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_SYSTEM_PROXY_MODE_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_system_proxy_mode_tests ${QT_V2RAYN_SYSTEM_PROXY_MODE_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_system_proxy_mode_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_system_proxy_mode_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+add_test(NAME system-proxy-mode COMMAND qt_v2rayn_system_proxy_mode_tests)
+set_tests_properties(system-proxy-mode PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_system_proxy_mode_tests)
+endif()
+
 set(QT_V2RAYN_STATISTICS_SERVICE_TEST_SOURCES
     StatisticsServiceTests.cpp
     ../src/services/StatisticsService.h

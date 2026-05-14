@@ -621,6 +621,12 @@ SpeedTestService::~SpeedTestService()
         return;
     }
 
+    // The worker checks cancelled_ at every batch-loop iteration. Without this
+    // signal the synchronous worker keeps spawning per-server probes (each up
+    // to kRuntimeRequestTimeoutMs long), and the wait() below blocks until the
+    // entire pending batch drains -- minutes on a large server list at shutdown.
+    cancelled_ = true;
+
     workerThread_->quit();
     workerThread_->wait();
 }

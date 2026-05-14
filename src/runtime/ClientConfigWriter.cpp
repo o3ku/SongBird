@@ -839,6 +839,19 @@ ClientConfigWriter::ClientConfigWriter(QString customConfigDirectory)
 {
 }
 
+void ClientConfigWriter::setExistingCoreTypes(const QList<CoreType>& existingCoreTypes)
+{
+    existingCoreTypes_ = existingCoreTypes;
+}
+
+QList<CoreType> ClientConfigWriter::effectiveExistingCoreTypes() const
+{
+    // When AppBootstrap has not pushed the installed-core snapshot yet (or in
+    // tests that construct the writer directly), fall back to treating both
+    // Xray and SingBox as available so behavior matches the pre-fix default.
+    return existingCoreTypes_.isEmpty() ? availableCoreTypes() : existingCoreTypes_;
+}
+
 OperationResult ClientConfigWriter::writeClientConfig(
     const Config& config,
     const VmessItem& server,
@@ -872,7 +885,7 @@ OperationResult ClientConfigWriter::writeClientConfigs(
         return writeCustomConfig(server, filePath);
     }
 
-    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
+    const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
     if (effectiveCore == CoreType::Clash || effectiveCore == CoreType::ClashMeta) {
         return ClashConfigWriter::writeClientConfig(config, server, filePath, statisticsPort);
     }
@@ -943,7 +956,7 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
     generated.primary.fileName = QStringLiteral("config.generated.json");
     generated.primary.root = buildRoot(config, server, statisticsPort);
 
-    if (requiresTunCompatSingBoxCore(config, server)) {
+    if (requiresTunCompatSingBoxCore(config, server, effectiveExistingCoreTypes())) {
         // The local rewrite has not split upstream's non-legacy Xray TUN relay path yet.
         // Keep emitting the sing-box sidecar whenever Xray runs with TUN so `singbox_tun`
         // can still be created instead of silently starting Xray alone with no TUN inbound.
@@ -1043,7 +1056,7 @@ QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem&
 {
     const bool requiresSingBox = server.configType == ConfigType::AnyTLS
         || server.configType == ConfigType::Naive;
-    const CoreType effectiveCore = resolvePreferredCoreType(config, server);
+    const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
     const bool useSingBox = requiresSingBox || effectiveCore == CoreType::SingBox;
     return useSingBox
         ? buildSingBoxRoot(config, server, statisticsPort)

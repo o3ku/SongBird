@@ -51,7 +51,17 @@ inline bool expectedSystemProxyEnabled(SystemProxyMode mode)
 
 inline SystemProxyMode resolveSystemProxyModeOnExit(SystemProxyMode currentMode, bool windowsShutdown)
 {
-    static_cast<void>(currentMode);
-    static_cast<void>(windowsShutdown);
-    return SystemProxyMode::ForcedClear;
+    if (windowsShutdown) {
+        return SystemProxyMode::ForcedClear;
+    }
+
+    switch (currentMode) {
+    case SystemProxyMode::Unchanged:
+        return SystemProxyMode::Unchanged;
+    case SystemProxyMode::ForcedClear:
+    case SystemProxyMode::ForcedChange:
+    case SystemProxyMode::Pac:
+    default:
+        return SystemProxyMode::ForcedClear;
+    }
 }

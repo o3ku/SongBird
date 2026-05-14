@@ -117,6 +117,16 @@ void setProtocolCore(Config& config, ConfigType configType, CoreType coreType)
         static_cast<int>(coreType)});
 }
 
+// VmessItem::coreType is informational; the TUN compat / writer path drives
+// core selection through coreTypeItems. Tests that exercise "Xray with TUN ->
+// emit sing-box sidecar" must therefore configure VMess -> Xray explicitly.
+Config tunCompatXrayBaseConfig()
+{
+    Config config = baseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::Xray);
+    return config;
+}
+
 Config legacyConfig(ConfigType configType = ConfigType::VMess)
 {
     Config config = baseConfig();
@@ -1136,7 +1146,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesTcpNetworkForSingBoxWebSo
 
 void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayForXray()
 {
-    const Config config = baseConfig();
+    const Config config = tunCompatXrayBaseConfig();
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
@@ -1158,7 +1168,7 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
 
 void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayForXrayWithoutLegacyProtect()
 {
-    Config config = baseConfig();
+    Config config = tunCompatXrayBaseConfig();
     config.tunModeItem.enableLegacyProtect = false;
     const VmessItem server = baseServer();
 
@@ -1181,7 +1191,7 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
 
 void ClientConfigWriterTests::generateClientConfigsUsesModernLocalDnsServerForTunCompatSingBoxRelay()
 {
-    const Config config = baseConfig();
+    const Config config = tunCompatXrayBaseConfig();
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
@@ -1202,7 +1212,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesModernLocalDnsServerForTu
 
 void ClientConfigWriterTests::generateClientConfigsMovesTunCompatSniffToRouteAction()
 {
-    const Config config = baseConfig();
+    const Config config = tunCompatXrayBaseConfig();
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
@@ -1229,7 +1239,7 @@ void ClientConfigWriterTests::generateClientConfigsMovesTunCompatSniffToRouteAct
 
 void ClientConfigWriterTests::generateClientConfigsAddsTunCompatRejectRules()
 {
-    const Config config = baseConfig();
+    const Config config = tunCompatXrayBaseConfig();
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
@@ -1271,7 +1281,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunCompatRejectRules()
 
 void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectProcessRules()
 {
-    const Config config = baseConfig();
+    const Config config = tunCompatXrayBaseConfig();
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;

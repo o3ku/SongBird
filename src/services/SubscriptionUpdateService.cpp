@@ -7,6 +7,7 @@
 #include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 #include <QUuid>
@@ -121,6 +122,16 @@ OperationResult SubscriptionUpdateService::updateInternal(Config& config, const 
     QStringList failureLines;
 
     for (const SubItem& item : items) {
+        // Honor cancellation requested by AppBootstrap::waitForBackgroundThreads()
+        // at shutdown so we don't keep downloading subscriptions while the app
+        // is trying to exit. Per-request timeouts already bound the in-flight
+        // call below; this just stops scheduling new ones.
+        QThread* const currentThread = QThread::currentThread();
+        if (currentThread != nullptr && currentThread->isInterruptionRequested()) {
+            failureLines.append(QStringLiteral("Subscription update cancelled by shutdown."));
+            break;
+        }
+
         int currentImportedCount = 0;
         const OperationResult result = updateSingle(config, item, &currentImportedCount, useProxy);
         if (result.success) {

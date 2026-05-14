@@ -8,6 +8,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSaveFile>
+#include <QThread>
 #include <QTimer>
 
 #include <utility>
@@ -109,6 +110,15 @@ OperationResult GeoResourceUpdateService::downloadBytes(const QUrl& url, QByteAr
     QString lastError;
     const QList<QUrl> candidateUrls = buildGitHubMirrorCandidateUrls(url);
     for (const QUrl& candidateUrl : candidateUrls) {
+        // Honor cancellation requested by AppBootstrap::waitForBackgroundThreads()
+        // at shutdown so we stop trying additional mirrors when the app is exiting.
+        QThread* const currentThread = QThread::currentThread();
+        if (currentThread != nullptr && currentThread->isInterruptionRequested()) {
+            return OperationResult::fail(lastError.isEmpty()
+                ? QCoreApplication::translate("GeoResourceUpdateService", "Geo update cancelled by shutdown.")
+                : lastError);
+        }
+
         if (downloadHandler_) {
             const OperationResult result = downloadHandler_(candidateUrl, content);
             if (result.success) {

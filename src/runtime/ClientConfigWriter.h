@@ -22,6 +22,8 @@ public:
 
     explicit ClientConfigWriter(QString customConfigDirectory = {});
 
+    void setExistingCoreTypes(const QList<CoreType>& existingCoreTypes);
+
     OperationResult writeClientConfig(
         const Config& config,
         const VmessItem& server,
@@ -138,6 +140,8 @@ private:
     static bool resolveAllowInsecure(const QString& value, bool fallbackValue);
 
     QString resolveCustomConfigPath(const QString& address) const;
+    QList<CoreType> effectiveExistingCoreTypes() const;
 
     QString customConfigDirectory_;
+    QList<CoreType> existingCoreTypes_;
 };
