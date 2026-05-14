@@ -281,8 +281,12 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QCOMPARE(qrPlaceholder->margin(), 10);
     QVERIFY(qrPlaceholder->height() <= qrPlaceholder->width());
     QTRY_VERIFY(!qrPlaceholder->pixmap().isNull());
-    QVERIFY(qrPlaceholder->pixmap().width() <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
-    QVERIFY(qrPlaceholder->pixmap().height() <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
+    const QPixmap qrPixmap = qrPlaceholder->pixmap();
+    const qreal qrPixmapDpr = qrPixmap.devicePixelRatio() <= 0.0 ? qreal(1.0) : qrPixmap.devicePixelRatio();
+    const int qrPixmapLogicalWidth = qRound(qrPixmap.width() / qrPixmapDpr);
+    const int qrPixmapLogicalHeight = qRound(qrPixmap.height() / qrPixmapDpr);
+    QVERIFY(qrPixmapLogicalWidth <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
+    QVERIFY(qrPixmapLogicalHeight <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
     QCOMPARE(shareLinkLabel->sizePolicy().verticalPolicy(), QSizePolicy::Preferred);
     QCOMPARE(shareLinkLabel->wordWrapMode(), QTextOption::WrapAnywhere);
     QCOMPARE(shareLinkLabel->property("shareLinkBottomPadding").toInt(), 10);
