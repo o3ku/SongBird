@@ -92,6 +92,7 @@ private slots:
     void generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute();
     void generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules();
     void generateClientConfigsDoesNotCreateTunCompatRelayForSingBoxCore();
+    void generateClientConfigsDoesNotCreateTunCompatRelayForProtocolConfiguredSingBoxCore();
     void generateClientConfigsBuildsSingBoxHysteria2Outbound();
     void generateClientConfigsOmitsSingBoxDnsAndDefaultResolverWhenDnsInputsAreEmpty();
     void generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls();
@@ -2679,6 +2680,20 @@ void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxDnsAndDefaultReso
 
     const QJsonObject route = generated.primary.root.value(QStringLiteral("route")).toObject();
     QVERIFY(route.value(QStringLiteral("default_domain_resolver")).isUndefined());
+}
+
+void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayForProtocolConfiguredSingBoxCore()
+{
+    Config config = baseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::SingBox);
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Auto;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    QVERIFY(generated.auxiliary.isEmpty());
 }
 
 void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls()

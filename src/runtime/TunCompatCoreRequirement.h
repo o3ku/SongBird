@@ -10,7 +10,10 @@ inline bool requiresTunCompatSingBoxCore(const Config& config, const VmessItem& 
     if (!config.tunModeItem.enableTun || server.configType == ConfigType::Custom) {
         return false;
     }
-    const CoreType selectedCore = resolveRuntimeCoreType(server.coreType);
+
+    // TUN compatibility must follow the effective runtime core selection, which
+    // can come from per-protocol settings instead of the server's stored core.
+    const CoreType selectedCore = resolvePreferredCoreType(config, server);
     return selectedCore == CoreType::Xray;
 }
 

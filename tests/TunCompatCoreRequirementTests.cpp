@@ -10,6 +10,7 @@ private slots:
     void xrayTunRequiresAuxiliarySingBoxCore();
     void xrayTunWithoutLegacyProtectStillRequiresAuxiliarySingBoxCore();
     void singBoxCoreDoesNotRequireAuxiliarySingBoxCore();
+    void protocolConfiguredSingBoxDoesNotRequireAuxiliarySingBoxCore();
     void httpAutoCoreDoesNotRequireAuxiliarySingBoxCore();
     void customConfigDoesNotRequireAuxiliarySingBoxCore();
     void disabledTunDoesNotRequireAuxiliarySingBoxCore();
@@ -60,6 +61,19 @@ void TunCompatCoreRequirementTests::singBoxCoreDoesNotRequireAuxiliarySingBoxCor
     server.coreType = CoreType::SingBox;
 
     QVERIFY(resolveAuxiliaryTunCompatCoreTypes(baseConfig(), server).isEmpty());
+}
+
+void TunCompatCoreRequirementTests::protocolConfiguredSingBoxDoesNotRequireAuxiliarySingBoxCore()
+{
+    Config config = baseConfig();
+    config.coreTypeItems.append(CoreTypeItem{
+        static_cast<int>(ConfigType::VMess),
+        static_cast<int>(CoreType::SingBox)});
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Auto;
+
+    QVERIFY(resolveAuxiliaryTunCompatCoreTypes(config, server).isEmpty());
 }
 
 void TunCompatCoreRequirementTests::httpAutoCoreDoesNotRequireAuxiliarySingBoxCore()
