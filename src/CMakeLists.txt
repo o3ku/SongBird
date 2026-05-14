@@ -258,6 +258,13 @@ if(WIN32)
     target_link_libraries(qt_v2rayn PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi)
 endif()
 
+if(WIN32 AND MSVC)
+    # The Windows manifest is embedded via resources/v2rayq.rc (RT_MANIFEST).
+    # Disable the linker's auto-generated manifest to avoid LNK4078 conflicts
+    # and to keep dpiAwareness=PerMonitorV2 authoritative.
+    target_link_options(qt_v2rayn PRIVATE /MANIFEST:NO)
+endif()
+
 install(TARGETS qt_v2rayn
     RUNTIME DESTINATION .
 )

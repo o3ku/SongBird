@@ -1,8 +1,10 @@
 #include "ui/qr/QrCodeRenderer.h"
 
 #include <QColor>
+#include <QGuiApplication>
 #include <QImage>
 #include <QPainter>
+#include <QtGlobal>
 
 #include "third_party/qrcodegen/qrcodegen.hpp"
 
@@ -29,9 +31,16 @@ QPixmap QrCodeRenderer::render(const QString& text, int size)
         }
     }
 
-    return QPixmap::fromImage(image.scaled(
-        size,
-        size,
+    const qreal dpr = qMax(
+        qreal(1.0),
+        QGuiApplication::instance() ? qApp->devicePixelRatio() : qreal(1.0));
+    const int physicalSize = qMax(1, qRound(size * dpr));
+
+    QPixmap pixmap = QPixmap::fromImage(image.scaled(
+        physicalSize,
+        physicalSize,
         Qt::KeepAspectRatio,
         Qt::FastTransformation));
+    pixmap.setDevicePixelRatio(dpr);
+    return pixmap;
 }

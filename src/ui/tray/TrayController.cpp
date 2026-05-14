@@ -50,11 +50,16 @@ QPixmap resolveTrayBasePixmap(const QList<RoutingItem>& routings, int currentRou
         baseIcon = loadDefaultTrayIcon();
     }
 
-    QPixmap pixmap = baseIcon.pixmap(TrayIconExtent, TrayIconExtent);
+    const qreal dpr = qMax(qreal(1.0), qApp ? qApp->devicePixelRatio() : qreal(1.0));
+    const QSize logicalSize(TrayIconExtent, TrayIconExtent);
+    const QSize deviceSize = logicalSize * dpr;
+
+    QPixmap pixmap = baseIcon.pixmap(deviceSize);
     if (pixmap.isNull()) {
-        pixmap = QPixmap(TrayIconExtent, TrayIconExtent);
+        pixmap = QPixmap(deviceSize);
         pixmap.fill(Qt::transparent);
     }
+    pixmap.setDevicePixelRatio(dpr);
 
     return pixmap;
 }

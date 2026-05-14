@@ -1,1 +1,5 @@
 IDI_APP_ICON ICON "logo.ico"
+
+#include <winuser.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "v2rayq.exe.manifest"
