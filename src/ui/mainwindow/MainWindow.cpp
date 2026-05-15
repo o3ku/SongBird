@@ -318,16 +318,14 @@ QString resolvePersistedSelectionId(const QString& tabKey)
 QString resolveTabKeyFromSelectionId(const QString& selectionId)
 {
     const QString normalized = selectionId.trimmed();
-    if (normalized.isEmpty() || normalized == QStringLiteral("__all__")) {
-        return QStringLiteral("all");
-    }
-
     if (normalized == QStringLiteral("__unsubscribed__")
         || normalized.compare(QStringLiteral("ungrouped"), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("ungrouped");
     }
 
-    return QStringLiteral("sub:%1").arg(normalized);
+    return normalized.isEmpty()
+        ? QStringLiteral("ungrouped")
+        : QStringLiteral("sub:%1").arg(normalized);
 }
 
 QString resolveSubscriptionIdFromTabKey(const QString& tabKey)
@@ -912,13 +910,7 @@ void MainWindow::restoreUiState(const Config& config)
                     serverTabKey = QStringLiteral("sub:%1").arg(serverSubId);
                 }
 
-                // Check if the preferred tab already shows this server
-                bool serverVisibleInPreferred = (preferredTabKey == QStringLiteral("all"));
-                if (!serverVisibleInPreferred && preferredTabKey == serverTabKey) {
-                    serverVisibleInPreferred = true;
-                }
-
-                if (!serverVisibleInPreferred) {
+                if (preferredTabKey != serverTabKey) {
                     preferredTabKey = serverTabKey;
                 }
             }
@@ -1395,21 +1387,8 @@ void MainWindow::updateServerReorderAvailability()
         return;
     }
 
-    const QHeaderView* header = serverView_->horizontalHeader();
-    const int sortingSection = header->sortIndicatorSection();
-    const bool sourceOrderRestored = sortingSection == ServerTableNoColumn
-        && header->sortIndicatorOrder() == Qt::AscendingOrder;
-    const bool sortingActive = sortingSection >= 0 && !sourceOrderRestored;
-    const bool showingAllVisibleRows = serverFilterModel_->rowCount() == serverModel_->rowCount();
-    const bool enabled = serverFilterEdit_->text().trimmed().isEmpty()
-        && showingAllVisibleRows
-        && !sortingActive;
-    serverView_->setRowsReorderEnabled(enabled);
-    serverView_->setToolTip(enabled
-        ? tr("Drag rows to reorder servers.")
-        : (sortingActive
-                ? tr("Switch back to No. ascending order before dragging to reorder servers.")
-                : tr("Drag reordering is only available when the full server list is visible.")));
+    serverView_->setRowsReorderEnabled(false);
+    serverView_->setToolTip(QString());
 }
 
 void MainWindow::updateSubscriptionFilter()
@@ -1421,12 +1400,10 @@ void MainWindow::updateSubscriptionFilter()
     const QString tabKey = currentSubscriptionTabKey();
     if (tabKey == QStringLiteral("ungrouped")) {
         serverFilterModel_->setSubscriptionFilterMode(ServerFilterProxyModel::SubscriptionFilterMode::Ungrouped);
-    } else if (tabKey.startsWith(QStringLiteral("sub:"))) {
+    } else {
         serverFilterModel_->setSubscriptionFilterMode(
             ServerFilterProxyModel::SubscriptionFilterMode::Subscription,
             tabKey.mid(QStringLiteral("sub:").size()));
-    } else {
-        serverFilterModel_->setSubscriptionFilterMode(ServerFilterProxyModel::SubscriptionFilterMode::All);
     }
 
     updateServerReorderAvailability();
@@ -1448,7 +1425,7 @@ bool MainWindow::isUngroupedSubscriptionTabSelected() const
 QString MainWindow::currentSubscriptionTabKey() const
 {
     if (subscriptionTabBar_ == nullptr || subscriptionTabBar_->currentIndex() < 0) {
-        return QStringLiteral("all");
+        return QStringLiteral("ungrouped");
     }
 
     return subscriptionTabBar_->tabData(subscriptionTabBar_->currentIndex()).toString();
@@ -1569,23 +1546,23 @@ QStringList MainWindow::buildReorderedServerIds(const QList<int>& movedRows, int
         return {};
     }
 
-    QStringList orderedIds;
-    orderedIds.reserve(serverFilterModel_->rowCount());
+    QStringList visibleIds;
+    visibleIds.reserve(serverFilterModel_->rowCount());
     for (int proxyRow = 0; proxyRow < serverFilterModel_->rowCount(); ++proxyRow) {
         const QModelIndex sourceIndex = serverFilterModel_->mapToSource(serverFilterModel_->index(proxyRow, 0));
         const VmessItem* item = serverModel_->itemAt(sourceIndex.row());
         if (item != nullptr && !item->indexId.isEmpty()) {
-            orderedIds.append(item->indexId);
+            visibleIds.append(item->indexId);
         }
     }
 
-    if (orderedIds.isEmpty()) {
+    if (visibleIds.isEmpty()) {
         return {};
     }
 
     QList<int> normalizedRows;
     for (int row : movedRows) {
-        if (row >= 0 && row < orderedIds.size() && !normalizedRows.contains(row)) {
+        if (row >= 0 && row < visibleIds.size() && !normalizedRows.contains(row)) {
             normalizedRows.append(row);
         }
     }
@@ -1595,31 +1572,55 @@ QStringList MainWindow::buildReorderedServerIds(const QList<int>& movedRows, int
 
     std::sort(normalizedRows.begin(), normalizedRows.end());
 
-    QStringList movedIds;
-    movedIds.reserve(normalizedRows.size());
+    QStringList movedVisibleIds;
+    movedVisibleIds.reserve(normalizedRows.size());
     for (int row : normalizedRows) {
-        movedIds.append(orderedIds.at(row));
+        movedVisibleIds.append(visibleIds.at(row));
     }
 
-    QStringList remainingIds = orderedIds;
-    for (const QString& indexId : movedIds) {
-        remainingIds.removeAll(indexId);
+    QStringList reorderedVisibleIds = visibleIds;
+    for (int rowIndex = normalizedRows.size() - 1; rowIndex >= 0; --rowIndex) {
+        reorderedVisibleIds.removeAt(normalizedRows.at(rowIndex));
     }
 
-    int insertionIndex = qBound(0, targetRow, orderedIds.size());
+    int insertionIndex = qBound(0, targetRow, visibleIds.size());
     for (int row : normalizedRows) {
         if (row < insertionIndex) {
             --insertionIndex;
         }
     }
-    insertionIndex = qBound(0, insertionIndex, remainingIds.size());
+    insertionIndex = qBound(0, insertionIndex, reorderedVisibleIds.size());
 
-    QStringList reorderedIds = remainingIds;
-    for (int index = 0; index < movedIds.size(); ++index) {
-        reorderedIds.insert(insertionIndex + index, movedIds.at(index));
+    for (int index = 0; index < movedVisibleIds.size(); ++index) {
+        reorderedVisibleIds.insert(insertionIndex + index, movedVisibleIds.at(index));
     }
 
-    return reorderedIds == orderedIds ? QStringList() : reorderedIds;
+    if (reorderedVisibleIds == visibleIds) {
+        return {};
+    }
+
+    QStringList allIds;
+    allIds.reserve(serverModel_->rowCount());
+    for (int row = 0; row < serverModel_->rowCount(); ++row) {
+        const VmessItem* item = serverModel_->itemAt(row);
+        if (item != nullptr && !item->indexId.isEmpty()) {
+            allIds.append(item->indexId);
+        }
+    }
+
+    if (allIds.isEmpty()) {
+        return {};
+    }
+
+    int visibleIndex = 0;
+    for (int index = 0; index < allIds.size() && visibleIndex < reorderedVisibleIds.size(); ++index) {
+        if (visibleIds.contains(allIds.at(index))) {
+            allIds[index] = reorderedVisibleIds.at(visibleIndex);
+            ++visibleIndex;
+        }
+    }
+
+    return allIds;
 }
 
 void MainWindow::setupUi()

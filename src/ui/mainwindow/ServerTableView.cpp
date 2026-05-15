@@ -65,11 +65,11 @@ public:
 ServerTableView::ServerTableView(QWidget* parent)
     : QTableView(parent)
 {
-    setDragDropMode(QAbstractItemView::DragDrop);
-    setDefaultDropAction(Qt::MoveAction);
+    setDragDropMode(QAbstractItemView::NoDragDrop);
+    setDefaultDropAction(Qt::IgnoreAction);
     setDragDropOverwriteMode(false);
-    setDropIndicatorShown(true);
-    setRowsReorderEnabled(true);
+    setDropIndicatorShown(false);
+    setRowsReorderEnabled(false);
     setMouseTracking(true);
     viewport()->setMouseTracking(true);
     setItemDelegate(new ServerTableItemDelegate(this));
@@ -82,6 +82,9 @@ ServerTableView::ServerTableView(QWidget* parent)
 void ServerTableView::setRowsReorderEnabled(bool enabled)
 {
     rowsReorderEnabled_ = enabled;
+    setDragDropMode(enabled ? QAbstractItemView::DragDrop : QAbstractItemView::NoDragDrop);
+    setDefaultDropAction(enabled ? Qt::MoveAction : Qt::IgnoreAction);
+    setDropIndicatorShown(enabled);
     setDragEnabled(enabled);
     viewport()->setAcceptDrops(enabled);
     setAcceptDrops(enabled);

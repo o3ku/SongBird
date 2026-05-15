@@ -26,6 +26,7 @@
 #include "subscription/ShareUrlBuilder.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/ServerTableView.h"
 #include "ui/models/LogListModel.h"
 #include "ui/qr/QrCodeRenderer.h"
 
@@ -57,6 +58,7 @@ private slots:
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
+    void serverTableDisablesDragReorderingAndKeepsMultiSelection();
     void serverContextMenuKeepsExistingMultiSelection();
     void serverContextMenuSelectsClickedUnselectedRow();
     void serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection();
@@ -109,6 +111,28 @@ Config createServerSelectionConfig()
         createServer(QStringLiteral("server-2"), QStringLiteral("Second"), 2),
         createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3)};
     config.currentIndexId = QStringLiteral("server-1");
+    return config;
+}
+
+Config createGroupedServerSelectionConfig()
+{
+    Config config = createServerSelectionConfig();
+    config.subscriptions = {
+        SubItem{
+            QStringLiteral("sub-1"),
+            QStringLiteral("Group 1"),
+            QStringLiteral("https://example.com/sub-1"),
+            true,
+            QStringLiteral("ua")},
+        SubItem{
+            QStringLiteral("sub-2"),
+            QStringLiteral("Group 2"),
+            QStringLiteral("https://example.com/sub-2"),
+            true,
+            QStringLiteral("ua")}};
+    config.servers[0].subId = QStringLiteral("sub-1");
+    config.servers[1].subId = QStringLiteral("sub-1");
+    config.servers[2].subId = QStringLiteral("sub-2");
     return config;
 }
 
@@ -750,6 +774,42 @@ void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted(
     QVERIFY(currentIndex.isValid());
     QCOMPARE(currentIndex.data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
     QVERIFY(serverView->selectionModel()->isRowSelected(currentIndex.row(), QModelIndex()));
+}
+
+void MainWindowTests::serverTableDisablesDragReorderingAndKeepsMultiSelection()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCOMPARE(serverView->model()->rowCount(), 2);
+    QVERIFY(!serverView->rowsReorderEnabled());
+    QVERIFY(serverView->toolTip().isEmpty());
+
+    serverView->selectionModel()->select(
+        serverView->model()->index(0, 0),
+        QItemSelectionModel::Select | QItemSelectionModel::Rows);
+    serverView->selectionModel()->select(
+        serverView->model()->index(1, 0),
+        QItemSelectionModel::Select | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    QCOMPARE(serverView->selectionModel()->selectedRows().size(), 2);
+    QVERIFY(!serverView->moveSelectedRowsTo(2));
+
+    serverFilterEdit->setText(QStringLiteral("First"));
+    QCoreApplication::processEvents();
+    QVERIFY(!serverView->rowsReorderEnabled());
+    QVERIFY(serverView->toolTip().isEmpty());
 }
 
 void MainWindowTests::serverContextMenuKeepsExistingMultiSelection()
