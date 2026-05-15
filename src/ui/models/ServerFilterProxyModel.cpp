@@ -256,8 +256,6 @@ bool ServerFilterProxyModel::matchesSubscriptionFilter(const QString& subscripti
     const QString trimmedSubscriptionId = subscriptionId.trimmed();
 
     switch (subscriptionFilterMode_) {
-    case SubscriptionFilterMode::All:
-        return true;
     case SubscriptionFilterMode::Ungrouped:
         return trimmedSubscriptionId.isEmpty() || !knownSubscriptionIds_.contains(trimmedSubscriptionId);
     case SubscriptionFilterMode::Subscription:

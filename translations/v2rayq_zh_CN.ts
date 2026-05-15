@@ -88,8 +88,6 @@ Restart as administrator now?</source>
     <message><source>Hide QR</source><translation>隐藏二维码</translation></message>
     <message><source>Show QR</source><translation>显示二维码</translation></message>
     <message><source>Drag rows to reorder servers.</source><translation>拖动行以调整服务器顺序。</translation></message>
-    <message><source>Switch to the All tab and clear the filter before dragging to reorder servers.</source><translation>请先切换到“全部”标签并清空筛选，再拖动调整服务器顺序。</translation></message>
-    <message><source>Switch to the All tab, clear the filter, and reset sorting before dragging to reorder servers.</source><translation>请先切换到“全部”标签、清空筛选并重置排序，再拖动调整服务器顺序。</translation></message>
     <message><source>Subscription</source><translation>订阅</translation></message>
     <message><source>All</source><translation>全部</translation></message>
     <message><source>Ungrouped</source><translation>未分组</translation></message>
@@ -214,7 +212,7 @@ Restart as administrator now?</source>
     <message><source>Delete Subscription</source><translation>删除订阅</translation></message>
     <message><source>Delete the selected subscription and all servers inside it?</source><translation>删除所选订阅及其中的所有服务器吗？</translation></message>
     <message><source>DNS Settings</source><translation>DNS 设置</translation></message>
-    <message><source>Drag reordering is only available when the full server list is visible.</source><translation>仅在显示完整服务器列表时可拖动调整顺序。</translation></message>
+    <message><source>Clear the server filter before dragging to reorder servers.</source><translation>拖动调整服务器顺序前，请先清空服务器筛选。</translation></message>
     <message><source>Hide</source><translation>隐藏</translation></message>
     <message><source>No available server. Add or import a server first.</source><translation>没有可用服务器。请先添加或导入服务器。</translation></message>
     <message><source>No compatible %1 core is installed for the active server "%2".</source><translation>当前活动服务器“%2”未安装兼容的 %1 核心。</translation></message>

@@ -9,8 +9,7 @@ class ServerFilterProxyModel final : public QSortFilterProxyModel {
 
 public:
     enum class SubscriptionFilterMode {
-        All = 0,
-        Ungrouped,
+        Ungrouped = 0,
         Subscription
     };
 
@@ -31,6 +30,6 @@ private:
     bool matchesTextFilter(int sourceRow, const QModelIndex& sourceParent) const;
 
     QSet<QString> knownSubscriptionIds_;
-    SubscriptionFilterMode subscriptionFilterMode_ = SubscriptionFilterMode::All;
+    SubscriptionFilterMode subscriptionFilterMode_ = SubscriptionFilterMode::Ungrouped;
     QString subscriptionId_;
 };
