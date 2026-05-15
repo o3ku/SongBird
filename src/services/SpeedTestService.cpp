@@ -34,9 +34,8 @@ namespace {
 constexpr int kRuntimeStartupTimeoutMs = 10000;
 constexpr int kRuntimeRequestTimeoutMs = 8000;
 constexpr int kUrlTestMaxConcurrency = 10;
-constexpr int kUrlTestMaxStartupConcurrency = 4;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
-const QString kDefaultUrlTestUrl = QStringLiteral("https://www.gstatic.com/generate_204");
+const QString kDefaultUrlTestUrl = QStringLiteral("https://www.google.com/generate_204");
 
 QString describeServer(const VmessItem& server)
 {
@@ -235,30 +234,9 @@ QString runUrlTest(
         return QStringLiteral("Core missing");
     }
 
-    while (!cancelled.load() && !SpeedTestServiceInternal::tryAcquireStartupSlot(kUrlTestMaxStartupConcurrency)) {
-        QThread::msleep(25);
-    }
     if (cancelled.load()) {
         return QStringLiteral("Cancelled");
     }
-    struct ScopedStartupSlotRelease
-    {
-        bool active = true;
-
-        void release()
-        {
-            if (!active) {
-                return;
-            }
-            SpeedTestServiceInternal::releaseStartupSlot();
-            active = false;
-        }
-
-        ~ScopedStartupSlotRelease()
-        {
-            release();
-        }
-    } startupSlot;
     const int socksPort = takeAvailablePortBase();
     if (socksPort <= 0) {
         return QStringLiteral("Port busy");
@@ -373,8 +351,6 @@ QString runUrlTest(
             ? QStringLiteral("Proxy startup timeout (no core output)")
             : QStringLiteral("Proxy startup timeout: %1").arg(normalizeErrorText(output));
     }
-    startupSlot.release();
-
     const QString url = defaultUrlTestUrl(item.runtimeConfig);
     log(QStringLiteral("URL Test proxy ready | %1 | type=%2 | port=%3 | url=%4")
             .arg(serverName)
@@ -392,11 +368,32 @@ QString runUrlTest(
     timer.start();
 
     bool timedOut = false;
+    bool headersObserved = false;
+    int headerStatusCode = 0;
+    qint64 headerElapsedMs = -1;
     QEventLoop loop;
     QTimer timeoutTimer;
     timeoutTimer.setSingleShot(true);
 
     QNetworkReply* reply = manager.get(request);
+    QObject::connect(reply, &QNetworkReply::metaDataChanged, &loop, [&]() {
+        if (headersObserved) {
+            return;
+        }
+
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (statusCode == 0) {
+            return;
+        }
+
+        headersObserved = true;
+        headerStatusCode = statusCode;
+        headerElapsedMs = timer.elapsed();
+        if (statusCode == 200 || statusCode == 204) {
+            reply->abort();
+            loop.quit();
+        }
+    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         timedOut = true;
@@ -414,16 +411,11 @@ QString runUrlTest(
 
     stopRuntime();
 
-    const bool remoteClosed = error == QNetworkReply::RemoteHostClosedError
-        || errorText.contains(QStringLiteral("Connection closed"), Qt::CaseInsensitive);
-
-    if (!timedOut && (statusCode == 200 || statusCode == 204 || remoteClosed)) {
-        return formatLatencyResult(timer.elapsed());
+    if (!timedOut && headersObserved && (headerStatusCode == 200 || headerStatusCode == 204)) {
+        return formatLatencyResult(headerElapsedMs);
     }
 
-    if (!timedOut
-        && (error == QNetworkReply::NoError || error == QNetworkReply::OperationCanceledError)
-        && statusCode == 0) {
+    if (!timedOut && (statusCode == 200 || statusCode == 204)) {
         return formatLatencyResult(timer.elapsed());
     }
 

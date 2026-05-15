@@ -6,15 +6,14 @@ class SpeedTestServiceInternalTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void detectReadyProxyPrefersSocksWhenBothPortsAreReady();
-    void detectReadyProxyAcceptsHttpWhenSocksIsNotReady();
+    void detectReadyProxyPrefersHttpWhenBothPortsAreReady();
+    void detectReadyProxyAcceptsSocksWhenHttpIsNotReady();
     void detectReadyProxyReturnsNulloptWhenNoPortIsReady();
     void reserveProxyPortsRejectsOverlapUntilReleased();
-    void startupSlotsEnforceConfiguredLimit();
     void makeUrlTestRuntimeConfigDisablesRoutingAndTun();
 };
 
-void SpeedTestServiceInternalTests::detectReadyProxyPrefersSocksWhenBothPortsAreReady()
+void SpeedTestServiceInternalTests::detectReadyProxyPrefersHttpWhenBothPortsAreReady()
 {
     const auto readyProxy = SpeedTestServiceInternal::detectReadyProxy(
         1080,
@@ -22,22 +21,22 @@ void SpeedTestServiceInternalTests::detectReadyProxyPrefersSocksWhenBothPortsAre
         [](int) { return true; });
 
     QVERIFY(readyProxy.has_value());
-    QCOMPARE(readyProxy->type, QNetworkProxy::Socks5Proxy);
-    QCOMPARE(readyProxy->port, 1080);
-    QCOMPARE(readyProxy->name, QStringLiteral("socks"));
+    QCOMPARE(readyProxy->type, QNetworkProxy::HttpProxy);
+    QCOMPARE(readyProxy->port, 1081);
+    QCOMPARE(readyProxy->name, QStringLiteral("http"));
 }
 
-void SpeedTestServiceInternalTests::detectReadyProxyAcceptsHttpWhenSocksIsNotReady()
+void SpeedTestServiceInternalTests::detectReadyProxyAcceptsSocksWhenHttpIsNotReady()
 {
     const auto readyProxy = SpeedTestServiceInternal::detectReadyProxy(
         1080,
         1081,
-        [](int port) { return port == 1081; });
+        [](int port) { return port == 1080; });
 
     QVERIFY(readyProxy.has_value());
-    QCOMPARE(readyProxy->type, QNetworkProxy::HttpProxy);
-    QCOMPARE(readyProxy->port, 1081);
-    QCOMPARE(readyProxy->name, QStringLiteral("http"));
+    QCOMPARE(readyProxy->type, QNetworkProxy::Socks5Proxy);
+    QCOMPARE(readyProxy->port, 1080);
+    QCOMPARE(readyProxy->name, QStringLiteral("socks"));
 }
 
 void SpeedTestServiceInternalTests::detectReadyProxyReturnsNulloptWhenNoPortIsReady()
@@ -62,22 +61,6 @@ void SpeedTestServiceInternalTests::reserveProxyPortsRejectsOverlapUntilReleased
     QVERIFY(SpeedTestServiceInternal::reserveProxyPorts(54911, 54912));
 
     SpeedTestServiceInternal::releaseProxyPorts(54911, 54912);
-}
-
-void SpeedTestServiceInternalTests::startupSlotsEnforceConfiguredLimit()
-{
-    SpeedTestServiceInternal::resetGlobalState();
-
-    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
-    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
-    QVERIFY(!SpeedTestServiceInternal::tryAcquireStartupSlot(2));
-
-    SpeedTestServiceInternal::releaseStartupSlot();
-
-    QVERIFY(SpeedTestServiceInternal::tryAcquireStartupSlot(2));
-
-    SpeedTestServiceInternal::releaseStartupSlot();
-    SpeedTestServiceInternal::releaseStartupSlot();
 }
 
 void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigDisablesRoutingAndTun()

@@ -1,8 +1,11 @@
 #include "ui/tray/TrayController.h"
 
+#include "common/AppPlatform.h"
+
 #include <QAction>
 #include <QApplication>
 #include <QActionGroup>
+#include <QCoreApplication>
 #include <QColor>
 #include <QFileInfo>
 #include <QIcon>
@@ -17,6 +20,11 @@
 namespace {
 
 constexpr int TrayIconExtent = 64;
+
+QString trayText(const char* sourceText)
+{
+    return QCoreApplication::translate("TrayController", sourceText);
+}
 
 QIcon loadDefaultTrayIcon()
 {
@@ -104,76 +112,27 @@ bool TrayController::initialize()
 
     trayMenu_ = new QMenu(mainWindow_);
     trayMenu_->setObjectName(QStringLiteral("trayMenu"));
-    currentServerAction_ = trayMenu_->addAction(QStringLiteral("Current: None"));
+    currentServerAction_ = trayMenu_->addAction(trayText("Current: %1").arg(noServerPlaceholderText()));
     currentServerAction_->setObjectName(QStringLiteral("trayCurrentServerAction"));
     currentServerAction_->setEnabled(false);
     trayMenu_->addSeparator();
-    serversMenu_ = trayMenu_->addMenu(QStringLiteral("Switch Server"));
+    serversMenu_ = trayMenu_->addMenu(trayText("Switch Server"));
     serversMenu_->setObjectName(QStringLiteral("trayServersMenu"));
-    routingsMenu_ = trayMenu_->addMenu(QStringLiteral("Switch Routing"));
+    routingsMenu_ = trayMenu_->addMenu(trayText("Switch Routing"));
     routingsMenu_->setObjectName(QStringLiteral("trayRoutingsMenu"));
     trayMenu_->addSeparator();
-    showHideAction_ = trayMenu_->addAction(QStringLiteral("Hide Window"));
-    showHideAction_->setObjectName(QStringLiteral("trayShowHideAction"));
-    startCoreAction_ = trayMenu_->addAction(QStringLiteral("Start Core"));
+    startCoreAction_ = trayMenu_->addAction(trayText("Start Core"));
     startCoreAction_->setObjectName(QStringLiteral("trayStartCoreAction"));
-    stopCoreAction_ = trayMenu_->addAction(QStringLiteral("Stop Core"));
+    stopCoreAction_ = trayMenu_->addAction(trayText("Stop Core"));
     stopCoreAction_->setObjectName(QStringLiteral("trayStopCoreAction"));
     trayMenu_->addSeparator();
-    updateSubscriptionsAction_ = trayMenu_->addAction(QStringLiteral("Update Subscriptions"));
-    updateSubscriptionsAction_->setObjectName(QStringLiteral("trayUpdateSubscriptionsAction"));
-    importClipboardAction_ = trayMenu_->addAction(QStringLiteral("Import Clipboard"));
-    importClipboardAction_->setObjectName(QStringLiteral("trayImportClipboardAction"));
-    reloadConfigAction_ = trayMenu_->addAction(QStringLiteral("Reload Config"));
-    reloadConfigAction_->setObjectName(QStringLiteral("trayReloadConfigAction"));
-    trayMenu_->addSeparator();
-    systemProxyMenu_ = trayMenu_->addMenu(QStringLiteral("System Proxy"));
-    systemProxyMenu_->setObjectName(QStringLiteral("traySystemProxyMenu"));
-    auto* systemProxyGroup = new QActionGroup(systemProxyMenu_);
-    systemProxyGroup->setExclusive(true);
-    clearProxyAction_ = systemProxyMenu_->addAction(QStringLiteral("Clear"));
-    clearProxyAction_->setObjectName(QStringLiteral("trayClearProxyAction"));
-    clearProxyAction_->setCheckable(true);
-    systemProxyGroup->addAction(clearProxyAction_);
-    globalProxyAction_ = systemProxyMenu_->addAction(QStringLiteral("Global"));
-    globalProxyAction_->setObjectName(QStringLiteral("trayGlobalProxyAction"));
-    globalProxyAction_->setCheckable(true);
-    systemProxyGroup->addAction(globalProxyAction_);
-    unchangedProxyAction_ = systemProxyMenu_->addAction(QStringLiteral("Unchanged"));
-    unchangedProxyAction_->setObjectName(QStringLiteral("trayUnchangedProxyAction"));
-    unchangedProxyAction_->setCheckable(true);
-    systemProxyGroup->addAction(unchangedProxyAction_);
-    pacProxyAction_ = systemProxyMenu_->addAction(QStringLiteral("PAC"));
-    pacProxyAction_->setObjectName(QStringLiteral("trayPacProxyAction"));
-    pacProxyAction_->setCheckable(true);
-    systemProxyGroup->addAction(pacProxyAction_);
-    toggleAutoRunAction_ = trayMenu_->addAction(QStringLiteral("Enable Auto Run"));
-    toggleAutoRunAction_->setObjectName(QStringLiteral("trayToggleAutoRunAction"));
-    trayMenu_->addSeparator();
-    quitAction_ = trayMenu_->addAction(QStringLiteral("Quit"));
+    quitAction_ = trayMenu_->addAction(trayText("Quit"));
     quitAction_->setObjectName(QStringLiteral("trayQuitAction"));
 
     trayIcon_->setContextMenu(trayMenu_);
 
-    connect(showHideAction_, &QAction::triggered, this, &TrayController::toggleMainWindow);
     connect(startCoreAction_, &QAction::triggered, this, &TrayController::startCoreRequested);
     connect(stopCoreAction_, &QAction::triggered, this, &TrayController::stopCoreRequested);
-    connect(updateSubscriptionsAction_, &QAction::triggered, this, &TrayController::updateSubscriptionsRequested);
-    connect(importClipboardAction_, &QAction::triggered, this, &TrayController::importFromClipboardRequested);
-    connect(reloadConfigAction_, &QAction::triggered, this, &TrayController::reloadConfigRequested);
-    connect(clearProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeRequested(toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
-    });
-    connect(globalProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeRequested(toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
-    });
-    connect(unchangedProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeRequested(toLegacySystemProxyModeValue(SystemProxyMode::Unchanged));
-    });
-    connect(pacProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeRequested(toLegacySystemProxyModeValue(SystemProxyMode::Pac));
-    });
-    connect(toggleAutoRunAction_, &QAction::triggered, this, &TrayController::toggleAutoRunRequested);
     connect(quitAction_, &QAction::triggered, this, &TrayController::quitRequested);
     connect(trayMenu_, &QMenu::aboutToShow, this, &TrayController::updateMenuText);
     connect(trayIcon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
@@ -224,14 +183,6 @@ void TrayController::setSystemProxyState(int mode, bool enabled)
     systemProxyMode_ = normalizedMode;
     systemProxyApplied_ = enabled;
     updateMenuText();
-}
-
-void TrayController::setProxyEnabled(bool enabled)
-{
-    setSystemProxyState(
-        enabled ? toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange)
-                : toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear),
-        enabled);
 }
 
 void TrayController::setBackgroundTaskRunning(bool running)
@@ -375,14 +326,11 @@ void TrayController::updateMenuText()
     }
 
     if (currentServerAction_ != nullptr) {
-        currentServerAction_->setText(QStringLiteral("Current: %1").arg(
-            currentServerName_));
-    }
-
-    if (showHideAction_ != nullptr) {
-        showHideAction_->setText(mainWindow_->isVisible()
-            ? QStringLiteral("Hide Window")
-            : QStringLiteral("Show Window"));
+        const QString currentServerText = currentServerName_.trimmed().isEmpty()
+            ? noServerPlaceholderText()
+            : currentServerName_.trimmed();
+        currentServerAction_->setText(trayText("Current: %1").arg(
+            currentServerText));
     }
 
     if (startCoreAction_ != nullptr) {
@@ -391,36 +339,6 @@ void TrayController::updateMenuText()
 
     if (stopCoreAction_ != nullptr) {
         stopCoreAction_->setEnabled(coreRunning_ && !coreTransitionPending_);
-    }
-
-    if (clearProxyAction_ != nullptr) {
-        clearProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::ForcedClear);
-    }
-
-    if (globalProxyAction_ != nullptr) {
-        globalProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::ForcedChange);
-    }
-
-    if (unchangedProxyAction_ != nullptr) {
-        unchangedProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::Unchanged);
-    }
-
-    if (pacProxyAction_ != nullptr) {
-        pacProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::Pac);
-    }
-
-    if (toggleAutoRunAction_ != nullptr) {
-        toggleAutoRunAction_->setText(autoRunEnabled_
-            ? QStringLiteral("Disable Auto Run")
-            : QStringLiteral("Enable Auto Run"));
-    }
-
-    if (updateSubscriptionsAction_ != nullptr) {
-        updateSubscriptionsAction_->setEnabled(!backgroundTaskRunning_);
-    }
-
-    if (importClipboardAction_ != nullptr) {
-        importClipboardAction_->setEnabled(!backgroundTaskRunning_);
     }
 
     if (serversMenu_ != nullptr) {
@@ -445,16 +363,16 @@ void TrayController::updateToolTip()
     QString proxyText = systemProxyModeDisplayName(systemProxyMode_);
     const bool expectedApplied = expectedSystemProxyEnabled(systemProxyMode_);
     if (systemProxyMode_ != SystemProxyMode::Unchanged && systemProxyApplied_ != expectedApplied) {
-        proxyText += QStringLiteral(" (not applied)");
+        proxyText += trayText(" (not applied)");
     }
 
-    QString tooltip = QStringLiteral("v2rayq | %1 | Core %2 | Proxy %3 | Auto Run %4")
-                          .arg(currentServerName_.isEmpty() ? QStringLiteral("No default server") : currentServerName_)
-                          .arg(coreRunning_ ? QStringLiteral("Running") : QStringLiteral("Stopped"))
-                          .arg(proxyText)
-                          .arg(autoRunEnabled_ ? QStringLiteral("Enabled") : QStringLiteral("Disabled"));
+    QString tooltip = QStringLiteral("v2rayq | %1 | %2 | %3 | %4")
+                          .arg(currentServerName_.isEmpty() ? trayText("No default server") : currentServerName_)
+                          .arg(trayText("Core %1").arg(coreRunning_ ? trayText("Running") : trayText("Stopped")))
+                          .arg(trayText("Proxy %1").arg(proxyText))
+                          .arg(trayText("Auto Run %1").arg(autoRunEnabled_ ? trayText("Enabled") : trayText("Disabled")));
     if (!routingSummary_.isEmpty()) {
-        tooltip += QStringLiteral(" | Routing %1").arg(routingSummary_);
+        tooltip += QStringLiteral(" | ") + trayText("Routing %1").arg(routingSummary_);
     }
     if (!statisticsSummary_.isEmpty()) {
         tooltip += QStringLiteral(" | ") + statisticsSummary_;
@@ -463,7 +381,7 @@ void TrayController::updateToolTip()
         tooltip += QStringLiteral(" | ") + trafficSummary_;
     }
     if (backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()) {
-        tooltip += QStringLiteral(" | Task %1").arg(backgroundTaskDescription_);
+        tooltip += QStringLiteral(" | ") + trayText("Task %1").arg(backgroundTaskDescription_);
     }
     trayIcon_->setToolTip(tooltip);
 }
@@ -503,7 +421,7 @@ void TrayController::rebuildServerMenu()
 
     serversMenu_->clear();
     if (servers_.isEmpty()) {
-        QAction* placeholder = serversMenu_->addAction(QStringLiteral("No servers"));
+        QAction* placeholder = serversMenu_->addAction(trayText("No servers"));
         placeholder->setEnabled(false);
         return;
     }
@@ -530,7 +448,7 @@ void TrayController::rebuildServerMenu()
     if (effectiveLimit < servers_.size()) {
         serversMenu_->addSeparator();
         QAction* remainingAction = serversMenu_->addAction(
-            QStringLiteral("%1 more server(s) hidden").arg(servers_.size() - effectiveLimit));
+            trayText("%1 more server(s) hidden").arg(servers_.size() - effectiveLimit));
         remainingAction->setEnabled(false);
     }
 }
@@ -548,7 +466,7 @@ void TrayController::rebuildRoutingMenu()
     }
 
     if (routings_.isEmpty()) {
-        QAction* placeholder = routingsMenu_->addAction(QStringLiteral("No routing entries"));
+        QAction* placeholder = routingsMenu_->addAction(trayText("No routing entries"));
         placeholder->setEnabled(false);
         return;
     }
@@ -580,13 +498,13 @@ QString TrayController::describeServer(const VmessItem& item)
         return QStringLiteral("%1:%2").arg(item.address.trimmed()).arg(item.port);
     }
 
-    return item.address.trimmed().isEmpty() ? QStringLiteral("Unnamed Server") : item.address.trimmed();
+    return item.address.trimmed().isEmpty() ? trayText("Unnamed Server") : item.address.trimmed();
 }
 
 QString TrayController::describeRouting(const RoutingItem& item, int index)
 {
     const QString remarks = item.remarks.trimmed();
     return remarks.isEmpty()
-        ? QStringLiteral("Routing %1").arg(index + 1)
+        ? trayText("Routing %1").arg(index + 1)
         : remarks;
 }

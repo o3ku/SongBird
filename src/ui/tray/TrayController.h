@@ -24,7 +24,6 @@ public:
     void setCurrentServerName(const QString& name);
     void setCoreRunning(bool enabled, bool pending = false);
     void setSystemProxyState(int mode, bool enabled);
-    void setProxyEnabled(bool enabled);
     void setAutoRunEnabled(bool enabled);
     void setRoutingSummary(const QString& value, bool advancedEnabled);
     void setStatisticsSummary(const QString& value);
@@ -38,11 +37,6 @@ public:
 signals:
     void startCoreRequested();
     void stopCoreRequested();
-    void updateSubscriptionsRequested();
-    void importFromClipboardRequested();
-    void systemProxyModeRequested(int mode);
-    void toggleAutoRunRequested();
-    void reloadConfigRequested();
     void defaultServerRequested(const QString& indexId);
     void routingRequested(int index);
     void quitRequested();
@@ -67,18 +61,8 @@ private:
     QAction* currentServerAction_ = nullptr;
     QMenu* serversMenu_ = nullptr;
     QMenu* routingsMenu_ = nullptr;
-    QAction* showHideAction_ = nullptr;
     QAction* startCoreAction_ = nullptr;
     QAction* stopCoreAction_ = nullptr;
-    QAction* updateSubscriptionsAction_ = nullptr;
-    QAction* importClipboardAction_ = nullptr;
-    QAction* reloadConfigAction_ = nullptr;
-    QMenu* systemProxyMenu_ = nullptr;
-    QAction* clearProxyAction_ = nullptr;
-    QAction* globalProxyAction_ = nullptr;
-    QAction* unchangedProxyAction_ = nullptr;
-    QAction* pacProxyAction_ = nullptr;
-    QAction* toggleAutoRunAction_ = nullptr;
     QAction* quitAction_ = nullptr;
     QString currentServerName_;
     QString routingSummary_;

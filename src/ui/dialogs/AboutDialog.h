@@ -11,13 +11,17 @@ class AboutDialog final : public QDialog {
 public:
     explicit AboutDialog(QWidget* parent = nullptr);
 
+    void setRepoUrl(const QString& repoUrl);
+    void setReleaseDate(const QString& releaseDate);
     void setVersion(const QString& version);
     void setConfigPath(const QString& configPath);
 
 private:
     void setupUi();
 
+    QLabel* repoUrlValueLabel_ = nullptr;
     QLabel* versionValueLabel_ = nullptr;
+    QLabel* releaseDateValueLabel_ = nullptr;
     QLabel* configPathValueLabel_ = nullptr;
     QDialogButtonBox* buttonBox_ = nullptr;
 };

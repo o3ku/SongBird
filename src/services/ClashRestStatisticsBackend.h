@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
+
 #include "common/OperationResult.h"
 
 class QNetworkAccessManager;
@@ -16,7 +18,7 @@ public:
     explicit ClashRestStatisticsBackend(QObject* parent = nullptr);
     ~ClashRestStatisticsBackend() override;
 
-    bool isRunning() const { return running_; }
+    bool isRunning() const { return running_.load(); }
     OperationResult start(const QString& host, int port, int refreshRateSeconds);
     void stop();
 
@@ -32,9 +34,9 @@ private:
     QNetworkAccessManager* networkManager_ = nullptr;
     QTimer* timer_ = nullptr;
     QString endpoint_;
-    bool running_ = false;
-    bool available_ = false;
-    bool hasBaseline_ = false;
-    quint64 baselineUp_ = 0;
-    quint64 baselineDown_ = 0;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> available_{false};
+    std::atomic<bool> hasBaseline_{false};
+    std::atomic<quint64> baselineUp_{0};
+    std::atomic<quint64> baselineDown_{0};
 };

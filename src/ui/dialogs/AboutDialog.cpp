@@ -1,5 +1,7 @@
 #include "ui/dialogs/AboutDialog.h"
 
+#include "common/DialogUtils.h"
+
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -9,6 +11,25 @@ AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
 {
     setupUi();
+}
+
+void AboutDialog::setRepoUrl(const QString& repoUrl)
+{
+    if (repoUrlValueLabel_ != nullptr) {
+        if (repoUrl.trimmed().isEmpty()) {
+            repoUrlValueLabel_->setText(tr("Unavailable"));
+        } else {
+            repoUrlValueLabel_->setText(
+                QStringLiteral("<a href=\"%1\">%1</a>").arg(repoUrl.trimmed()));
+        }
+    }
+}
+
+void AboutDialog::setReleaseDate(const QString& releaseDate)
+{
+    if (releaseDateValueLabel_ != nullptr) {
+        releaseDateValueLabel_->setText(releaseDate.trimmed().isEmpty() ? tr("Unknown") : releaseDate.trimmed());
+    }
 }
 
 void AboutDialog::setVersion(const QString& version)
@@ -34,14 +55,23 @@ void AboutDialog::setupUi()
     titleLabel->setObjectName(QStringLiteral("aboutTitleLabel"));
 
     auto* summaryLabel = new QLabel(
-        tr("A pure Qt/C++ prototype focused on legacy-compatible v2rayN workflows."),
+        tr("A C++ fork of v2rayN with improvements"),
         this);
     summaryLabel->setObjectName(QStringLiteral("aboutSummaryLabel"));
     summaryLabel->setWordWrap(true);
 
+    repoUrlValueLabel_ = new QLabel(tr("Unavailable"), this);
+    repoUrlValueLabel_->setObjectName(QStringLiteral("aboutRepoUrlValueLabel"));
+    repoUrlValueLabel_->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    repoUrlValueLabel_->setOpenExternalLinks(true);
+
     versionValueLabel_ = new QLabel(tr("Unknown"), this);
     versionValueLabel_->setObjectName(QStringLiteral("aboutVersionValueLabel"));
     versionValueLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    releaseDateValueLabel_ = new QLabel(tr("Unknown"), this);
+    releaseDateValueLabel_->setObjectName(QStringLiteral("aboutReleaseDateValueLabel"));
+    releaseDateValueLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
     configPathValueLabel_ = new QLabel(tr("Unavailable"), this);
     configPathValueLabel_->setObjectName(QStringLiteral("aboutConfigPathValueLabel"));
@@ -49,10 +79,13 @@ void AboutDialog::setupUi()
     configPathValueLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
     auto* formLayout = new QFormLayout();
+    formLayout->addRow(tr("Github"), repoUrlValueLabel_);
     formLayout->addRow(tr("Version"), versionValueLabel_);
+    formLayout->addRow(tr("Release Date"), releaseDateValueLabel_);
     formLayout->addRow(tr("Config Path"), configPathValueLabel_);
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok, this);
+    DialogUtils::localizeStandardDialogButtonBox(buttonBox_);
 
     auto* rootLayout = new QVBoxLayout(this);
     rootLayout->addWidget(titleLabel);

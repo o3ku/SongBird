@@ -49,6 +49,21 @@ inline bool expectedSystemProxyEnabled(SystemProxyMode mode)
     return mode == SystemProxyMode::ForcedChange || mode == SystemProxyMode::Pac;
 }
 
+inline bool shouldAdoptManagedSystemProxyOnStartup(
+    SystemProxyMode configuredMode,
+    bool persistedProxyEnabled,
+    bool systemProxyEnabled)
+{
+    return expectedSystemProxyEnabled(configuredMode)
+        && persistedProxyEnabled
+        && systemProxyEnabled;
+}
+
+inline bool shouldClearManagedSystemProxy(bool managedSystemProxyActive, bool systemProxyEnabled)
+{
+    return managedSystemProxyActive && systemProxyEnabled;
+}
+
 inline SystemProxyMode resolveSystemProxyModeOnExit(SystemProxyMode currentMode, bool windowsShutdown)
 {
     if (windowsShutdown) {

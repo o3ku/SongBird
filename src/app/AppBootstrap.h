@@ -187,7 +187,7 @@ private:
     void syncBackgroundTaskState();
     void trackBackgroundThread(QThread* thread);
     void waitForBackgroundThreads();
-    void stopAuxiliaryCore();
+    void stopAuxiliaryCore(bool immediate = false);
     OperationResult removeStaleTunAdapterIfPresent() const;
     void removeStaleTunAdapterAsync(const std::function<void(const OperationResult&)>& completion);
     void removeStaleTunAdapter();
@@ -239,7 +239,9 @@ private:
     bool coreStopPending_ = false;
     bool coreReady_ = false;
     bool coreTunEnabledAtStart_ = false;
+    bool managedSystemProxyActive_ = false;
     bool tunCleanupActive_ = false;
+    bool skipTunCleanupOnNextCoreExit_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;

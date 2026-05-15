@@ -30,10 +30,10 @@ OperationResult ClashRestStatisticsBackend::start(const QString& host, int port,
     const QString trimmedHost = host.trimmed().isEmpty() ? QStringLiteral("127.0.0.1") : host.trimmed();
     endpoint_ = QStringLiteral("http://%1:%2/connections").arg(trimmedHost).arg(port);
 
-    running_ = true;
-    hasBaseline_ = false;
-    baselineUp_ = 0;
-    baselineDown_ = 0;
+    running_.store(true);
+    hasBaseline_.store(false);
+    baselineUp_.store(0);
+    baselineDown_.store(0);
 
     const int intervalMs = qMax(1, refreshRateSeconds) * 1000;
     timer_->start(intervalMs);
@@ -47,16 +47,16 @@ void ClashRestStatisticsBackend::stop()
     if (timer_ != nullptr) {
         timer_->stop();
     }
-    running_ = false;
-    hasBaseline_ = false;
-    baselineUp_ = 0;
-    baselineDown_ = 0;
+    running_.store(false);
+    hasBaseline_.store(false);
+    baselineUp_.store(0);
+    baselineDown_.store(0);
     updateAvailability(false);
 }
 
 void ClashRestStatisticsBackend::poll()
 {
-    if (!running_ || endpoint_.isEmpty() || networkManager_ == nullptr) {
+    if (!running_.load() || endpoint_.isEmpty() || networkManager_ == nullptr) {
         return;
     }
 
@@ -77,7 +77,7 @@ void ClashRestStatisticsBackend::handleReply(QNetworkReply* reply)
     }
     reply->deleteLater();
 
-    if (!running_) {
+    if (!running_.load()) {
         return;
     }
 
@@ -94,28 +94,30 @@ void ClashRestStatisticsBackend::handleReply(QNetworkReply* reply)
     }
 
     const QJsonObject object = document.object();
-    const quint64 totalUp = static_cast<quint64>(object.value(QStringLiteral("uploadTotal")).toDouble(0.0));
-    const quint64 totalDown = static_cast<quint64>(object.value(QStringLiteral("downloadTotal")).toDouble(0.0));
+    const quint64 totalUp = static_cast<quint64>(object.value(QStringLiteral("uploadTotal")).toVariant().toLongLong());
+    const quint64 totalDown = static_cast<quint64>(object.value(QStringLiteral("downloadTotal")).toVariant().toLongLong());
 
     updateAvailability(true);
 
-    if (!hasBaseline_) {
-        baselineUp_ = totalUp;
-        baselineDown_ = totalDown;
-        hasBaseline_ = true;
+    if (!hasBaseline_.load()) {
+        baselineUp_.store(totalUp);
+        baselineDown_.store(totalDown);
+        hasBaseline_.store(true);
         return;
     }
 
+    const quint64 prevUp = baselineUp_.load();
+    const quint64 prevDown = baselineDown_.load();
     quint64 deltaUp = 0;
     quint64 deltaDown = 0;
-    if (totalUp >= baselineUp_) {
-        deltaUp = totalUp - baselineUp_;
+    if (totalUp >= prevUp) {
+        deltaUp = totalUp - prevUp;
     }
-    if (totalDown >= baselineDown_) {
-        deltaDown = totalDown - baselineDown_;
+    if (totalDown >= prevDown) {
+        deltaDown = totalDown - prevDown;
     }
-    baselineUp_ = totalUp;
-    baselineDown_ = totalDown;
+    baselineUp_.store(totalUp);
+    baselineDown_.store(totalDown);
 
     if (deltaUp > 0 || deltaDown > 0) {
         emit trafficDeltaReceived(deltaUp, deltaDown);
@@ -124,9 +126,9 @@ void ClashRestStatisticsBackend::handleReply(QNetworkReply* reply)
 
 void ClashRestStatisticsBackend::updateAvailability(bool available)
 {
-    if (available_ == available) {
+    if (available_.load() == available) {
         return;
     }
-    available_ = available;
+    available_.store(available);
     emit pollingAvailabilityChanged(available);
 }

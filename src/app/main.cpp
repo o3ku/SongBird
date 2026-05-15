@@ -8,6 +8,7 @@
 #include <QIcon>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
 #include <QTimer>
@@ -16,12 +17,9 @@
 #include "app/AppBootstrap.h"
 #include "app/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
+#include "common/AppPlatform.h"
+#include "common/DialogUtils.h"
 #include "ui/theme/AppTheme.h"
-
-#if defined(Q_OS_WIN)
-#include <windows.h>
-#include <shellapi.h>
-#endif
 
 #ifndef QT_V2RAYN_APP_VERSION
 #define QT_V2RAYN_APP_VERSION "0.4.0"
@@ -129,41 +127,46 @@ void installConfiguredTranslator(QApplication& app, QTranslator& translator, con
     for (const QString& dir : searchDirs) {
         if (translator.load(locale, qmPrefix, qmSeparator, dir)) {
             app.installTranslator(&translator);
+            QLocale::setDefault(locale);
             return;
         }
     }
 }
 
-bool isWindowsPlatform()
+bool installQtTranslator(
+    QApplication& app,
+    QTranslator& translator,
+    const QString& languageCode,
+    const QString& qmPrefix)
 {
-#if defined(Q_OS_WIN)
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool isProcessElevated()
-{
-#if defined(Q_OS_WIN)
-    HANDLE tokenHandle = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tokenHandle)) {
+    if (languageCode == QStringLiteral("en")) {
         return false;
     }
 
-    TOKEN_ELEVATION elevation{};
-    DWORD returnedSize = 0;
-    const BOOL ok = GetTokenInformation(
-        tokenHandle,
-        TokenElevation,
-        &elevation,
-        sizeof(elevation),
-        &returnedSize);
-    CloseHandle(tokenHandle);
-    return ok != FALSE && elevation.TokenIsElevated != 0;
+    const QLocale locale = languageCode == QStringLiteral("zh_CN")
+        ? QLocale(QLocale::Chinese, QLocale::China)
+        : QLocale();
+
+    QString translationsPath;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    translationsPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
 #else
-    return true;
+    translationsPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
 #endif
+
+    const QStringList searchDirs = {
+        QStringLiteral(":/translations"),
+        translationsPath
+    };
+
+    for (const QString& dir : searchDirs) {
+        if (!dir.isEmpty() && translator.load(locale, qmPrefix, QStringLiteral("_"), dir)) {
+            app.installTranslator(&translator);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 QString startupAdminPromptTitle()
@@ -209,9 +212,14 @@ int main(int argc, char* argv[])
         app.setWindowIcon(appIcon);
     }
 
+    QTranslator qtBaseTranslator;
+    QTranslator qtTranslator;
     QTranslator translator;
     const QString requestedConfigPath = resolveRequestedConfigPath(QCoreApplication::arguments());
-    installConfiguredTranslator(app, translator, loadConfiguredLanguageCode(requestedConfigPath));
+    const QString languageCode = loadConfiguredLanguageCode(requestedConfigPath);
+    installQtTranslator(app, qtBaseTranslator, languageCode, QStringLiteral("qtbase"));
+    installQtTranslator(app, qtTranslator, languageCode, QStringLiteral("qt"));
+    installConfiguredTranslator(app, translator, languageCode);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QCoreApplication::translate("main", "Pure Qt prototype for v2rayN."));
@@ -312,7 +320,7 @@ int main(int argc, char* argv[])
                 return singleInstanceBootstrap.tryAcquire();
             },
             [](int) {})) {
-        QMessageBox::information(
+        DialogUtils::showInformation(
             nullptr,
             QStringLiteral("v2rayq"),
             QCoreApplication::translate("main", "Another v2rayq instance is already running."));

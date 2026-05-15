@@ -43,6 +43,7 @@ private slots:
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
+    void selectTabOpensRoutingPage();
 };
 
 void SettingsDialogTests::downloadButtonStartsInlineUpdate_data()
@@ -143,6 +144,22 @@ void SettingsDialogTests::installedCoreVersionShowsUpdateAction()
     QVERIFY(singBoxLabel != nullptr);
     QCOMPARE(singBoxLabel->text(), QStringLiteral("v1.11.0"));
     QCOMPARE(singBoxButton->text(), QStringLiteral("Update"));
+}
+
+void SettingsDialogTests::selectTabOpensRoutingPage()
+{
+    SettingsDialog dialog;
+    dialog.selectTab(2);
+    dialog.setConfig(Config());
+
+    auto* tabBar = dialog.findChild<QTabBar*>(QStringLiteral("settingsTabBar"));
+    auto* stackLayout = dialog.findChild<QStackedLayout*>(QStringLiteral("settingsStackLayout"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(stackLayout != nullptr);
+
+    QCOMPARE(tabBar->currentIndex(), 2);
+    QCOMPARE(tabBar->tabText(2), QStringLiteral("Routing"));
+    QCOMPARE(stackLayout->currentIndex(), 2);
 }
 
 void SettingsDialogTests::sniffingEnabledCheckboxRoundTripsConfig()

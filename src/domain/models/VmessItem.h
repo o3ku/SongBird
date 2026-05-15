@@ -22,7 +22,7 @@ inline QString coreTypeDisplayName(CoreType type)
 {
     switch (type) {
     case CoreType::Auto:
-        return QStringLiteral("Auto (Xray)");
+        return QStringLiteral("Auto (SingBox)");
     case CoreType::V2Fly:
         return QStringLiteral("V2Ray");
     case CoreType::Xray:

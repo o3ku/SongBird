@@ -7,6 +7,10 @@
 #include <QStringList>
 
 #if defined(Q_OS_WIN)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
 #endif

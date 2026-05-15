@@ -31,18 +31,6 @@ inline std::set<int>& reservedProxyPorts()
     return ports;
 }
 
-inline std::mutex& startupSlotsMutex()
-{
-    static std::mutex mutex;
-    return mutex;
-}
-
-inline int& activeStartupSlots()
-{
-    static int count = 0;
-    return count;
-}
-
 inline bool reserveProxyPorts(int socksPort, int httpPort)
 {
     if (socksPort <= 0 || httpPort <= 0 || socksPort == httpPort) {
@@ -68,40 +56,11 @@ inline void releaseProxyPorts(int socksPort, int httpPort)
     ports.erase(httpPort);
 }
 
-inline bool tryAcquireStartupSlot(int maxActiveSlots)
-{
-    if (maxActiveSlots <= 0) {
-        return false;
-    }
-
-    std::lock_guard<std::mutex> lock(startupSlotsMutex());
-    int& count = activeStartupSlots();
-    if (count >= maxActiveSlots) {
-        return false;
-    }
-
-    ++count;
-    return true;
-}
-
-inline void releaseStartupSlot()
-{
-    std::lock_guard<std::mutex> lock(startupSlotsMutex());
-    int& count = activeStartupSlots();
-    if (count > 0) {
-        --count;
-    }
-}
-
 inline void resetGlobalState()
 {
     {
         std::lock_guard<std::mutex> lock(reservedProxyPortsMutex());
         reservedProxyPorts().clear();
-    }
-    {
-        std::lock_guard<std::mutex> lock(startupSlotsMutex());
-        activeStartupSlots() = 0;
     }
 }
 
@@ -110,12 +69,15 @@ inline std::optional<ReadyProxy> detectReadyProxy(
     int httpPort,
     const std::function<bool(int)>& isPortReady)
 {
-    if (isPortReady(socksPort)) {
-        return ReadyProxy{QNetworkProxy::Socks5Proxy, socksPort, QStringLiteral("socks")};
-    }
-
     if (isPortReady(httpPort)) {
         return ReadyProxy{QNetworkProxy::HttpProxy, httpPort, QStringLiteral("http")};
+    }
+
+    // Prefer the local HTTP inbound because browser/system-proxy traffic uses
+    // that path, so URL test results better match the "set current server"
+    // experience seen by users.
+    if (isPortReady(socksPort)) {
+        return ReadyProxy{QNetworkProxy::Socks5Proxy, socksPort, QStringLiteral("socks")};
     }
 
     return std::nullopt;

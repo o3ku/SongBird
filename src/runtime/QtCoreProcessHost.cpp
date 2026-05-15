@@ -90,11 +90,17 @@ OperationResult QtCoreProcessHost::stop(bool immediate)
     }
 
     process_->terminate();
-    scheduleForcedKill();
     if (immediate) {
+        if (!process_->waitForFinished(1500)) {
+            process_->kill();
+            if (!process_->waitForFinished(1500)) {
+                return OperationResult::fail(QStringLiteral("Timed out while stopping the core process."));
+            }
+        }
         return OperationResult::ok(QStringLiteral("Stopping core process immediately..."));
     }
 
+    scheduleForcedKill();
     return OperationResult::ok(QStringLiteral("Stopping core process..."));
 }
 

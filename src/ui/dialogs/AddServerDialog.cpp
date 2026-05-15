@@ -1,5 +1,7 @@
 #include "ui/dialogs/AddServerDialog.h"
 
+#include "common/DialogUtils.h"
+
 #include <QComboBox>
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -196,63 +198,63 @@ void AddServerDialog::updateFieldState()
 
     bool showAlterId = false;
     bool showFlow = false;
-    QString credentialLabelText = QStringLiteral("Credential");
-    QString securityLabelText = QStringLiteral("Security");
+    QString credentialLabelText = tr("Credential");
+    QString securityLabelText = tr("Security");
     QString defaultSecurity;
 
     switch (type) {
     case ConfigType::VMess:
-        credentialLabelText = QStringLiteral("UUID");
-        securityLabelText = QStringLiteral("Encryption");
+        credentialLabelText = tr("UUID");
+        securityLabelText = tr("Encryption");
         defaultSecurity = QStringLiteral("auto");
         showAlterId = true;
         break;
     case ConfigType::VLESS:
-        credentialLabelText = QStringLiteral("UUID");
-        securityLabelText = QStringLiteral("Encryption");
+        credentialLabelText = tr("UUID");
+        securityLabelText = tr("Encryption");
         defaultSecurity = QStringLiteral("none");
         showFlow = true;
         break;
     case ConfigType::Trojan:
-        credentialLabelText = QStringLiteral("Password");
-        securityLabelText = QStringLiteral("Security");
+        credentialLabelText = tr("Password");
+        securityLabelText = tr("Security");
         defaultSecurity.clear();
         showFlow = true;
         break;
     case ConfigType::Shadowsocks:
-        credentialLabelText = QStringLiteral("Password");
-        securityLabelText = QStringLiteral("Method");
+        credentialLabelText = tr("Password");
+        securityLabelText = tr("Method");
         defaultSecurity = QStringLiteral("aes-128-gcm");
         break;
     case ConfigType::Socks:
     case ConfigType::HTTP:
-        credentialLabelText = QStringLiteral("Username");
-        securityLabelText = QStringLiteral("Password");
+        credentialLabelText = tr("Username");
+        securityLabelText = tr("Password");
         defaultSecurity.clear();
         break;
     case ConfigType::Hysteria2:
-        credentialLabelText = QStringLiteral("Password");
-        securityLabelText = QStringLiteral("Security");
+        credentialLabelText = tr("Password");
+        securityLabelText = tr("Security");
         defaultSecurity.clear();
         break;
     case ConfigType::TUIC:
-        credentialLabelText = QStringLiteral("UUID");
-        securityLabelText = QStringLiteral("Password");
+        credentialLabelText = tr("UUID");
+        securityLabelText = tr("Password");
         defaultSecurity.clear();
         break;
     case ConfigType::WireGuard:
-        credentialLabelText = QStringLiteral("Private Key");
-        securityLabelText = QStringLiteral("Security");
+        credentialLabelText = tr("Private Key");
+        securityLabelText = tr("Security");
         defaultSecurity.clear();
         break;
     case ConfigType::AnyTLS:
-        credentialLabelText = QStringLiteral("Password");
-        securityLabelText = QStringLiteral("Security");
+        credentialLabelText = tr("Password");
+        securityLabelText = tr("Security");
         defaultSecurity.clear();
         break;
     case ConfigType::Naive:
-        credentialLabelText = QStringLiteral("Username");
-        securityLabelText = QStringLiteral("Security");
+        credentialLabelText = tr("Username");
+        securityLabelText = tr("Security");
         defaultSecurity.clear();
         break;
     case ConfigType::Custom:
@@ -279,31 +281,31 @@ void AddServerDialog::updateFieldState()
     const bool realityTransport = transportSecurity.compare(QStringLiteral("reality"), Qt::CaseInsensitive) == 0;
     const QString network = networkCombo_->currentText().trimmed().toLower();
 
-    QString headerLabelText = QStringLiteral("Header Type");
-    QString hostLabelText = QStringLiteral("Host");
-    QString pathLabelText = QStringLiteral("Path");
-    QString hostPlaceholder = QStringLiteral("host.example.com");
-    QString pathPlaceholder = QStringLiteral("/");
+    QString headerLabelText = tr("Header Type");
+    QString hostLabelText = tr("Host");
+    QString pathLabelText = tr("Path");
+    QString hostPlaceholder = tr("host.example.com");
+    QString pathPlaceholder = tr("/");
     bool showHost = true;
     const bool httpupgradeTransport = network == QStringLiteral("httpupgrade");
     const bool xhttpTransport = network == QStringLiteral("xhttp");
 
     if (network == QStringLiteral("grpc")) {
-        headerLabelText = QStringLiteral("Mode");
-        pathLabelText = QStringLiteral("Service Name");
-        pathPlaceholder = QStringLiteral("service-name");
+        headerLabelText = tr("Mode");
+        pathLabelText = tr("Service Name");
+        pathPlaceholder = tr("service-name");
         showHost = false;
     } else if (xhttpTransport) {
-        headerLabelText = QStringLiteral("Mode");
+        headerLabelText = tr("Mode");
     } else if (network == QStringLiteral("kcp")) {
-        pathLabelText = QStringLiteral("Seed");
-        pathPlaceholder = QStringLiteral("mkcp-seed");
+        pathLabelText = tr("Seed");
+        pathPlaceholder = tr("mkcp-seed");
         showHost = false;
     } else if (network == QStringLiteral("quic")) {
-        hostLabelText = QStringLiteral("QUIC Security");
-        pathLabelText = QStringLiteral("Key");
-        hostPlaceholder = QStringLiteral("none");
-        pathPlaceholder = QStringLiteral("quic-key");
+        hostLabelText = tr("QUIC Security");
+        pathLabelText = tr("Key");
+        hostPlaceholder = tr("none");
+        pathPlaceholder = tr("quic-key");
     }
 
     headerTypeFieldLabel_->setText(headerLabelText);
@@ -379,16 +381,6 @@ void AddServerDialog::applyDefaultCoreTypeForCurrentProtocol()
         return;
     }
 
-    const CoreType currentCore = static_cast<CoreType>(coreCombo_->currentData().toInt());
-    if (currentCore != CoreType::Auto) {
-        return;
-    }
-
-    const ConfigType type = static_cast<ConfigType>(typeCombo_->currentData().toInt());
-    if (type != ConfigType::HTTP) {
-        return;
-    }
-
     const int singBoxIndex = coreCombo_->findData(static_cast<int>(CoreType::SingBox));
     if (singBoxIndex >= 0) {
         coreCombo_->setCurrentIndex(singBoxIndex);
@@ -446,39 +438,41 @@ void AddServerDialog::refillSecurityOptions(ConfigType type)
 
 void AddServerDialog::setCoreType(CoreType type)
 {
+    if (type == CoreType::Auto) {
+        type = CoreType::SingBox;
+    }
+
     const int index = coreCombo_->findData(static_cast<int>(type));
     coreCombo_->setCurrentIndex(index >= 0 ? index : 0);
 }
 
 void AddServerDialog::setupUi()
 {
-    setWindowTitle(QStringLiteral("Add Server"));
+    setWindowTitle(tr("Add Server"));
     resize(460, 560);
 
     typeCombo_ = new QComboBox(this);
-    typeCombo_->addItem(QStringLiteral("VMess"), static_cast<int>(ConfigType::VMess));
-    typeCombo_->addItem(QStringLiteral("VLESS"), static_cast<int>(ConfigType::VLESS));
-    typeCombo_->addItem(QStringLiteral("Trojan"), static_cast<int>(ConfigType::Trojan));
-    typeCombo_->addItem(QStringLiteral("Shadowsocks"), static_cast<int>(ConfigType::Shadowsocks));
-    typeCombo_->addItem(QStringLiteral("Socks"), static_cast<int>(ConfigType::Socks));
-    typeCombo_->addItem(QStringLiteral("HTTP"), static_cast<int>(ConfigType::HTTP));
-    typeCombo_->addItem(QStringLiteral("Hysteria2"), static_cast<int>(ConfigType::Hysteria2));
-    typeCombo_->addItem(QStringLiteral("TUIC"), static_cast<int>(ConfigType::TUIC));
-    typeCombo_->addItem(QStringLiteral("WireGuard"), static_cast<int>(ConfigType::WireGuard));
-    typeCombo_->addItem(QStringLiteral("AnyTLS"), static_cast<int>(ConfigType::AnyTLS));
-    typeCombo_->addItem(QStringLiteral("Naive"), static_cast<int>(ConfigType::Naive));
+    typeCombo_->setObjectName(QStringLiteral("typeCombo"));
+    typeCombo_->addItem(tr("VMess"), static_cast<int>(ConfigType::VMess));
+    typeCombo_->addItem(tr("VLESS"), static_cast<int>(ConfigType::VLESS));
+    typeCombo_->addItem(tr("Trojan"), static_cast<int>(ConfigType::Trojan));
+    typeCombo_->addItem(tr("Shadowsocks"), static_cast<int>(ConfigType::Shadowsocks));
+    typeCombo_->addItem(tr("Socks"), static_cast<int>(ConfigType::Socks));
+    typeCombo_->addItem(tr("HTTP"), static_cast<int>(ConfigType::HTTP));
+    typeCombo_->addItem(tr("Hysteria2"), static_cast<int>(ConfigType::Hysteria2));
+    typeCombo_->addItem(tr("TUIC"), static_cast<int>(ConfigType::TUIC));
+    typeCombo_->addItem(tr("WireGuard"), static_cast<int>(ConfigType::WireGuard));
+    typeCombo_->addItem(tr("AnyTLS"), static_cast<int>(ConfigType::AnyTLS));
+    typeCombo_->addItem(tr("Naive"), static_cast<int>(ConfigType::Naive));
 
     coreCombo_ = new QComboBox(this);
-    coreCombo_->addItem(QStringLiteral("Auto (Xray)"), static_cast<int>(CoreType::Auto));
-    coreCombo_->addItem(QStringLiteral("Xray"), static_cast<int>(CoreType::Xray));
-    coreCombo_->addItem(QStringLiteral("V2Ray"), static_cast<int>(CoreType::V2Fly));
-    coreCombo_->addItem(QStringLiteral("SagerNet"), static_cast<int>(CoreType::SagerNet));
-    coreCombo_->addItem(QStringLiteral("V2Ray v5"), static_cast<int>(CoreType::V2FlyV5));
-    coreCombo_->addItem(QStringLiteral("sing-box"), static_cast<int>(CoreType::SingBox));
+    coreCombo_->setObjectName(QStringLiteral("coreCombo"));
+    coreCombo_->addItem(tr("sing-box (Default)"), static_cast<int>(CoreType::SingBox));
+    coreCombo_->addItem(tr("Xray"), static_cast<int>(CoreType::Xray));
 
     remarksEdit_ = new QLineEdit(this);
     addressEdit_ = new QLineEdit(this);
-    addressEdit_->setPlaceholderText(QStringLiteral("example.com"));
+    addressEdit_->setPlaceholderText(tr("example.com"));
 
     portSpin_ = new QSpinBox(this);
     portSpin_->setRange(1, 65535);
@@ -487,7 +481,7 @@ void AddServerDialog::setupUi()
     credentialLabel_ = new QLabel(this);
     credentialRowWidget_ = new QWidget(this);
     credentialEdit_ = new QLineEdit(this);
-    credentialGenerateButton_ = new QPushButton(QStringLiteral("Generate UUID"), this);
+    credentialGenerateButton_ = new QPushButton(tr("Generate UUID"), this);
 
     auto* credentialLayout = new QHBoxLayout(credentialRowWidget_);
     credentialLayout->setContentsMargins(0, 0, 0, 0);
@@ -498,11 +492,11 @@ void AddServerDialog::setupUi()
     securityCombo_ = new QComboBox(this);
     securityCombo_->setEditable(true);
 
-    alterIdLabel_ = new QLabel(QStringLiteral("Alter ID"), this);
+    alterIdLabel_ = new QLabel(tr("Alter ID"), this);
     alterIdSpin_ = new QSpinBox(this);
     alterIdSpin_->setRange(0, 65535);
 
-    flowLabel_ = new QLabel(QStringLiteral("Flow"), this);
+    flowLabel_ = new QLabel(tr("Flow"), this);
     flowEdit_ = new QLineEdit(this);
 
     networkCombo_ = new QComboBox(this);
@@ -518,7 +512,7 @@ void AddServerDialog::setupUi()
         QStringLiteral("h2")
     });
 
-    headerTypeFieldLabel_ = new QLabel(QStringLiteral("Header Type"), this);
+    headerTypeFieldLabel_ = new QLabel(tr("Header Type"), this);
     headerTypeCombo_ = new QComboBox(this);
     headerTypeCombo_->setEditable(true);
     headerTypeCombo_->addItems({
@@ -542,36 +536,36 @@ void AddServerDialog::setupUi()
         QStringLiteral("reality")
     });
 
-    hostFieldLabel_ = new QLabel(QStringLiteral("Host"), this);
+    hostFieldLabel_ = new QLabel(tr("Host"), this);
     hostEdit_ = new QLineEdit(this);
-    hostEdit_->setPlaceholderText(QStringLiteral("host.example.com"));
+    hostEdit_->setPlaceholderText(tr("host.example.com"));
 
-    pathFieldLabel_ = new QLabel(QStringLiteral("Path"), this);
+    pathFieldLabel_ = new QLabel(tr("Path"), this);
     pathEdit_ = new QLineEdit(this);
-    pathEdit_->setPlaceholderText(QStringLiteral("/"));
+    pathEdit_->setPlaceholderText(tr("/"));
 
     sniEdit_ = new QLineEdit(this);
-    sniEdit_->setPlaceholderText(QStringLiteral("server name indication"));
+    sniEdit_->setPlaceholderText(tr("server name indication"));
 
-    fingerprintLabel_ = new QLabel(QStringLiteral("Fingerprint"), this);
+    fingerprintLabel_ = new QLabel(tr("Fingerprint"), this);
     fingerprintEdit_ = new QLineEdit(this);
     fingerprintEdit_->setPlaceholderText(QStringLiteral("chrome"));
 
-    certLabel_ = new QLabel(QStringLiteral("TLS Certificate"), this);
+    certLabel_ = new QLabel(tr("TLS Certificate"), this);
     certEdit_ = new QPlainTextEdit(this);
     certEdit_->setPlaceholderText(QStringLiteral("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"));
     certEdit_->setTabChangesFocus(true);
     certEdit_->setMaximumHeight(110);
 
-    certShaLabel_ = new QLabel(QStringLiteral("Pinned Cert SHA256"), this);
+    certShaLabel_ = new QLabel(tr("Pinned Cert SHA256"), this);
     certShaEdit_ = new QLineEdit(this);
     certShaEdit_->setPlaceholderText(QStringLiteral("sha256/base64-one,sha256/base64-two"));
 
-    echConfigListLabel_ = new QLabel(QStringLiteral("ECH Config"), this);
+    echConfigListLabel_ = new QLabel(tr("ECH Config"), this);
     echConfigListEdit_ = new QLineEdit(this);
     echConfigListEdit_->setPlaceholderText(QStringLiteral("ECHCONFIGBASE64"));
 
-    echForceQueryLabel_ = new QLabel(QStringLiteral("ECH Force Query"), this);
+    echForceQueryLabel_ = new QLabel(tr("ECH Force Query"), this);
     echForceQueryCombo_ = new QComboBox(this);
     echForceQueryCombo_->setEditable(true);
     echForceQueryCombo_->addItems({
@@ -581,27 +575,27 @@ void AddServerDialog::setupUi()
         QStringLiteral("full")
     });
 
-    publicKeyLabel_ = new QLabel(QStringLiteral("Public Key"), this);
+    publicKeyLabel_ = new QLabel(tr("Public Key"), this);
     publicKeyEdit_ = new QLineEdit(this);
-    publicKeyEdit_->setPlaceholderText(QStringLiteral("Reality public key"));
+    publicKeyEdit_->setPlaceholderText(tr("Reality public key"));
 
-    shortIdLabel_ = new QLabel(QStringLiteral("Short ID"), this);
+    shortIdLabel_ = new QLabel(tr("Short ID"), this);
     shortIdEdit_ = new QLineEdit(this);
     shortIdEdit_->setPlaceholderText(QStringLiteral("0123456789abcdef"));
 
-    spiderXLabel_ = new QLabel(QStringLiteral("Spider X"), this);
+    spiderXLabel_ = new QLabel(tr("Spider X"), this);
     spiderXEdit_ = new QLineEdit(this);
     spiderXEdit_->setPlaceholderText(QStringLiteral("/"));
 
-    mldsa65VerifyLabel_ = new QLabel(QStringLiteral("MLDSA65 Verify"), this);
+    mldsa65VerifyLabel_ = new QLabel(tr("MLDSA65 Verify"), this);
     mldsa65VerifyEdit_ = new QLineEdit(this);
-    mldsa65VerifyEdit_->setPlaceholderText(QStringLiteral("mldsa65 verify key"));
+    mldsa65VerifyEdit_->setPlaceholderText(tr("mldsa65 verify key"));
 
-    alpnLabel_ = new QLabel(QStringLiteral("ALPN"), this);
+    alpnLabel_ = new QLabel(tr("ALPN"), this);
     alpnEdit_ = new QLineEdit(this);
     alpnEdit_->setPlaceholderText(QStringLiteral("h2,http/1.1"));
 
-    userAgentLabel_ = new QLabel(QStringLiteral("User-Agent"), this);
+    userAgentLabel_ = new QLabel(tr("User-Agent"), this);
     userAgentCombo_ = new QComboBox(this);
     userAgentCombo_->setEditable(true);
     userAgentCombo_->addItems({
@@ -612,26 +606,26 @@ void AddServerDialog::setupUi()
         QStringLiteral("golang")
     });
 
-    extraLabel_ = new QLabel(QStringLiteral("Extra"), this);
+    extraLabel_ = new QLabel(tr("Extra"), this);
     extraEdit_ = new QPlainTextEdit(this);
     extraEdit_->setPlaceholderText(QStringLiteral("{\"scMaxEachPostBytes\":12345}"));
     extraEdit_->setTabChangesFocus(true);
     extraEdit_->setMaximumHeight(100);
 
-    finalmaskLabel_ = new QLabel(QStringLiteral("Finalmask"), this);
+    finalmaskLabel_ = new QLabel(tr("Finalmask"), this);
     finalmaskEdit_ = new QPlainTextEdit(this);
     finalmaskEdit_->setPlaceholderText(QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
     finalmaskEdit_->setTabChangesFocus(true);
     finalmaskEdit_->setMaximumHeight(100);
 
-    muxOverrideLabel_ = new QLabel(QStringLiteral("Mux"), this);
+    muxOverrideLabel_ = new QLabel(tr("Mux"), this);
     muxOverrideCombo_ = new QComboBox(this);
     muxOverrideCombo_->setObjectName(QStringLiteral("muxOverrideCombo"));
-    muxOverrideCombo_->addItem(QStringLiteral("Inherit Global"));
-    muxOverrideCombo_->addItem(QStringLiteral("Enabled"));
-    muxOverrideCombo_->addItem(QStringLiteral("Disabled"));
+    muxOverrideCombo_->addItem(tr("Inherit Global"));
+    muxOverrideCombo_->addItem(tr("Enabled"));
+    muxOverrideCombo_->addItem(tr("Disabled"));
 
-    allowInsecureLabel_ = new QLabel(QStringLiteral("Allow Insecure"), this);
+    allowInsecureLabel_ = new QLabel(tr("Allow Insecure"), this);
     allowInsecureCombo_ = new QComboBox(this);
     allowInsecureCombo_->setEditable(true);
     allowInsecureCombo_->addItems({
@@ -642,11 +636,11 @@ void AddServerDialog::setupUi()
 
     // Hysteria2 fields
     hysteria2Group_ = new QWidget(this);
-    obfsPasswordLabel_ = new QLabel(QStringLiteral("Obfs Password"), this);
+    obfsPasswordLabel_ = new QLabel(tr("Obfs Password"), this);
     obfsPasswordEdit_ = new QLineEdit(this);
-    upMbpsLabel_ = new QLabel(QStringLiteral("Upload (Mbps)"), this);
+    upMbpsLabel_ = new QLabel(tr("Upload (Mbps)"), this);
     upMbpsEdit_ = new QLineEdit(this);
-    downMbpsLabel_ = new QLabel(QStringLiteral("Download (Mbps)"), this);
+    downMbpsLabel_ = new QLabel(tr("Download (Mbps)"), this);
     downMbpsEdit_ = new QLineEdit(this);
     {
         auto* hy2Layout = new QFormLayout(hysteria2Group_);
@@ -658,7 +652,7 @@ void AddServerDialog::setupUi()
 
     // TUIC fields
     tuicGroup_ = new QWidget(this);
-    congestionControlLabel_ = new QLabel(QStringLiteral("Congestion Control"), this);
+    congestionControlLabel_ = new QLabel(tr("Congestion Control"), this);
     congestionControlCombo_ = new QComboBox(this);
     congestionControlCombo_->setEditable(true);
     congestionControlCombo_->addItems({
@@ -666,7 +660,7 @@ void AddServerDialog::setupUi()
         QStringLiteral("bbr"),
         QStringLiteral("new_reno")
     });
-    udpRelayModeLabel_ = new QLabel(QStringLiteral("UDP Relay Mode"), this);
+    udpRelayModeLabel_ = new QLabel(tr("UDP Relay Mode"), this);
     udpRelayModeCombo_ = new QComboBox(this);
     udpRelayModeCombo_->setEditable(true);
     udpRelayModeCombo_->addItems({
@@ -682,19 +676,19 @@ void AddServerDialog::setupUi()
 
     // WireGuard fields
     wireguardGroup_ = new QWidget(this);
-    privateKeyLabel_ = new QLabel(QStringLiteral("Private Key"), this);
+    privateKeyLabel_ = new QLabel(tr("Private Key"), this);
     privateKeyEdit_ = new QLineEdit(this);
-    peerPublicKeyLabel_ = new QLabel(QStringLiteral("Peer Public Key"), this);
+    peerPublicKeyLabel_ = new QLabel(tr("Peer Public Key"), this);
     peerPublicKeyEdit_ = new QLineEdit(this);
-    localAddressLabel_ = new QLabel(QStringLiteral("Local Address"), this);
+    localAddressLabel_ = new QLabel(tr("Local Address"), this);
     localAddressEdit_ = new QLineEdit(this);
     localAddressEdit_->setPlaceholderText(QStringLiteral("10.0.0.2/32, fd00::2/128"));
-    wireguardMtuLabel_ = new QLabel(QStringLiteral("MTU"), this);
+    wireguardMtuLabel_ = new QLabel(tr("MTU"), this);
     wireguardMtuSpin_ = new QSpinBox(this);
     wireguardMtuSpin_->setRange(0, 65535);
     wireguardMtuSpin_->setValue(0);
-    wireguardMtuSpin_->setSpecialValueText(QStringLiteral("Default"));
-    reservedLabel_ = new QLabel(QStringLiteral("Reserved"), this);
+    wireguardMtuSpin_->setSpecialValueText(tr("Default"));
+    reservedLabel_ = new QLabel(tr("Reserved"), this);
     reservedEdit_ = new QLineEdit(this);
     reservedEdit_->setPlaceholderText(QStringLiteral("0,0,0"));
     {
@@ -709,15 +703,15 @@ void AddServerDialog::setupUi()
 
     // Naive fields
     naiveGroup_ = new QWidget(this);
-    naivePasswordLabel_ = new QLabel(QStringLiteral("Password"), this);
+    naivePasswordLabel_ = new QLabel(tr("Password"), this);
     naivePasswordEdit_ = new QLineEdit(this);
     naivePasswordEdit_->setEchoMode(QLineEdit::Password);
-    naiveQuicCheck_ = new QCheckBox(QStringLiteral("Use QUIC transport (naive+quic)"), this);
-    naiveInsecureConcurrencyLabel_ = new QLabel(QStringLiteral("Insecure Concurrency"), this);
+    naiveQuicCheck_ = new QCheckBox(tr("Use QUIC transport (naive+quic)"), this);
+    naiveInsecureConcurrencyLabel_ = new QLabel(tr("Insecure Concurrency"), this);
     naiveInsecureConcurrencySpin_ = new QSpinBox(this);
     naiveInsecureConcurrencySpin_->setRange(0, 64);
     naiveInsecureConcurrencySpin_->setValue(0);
-    naiveInsecureConcurrencySpin_->setSpecialValueText(QStringLiteral("Off"));
+    naiveInsecureConcurrencySpin_->setSpecialValueText(tr("Off"));
     {
         auto* naiveLayout = new QFormLayout(naiveGroup_);
         naiveLayout->setContentsMargins(0, 0, 0, 0);
@@ -727,23 +721,24 @@ void AddServerDialog::setupUi()
     }
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    DialogUtils::localizeStandardDialogButtonBox(buttonBox_);
 
     auto* formLayout = new QFormLayout();
-    formLayout->addRow(QStringLiteral("Type"), typeCombo_);
-    formLayout->addRow(QStringLiteral("Core"), coreCombo_);
-    formLayout->addRow(QStringLiteral("Remarks"), remarksEdit_);
-    formLayout->addRow(QStringLiteral("Address"), addressEdit_);
-    formLayout->addRow(QStringLiteral("Port"), portSpin_);
+    formLayout->addRow(tr("Type"), typeCombo_);
+    formLayout->addRow(tr("Core"), coreCombo_);
+    formLayout->addRow(tr("Remarks"), remarksEdit_);
+    formLayout->addRow(tr("Address"), addressEdit_);
+    formLayout->addRow(tr("Port"), portSpin_);
     formLayout->addRow(credentialLabel_, credentialRowWidget_);
     formLayout->addRow(securityLabel_, securityCombo_);
     formLayout->addRow(alterIdLabel_, alterIdSpin_);
     formLayout->addRow(flowLabel_, flowEdit_);
-    formLayout->addRow(QStringLiteral("Network"), networkCombo_);
+    formLayout->addRow(tr("Network"), networkCombo_);
     formLayout->addRow(headerTypeFieldLabel_, headerTypeCombo_);
-    formLayout->addRow(QStringLiteral("Transport Security"), streamSecurityCombo_);
+    formLayout->addRow(tr("Transport Security"), streamSecurityCombo_);
     formLayout->addRow(hostFieldLabel_, hostEdit_);
     formLayout->addRow(pathFieldLabel_, pathEdit_);
-    formLayout->addRow(QStringLiteral("SNI"), sniEdit_);
+    formLayout->addRow(tr("SNI"), sniEdit_);
     formLayout->addRow(fingerprintLabel_, fingerprintEdit_);
     formLayout->addRow(certLabel_, certEdit_);
     formLayout->addRow(certShaLabel_, certShaEdit_);

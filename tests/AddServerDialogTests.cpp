@@ -13,7 +13,8 @@ private slots:
     void xhttpExtraRoundTripsExistingServer();
     void finalmaskRoundTripsExistingServer();
     void httpTypeRoundTripsExistingServer();
-    void newHttpDialogDefaultsToSingBoxCore();
+    void newDialogDefaultsToSingBoxCore();
+    void legacyAutoCoreIsShownAsSingBox();
     void certPemRoundTripsExistingServer();
     void certShaRoundTripsExistingServer();
     void mldsa65VerifyRoundTripsExistingServer();
@@ -138,23 +139,39 @@ void AddServerDialogTests::httpTypeRoundTripsExistingServer()
     QCOMPARE(updated.security, server.security);
 }
 
-void AddServerDialogTests::newHttpDialogDefaultsToSingBoxCore()
+void AddServerDialogTests::newDialogDefaultsToSingBoxCore()
 {
     AddServerDialog dialog;
 
-    QComboBox* typeCombo = nullptr;
-    for (QComboBox* combo : dialog.findChildren<QComboBox*>()) {
-        if (combo != nullptr && combo->findText(QStringLiteral("HTTP")) >= 0) {
-            typeCombo = combo;
-            break;
-        }
-    }
+    auto* typeCombo = dialog.findChild<QComboBox*>(QStringLiteral("typeCombo"));
+    auto* coreCombo = dialog.findChild<QComboBox*>(QStringLiteral("coreCombo"));
     QVERIFY(typeCombo != nullptr);
+    QVERIFY(coreCombo != nullptr);
     typeCombo->setCurrentText(QStringLiteral("HTTP"));
 
     const VmessItem server = dialog.server();
     QCOMPARE(server.configType, ConfigType::HTTP);
     QCOMPARE(server.coreType, CoreType::SingBox);
+    QCOMPARE(coreCombo->count(), 2);
+    QCOMPARE(coreCombo->currentData().toInt(), static_cast<int>(CoreType::SingBox));
+    QCOMPARE(coreCombo->findData(static_cast<int>(CoreType::Auto)), -1);
+}
+
+void AddServerDialogTests::legacyAutoCoreIsShownAsSingBox()
+{
+    VmessItem server;
+    server.configType = ConfigType::VMess;
+    server.coreType = CoreType::Auto;
+
+    AddServerDialog dialog;
+    dialog.setServer(server);
+
+    auto* coreCombo = dialog.findChild<QComboBox*>(QStringLiteral("coreCombo"));
+    QVERIFY(coreCombo != nullptr);
+    QCOMPARE(coreCombo->currentData().toInt(), static_cast<int>(CoreType::SingBox));
+
+    const VmessItem updated = dialog.server();
+    QCOMPARE(updated.coreType, CoreType::SingBox);
 }
 
 void AddServerDialogTests::certPemRoundTripsExistingServer()

@@ -135,6 +135,35 @@ set(QT_V2RAYN_TRANSLATION_TS_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../translations/v2rayq_zh_CN.ts
 )
 
+set(QT_V2RAYN_QT_TRANSLATION_QM_FILES)
+if(TARGET Qt${QT_VERSION_MAJOR}::qmake)
+    get_target_property(QT_V2RAYN_QMAKE_EXECUTABLE Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
+endif()
+if(QT_V2RAYN_QMAKE_EXECUTABLE)
+    execute_process(
+        COMMAND "${QT_V2RAYN_QMAKE_EXECUTABLE}" -query QT_INSTALL_TRANSLATIONS
+        OUTPUT_VARIABLE QT_V2RAYN_QT_TRANSLATIONS_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif()
+if(NOT QT_V2RAYN_QT_TRANSLATIONS_DIR AND QT_VERSION_MAJOR EQUAL 5)
+    message(WARNING "Qt translations directory not found. Set QT_V2RAYN_QT_TRANSLATIONS_DIR manually or ensure qmake is discoverable.")
+endif()
+
+set(QT_V2RAYN_QT_ZH_QM
+    "${QT_V2RAYN_QT_TRANSLATIONS_DIR}/qt_zh_CN.qm"
+)
+if(EXISTS "${QT_V2RAYN_QT_ZH_QM}")
+    list(APPEND QT_V2RAYN_QT_TRANSLATION_QM_FILES "${QT_V2RAYN_QT_ZH_QM}")
+endif()
+
+set(QT_V2RAYN_QTBASE_ZH_QM
+    "${QT_V2RAYN_QT_TRANSLATIONS_DIR}/qtbase_zh_CN.qm"
+)
+if(EXISTS "${QT_V2RAYN_QTBASE_ZH_QM}")
+    list(APPEND QT_V2RAYN_QT_TRANSLATION_QM_FILES "${QT_V2RAYN_QTBASE_ZH_QM}")
+endif()
+
 set(QT_V2RAYN_TRANSLATION_QM_FILES)
 if(QT_V2RAYN_HAS_LINGUISTTOOLS)
     if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -149,6 +178,10 @@ if(QT_V2RAYN_HAS_LINGUISTTOOLS)
     set(QT_V2RAYN_TRANSLATIONS_QRC "${CMAKE_CURRENT_BINARY_DIR}/translations.qrc")
     file(WRITE "${QT_V2RAYN_TRANSLATIONS_QRC}" "<RCC>\n    <qresource prefix=\"/translations\">\n")
     foreach(qm_file ${QT_V2RAYN_TRANSLATION_QM_FILES})
+        get_filename_component(qm_name "${qm_file}" NAME)
+        file(APPEND "${QT_V2RAYN_TRANSLATIONS_QRC}" "        <file alias=\"${qm_name}\">${qm_file}</file>\n")
+    endforeach()
+    foreach(qm_file ${QT_V2RAYN_QT_TRANSLATION_QM_FILES})
         get_filename_component(qm_name "${qm_file}" NAME)
         file(APPEND "${QT_V2RAYN_TRANSLATIONS_QRC}" "        <file alias=\"${qm_name}\">${qm_file}</file>\n")
     endforeach()

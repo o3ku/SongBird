@@ -1,8 +1,8 @@
 #include "ui/dialogs/SettingsDialog.h"
 #include "runtime/ProtocolCoreCompat.h"
+#include "common/DialogUtils.h"
 
 #include <QCheckBox>
-#include <QAbstractButton>
 #include <QButtonGroup>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -945,6 +945,7 @@ void SettingsDialog::setupUi()
     });
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    DialogUtils::localizeStandardDialogButtonBox(buttonBox_);
     AppTheme::applyCompactFont(buttonBox_);
 
     auto* settingsActionBar = new QWidget(this);
