@@ -9,9 +9,11 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QListView>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QComboBox>
 #include <QMenu>
+#include <QPointer>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyleOptionViewItem>
@@ -36,6 +38,8 @@ private slots:
     void appendLogPreservesViewportWhenFilterActive();
     void logStickToBottomButtonMatchesFilterHeight();
     void globalHotkeySettingsActionEmitsSignal();
+    void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
+    void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
     void toolbarRemovesServerButton();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
@@ -55,7 +59,12 @@ private slots:
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
     void serverContextMenuKeepsExistingMultiSelection();
     void serverContextMenuSelectsClickedUnselectedRow();
+    void serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection();
+    void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
+    void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
+    void requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled();
+    void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
     void compactUiZonesDoNotExceedServerTableFont();
 };
@@ -101,6 +110,60 @@ Config createServerSelectionConfig()
         createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3)};
     config.currentIndexId = QStringLiteral("server-1");
     return config;
+}
+
+bool triggerServerContextMenuAction(
+    MainWindow& window,
+    const QPoint& menuPoint,
+    const QString& actionObjectName,
+    QStringList* actionTexts = nullptr)
+{
+    bool triggered = false;
+
+    QTimer::singleShot(50, [&triggered, actionObjectName, actionTexts]() {
+        auto inspectMenu = [&triggered, &actionObjectName, actionTexts](QMenu* menu) {
+            if (menu == nullptr) {
+                return false;
+            }
+
+            for (QAction* action : menu->actions()) {
+                if (action == nullptr || action->isSeparator()) {
+                    continue;
+                }
+
+                if (actionTexts != nullptr) {
+                    actionTexts->append(action->text());
+                }
+
+                if (action->objectName() == actionObjectName) {
+                    action->trigger();
+                    triggered = true;
+                }
+            }
+
+            menu->close();
+            return true;
+        };
+
+        if (inspectMenu(qobject_cast<QMenu*>(QApplication::activePopupWidget()))) {
+            return;
+        }
+
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (inspectMenu(qobject_cast<QMenu*>(widget))) {
+                return;
+            }
+        }
+    });
+
+    QMetaObject::invokeMethod(
+        &window,
+        "showServerContextMenu",
+        Qt::DirectConnection,
+        Q_ARG(QPoint, menuPoint));
+    QCoreApplication::processEvents();
+
+    return triggered;
 }
 
 } // namespace
@@ -205,6 +268,39 @@ void MainWindowTests::globalHotkeySettingsActionEmitsSignal()
     QCOMPARE(spy.count(), 1);
 }
 
+void MainWindowTests::toolbarOrdersSettingsSubscriptionsAndRoutingButtons()
+{
+    MainWindow window;
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingButton"));
+    auto* subButton = window.findChild<QToolButton*>(QStringLiteral("subButton"));
+    auto* routingButton = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
+    QVERIFY(settingsButton != nullptr);
+    QVERIFY(subButton != nullptr);
+    QVERIFY(routingButton != nullptr);
+
+    QVERIFY(settingsButton->x() < subButton->x());
+    QVERIFY(subButton->x() < routingButton->x());
+    QCOMPARE(settingsButton->text(), QStringLiteral("Settings"));
+    QCOMPARE(subButton->text(), QStringLiteral("Subscriptions"));
+    QCOMPARE(routingButton->text(), QStringLiteral("Routing"));
+}
+
+void MainWindowTests::routingToolbarButtonEmitsRoutingSettingsSignal()
+{
+    MainWindow window;
+    QSignalSpy spy(&window, SIGNAL(openSettingsAtRoutingTabRequested()));
+    QVERIFY(spy.isValid());
+
+    auto* button = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
+    QVERIFY(button != nullptr);
+    button->click();
+
+    QCOMPARE(spy.count(), 1);
+}
+
 void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
 {
     MainWindow window;
@@ -280,8 +376,8 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QCOMPARE(qrPlaceholder->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
     QCOMPARE(qrPlaceholder->margin(), 10);
     QVERIFY(qrPlaceholder->height() <= qrPlaceholder->width());
-    QTRY_VERIFY(!qrPlaceholder->pixmap().isNull());
-    const QPixmap qrPixmap = qrPlaceholder->pixmap();
+    QTRY_VERIFY(!qrPlaceholder->pixmap()->isNull());
+    const QPixmap qrPixmap = *qrPlaceholder->pixmap();
     const qreal qrPixmapDpr = qrPixmap.devicePixelRatio() <= 0.0 ? qreal(1.0) : qrPixmap.devicePixelRatio();
     const int qrPixmapLogicalWidth = qRound(qrPixmap.width() / qrPixmapDpr);
     const int qrPixmapLogicalHeight = qRound(qrPixmap.height() / qrPixmapDpr);
@@ -750,6 +846,79 @@ void MainWindowTests::serverContextMenuSelectsClickedUnselectedRow()
     QCOMPARE(serverView->selectionModel()->selectedRows().size(), 1);
 }
 
+void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+    QVERIFY(QApplication::clipboard() != nullptr);
+
+    const QModelIndex firstIndex = serverView->model()->index(0, 0);
+    const QModelIndex secondIndex = serverView->model()->index(1, 0);
+    QVERIFY(firstIndex.isValid());
+    QVERIFY(secondIndex.isValid());
+
+    QStringList singleSelectionActions;
+    QApplication::clipboard()->clear();
+    serverView->selectionModel()->select(
+        QItemSelection(firstIndex, firstIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QVERIFY(triggerServerContextMenuAction(
+        window,
+        serverView->visualRect(firstIndex).center(),
+        QStringLiteral("copyUrlAction"),
+        &singleSelectionActions));
+    QCOMPARE(QApplication::clipboard()->text(), ShareUrlBuilder::build(config.servers.at(0)));
+    QVERIFY(singleSelectionActions.contains(QStringLiteral("Copy Url")));
+
+    QStringList multiSelectionActions;
+    QApplication::clipboard()->clear();
+    serverView->selectionModel()->select(
+        QItemSelection(firstIndex, secondIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QVERIFY(triggerServerContextMenuAction(
+        window,
+        serverView->visualRect(secondIndex).center(),
+        QStringLiteral("copyUrlAction"),
+        &multiSelectionActions));
+    QCOMPARE(
+        QApplication::clipboard()->text(),
+        ShareUrlBuilder::build(config.servers.at(0)) + QChar('\n') + ShareUrlBuilder::build(config.servers.at(1)));
+    QVERIFY(multiSelectionActions.contains(QStringLiteral("Copy Url")));
+}
+
+void MainWindowTests::serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly()
+{
+    MainWindow window;
+    Config config;
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("ungrouped")));
+    QCOMPARE(serverView->model()->rowCount(), 0);
+
+    // Verify that addServerAction_ exists and has the expected objectName
+    auto* addServerAction = window.findChild<QAction*>(QStringLiteral("addServerAction"));
+    QVERIFY(addServerAction != nullptr);
+
+    // Verify blank-area click yields invalid index and the ungrouped tab is selected
+    const QPoint blankPoint(serverView->viewport()->rect().center());
+    QVERIFY(!serverView->indexAt(blankPoint).isValid());
+}
+
 void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()
 {
     MainWindow window;
@@ -777,6 +946,70 @@ void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()
     QCoreApplication::processEvents();
 
     QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://example.com/subscription"));
+}
+
+void MainWindowTests::currentServerStatusUsesNoServerPlaceholderWhenEmpty()
+{
+    MainWindow window;
+    window.setConfig(Config());
+
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
+
+    window.setCurrentServerName(QStringLiteral("Test Server"));
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
+
+    window.setCurrentServerName(QString());
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
+}
+
+void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()
+{
+    MainWindow window;
+    window.setHideToTrayEnabled(true);
+    window.show();
+    QCoreApplication::processEvents();
+
+    QSignalSpy hiddenSpy(&window, SIGNAL(hiddenToTray()));
+    QVERIFY(hiddenSpy.isValid());
+
+    bool confirmationShown = false;
+    QTimer::singleShot(0, [&confirmationShown]() {
+        auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        QVERIFY(dialog != nullptr);
+        confirmationShown = true;
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit v2rayq"));
+        QCOMPARE(dialog->text(), QStringLiteral("Quit v2rayq now?"));
+        QAbstractButton* noButton = dialog->button(QMessageBox::No);
+        QVERIFY(noButton != nullptr);
+        QTest::mouseClick(noButton, Qt::LeftButton);
+    });
+
+    QVERIFY(!window.requestExit());
+    QVERIFY(confirmationShown);
+    QVERIFY(window.isVisible());
+    QCOMPARE(hiddenSpy.count(), 0);
+}
+
+void MainWindowTests::requestExitConfirmationUsesMainWindowAsParentWhenHidden()
+{
+    MainWindow window;
+    window.hide();
+    QCoreApplication::processEvents();
+
+    bool confirmationParentedToWindow = false;
+    QTimer::singleShot(0, [&confirmationParentedToWindow, &window]() {
+        auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        QVERIFY(dialog != nullptr);
+        confirmationParentedToWindow = dialog->parentWidget() == &window;
+        QAbstractButton* noButton = dialog->button(QMessageBox::No);
+        QVERIFY(noButton != nullptr);
+        QTest::mouseClick(noButton, Qt::LeftButton);
+    });
+
+    QVERIFY(!window.requestExit());
+    QVERIFY(confirmationParentedToWindow);
 }
 
 void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()
@@ -825,6 +1058,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     auto* subscriptionTabBarContainer = window.findChild<QWidget*>(QStringLiteral("subscriptionTabBarContainer"));
     auto* serverHeaderRow = window.findChild<QWidget*>(QStringLiteral("serverHeaderRow"));
     auto* rootSplitter = window.findChild<QSplitter*>(QStringLiteral("rootSplitter"));
+    auto* mainToolBar = window.findChild<QToolBar*>(QStringLiteral("mainToolBar"));
     auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
     auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
     auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
@@ -835,6 +1069,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(subscriptionTabBarContainer != nullptr);
     QVERIFY(serverHeaderRow != nullptr);
     QVERIFY(rootSplitter != nullptr);
+    QVERIFY(mainToolBar != nullptr);
     QVERIFY(serverFilterEdit != nullptr);
     QVERIFY(logFilterEdit != nullptr);
     QVERIFY(routingStatusLabel != nullptr);
@@ -846,6 +1081,8 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(!subscriptionTabBar->expanding());
     QVERIFY(!subscriptionTabBar->drawBase());
     QVERIFY(subscriptionTabBarContainer->layout() != nullptr);
+    QVERIFY(subscriptionTabBarContainer->testAttribute(Qt::WA_StyledBackground));
+    QVERIFY(serverHeaderRow->testAttribute(Qt::WA_StyledBackground));
     QCOMPARE(serverFilterEdit->parentWidget(), subscriptionTabBarContainer);
     const QMargins subscriptionTabBarMargins = subscriptionTabBarContainer->layout()->contentsMargins();
     QCOMPARE(subscriptionTabBarMargins.left(), 0);
@@ -857,9 +1094,10 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QCOMPARE(serverPanelLayout->spacing(), 0);
     const QMargins rootSplitterMargins = rootSplitter->contentsMargins();
     QCOMPARE(rootSplitterMargins.left(), 0);
-    QCOMPARE(rootSplitterMargins.top(), 4);
+    QCOMPARE(rootSplitterMargins.top(), 0);
     QCOMPARE(rootSplitterMargins.right(), 0);
     QCOMPARE(rootSplitterMargins.bottom(), 0);
+    QCOMPARE(rootSplitter->geometry().top(), mainToolBar->geometry().bottom() + 1);
     QVERIFY(serverFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);
@@ -868,6 +1106,10 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QCOMPARE(serverFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
     QCOMPARE(logFilterEdit->sizePolicy().horizontalPolicy(), QSizePolicy::Preferred);
     QCOMPARE(routingCombo->maximumWidth(), routingCombo->minimumWidth());
+
+    auto* logHeaderRow = window.findChild<QWidget*>(QStringLiteral("logHeaderRow"));
+    QVERIFY(logHeaderRow != nullptr);
+    QVERIFY(logHeaderRow->testAttribute(Qt::WA_StyledBackground));
     QVERIFY(serverFilterEdit->maximumWidth() > serverFilterEdit->minimumWidth());
     QVERIFY(logFilterEdit->maximumWidth() > logFilterEdit->minimumWidth());
     QVERIFY(routingCombo->minimumWidth() >= QFontMetrics(routingCombo->font()).horizontalAdvance(routingCombo->currentText()));

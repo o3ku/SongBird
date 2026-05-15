@@ -36,6 +36,10 @@
         <translation>在指定毫秒数后退出应用。</translation>
     </message>
     <message>
+        <source>Skip startup core detection and auto-start for testing.</source>
+        <translation>为测试跳过启动时的核心检测和自动启动。</translation>
+    </message>
+    <message>
         <source>Administrator Permission</source>
         <translation>管理员权限</translation>
     </message>
@@ -52,6 +56,30 @@ Restart as administrator now?</source>
     <message>
         <source>Another v2rayq instance is already running.</source>
         <translation>另一个 v2rayq 实例已经在运行。</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>确定</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>打开</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>保存</translation>
     </message>
 </context>
 <context>
@@ -72,6 +100,7 @@ Restart as administrator now?</source>
     <message><source>Duplicate Server</source><translation>复制服务器</translation></message>
     <message><source>Export Client Config</source><translation>导出客户端配置</translation></message>
     <message><source>Export Server Config</source><translation>导出服务端配置</translation></message>
+    <message><source>Copy Url</source><translation>复制链接</translation></message>
     <message><source>Copy Share Link</source><translation>复制分享链接</translation></message>
     <message><source>Copy Subscription Content</source><translation>复制订阅内容</translation></message>
     <message><source>Open Config</source><translation>打开配置</translation></message>
@@ -171,6 +200,51 @@ Restart as administrator now?</source>
     <message><source>Quit v2rayq</source><translation>退出 v2rayq</translation></message>
     <message><source>Quit v2rayq now?</source><translation>现在退出 v2rayq 吗？</translation></message>
     <message><source>Stick to bottom</source><translation>滚动到底部</translation></message>
+    <message><source>Click to open settings.</source><translation>点击以打开设置。</translation></message>
+    <message><source>Copied %1 share link(s) to the clipboard.</source><translation>已将 %1 个分享链接复制到剪贴板。</translation></message>
+    <message><source>Copied %1 URL(s) to the clipboard.</source><translation>已复制 %1 个链接到剪贴板。</translation></message>
+    <message><source>URL unavailable for the selected server.</source><translation>所选服务器没有可复制的链接。</translation></message>
+    <message><source>Copied share URL to the clipboard.</source><translation>已将分享 URL 复制到剪贴板。</translation></message>
+    <message><source>Copied subscription content for %1 server(s) to the clipboard.</source><translation>已将 %1 个服务器的订阅内容复制到剪贴板。</translation></message>
+    <message><source>Copied subscription URL to the clipboard.</source><translation>已将订阅 URL 复制到剪贴板。</translation></message>
+    <message><source>Copy Subscription Url</source><translation>复制订阅 URL</translation></message>
+    <message><source>Core start is in progress.</source><translation>核心启动中。</translation></message>
+    <message><source>Core start/stop is in progress.</source><translation>核心启动或停止中。</translation></message>
+    <message><source>Delete</source><translation>删除</translation></message>
+    <message><source>Delete Subscription</source><translation>删除订阅</translation></message>
+    <message><source>Delete the selected subscription and all servers inside it?</source><translation>删除所选订阅及其中的所有服务器吗？</translation></message>
+    <message><source>DNS Settings</source><translation>DNS 设置</translation></message>
+    <message><source>Drag reordering is only available when the full server list is visible.</source><translation>仅在显示完整服务器列表时可拖动调整顺序。</translation></message>
+    <message><source>Hide</source><translation>隐藏</translation></message>
+    <message><source>No available server. Add or import a server first.</source><translation>没有可用服务器。请先添加或导入服务器。</translation></message>
+    <message><source>No compatible %1 core is installed for the active server "%2".</source><translation>当前活动服务器“%2”未安装兼容的 %1 核心。</translation></message>
+    <message><source>PAC Proxy</source><translation>PAC 代理</translation></message>
+    <message><source>PROXY</source><translation>代理</translation></message>
+    <message><source>Remove Servers</source><translation>删除服务器</translation></message>
+    <message><source>Remove the selected %1 servers?</source><translation>删除所选的 %1 个服务器吗？</translation></message>
+    <message><source>Remove the selected server?</source><translation>删除所选服务器吗？</translation></message>
+    <message><source>Routing %1</source><translation>路由 %1</translation></message>
+    <message><source>Share link unavailable for the selected server.</source><translation>所选服务器的分享链接不可用。</translation></message>
+    <message><source>START</source><translation>启动</translation></message>
+    <message><source>Start or stop the core.</source><translation>启动或停止核心。</translation></message>
+    <message><source>Start the core with the active server.</source><translation>使用当前活动服务器启动核心。</translation></message>
+    <message><source>Starting</source><translation>启动中</translation></message>
+    <message><source>Stop the running core.</source><translation>停止正在运行的核心。</translation></message>
+    <message><source>Stopping</source><translation>停止中</translation></message>
+    <message><source>Subscription content unavailable for the selected server.</source><translation>所选服务器的订阅内容不可用。</translation></message>
+    <message><source>Subscription Management</source><translation>订阅管理</translation></message>
+    <message><source>Subscription URL unavailable for the current tab.</source><translation>当前标签页的订阅 URL 不可用。</translation></message>
+    <message><source>Switch back to No. ascending order before dragging to reorder servers.</source><translation>拖动调整服务器顺序前，请先切回编号升序。</translation></message>
+    <message><source>Task: %1</source><translation>任务：%1</translation></message>
+    <message><source>Unnamed server</source><translation>未命名服务器</translation></message>
+    <message><source>Update Subscription</source><translation>更新订阅</translation></message>
+    <message><source>Update Subscription via Proxy</source><translation>通过代理更新订阅</translation></message>
+    <message><source>Updating subscriptions...</source><translation>正在更新订阅...</translation></message>
+    <message><source>Proxy ON</source><translation>代理开</translation></message>
+    <message><source>Proxy OFF</source><translation>代理关</translation></message>
+    <message><source>TUN ON</source><translation>TUN 开</translation></message>
+    <message><source>TUN OFF</source><translation>TUN 关</translation></message>
+    <message><source>V2RAYQ [%1] [%2] [%3] [%4]</source><translation>V2RAYQ [%1] [%2] [%3] [%4]</translation></message>
 </context>
 <context>
     <name>ServerTableModel</name>
@@ -264,6 +338,34 @@ Restart as administrator now?</source>
     <message><source>Failed</source><translation>失败</translation></message>
     <message><source>Downloading...</source><translation>正在下载...</translation></message>
     <message><source>Not found</source><translation>未找到</translation></message>
+    <message><source>Base Route</source><translation>基础路由</translation></message>
+    <message><source>Custom Rules</source><translation>自定义规则</translation></message>
+    <message><source>Domain</source><translation>域名</translation></message>
+    <message><source>Install</source><translation>安装</translation></message>
+    <message><source>Installed</source><translation>已安装</translation></message>
+    <message><source>Protocol</source><translation>协议</translation></message>
+</context>
+<context>
+    <name>DnsSettingsDialog</name>
+    <message><source>Behaviour</source><translation>行为</translation></message>
+    <message><source>Block binding queries on direct outbound</source><translation>在直连出站时阻止绑定查询</translation></message>
+    <message><source>Comma-separated CIDRs that direct DNS answers must match</source><translation>直连 DNS 应答必须匹配的 CIDR，多个以逗号分隔</translation></message>
+    <message><source>DNS Servers</source><translation>DNS 服务器</translation></message>
+    <message><source>DNS Settings</source><translation>DNS 设置</translation></message>
+    <message><source>Domain Strategy</source><translation>域名策略</translation></message>
+    <message><source>Extras</source><translation>附加项</translation></message>
+    <message><source>Global FakeIP (apply to all domains)</source><translation>全局 FakeIP（应用于所有域名）</translation></message>
+    <message><source>Hosts</source><translation>Hosts</translation></message>
+    <message><source>Include built-in common hosts</source><translation>包含内置常用 hosts</translation></message>
+    <message><source>One host per line: example.com 1.2.3.4</source><translation>每行一个 host：example.com 1.2.3.4</translation></message>
+    <message><source>Query upstream servers in parallel</source><translation>并行查询上游服务器</translation></message>
+    <message><source>Read entries from the system hosts file</source><translation>读取系统 hosts 文件中的条目</translation></message>
+    <message><source>Serve stale answers when upstream fails</source><translation>上游失败时提供过期应答</translation></message>
+    <message><source>Strategy for Freedom</source><translation>Freedom 的策略</translation></message>
+    <message><source>Strategy for Proxy</source><translation>Proxy 的策略</translation></message>
+    <message><source>Used for direct connections, e.g. https://dns.alidns.com/dns-query</source><translation>用于直连，例如 https://dns.alidns.com/dns-query</translation></message>
+    <message><source>Used for proxied domains, e.g. https://cloudflare-dns.com/dns-query</source><translation>用于代理域名，例如 https://cloudflare-dns.com/dns-query</translation></message>
+    <message><source>Used to resolve DoH/DoT server names, e.g. 223.5.5.5</source><translation>用于解析 DoH/DoT 服务器名称，例如 223.5.5.5</translation></message>
 </context>
 <context>
     <name>GlobalHotkeyDialog</name>
@@ -285,8 +387,35 @@ Restart as administrator now?</source>
     <message><source>Unknown</source><translation>未知</translation></message>
     <message><source>Unavailable</source><translation>不可用</translation></message>
     <message><source>A pure Qt/C++ prototype focused on legacy-compatible v2rayN workflows.</source><translation>一个专注于 legacy 兼容工作流的 Qt/C++ v2rayN 原型。</translation></message>
+    <message><source>A C++ fork of v2rayN with improvements</source><translation>基于 v2rayN 的 C++ 改进分支</translation></message>
+    <message><source>Github</source><translation>GitHub</translation></message>
     <message><source>Version</source><translation>版本</translation></message>
+    <message><source>Release Date</source><translation>发布日期</translation></message>
     <message><source>Config Path</source><translation>配置路径</translation></message>
+</context>
+<context>
+    <name>TrayController</name>
+    <message><source>Current: %1</source><translation>当前：%1</translation></message>
+    <message><source>Switch Server</source><translation>切换服务器</translation></message>
+    <message><source>Switch Routing</source><translation>切换路由</translation></message>
+    <message><source>Start Core</source><translation>启动核心</translation></message>
+    <message><source>Stop Core</source><translation>停止核心</translation></message>
+    <message><source>Quit</source><translation>退出</translation></message>
+    <message><source> (not applied)</source><translation>（未应用）</translation></message>
+    <message><source>No default server</source><translation>无默认服务器</translation></message>
+    <message><source>Core %1</source><translation>核心 %1</translation></message>
+    <message><source>Running</source><translation>运行中</translation></message>
+    <message><source>Stopped</source><translation>已停止</translation></message>
+    <message><source>Proxy %1</source><translation>代理 %1</translation></message>
+    <message><source>Auto Run %1</source><translation>自启动 %1</translation></message>
+    <message><source>Enabled</source><translation>已启用</translation></message>
+    <message><source>Disabled</source><translation>已禁用</translation></message>
+    <message><source>Routing %1</source><translation>路由 %1</translation></message>
+    <message><source>Task %1</source><translation>任务 %1</translation></message>
+    <message><source>No servers</source><translation>没有服务器</translation></message>
+    <message><source>%1 more server(s) hidden</source><translation>还有 %1 个服务器被隐藏</translation></message>
+    <message><source>No routing entries</source><translation>没有路由项</translation></message>
+    <message><source>Unnamed Server</source><translation>未命名服务器</translation></message>
 </context>
 <context>
     <name>WindowsGlobalHotkeyService</name>
@@ -349,10 +478,49 @@ Restart v2rayq as administrator now to apply the saved TUN setting?</source><tra
     <message><source>Update failed. Restoring the previous running core...</source><translation>更新失败，正在恢复之前运行中的核心...</translation></message>
     <message><source>Update Geo Files</source><translation>更新 Geo 文件</translation></message>
     <message><source>Reloading core after updating Geo resources.</source><translation>正在重载核心以应用 Geo 资源更新。</translation></message>
+    <message><source>(unknown)</source><translation>（未知）</translation></message>
+    <message><source>Checking proxy availability</source><translation>检查代理可用性</translation></message>
+    <message><source>DNS settings saved.</source><translation>DNS 设置已保存。</translation></message>
+    <message><source>Failed to save DNS settings.</source><translation>保存 DNS 设置失败。</translation></message>
+    <message><source>Importing clipboard content in the background...</source><translation>正在后台导入剪贴板内容...</translation></message>
+    <message><source>Importing subscription URLs from the clipboard in the background...</source><translation>正在后台从剪贴板导入订阅 URL...</translation></message>
+    <message><source>Install / Update %1 Core</source><translation>安装 / 更新 %1 核心</translation></message>
+    <message><source>Install / Update %1?
+The running core will be stopped before installation if needed.</source><translation>安装 / 更新 %1？
+如有需要，安装前会先停止正在运行的核心。</translation></message>
+    <message><source>Install %1 Core</source><translation>安装 %1 核心</translation></message>
+    <message><source>No compatible %1 core executable was found for the active server "%2". Expected one of: %3.</source><translation>未找到与当前活动服务器“%2”兼容的 %1 核心可执行文件。期望的文件之一：%3。</translation></message>
+    <message><source>Non-interactive mode suppressed the missing-core download prompt for "%1".</source><translation>非交互模式已抑制缺失核心“%1”的下载提示。</translation></message>
+    <message><source>Restart the core to apply the new DNS settings.</source><translation>请重启核心以应用新的 DNS 设置。</translation></message>
+    <message><source>Running availability check in the background...</source><translation>正在后台运行可用性检查...</translation></message>
+    <message><source>Running URL Test</source><translation>正在运行 URL 测试</translation></message>
+    <message><source>Starting the downloaded core...</source><translation>正在启动已下载的核心...</translation></message>
+    <message><source>The active server "%1" needs the %2 core for TUN compatibility, but no compatible executable was found.
+Expected one of: %3.</source><translation>当前活动服务器“%1”因 TUN 兼容性需要 %2 核心，但未找到兼容的可执行文件。
+期望的文件之一：%3。</translation></message>
+    <message><source>The active server "%1" needs the %2 core for TUN compatibility, but no compatible executable was found.
+Expected one of: %3.
+Install it now?</source><translation>当前活动服务器“%1”因 TUN 兼容性需要 %2 核心，但未找到兼容的可执行文件。
+期望的文件之一：%3。
+现在安装吗？</translation></message>
+    <message><source>The active server "%1" requires the %2 core, but no compatible executable was found.
+Expected one of: %3.
+Install it now?</source><translation>当前活动服务器“%1”需要 %2 核心，但未找到兼容的可执行文件。
+期望的文件之一：%3。
+现在安装吗？</translation></message>
+    <message><source>TUN mode requires administrator privileges on Windows. Run v2rayq as administrator before starting the core.</source><translation>TUN 模式在 Windows 上需要管理员权限。请先以管理员身份运行 v2rayq 再启动核心。</translation></message>
+    <message><source>Updating core</source><translation>正在更新核心</translation></message>
+    <message><source>Updating Geo resources</source><translation>正在更新 Geo 资源</translation></message>
+    <message><source>Updating Geo resources in the background...</source><translation>正在后台更新 Geo 资源...</translation></message>
+    <message><source>Updating selected subscriptions in the background...</source><translation>正在后台更新所选订阅...</translation></message>
+    <message><source>Updating subscriptions</source><translation>正在更新订阅</translation></message>
+    <message><source>Updating subscriptions in the background...</source><translation>正在后台更新订阅...</translation></message>
+    <message><source>Updating the current subscription through the local proxy...</source><translation>正在通过本地代理更新当前订阅...</translation></message>
 </context>
 <context>
 <name>ProxyAvailabilityCheckService</name>
     <message><source>Availability check: %1 ms</source><translation>可用性检查：%1 ms</translation></message>
+    <message><source>Availability check is not supported while TUN mode is enabled.</source><translation>启用 TUN 模式时不支持可用性检查。</translation></message>
 </context>
 <context>
     <name>GeoResourceUpdateService</name>
@@ -371,6 +539,7 @@ Restart v2rayq as administrator now to apply the saved TUN setting?</source><tra
     <message><source>Geo download failed.</source><translation>Geo 下载失败。</translation></message>
     <message><source>HTTP %1: %2</source><translation>HTTP %1：%2</translation></message>
     <message><source>HTTP %1</source><translation>HTTP %1</translation></message>
+    <message><source>Geo update cancelled by shutdown.</source><translation>Geo 更新因关闭程序而取消。</translation></message>
 </context>
 <context>
     <name>CoreUpdateService</name>
@@ -405,5 +574,131 @@ Restart v2rayq as administrator now to apply the saved TUN setting?</source><tra
     <message><source>Installing files to %1</source><translation>正在安装文件到 %1</translation></message>
     <message><source>%1 update completed successfully.</source><translation>%1 更新已成功完成。</translation></message>
     <message><source>Updated %1 to %2 in %3.</source><translation>已将 %1 更新到 %2，位置：%3。</translation></message>
-</context>
+    <message><source>Install / Update %1?
+The running core will be stopped before installation if needed.</source><translation>安装 / 更新 %1？
+如有需要，安装前会先停止正在运行的核心。</translation></message>
+    <message><source>Archive extraction failed.</source><translation>解压归档失败。</translation></message>
+    <message><source>Archive extraction timed out.</source><translation>解压归档超时。</translation></message>
+    <message><source>Core download buffer is unavailable.</source><translation>核心下载缓冲区不可用。</translation></message>
+    <message><source>Core download timed out.</source><translation>核心下载超时。</translation></message>
+    <message><source>Core download URL is invalid.</source><translation>核心下载 URL 无效。</translation></message>
+    <message><source>Core update was canceled.</source><translation>核心更新已取消。</translation></message>
+    <message><source>Core version output buffer is unavailable.</source><translation>核心版本输出缓冲区不可用。</translation></message>
+    <message><source>Failed to create the target directory for %1.</source><translation>为 %1 创建目标目录失败。</translation></message>
+    <message><source>Failed to create the target directory: %1.</source><translation>创建目标目录失败：%1。</translation></message>
+    <message><source>Failed to open %1 for reading.</source><translation>打开 %1 进行读取失败。</translation></message>
+    <message><source>Failed to start PowerShell for archive extraction: %1</source><translation>启动 PowerShell 以解压归档失败：%1</translation></message>
+    <message><source>Failed to start the version check process: %1</source><translation>启动版本检查进程失败：%1</translation></message>
+    <message><source>GitHub release metadata was unavailable and no local core installation was found. Falling back to built-in %1 package: %2 (%3).</source><translation>GitHub 发布元数据不可用，且未找到本地核心安装。回退到内置 %1 包：%2 (%3)。</translation></message>
+    <message><source>No local core installation was found. Using built-in bootstrap %1 package: %2 (%3).</source><translation>未找到本地核心安装。使用内置引导 %1 包：%2 (%3)。</translation></message>
+    <message><source>No releases were found.</source><translation>未找到任何发布版本。</translation></message>
+    <message><source>No stable releases were found.</source><translation>未找到稳定发布版本。</translation></message>
+    <message><source>Release metadata is invalid.</source><translation>发布元数据无效。</translation></message>
+    <message><source>Release output buffer is unavailable.</source><translation>发布输出缓冲区不可用。</translation></message>
+    <message><source>The version check process timed out.</source><translation>版本检查进程超时。</translation></message>
+    <message><source>Using direct latest %1 package: %2</source><translation>使用直接最新的 %1 包：%2</translation></message>
+	</context>
+	<context>
+	    <name>AppPlatform</name>
+	    <message>
+	        <source>&lt;No Server&gt;</source>
+	        <translation>&lt;无服务器&gt;</translation>
+	    </message>
+	</context>
+	<context>
+	    <name>AddServerDialog</name>
+	    <message><source>Add Server</source><translation>添加服务器</translation></message>
+	    <message><source>VMess</source><translation>VMess</translation></message>
+	    <message><source>VLESS</source><translation>VLESS</translation></message>
+	    <message><source>Trojan</source><translation>Trojan</translation></message>
+	    <message><source>Shadowsocks</source><translation>Shadowsocks</translation></message>
+	    <message><source>Socks</source><translation>SOCKS</translation></message>
+	    <message><source>HTTP</source><translation>HTTP</translation></message>
+	    <message><source>Hysteria2</source><translation>Hysteria2</translation></message>
+	    <message><source>TUIC</source><translation>TUIC</translation></message>
+	    <message><source>WireGuard</source><translation>WireGuard</translation></message>
+	    <message><source>AnyTLS</source><translation>AnyTLS</translation></message>
+	    <message><source>Naive</source><translation>Naive</translation></message>
+	    <message><source>sing-box (Default)</source><translation>sing-box（默认）</translation></message>
+	    <message><source>Xray</source><translation>Xray</translation></message>
+	    <message><source>example.com</source><translation>example.com</translation></message>
+	    <message><source>Generate UUID</source><translation>生成 UUID</translation></message>
+	    <message><source>Alter ID</source><translation>额外 ID</translation></message>
+	    <message><source>Flow</source><translation>流控</translation></message>
+	    <message><source>Header Type</source><translation>伪装类型</translation></message>
+	    <message><source>Host</source><translation>主机</translation></message>
+	    <message><source>host.example.com</source><translation>host.example.com</translation></message>
+	    <message><source>Path</source><translation>路径</translation></message>
+	    <message><source>/</source><translation>/</translation></message>
+	    <message><source>server name indication</source><translation>服务器名称指示</translation></message>
+	    <message><source>Fingerprint</source><translation>指纹</translation></message>
+	    <message><source>TLS Certificate</source><translation>TLS 证书</translation></message>
+	    <message><source>Pinned Cert SHA256</source><translation>证书 SHA256 锁定</translation></message>
+	    <message><source>ECH Config</source><translation>ECH 配置</translation></message>
+	    <message><source>ECH Force Query</source><translation>ECH 强制查询</translation></message>
+	    <message><source>Public Key</source><translation>公钥</translation></message>
+	    <message><source>Reality public key</source><translation>Reality 公钥</translation></message>
+	    <message><source>Short ID</source><translation>短 ID</translation></message>
+	    <message><source>Spider X</source><translation>Spider X</translation></message>
+	    <message><source>MLDSA65 Verify</source><translation>MLDSA65 验证</translation></message>
+	    <message><source>mldsa65 verify key</source><translation>mldsa65 验证密钥</translation></message>
+	    <message><source>ALPN</source><translation>ALPN</translation></message>
+	    <message><source>User-Agent</source><translation>用户代理</translation></message>
+	    <message><source>Extra</source><translation>扩展</translation></message>
+	    <message><source>Finalmask</source><translation>Finalmask</translation></message>
+	    <message><source>Mux</source><translation>多路复用</translation></message>
+	    <message><source>Inherit Global</source><translation>继承全局</translation></message>
+	    <message><source>Enabled</source><translation>启用</translation></message>
+	    <message><source>Disabled</source><translation>禁用</translation></message>
+	    <message><source>Allow Insecure</source><translation>允许不安全</translation></message>
+	    <message><source>Obfs Password</source><translation>混淆密码</translation></message>
+	    <message><source>Upload (Mbps)</source><translation>上传 (Mbps)</translation></message>
+	    <message><source>Download (Mbps)</source><translation>下载 (Mbps)</translation></message>
+	    <message><source>Congestion Control</source><translation>拥塞控制</translation></message>
+	    <message><source>UDP Relay Mode</source><translation>UDP 中继模式</translation></message>
+	    <message><source>Private Key</source><translation>私钥</translation></message>
+	    <message><source>Peer Public Key</source><translation>对端公钥</translation></message>
+	    <message><source>Local Address</source><translation>本地地址</translation></message>
+	    <message><source>MTU</source><translation>MTU</translation></message>
+	    <message><source>Default</source><translation>默认</translation></message>
+	    <message><source>Reserved</source><translation>保留字段</translation></message>
+	    <message><source>Password</source><translation>密码</translation></message>
+	    <message><source>Use QUIC transport (naive+quic)</source><translation>使用 QUIC 传输 (naive+quic)</translation></message>
+	    <message><source>Insecure Concurrency</source><translation>不安全并发数</translation></message>
+	    <message><source>Off</source><translation>关</translation></message>
+	    <message><source>Type</source><translation>类型</translation></message>
+	    <message><source>Core</source><translation>核心</translation></message>
+	    <message><source>Remarks</source><translation>备注</translation></message>
+	    <message><source>Address</source><translation>地址</translation></message>
+	    <message><source>Port</source><translation>端口</translation></message>
+	    <message><source>Network</source><translation>传输协议</translation></message>
+	    <message><source>Transport Security</source><translation>传输安全</translation></message>
+	    <message><source>SNI</source><translation>SNI</translation></message>
+	    <message><source>Credential</source><translation>凭据</translation></message>
+	    <message><source>Security</source><translation>安全</translation></message>
+	    <message><source>UUID</source><translation>UUID</translation></message>
+	    <message><source>Encryption</source><translation>加密</translation></message>
+	    <message><source>Method</source><translation>方法</translation></message>
+	    <message><source>Username</source><translation>用户名</translation></message>
+	    <message><source>Mode</source><translation>模式</translation></message>
+	    <message><source>Service Name</source><translation>服务名称</translation></message>
+	    <message><source>service-name</source><translation>service-name</translation></message>
+	    <message><source>Seed</source><translation>种子</translation></message>
+	    <message><source>mkcp-seed</source><translation>mkcp-种子</translation></message>
+	    <message><source>QUIC Security</source><translation>QUIC 安全</translation></message>
+	    <message><source>Key</source><translation>密钥</translation></message>
+	    <message><source>none</source><translation>无</translation></message>
+	    <message><source>quic-key</source><translation>quic-密钥</translation></message>
+	</context>
+	<context>
+	    <name>CustomServerDialog</name>
+	    <message><source>Custom Server</source><translation>自定义服务器</translation></message>
+	    <message><source>Select a custom config file</source><translation>选择自定义配置文件</translation></message>
+	    <message><source>Browse</source><translation>浏览</translation></message>
+	    <message><source>Remarks</source><translation>备注</translation></message>
+	    <message><source>Config File</source><translation>配置文件</translation></message>
+	    <message><source>Core</source><translation>核心</translation></message>
+	    <message><source>Pre-Socks Port</source><translation>预 Socks 端口</translation></message>
+	    <message><source>Select Custom Config</source><translation>选择自定义配置</translation></message>
+	</context>
 </TS>

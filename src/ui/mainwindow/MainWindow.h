@@ -48,6 +48,7 @@ public:
     void showTransientStatus(const QString& message, int timeoutMs = 5000);
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
+    bool requestExit();
     void setAutoRunEnabled(bool enabled);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
@@ -68,6 +69,7 @@ public:
 
 signals:
     void openSettingsAtSubscriptionsTabRequested();
+    void openSettingsAtRoutingTabRequested();
     void addServerRequested();
     void addCustomServerRequested();
     void editServerRequested(const QString& indexId);
@@ -150,6 +152,7 @@ private:
     bool isUngroupedSubscriptionTabSelected() const;
     void showSubscriptionTabContextMenu(const QPoint& position);
     void copyCurrentSubscriptionUrlToClipboard();
+    void copySelectedServerUrlsToClipboard();
     void clearTransientStatus();
     void applyDeferredUiState();
     void applyFrameAdjustedWindowMetrics();
@@ -183,7 +186,8 @@ private:
     bool logWasAtBottom_ = false;
     LogItemDelegate* logItemDelegate_ = nullptr;
     ServerTableView* serverView_ = nullptr;
-    QWidget* loadingOverlay_ = nullptr;    QSplitter* topSplitter_ = nullptr;
+    QWidget* loadingOverlay_ = nullptr;
+    QSplitter* topSplitter_ = nullptr;
     QSplitter* rootSplitter_ = nullptr;
     QTabBar* subscriptionTabBar_ = nullptr;
     QWidget* qrPanel_ = nullptr;
@@ -204,6 +208,7 @@ private:
     QAction* duplicateServerAction_ = nullptr;
     QAction* exportClientConfigAction_ = nullptr;
     QAction* exportServerConfigAction_ = nullptr;
+    QAction* copyUrlAction_ = nullptr;
     QAction* copyShareLinkAction_ = nullptr;
     QAction* copySubscriptionContentAction_ = nullptr;
     QAction* copySubscriptionUrlAction_ = nullptr;
@@ -212,6 +217,7 @@ private:
     QAction* importClientConfigAction_ = nullptr;
     QAction* importServerConfigAction_ = nullptr;
     QAction* subAction_ = nullptr;
+    QAction* routingSettingsAction_ = nullptr;
     QAction* updateSubscriptionsAction_ = nullptr;
     QAction* testMeAction_ = nullptr;
     QAction* updateV2RayCoreAction_ = nullptr;

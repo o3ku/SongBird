@@ -1,4 +1,6 @@
 #include "ui/mainwindow/MainWindow.h"
+#include "common/AppPlatform.h"
+#include "common/DialogUtils.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -680,6 +682,17 @@ void MainWindow::setAllowClose(bool allowClose)
     allowClose_ = allowClose;
 }
 
+bool MainWindow::requestExit()
+{
+    if (!confirmExit()) {
+        return false;
+    }
+
+    allowClose_ = true;
+    close();
+    return true;
+}
+
 void MainWindow::setAutoRunEnabled(bool enabled)
 {
     autoRunEnabled_ = enabled;
@@ -1025,6 +1038,10 @@ void MainWindow::updateActionState()
 
     if (exportServerConfigAction_ != nullptr) {
         exportServerConfigAction_->setEnabled(hasServerConfigSelection);
+    }
+
+    if (copyUrlAction_ != nullptr) {
+        copyUrlAction_->setEnabled(hasShareExports);
     }
 
     if (copyShareLinkAction_ != nullptr) {
@@ -1630,6 +1647,7 @@ void MainWindow::setupToolbar()
     toolBar->setContentsMargins(0, 2, 0, 2);
 
     addServerAction_ = new QAction(tr("Add Server"), this);
+    addServerAction_->setObjectName(QStringLiteral("addServerAction"));
     addCustomServerAction_ = new QAction(tr("Import Custom"), this);
     editServerAction_ = new QAction(tr("Edit Server"), this);
     duplicateServerAction_ = new QAction(tr("Duplicate Server"), this);
@@ -1637,6 +1655,8 @@ void MainWindow::setupToolbar()
     exportClientConfigAction_->setObjectName(QStringLiteral("exportClientConfigAction"));
     exportServerConfigAction_ = new QAction(tr("Export Server Config"), this);
     exportServerConfigAction_->setObjectName(QStringLiteral("exportServerConfigAction"));
+    copyUrlAction_ = new QAction(tr("Copy Url"), this);
+    copyUrlAction_->setObjectName(QStringLiteral("copyUrlAction"));
     copyShareLinkAction_ = new QAction(tr("Copy Share Link"), this);
     copyShareLinkAction_->setObjectName(QStringLiteral("copyShareLinkAction"));
     copySubscriptionContentAction_ = new QAction(tr("Copy Subscription Content"), this);
@@ -1651,6 +1671,10 @@ void MainWindow::setupToolbar()
     subAction_ = new QAction(tr("Subscriptions"), this);
     subAction_->setIcon(loadToolbarIcon(QStringLiteral("sub.png")));
     connect(subAction_, &QAction::triggered, this, &MainWindow::openSettingsAtSubscriptionsTabRequested);
+    routingSettingsAction_ = new QAction(tr("Routing"), this);
+    routingSettingsAction_->setObjectName(QStringLiteral("routingSettingsAction"));
+    routingSettingsAction_->setIcon(loadToolbarIcon(QStringLiteral("server.png")));
+    connect(routingSettingsAction_, &QAction::triggered, this, &MainWindow::openSettingsAtRoutingTabRequested);
     updateSubscriptionsAction_ = new QAction(tr("Update Subscriptions"), this);
     updateSubscriptionsAction_->setObjectName(QStringLiteral("updateSubscriptionsAction"));
     testMeAction_ = new QAction(tr("TestMe"), this);
@@ -1750,25 +1774,6 @@ void MainWindow::setupToolbar()
     });
 
     // Sub button now opens Settings at Subscriptions tab
-    // updateCurrentSubscriptionAction and updateSubscriptionsAction_ are moved to Update menu
-
-    auto* updateMenu = new QMenu(tr("Update"), toolBar);
-    updateMenu->setObjectName(QStringLiteral("updateMenu"));
-    updateMenu->addAction(updateV2RayCoreAction_);
-    updateMenu->addAction(updateXrayCoreAction_);
-    updateMenu->addAction(updateSingBoxCoreAction_);
-    updateMenu->addAction(updateClashCoreAction_);
-    updateMenu->addAction(updateClashMetaCoreAction_);
-    updateMenu->addAction(updateGeoResourcesAction_);
-    updateMenu->addSeparator();
-    updateMenu->addAction(updateCurrentSubscriptionAction_);
-    updateMenu->addAction(updateSubscriptionsAction_);
-    updateMenu->addSeparator();
-    updateMenu->addAction(openReleasePageAction_);
-    updateMenu->addAction(openV2RayReleasePageAction_);
-    updateMenu->addAction(openXrayReleasePageAction_);
-    updateMenu->addAction(openSingBoxReleasePageAction_);
-    updateMenu->addAction(openGeoReleasePageAction_);
 
     systemProxyMenu_ = new QMenu(tr("System Proxy"), toolBar);
     systemProxyMenu_->setObjectName(QStringLiteral("systemProxyMenu"));
@@ -1786,19 +1791,29 @@ void MainWindow::setupToolbar()
     auto* settingMenu = new QMenu(toolBar);
     settingMenu->setObjectName(QStringLiteral("settingMenu"));
     settingMenu->addAction(settingsAction_);
+    settingMenu->addAction(routingSettingsAction_);
     settingMenu->addAction(dnsSettingsAction_);
     settingMenu->addAction(globalHotkeySettingsAction_);
 
     auto* helpMenu = new QMenu(tr("Help"), toolBar);
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
     helpMenu->addAction(aboutAction_);
-    helpMenu->addSeparator();
     helpMenu->addAction(openProjectPageAction_);
-    helpMenu->addAction(openDocumentationAction_);
-    helpMenu->addAction(openDnsObjectDocumentationAction_);
-    helpMenu->addAction(openRuleObjectDocumentationAction_);
-    helpMenu->addAction(openLoopbackToolAction_);
+    helpMenu->addSeparator();
+    helpMenu->addAction(updateCurrentSubscriptionAction_);
+    helpMenu->addAction(updateSubscriptionsAction_);
+    helpMenu->addSeparator();
+    helpMenu->addAction(updateGeoResourcesAction_);
+    helpMenu->addAction(updateXrayCoreAction_);
+    helpMenu->addAction(updateSingBoxCoreAction_);
 
+    createToolbarActionButton(
+        toolBar,
+        QStringLiteral("settingButton"),
+        tr("Settings"),
+        loadToolbarIcon(QStringLiteral("option.png")),
+        settingsAction_);
+    toolBar->addSeparator();
     createToolbarActionButton(
         toolBar,
         QStringLiteral("subButton"),
@@ -1808,18 +1823,12 @@ void MainWindow::setupToolbar()
     toolBar->addSeparator();
     createToolbarActionButton(
         toolBar,
-        QStringLiteral("settingButton"),
-        tr("Setting"),
-        loadToolbarIcon(QStringLiteral("option.png")),
-        settingsAction_);
+        QStringLiteral("routingButton"),
+        tr("Routing"),
+        loadToolbarIcon(QStringLiteral("server.png")),
+        routingSettingsAction_);
     toolBar->addSeparator();
 
-    createToolbarMenuButton(
-        toolBar,
-        QStringLiteral("updateButton"),
-        tr("Update"),
-        loadToolbarIcon(QStringLiteral("checkupdate.png")),
-        updateMenu);
     createToolbarMenuButton(
         toolBar,
         QStringLiteral("helpButton"),
@@ -1934,6 +1943,7 @@ void MainWindow::setupServerView()
 
     auto* subscriptionTabBarContainer = new QWidget(this);
     subscriptionTabBarContainer->setObjectName(QStringLiteral("subscriptionTabBarContainer"));
+    subscriptionTabBarContainer->setAttribute(Qt::WA_StyledBackground, true);
     auto* subscriptionTabBarLayout = new QHBoxLayout(subscriptionTabBarContainer);
     subscriptionTabBarLayout->setContentsMargins(0, 0, 0, 0);
     subscriptionTabBarLayout->setSpacing(6);
@@ -1991,6 +2001,7 @@ void MainWindow::setupServerView()
 
     auto* serverHeaderRow = new QWidget(serverPanel);
     serverHeaderRow->setObjectName(QStringLiteral("serverHeaderRow"));
+    serverHeaderRow->setAttribute(Qt::WA_StyledBackground, true);
     auto* serverHeaderLayout = new QHBoxLayout(serverHeaderRow);
     serverHeaderLayout->setContentsMargins(0, 0, 2, 0);
     serverHeaderLayout->setSpacing(0);
@@ -2019,8 +2030,9 @@ void MainWindow::setupServerView()
 
     auto* logHeaderRow = new QWidget(logPanel);
     logHeaderRow->setObjectName(QStringLiteral("logHeaderRow"));
+    logHeaderRow->setAttribute(Qt::WA_StyledBackground, true);
     auto* logHeaderLayout = new QHBoxLayout(logHeaderRow);
-    logHeaderLayout->setContentsMargins(10, 7, 2, 3);
+    logHeaderLayout->setContentsMargins(10, 4, 2, 4);
     logHeaderLayout->setSpacing(6);
 
     auto* logTitleLabel = new QLabel(tr("Information"), logHeaderRow);
@@ -2074,7 +2086,7 @@ void MainWindow::setupServerView()
 
     rootSplitter_ = new QSplitter(Qt::Vertical, this);
     rootSplitter_->setObjectName(QStringLiteral("rootSplitter"));
-    rootSplitter_->setContentsMargins(0, 4, 0, 0);
+    rootSplitter_->setContentsMargins(0, 0, 0, 0);
     rootSplitter_->setChildrenCollapsible(false);
     rootSplitter_->addWidget(topSplitter_);
     rootSplitter_->addWidget(logPanel);
@@ -2175,20 +2187,8 @@ void MainWindow::setupConnections()
             emit exportServerConfigRequested(indexId);
         }
     });
-    connect(copyShareLinkAction_, &QAction::triggered, this, [this]() {
-        const QStringList shareLinks = buildShareLinks(selectedServers());
-        if (shareLinks.isEmpty()) {
-            showTransientStatus(tr("Share link unavailable for the selected server."), 4000);
-            return;
-        }
-
-        if (QApplication::clipboard() != nullptr) {
-            QApplication::clipboard()->setText(shareLinks.join(QChar('\n')));
-        }
-        const QString message = tr("Copied %1 share link(s) to the clipboard.").arg(shareLinks.size());
-        appendLog(message);
-        showTransientStatus(message, 3000);
-    });
+    connect(copyUrlAction_, &QAction::triggered, this, &MainWindow::copySelectedServerUrlsToClipboard);
+    connect(copyShareLinkAction_, &QAction::triggered, this, &MainWindow::copySelectedServerUrlsToClipboard);
     connect(copySubscriptionContentAction_, &QAction::triggered, this, [this]() {
         const QStringList shareLinks = buildShareLinks(selectedServers());
         if (shareLinks.isEmpty()) {
@@ -2241,11 +2241,10 @@ void MainWindow::setupConnections()
         const QString message = indexIds.size() == 1
             ? tr("Remove the selected server?")
             : tr("Remove the selected %1 servers?").arg(indexIds.size());
-        if (QMessageBox::question(
+        if (DialogUtils::askYesNoQuestion(
                 this,
                 tr("Remove Servers"),
                 message,
-                QMessageBox::Yes | QMessageBox::No,
                 QMessageBox::No)
             != QMessageBox::Yes) {
             return;
@@ -2586,8 +2585,7 @@ void MainWindow::setupConnections()
     exitShortcutAction->setShortcut(QKeySequence(Qt::ALT | Qt::Key_X));
     exitShortcutAction->setShortcutContext(Qt::WindowShortcut);
     connect(exitShortcutAction, &QAction::triggered, this, [this]() {
-        setAllowClose(true);
-        close();
+        requestExit();
     });
     addAction(exitShortcutAction);
 
@@ -2654,11 +2652,10 @@ void MainWindow::showSubscriptionTabContextMenu(const QPoint& position)
 
         auto* deleteAction = menu.addAction(tr("Delete"));
         connect(deleteAction, &QAction::triggered, &menu, [this, subscriptionId]() {
-            if (QMessageBox::question(
+            if (DialogUtils::askYesNoQuestion(
                     this,
                     tr("Delete Subscription"),
                     tr("Delete the selected subscription and all servers inside it?"),
-                    QMessageBox::Yes | QMessageBox::No,
                     QMessageBox::No)
                 == QMessageBox::Yes) {
                 emit deleteSubscriptionRequested(subscriptionId);
@@ -2683,6 +2680,18 @@ void MainWindow::showServerContextMenu(const QPoint& position)
     }
 
     const QModelIndex clickedIndex = serverView_->indexAt(position);
+    const bool ungroupedTabSelected = isUngroupedSubscriptionTabSelected();
+    if (!clickedIndex.isValid()) {
+        if (!ungroupedTabSelected || addServerAction_ == nullptr) {
+            return;
+        }
+
+        QMenu menu(serverView_);
+        menu.addAction(addServerAction_);
+        menu.exec(serverView_->viewport()->mapToGlobal(position));
+        return;
+    }
+
     if (clickedIndex.isValid() && !serverView_->selectionModel()->isRowSelected(clickedIndex.row(), QModelIndex())) {
         serverView_->clearSelection();
         serverView_->setCurrentIndex(clickedIndex);
@@ -2696,11 +2705,11 @@ void MainWindow::showServerContextMenu(const QPoint& position)
     }
 
     const bool singleSelection = selectedIds.size() == 1;
-    const bool ungroupedTabSelected = isUngroupedSubscriptionTabSelected();
     QMenu menu(serverView_);
 
     if (singleSelection) {
         menu.addAction(setDefaultServerAction_);
+        menu.addAction(copyUrlAction_);
 
         if (ungroupedTabSelected) {
             menu.addAction(editServerAction_);
@@ -2714,6 +2723,7 @@ void MainWindow::showServerContextMenu(const QPoint& position)
             menu.addAction(testAction_);
         }
     } else {
+        menu.addAction(copyUrlAction_);
         menu.addAction(testAction_);
         if (ungroupedTabSelected) {
             menu.addSeparator();
@@ -2738,6 +2748,30 @@ void MainWindow::copyCurrentSubscriptionUrlToClipboard()
 
     appendLog(tr("Copied subscription URL to the clipboard."));
     showTransientStatus(tr("Copied subscription URL to the clipboard."), 3000);
+}
+
+void MainWindow::copySelectedServerUrlsToClipboard()
+{
+    const QStringList shareLinks = buildShareLinks(selectedServers());
+    const bool copyShareLinkRequested = sender() == copyShareLinkAction_;
+    if (shareLinks.isEmpty()) {
+        showTransientStatus(
+            copyShareLinkRequested
+                ? tr("Share link unavailable for the selected server.")
+                : tr("URL unavailable for the selected server."),
+            4000);
+        return;
+    }
+
+    if (QApplication::clipboard() != nullptr) {
+        QApplication::clipboard()->setText(shareLinks.join(QChar('\n')));
+    }
+
+    const QString message = copyShareLinkRequested
+        ? tr("Copied %1 share link(s) to the clipboard.").arg(shareLinks.size())
+        : tr("Copied %1 URL(s) to the clipboard.").arg(shareLinks.size());
+    appendLog(message);
+    showTransientStatus(message, 3000);
 }
 
 void MainWindow::applyDeferredUiState()
@@ -2891,11 +2925,10 @@ QString MainWindow::persistedSubscriptionSelectionId() const
 
 bool MainWindow::confirmExit()
 {
-    return QMessageBox::question(
+    return DialogUtils::askYesNoQuestion(
                this,
                tr("Quit v2rayq"),
                tr("Quit v2rayq now?"),
-               QMessageBox::Yes | QMessageBox::No,
                QMessageBox::No)
         == QMessageBox::Yes;
 }
@@ -2923,23 +2956,26 @@ QString MainWindow::describeRoutingMode(const RoutingItem& item, int index)
 void MainWindow::updateWindowTitle()
 {
     const QString coreName = currentCoreName_.trimmed().isEmpty()
-        ? QStringLiteral("Unknown")
+        ? tr("Unknown")
         : currentCoreName_.trimmed();
     const QString serverName = currentServerName_.trimmed().isEmpty()
-        ? QStringLiteral("None")
+        ? tr("None")
         : currentServerName_.trimmed();
-    const QString proxyState = systemProxyApplied_ ? QStringLiteral("Proxy ON") : QStringLiteral("Proxy OFF");
-    const QString tunState = tunEnabled_ ? QStringLiteral("TUN ON") : QStringLiteral("TUN OFF");
+    const QString proxyState = systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
+    const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
 
-    setWindowTitle(QStringLiteral("V2RAYQ [%1] [%2] [%3] [%4]")
+    setWindowTitle(tr("V2RAYQ [%1] [%2] [%3] [%4]")
                        .arg(coreName, serverName, proxyState, tunState));
 }
 
 void MainWindow::updateStatusIndicators()
 {
     if (currentServerStatusLabel_ != nullptr) {
+        const QString currentServerText = currentServerName_.trimmed().isEmpty()
+            ? noServerPlaceholderText()
+            : currentServerName_.trimmed();
         currentServerStatusLabel_->setText(tr("Current: %1").arg(
-            currentServerName_));
+            currentServerText));
     }
 
     if (routingStatusLabel_ != nullptr) {
