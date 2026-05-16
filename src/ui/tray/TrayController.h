@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
 #include "common/SystemProxyMode.h"
@@ -18,6 +19,7 @@ class TrayController final : public QObject {
 
 public:
     explicit TrayController(MainWindow* mainWindow, QObject* parent = nullptr);
+    ~TrayController() override;
 
     bool initialize();
     bool isAvailable() const;
@@ -55,15 +57,15 @@ private:
     static QString describeServer(const VmessItem& item);
     static QString describeRouting(const RoutingItem& item, int index);
 
-    MainWindow* mainWindow_ = nullptr;
-    QSystemTrayIcon* trayIcon_ = nullptr;
-    QMenu* trayMenu_ = nullptr;
-    QAction* currentServerAction_ = nullptr;
-    QMenu* serversMenu_ = nullptr;
-    QMenu* routingsMenu_ = nullptr;
-    QAction* startCoreAction_ = nullptr;
-    QAction* stopCoreAction_ = nullptr;
-    QAction* quitAction_ = nullptr;
+    QPointer<MainWindow> mainWindow_;
+    QPointer<QSystemTrayIcon> trayIcon_;
+    QPointer<QMenu> trayMenu_;
+    QPointer<QAction> currentServerAction_;
+    QPointer<QMenu> serversMenu_;
+    QPointer<QMenu> routingsMenu_;
+    QPointer<QAction> startCoreAction_;
+    QPointer<QAction> stopCoreAction_;
+    QPointer<QAction> quitAction_;
     QString currentServerName_;
     QString routingSummary_;
     QString statisticsSummary_;

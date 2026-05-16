@@ -1,11 +1,149 @@
 #include "ui/theme/AppTheme.h"
 
 #include <QApplication>
+#include <QAbstractItemModel>
+#include <QEvent>
 #include <QFont>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPalette>
+#include <QPointer>
 #include <QStringView>
+#include <QStyledItemDelegate>
+#include <QStyle>
+#include <QStyleOptionViewItem>
+#include <QTableView>
 #include <QWidget>
 
 namespace {
+
+constexpr auto kServerTableStyleProperty = "serverTableStyle";
+constexpr auto kServerTableHoveredRowProperty = "serverTableHoveredRow";
+constexpr auto kServerTableHoverTrackerName = "serverTableHoverTracker";
+constexpr auto kServerTableStyleDelegateName = "serverTableStyleDelegate";
+
+class ServerTableStyleDelegate final : public QStyledItemDelegate {
+public:
+    explicit ServerTableStyleDelegate(QObject* parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+        setObjectName(QString::fromLatin1(kServerTableStyleDelegateName));
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QStyleOptionViewItem styledOption(option);
+        initStyleOption(&styledOption, index);
+
+        const auto* tableView = qobject_cast<const QTableView*>(parent());
+        const bool selected = (styledOption.state & QStyle::State_Selected) != 0;
+        const int hoveredRow = tableView == nullptr
+            ? -1
+            : tableView->property(kServerTableHoveredRowProperty).toInt();
+        const bool hovered = !selected && hoveredRow == index.row();
+        const QColor rowDividerColor(QStringLiteral("#e1e7ee"));
+        const QColor hoveredDividerColor(QStringLiteral("#9babc5"));
+        const QColor selectedDividerColor(QStringLiteral("#b0c4e3"));
+        const QColor baseColor = tableView == nullptr
+            ? QColor(QStringLiteral("#ffffff"))
+            : tableView->palette().color(QPalette::Base);
+        const QColor alternateBaseColor = tableView == nullptr
+            ? QColor(QStringLiteral("#f9f9f9"))
+            : tableView->palette().color(QPalette::AlternateBase);
+        const QColor bgColor = selected
+            ? QColor(QStringLiteral("#c5dbfe"))
+            : (hovered
+                    ? QColor(QStringLiteral("#f2f6fc"))
+                    : (((index.row() % 2) != 0) ? alternateBaseColor : baseColor));
+
+        styledOption.state &= ~QStyle::State_HasFocus;
+        styledOption.state &= ~QStyle::State_MouseOver;
+        styledOption.state &= ~QStyle::State_Selected;
+        styledOption.backgroundBrush = QBrush(bgColor);
+        painter->fillRect(option.rect, bgColor);
+
+        const QWidget* widget = styledOption.widget;
+        QStyle* style = widget == nullptr ? QApplication::style() : widget->style();
+        style->drawControl(QStyle::CE_ItemViewItem, &styledOption, painter, widget);
+
+        painter->save();
+        painter->setPen(QPen(selected ? selectedDividerColor : (hovered ? hoveredDividerColor : rowDividerColor)));
+        painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
+        painter->restore();
+    }
+};
+
+class ServerTableHoverTracker final : public QObject {
+public:
+    explicit ServerTableHoverTracker(QTableView* tableView)
+        : QObject(tableView)
+        , tableView_(tableView)
+    {
+        setObjectName(QString::fromLatin1(kServerTableHoverTrackerName));
+        if (tableView_ != nullptr && tableView_->viewport() != nullptr) {
+            tableView_->viewport()->installEventFilter(this);
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (tableView_ == nullptr
+            || tableView_->viewport() == nullptr
+            || watched != tableView_->viewport()
+            || event == nullptr) {
+            return QObject::eventFilter(watched, event);
+        }
+
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            const QModelIndex index = tableView_->indexAt(mouseEvent->pos());
+            setHoveredRow(index.isValid() ? index.row() : -1);
+            break;
+        }
+        case QEvent::Leave:
+            setHoveredRow(-1);
+            break;
+        default:
+            break;
+        }
+
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void setHoveredRow(int row)
+    {
+        if (tableView_ == nullptr) {
+            return;
+        }
+
+        const int previousRow = tableView_->property(kServerTableHoveredRowProperty).toInt();
+        if (previousRow == row) {
+            return;
+        }
+
+        tableView_->setProperty(kServerTableHoveredRowProperty, row);
+
+        if (tableView_->model() == nullptr) {
+            tableView_->viewport()->update();
+            return;
+        }
+
+        const int columnCount = tableView_->model()->columnCount();
+        for (int column = 0; column < columnCount; ++column) {
+            if (previousRow >= 0) {
+                tableView_->update(tableView_->model()->index(previousRow, column));
+            }
+            if (row >= 0) {
+                tableView_->update(tableView_->model()->index(row, column));
+            }
+        }
+    }
+
+    QPointer<QTableView> tableView_;
+};
 
 QString buildApplicationStyleSheet()
 {
@@ -69,21 +207,18 @@ QString buildApplicationStyleSheet()
         "QAbstractItemView#comboPopupView::item:selected { background: #c5dbfe; color: #1f1f1f; }"
         "QHeaderView::section { background: #f1f1f1; color: #444444; padding: 2px 8px; border: none; border-bottom: 1px solid #d0d0d0; border-right: 1px solid #e6e6e6; font-weight: 600; }"
         "QHeaderView::section:last { border-right: none; }"
-        "QTableView#serverTableView { border: none; font-size: 9pt; }"
-        "QTableView#serverTableView QHeaderView::section { background: #ffffff; }"
+        "QTableView[serverTableStyle=\"true\"], QTableWidget[serverTableStyle=\"true\"] { border: 1px solid #c8c8c8; font-size: 9pt; }"
+        "QTableView[serverTableStyle=\"true\"] QHeaderView::section, QTableWidget[serverTableStyle=\"true\"] QHeaderView::section { background: #ffffff; }"
+        "QTableView#serverTableView[serverTableStyle=\"true\"] { border: none; }"
         "QSplitter#rootSplitter { background: #ffffff; }"
         "QWidget#settingsStackContainer { background: #ffffff; border: none; }"
-        "QWidget#settingsTabBarContainer { background: transparent; border: none; border-bottom: 1px solid #000000; }"
+        "QWidget#settingsTabBarContainer, QWidget#subscriptionTabBarContainer { background: transparent; border: none; border-bottom: 1px solid #000000; }"
         "QWidget#settingsActionBar { background: #ffffff; border: none; border-top: 1px solid #000000; }"
-        "QTabBar#settingsTabBar { background: transparent; border: none; }"
-        "QTabBar#settingsTabBar::tab { background: transparent; color: #808080; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; }"
-        "QTabBar#settingsTabBar::tab:selected { background: #111111; color: #ffffff; }"
-        "QTabBar#settingsTabBar::tab:hover:!selected { background: #dddddd; color: #222222; }"
-        "QWidget#subscriptionTabBarContainer { background: transparent; border: none; border-bottom: 1px solid #d0d0d0; }"
-        "QTabBar#subscriptionTabBar { background: transparent; border: none; }"
-        "QTabBar#subscriptionTabBar::tab { background: transparent; color: #808080; font-weight: 400; padding: 8px 24px 6px 24px; margin: 0px; border: none; border-bottom: 2px solid transparent; }"
-        "QTabBar#subscriptionTabBar::tab:selected { background: transparent; color: #222222; font-weight: 600; border-bottom-color: #000000; }"
-        "QTabBar#subscriptionTabBar::tab:hover:!selected { background: transparent; color: #444444; border-bottom-color: #777777; }"
+        "QTabWidget#routingCustomRuleTabs::pane { background: #ffffff; border: none; }"
+        "QTabBar#settingsTabBar, QTabBar#subscriptionTabBar, QTabWidget#routingCustomRuleTabs QTabBar { background: transparent; border: none; }"
+        "QTabBar#settingsTabBar::tab, QTabBar#subscriptionTabBar::tab, QTabWidget#routingCustomRuleTabs QTabBar::tab { background: transparent; color: #808080; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; }"
+        "QTabBar#settingsTabBar::tab:selected, QTabBar#subscriptionTabBar::tab:selected, QTabWidget#routingCustomRuleTabs QTabBar::tab:selected { background: #111111; color: #ffffff; }"
+        "QTabBar#settingsTabBar::tab:hover:!selected, QTabBar#subscriptionTabBar::tab:hover:!selected, QTabWidget#routingCustomRuleTabs QTabBar::tab:hover:!selected { background: #dddddd; color: #222222; }"
         "#serverHeaderRow { background: #f4f4f4; }"
         "#serverHeaderRow { border-bottom: 1px solid #d0d0d0; }"
         "QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: #ffffff; border: 1px solid #c8c8c8; border-radius: 0px; padding: 2px 8px; }"
@@ -157,6 +292,41 @@ void AppTheme::applyCompactFont(const QList<QWidget*>& widgets)
     for (QWidget* widget : widgets) {
         applyCompactFont(widget);
     }
+}
+
+void AppTheme::applyServerTableStyle(QTableView* tableView)
+{
+    if (tableView == nullptr) {
+        return;
+    }
+
+    tableView->setProperty(kServerTableStyleProperty, true);
+    tableView->setProperty(kServerTableHoveredRowProperty, -1);
+    tableView->setAlternatingRowColors(true);
+    tableView->setShowGrid(false);
+    tableView->setMouseTracking(true);
+
+    if (tableView->viewport() != nullptr) {
+        tableView->viewport()->setMouseTracking(true);
+    }
+
+    QPalette palette = tableView->palette();
+    palette.setColor(QPalette::Base, QColor(QStringLiteral("#ffffff")));
+    palette.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#f9f9f9")));
+    tableView->setPalette(palette);
+
+    if (tableView->findChild<QObject*>(QString::fromLatin1(kServerTableHoverTrackerName)) == nullptr) {
+        new ServerTableHoverTracker(tableView);
+    }
+
+    if (tableView->itemDelegate() == nullptr
+        || tableView->itemDelegate()->objectName() != QString::fromLatin1(kServerTableStyleDelegateName)) {
+        tableView->setItemDelegate(new ServerTableStyleDelegate(tableView));
+    }
+
+    tableView->style()->unpolish(tableView);
+    tableView->style()->polish(tableView);
+    tableView->update();
 }
 
 QString AppTheme::semanticStatusProperty(QStringView colorHex)

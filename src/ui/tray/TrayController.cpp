@@ -99,6 +99,18 @@ TrayController::TrayController(MainWindow* mainWindow, QObject* parent)
 {
 }
 
+TrayController::~TrayController()
+{
+    if (trayIcon_ != nullptr) {
+        trayIcon_->setContextMenu(nullptr);
+        trayIcon_->hide();
+    }
+    if (trayMenu_ != nullptr && trayMenu_->parent() == nullptr) {
+        delete trayMenu_;
+        trayMenu_ = nullptr;
+    }
+}
+
 bool TrayController::initialize()
 {
     if (mainWindow_ == nullptr || !QSystemTrayIcon::isSystemTrayAvailable()) {
@@ -110,7 +122,7 @@ bool TrayController::initialize()
     trayIcon_->setIcon(loadDefaultTrayIcon());
     trayIcon_->setToolTip(QStringLiteral("v2rayq"));
 
-    trayMenu_ = new QMenu(mainWindow_);
+    trayMenu_ = new QMenu();
     trayMenu_->setObjectName(QStringLiteral("trayMenu"));
     currentServerAction_ = trayMenu_->addAction(trayText("Current: %1").arg(noServerPlaceholderText()));
     currentServerAction_->setObjectName(QStringLiteral("trayCurrentServerAction"));

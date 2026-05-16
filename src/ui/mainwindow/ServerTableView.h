@@ -17,7 +17,6 @@ public:
 
     void setRowsReorderEnabled(bool enabled);
     bool rowsReorderEnabled() const;
-    int hoveredRow() const;
     void setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler);
     bool moveSelectedRowsTo(int targetRow);
 
@@ -32,9 +31,7 @@ protected:
 private:
     int resolveDropRow(const QPoint& viewportPosition) const;
     bool requestMoveSelectedRows(int targetRow);
-    void setHoveredRow(int row);
 
     std::function<void(const QList<int>& rows, int targetRow)> rowsMoveHandler_;
     bool rowsReorderEnabled_ = true;
-    int hoveredRow_ = -1;
 };

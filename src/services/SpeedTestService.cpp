@@ -48,13 +48,6 @@ QString describeServer(const VmessItem& server)
     return server.indexId.trimmed();
 }
 
-QString formatLatencyResult(qint64 milliseconds)
-{
-    return milliseconds >= 0
-        ? QStringLiteral("%1 ms").arg(milliseconds)
-        : QStringLiteral("Timeout");
-}
-
 QString defaultUrlTestUrl(const Config& config)
 {
     return config.speedPingTestUrl.trimmed().isEmpty()
@@ -411,15 +404,22 @@ QString runUrlTest(
 
     stopRuntime();
 
-    if (!timedOut && headersObserved && (headerStatusCode == 200 || headerStatusCode == 204)) {
-        return formatLatencyResult(headerElapsedMs);
+    const bool successFromHeaders = !timedOut && headersObserved && (headerStatusCode == 200 || headerStatusCode == 204);
+    const bool successFromFinishedReply = !timedOut && (statusCode == 200 || statusCode == 204);
+    const qint64 latencyMs = successFromHeaders
+        ? headerElapsedMs
+        : (successFromFinishedReply ? timer.elapsed() : -1);
+    const auto probeResult = SpeedTestServiceInternal::classifyUrlProbeResult(
+        successFromHeaders || successFromFinishedReply,
+        timedOut,
+        latencyMs,
+        normalizeErrorText(errorText));
+    if (probeResult.status == SpeedTestServiceInternal::UrlProbeStatus::Failed
+        && !probeResult.errorText.isEmpty()) {
+        log(QStringLiteral("URL Test failure detail | %1 | %2")
+                .arg(serverName, probeResult.errorText));
     }
-
-    if (!timedOut && (statusCode == 200 || statusCode == 204)) {
-        return formatLatencyResult(timer.elapsed());
-    }
-
-    return timedOut ? QStringLiteral("Timeout") : normalizeErrorText(errorText);
+    return SpeedTestServiceInternal::formatUrlProbeResult(probeResult);
 }
 
 class SpeedTestWorker final : public QObject

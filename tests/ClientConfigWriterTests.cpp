@@ -35,6 +35,7 @@ private slots:
     void generateClientConfigsAddsSystemHostsToLegacyDnsHostsWhenEnabled();
     void generateClientConfigsAddsLegacyServeStaleAndParallelQueryWhenEnabled();
     void generateClientConfigsUsesLegacyRealityMldsa65Verify();
+    void generateClientConfigsUsesLegacyRealityPublicKeyField();
     void generateClientConfigsUsesLegacyTlsEchFields();
     void generateClientConfigsUsesDefaultAllowInsecureForSingBoxTlsWhenServerValueMissing();
     void generateClientConfigsUsesSingBoxTlsCertificates();
@@ -904,6 +905,29 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityMldsa65Verif
                                           .toObject();
 
     QCOMPARE(realitySettings.value(QStringLiteral("mldsa65Verify")).toString(), QStringLiteral("mldsa65-public-key"));
+}
+
+void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityPublicKeyField()
+{
+    Config config = legacyConfig();
+    config.tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.streamSecurity = QStringLiteral("reality");
+    server.publicKey = QStringLiteral("reality-public-key");
+    server.shortId = QStringLiteral("0123456789abcdef");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    const QJsonObject realitySettings = proxyOutbound.value(QStringLiteral("streamSettings")).toObject()
+                                          .value(QStringLiteral("realitySettings"))
+                                          .toObject();
+
+    QCOMPARE(realitySettings.value(QStringLiteral("publicKey")).toString(), QStringLiteral("reality-public-key"));
+    QVERIFY(realitySettings.value(QStringLiteral("password")).isUndefined());
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsEchFields()

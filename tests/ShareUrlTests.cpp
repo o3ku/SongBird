@@ -20,6 +20,8 @@ private slots:
     void buildAndParseNaiveHttpsRoundTrips();
     void buildAndParseNaiveQuicRoundTrips();
     void parseHysteria2PinSha256IntoCertSha();
+    void parseVlessTlsVisionShareUrl();
+    void parseVlessRealityVisionShareUrl();
 };
 
 void ShareUrlTests::buildAndParseHttpupgradeTransportRoundTrips()
@@ -246,6 +248,56 @@ void ShareUrlTests::parseHysteria2PinSha256IntoCertSha()
     QCOMPARE(parsed.configType, ConfigType::Hysteria2);
     QCOMPARE(parsed.certSha, QStringLiteral("sha256/base64-pin"));
     QVERIFY(parsed.fingerprint.isEmpty());
+}
+
+void ShareUrlTests::parseVlessTlsVisionShareUrl()
+{
+    const QString url =
+        QStringLiteral("vless://79b78774-0ccd-4792-aa2d-189887dd987f@hk1.ap221.com:443?"
+                       "encryption=none&flow=xtls-rprx-vision&security=tls&sni=hk.ap221.com&"
+                       "type=tcp&headerType=none#HK");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::VLESS);
+    QCOMPARE(parsed.address, QStringLiteral("hk1.ap221.com"));
+    QCOMPARE(parsed.port, 443);
+    QCOMPARE(parsed.id, QStringLiteral("79b78774-0ccd-4792-aa2d-189887dd987f"));
+    QCOMPARE(parsed.security, QStringLiteral("none"));
+    QCOMPARE(parsed.flow, QStringLiteral("xtls-rprx-vision"));
+    QCOMPARE(parsed.streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(parsed.sni, QStringLiteral("hk.ap221.com"));
+    QCOMPARE(parsed.network, QStringLiteral("tcp"));
+    QCOMPARE(parsed.headerType, QStringLiteral("none"));
+}
+
+void ShareUrlTests::parseVlessRealityVisionShareUrl()
+{
+    const QString url =
+        QStringLiteral("vless://a4caef32-090f-4f17-b7fa-2808f205620d@64.49.46.225:57502?"
+                       "encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.tesla.com&"
+                       "fp=firefox&pbk=IOAu39FSiRk_VX4sfzCVZorWhUY0ikftPdHqcmNoY1c&"
+                       "sid=ebfeeffb94d5bd5d&type=tcp&headerType=none#HK");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::VLESS);
+    QCOMPARE(parsed.address, QStringLiteral("64.49.46.225"));
+    QCOMPARE(parsed.port, 57502);
+    QCOMPARE(parsed.id, QStringLiteral("a4caef32-090f-4f17-b7fa-2808f205620d"));
+    QCOMPARE(parsed.security, QStringLiteral("none"));
+    QCOMPARE(parsed.flow, QStringLiteral("xtls-rprx-vision"));
+    QCOMPARE(parsed.streamSecurity, QStringLiteral("reality"));
+    QCOMPARE(parsed.sni, QStringLiteral("www.tesla.com"));
+    QCOMPARE(parsed.fingerprint, QStringLiteral("firefox"));
+    QCOMPARE(parsed.publicKey, QStringLiteral("IOAu39FSiRk_VX4sfzCVZorWhUY0ikftPdHqcmNoY1c"));
+    QCOMPARE(parsed.shortId, QStringLiteral("ebfeeffb94d5bd5d"));
+    QCOMPARE(parsed.network, QStringLiteral("tcp"));
+    QCOMPARE(parsed.headerType, QStringLiteral("none"));
 }
 
 void ShareUrlTests::buildAndParseRealityMldsa65VerifyRoundTrips()

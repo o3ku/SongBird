@@ -298,6 +298,8 @@ Restart as administrator now?</source>
     <message><source>Per-Protocol Override</source><translation>按协议覆盖</translation></message>
     <message><source>Installed Cores</source><translation>已安装核心</translation></message>
     <message><source>Download</source><translation>下载</translation></message>
+    <message><source>By Protocol</source><translation>按协议设置</translation></message>
+    <message><source>By Core</source><translation>按Core设置</translation></message>
     <message><source>Set All</source><translation>全部设为</translation></message>
     <message><source>Set all protocols to %1</source><translation>将所有协议设为使用 %1</translation></message>
     <message><source>Leave empty to use built-in PAC server (http://127.0.0.1:10870/pac)</source><translation>留空则使用内置 PAC 服务器 (http://127.0.0.1:10870/pac)</translation></message>
@@ -447,6 +449,8 @@ Restart v2rayq as administrator now to apply the saved TUN setting?</source><tra
     <message><source>Restart Required</source><translation>需要重启</translation></message>
     <message><source>Language changes take effect after restart. Restart now?</source><translation>语言切换需要重启后生效。现在重启吗？</translation></message>
     <message><source>Failed to restart the application.</source><translation>重启应用失败。</translation></message>
+    <message><source>Node set successfully. It may be inaccessible. Please verify manually.</source><translation>节点设置成功，可能无法访问，请自行验证。</translation></message>
+    <message><source>Please verify manually</source><translation>请自行验证</translation></message>
     <message><source>Traffic: Speed D 0B/s / U 0B/s | Today D 0B / U 0B | Total D 0B / U 0B</source><translation>流量：速度 下行 0B/s / 上行 0B/s | 今日 下行 0B / 上行 0B | 总计 下行 0B / 上行 0B</translation></message>
     <message><source>Traffic: Speed D %1/s / U %2/s | Today D %3 / U %4 | Total D %5 / U %6</source><translation>流量：速度 下行 %1/s / 上行 %2/s | 今日 下行 %3 / 上行 %4 | 总计 下行 %5 / 上行 %6</translation></message>
     <message><source>Stats: Off</source><translation>统计：关闭</translation></message>

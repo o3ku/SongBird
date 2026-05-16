@@ -2724,7 +2724,7 @@ QJsonObject ClientConfigWriter::buildStreamSettings(const Config& config, const 
         QJsonObject realitySettings;
         realitySettings.insert(QStringLiteral("serverName"), resolveServerName(server));
         realitySettings.insert(QStringLiteral("fingerprint"), resolveRealityFingerprint(config, server));
-        realitySettings.insert(QStringLiteral("password"), server.publicKey.trimmed());
+        realitySettings.insert(QStringLiteral("publicKey"), server.publicKey.trimmed());
         realitySettings.insert(QStringLiteral("shortId"), server.shortId.trimmed());
         realitySettings.insert(QStringLiteral("spiderX"), server.spiderX.trimmed());
         if (!server.mldsa65Verify.trimmed().isEmpty()) {

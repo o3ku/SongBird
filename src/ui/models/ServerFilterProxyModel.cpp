@@ -3,6 +3,7 @@
 #include <QAbstractItemModel>
 #include <QRegularExpression>
 
+#include "services/SpeedTestServiceInternal.h"
 #include "ui/models/ServerTableModel.h"
 
 namespace {
@@ -56,14 +57,20 @@ int compareValues(const T& left, const T& right)
 
 bool tryParseTestResultMetric(const QString& value, QString& family, double& numericValue)
 {
-    static const QRegularExpression expression(
-        QStringLiteral("^([+-]?\\d+(?:\\.\\d+)?)\\s*([a-zA-Z/]+)$"));
-
     const QString normalized = normalizeSortText(value);
     if (normalized.isEmpty()) {
         return false;
     }
 
+    double parsedLatencyMs = 0.0;
+    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, parsedLatencyMs)) {
+        family = QStringLiteral("latency");
+        numericValue = parsedLatencyMs;
+        return true;
+    }
+
+    static const QRegularExpression expression(
+        QStringLiteral("^([+-]?\\d+(?:\\.\\d+)?)\\s*([a-zA-Z/]+)$"));
     const QRegularExpressionMatch match = expression.match(normalized);
     if (!match.hasMatch()) {
         return false;
@@ -76,11 +83,6 @@ bool tryParseTestResultMetric(const QString& value, QString& family, double& num
     }
 
     const QString unit = match.captured(2);
-    if (unit == QStringLiteral("ms")) {
-        family = QStringLiteral("latency");
-        numericValue = rawNumber;
-        return true;
-    }
 
     const QHash<QString, double> speedUnitMultipliers{
         {QStringLiteral("b/s"), 1.0},

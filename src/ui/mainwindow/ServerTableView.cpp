@@ -1,66 +1,14 @@
 #include "ui/mainwindow/ServerTableView.h"
+#include "ui/theme/AppTheme.h"
 
-#include "ui/models/ServerTableModel.h"
-
-#include <QBrush>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QEvent>
 #include <QItemSelectionModel>
 #include <QMouseEvent>
-#include <QPalette>
-#include <QPainter>
-#include <QStyle>
-#include <QApplication>
-#include <QStyledItemDelegate>
 
 #include <algorithm>
-
-namespace {
-
-class ServerTableItemDelegate final : public QStyledItemDelegate {
-public:
-    explicit ServerTableItemDelegate(QObject* parent = nullptr)
-        : QStyledItemDelegate(parent)
-    {
-    }
-
-    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
-    {
-        QStyleOptionViewItem styledOption(option);
-        initStyleOption(&styledOption, index);
-
-        const bool selected = (styledOption.state & QStyle::State_Selected) != 0;
-        const auto* tableView = dynamic_cast<const ServerTableView*>(parent());
-        const bool hovered = !selected && tableView != nullptr && tableView->hoveredRow() == index.row();
-        const QColor rowDividerColor(QStringLiteral("#e1e7ee"));
-        const QColor hoveredDividerColor(QStringLiteral("#9babc5"));
-        const QColor selectedDividerColor(QStringLiteral("#b0c4e3"));
-        styledOption.state &= ~QStyle::State_HasFocus;
-        styledOption.state &= ~QStyle::State_MouseOver;
-        styledOption.state &= ~QStyle::State_Selected;
-
-        if (selected || hovered) {
-            const QColor bgColor = selected ? QColor(QStringLiteral("#c5dbfe")) : QColor(QStringLiteral("#f2f6fc"));
-            styledOption.backgroundBrush = QBrush(bgColor);
-            painter->fillRect(option.rect, bgColor);
-        } else {
-            styledOption.backgroundBrush = QBrush(Qt::NoBrush);
-        }
-
-        const QWidget* widget = styledOption.widget;
-        QStyle* style = widget == nullptr ? QApplication::style() : widget->style();
-        style->drawControl(QStyle::CE_ItemViewItem, &styledOption, painter, widget);
-
-        painter->save();
-        painter->setPen(QPen(selected ? selectedDividerColor : (hovered ? hoveredDividerColor : rowDividerColor)));
-        painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
-        painter->restore();
-    }
-};
-
-} // namespace
 
 ServerTableView::ServerTableView(QWidget* parent)
     : QTableView(parent)
@@ -70,13 +18,7 @@ ServerTableView::ServerTableView(QWidget* parent)
     setDragDropOverwriteMode(false);
     setDropIndicatorShown(false);
     setRowsReorderEnabled(false);
-    setMouseTracking(true);
-    viewport()->setMouseTracking(true);
-    setItemDelegate(new ServerTableItemDelegate(this));
-
-    connect(this, &QTableView::entered, this, [this](const QModelIndex& index) {
-        setHoveredRow(index.isValid() ? index.row() : -1);
-    });
+    AppTheme::applyServerTableStyle(this);
 }
 
 void ServerTableView::setRowsReorderEnabled(bool enabled)
@@ -93,11 +35,6 @@ void ServerTableView::setRowsReorderEnabled(bool enabled)
 bool ServerTableView::rowsReorderEnabled() const
 {
     return rowsReorderEnabled_;
-}
-
-int ServerTableView::hoveredRow() const
-{
-    return hoveredRow_;
 }
 
 void ServerTableView::setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler)
@@ -153,7 +90,6 @@ void ServerTableView::dropEvent(QDropEvent* event)
 
 void ServerTableView::leaveEvent(QEvent* event)
 {
-    setHoveredRow(-1);
     QTableView::leaveEvent(event);
 }
 
@@ -230,29 +166,3 @@ bool ServerTableView::requestMoveSelectedRows(int targetRow)
     return true;
 }
 
-void ServerTableView::setHoveredRow(int row)
-{
-    if (hoveredRow_ == row) {
-        return;
-    }
-
-    const int previousRow = hoveredRow_;
-    hoveredRow_ = row;
-
-    if (model() == nullptr) {
-        viewport()->update();
-        return;
-    }
-
-    const int columnCount = model()->columnCount();
-    if (previousRow >= 0) {
-        for (int col = 0; col < columnCount; ++col) {
-            update(model()->index(previousRow, col));
-        }
-    }
-    if (hoveredRow_ >= 0) {
-        for (int col = 0; col < columnCount; ++col) {
-            update(model()->index(hoveredRow_, col));
-        }
-    }
-}

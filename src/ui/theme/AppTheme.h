@@ -5,6 +5,7 @@
 
 class QApplication;
 class QStringView;
+class QTableView;
 class QWidget;
 
 namespace AppTheme {
@@ -12,6 +13,7 @@ namespace AppTheme {
 void applyApplicationTheme(QApplication& app);
 void applyCompactFont(QWidget* widget);
 void applyCompactFont(const QList<QWidget*>& widgets);
+void applyServerTableStyle(QTableView* tableView);
 QString semanticStatusProperty(QStringView colorHex);
 QString successStatusColor();
 QString warningStatusColor();
