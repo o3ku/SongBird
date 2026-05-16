@@ -54,9 +54,9 @@ public:
     void setProxyEnabled(bool enabled);
     void setCoreRunning(bool enabled, bool pending = false);
     void setCurrentServerName(const QString& name);
+    void setCurrentServerWarning(const QString& warning);
     void setRoutingSummary(const QString& routingText, const QString& listenText);
     void setStatisticsSessionState(const StatisticsSessionState& state);
-    void setTrafficSummary(const QString& text);
     void setSpeedTestRunning(bool running);
     void setSubscriptionUpdateRunning(bool running);
     void setBackgroundTaskRunning(bool running);
@@ -183,6 +183,7 @@ private:
     LogListModel* logModel_ = nullptr;
     LogFilterProxyModel* logFilterModel_ = nullptr;
     QTimer* logScrollTimer_ = nullptr;
+    QTimer* transientStatusTimer_ = nullptr;
     bool logWasAtBottom_ = false;
     LogItemDelegate* logItemDelegate_ = nullptr;
     ServerTableView* serverView_ = nullptr;
@@ -279,12 +280,14 @@ private:
     bool coreRunning_ = false;
     bool coreTransitionPending_ = false;
     bool speedTestRunning_ = false;
+    QString currentServerWarning_;
     bool backgroundTaskRunning_ = false;
     bool qrPreviewVisible_ = false;
     bool uiStateRestorePending_ = false;
     bool initialServerColumnLayoutPending_ = true;
     bool frameAdjustedWindowMetricsApplied_ = false;
     QString backgroundTaskDescription_;
+    QString transientStatusMessage_;
     Config config_;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;

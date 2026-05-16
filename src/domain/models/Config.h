@@ -32,7 +32,6 @@ struct Config {
     std::optional<bool> mux4SboxPadding;
     int sysProxyType = 0;
     bool enableStatistics = false;
-    bool keepOlderDedup = false;
     int statisticsFreshRate = 1;
     bool showMainOnStartup = true;
     bool autoRunEnabled = false;
@@ -46,7 +45,6 @@ struct Config {
     QString settingsRoutingRuleTabKey;
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
-    bool mainQrPreviewVisible = false;
     bool mainCoreRunning = false;
     bool mainProxyEnabled = false;
     QString speedPingTestUrl;
@@ -79,10 +77,7 @@ struct Config {
     QString systemProxyExceptions;
     QString systemProxyAdvancedProtocol;
     QString pacUrl;
-    int autoUpdateInterval = 0;
-    int autoUpdateSubInterval = 0;
     bool checkPreReleaseUpdate = false;
-    bool enableSecurityProtocolTls13 = false;
     int trayMenuServersLimit = 0;
 
     QList<VmessItem> servers;

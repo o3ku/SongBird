@@ -103,11 +103,8 @@ private:
     QLineEdit* systemProxyExceptionsEdit_ = nullptr;
     QComboBox* systemProxyAdvancedProtocolCombo_ = nullptr;
     QLineEdit* pacUrlEdit_ = nullptr;
-    QSpinBox* autoUpdateIntervalSpin_ = nullptr;
-    QSpinBox* autoUpdateSubIntervalSpin_ = nullptr;
     QCheckBox* checkPreReleaseUpdateCheck_ = nullptr;
     QCheckBox* ignoreGeoUpdateCoreCheck_ = nullptr;
-    QCheckBox* enableSecurityProtocolTls13Check_ = nullptr;
     QComboBox* languageCombo_ = nullptr;
     QCheckBox* tunEnableCheck_ = nullptr;
     QCheckBox* tunAutoRouteCheck_ = nullptr;
@@ -141,6 +138,8 @@ private:
     CoreType updatingCoreType_ = CoreType::Unknown;
 
     QList<RoutingItem> routingItems_;
+    QLabel* baseRouteTitleLabel_ = nullptr;
+    QLabel* customRulesTitleLabel_ = nullptr;
     QButtonGroup* baseRouteButtonGroup_ = nullptr;
     QHBoxLayout* baseRouteLayout_ = nullptr;
     QTabWidget* customRuleTabs_ = nullptr;

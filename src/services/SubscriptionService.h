@@ -21,6 +21,8 @@ public:
 
 private:
     static void normalizeSubscriptionIds(QList<SubItem>& items);
+    static QString serverReuseKey(const VmessItem& item);
+    static QString normalizedValue(const QString& value);
 
     IConfigRepository& repository_;
 };

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <QHash>
 #include <QSet>
 #include <QUuid>
 
@@ -26,6 +27,20 @@ QList<VmessItem> deduplicateSubscriptionServersByUuid(const QList<VmessItem>& it
     }
 
     return deduplicated;
+}
+
+bool hasServerWithIndexId(const QList<VmessItem>& servers, const QString& indexId)
+{
+    if (indexId.trimmed().isEmpty()) {
+        return false;
+    }
+
+    return std::any_of(
+        servers.cbegin(),
+        servers.cend(),
+        [&indexId](const VmessItem& item) {
+            return item.indexId == indexId;
+        });
 }
 }
 
@@ -143,23 +158,67 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     const QString& subscriptionId,
     QList<VmessItem> items)
 {
-    if (subscriptionId.trimmed().isEmpty()) {
+    const QString normalizedId = subscriptionId.trimmed();
+    if (normalizedId.isEmpty()) {
         return OperationResult::fail(QStringLiteral("Subscription id is required."));
     }
 
+    const QString previousCurrentIndexId = config.currentIndexId;
+    QList<VmessItem> oldSubscriptionServers;
     auto newEnd = std::remove_if(
         config.servers.begin(),
         config.servers.end(),
-        [&subscriptionId](const VmessItem& item) {
-            return item.subId == subscriptionId;
+        [&normalizedId, &oldSubscriptionServers](const VmessItem& item) {
+            if (item.subId.trimmed() == normalizedId) {
+                oldSubscriptionServers.append(item);
+                return true;
+            }
+
+            return false;
         });
     config.servers.erase(newEnd, config.servers.end());
 
     items = deduplicateSubscriptionServersByUuid(items);
+    QHash<QString, QList<VmessItem>> reusableServersByKey;
+    for (const VmessItem& oldItem : oldSubscriptionServers) {
+        reusableServersByKey[serverReuseKey(oldItem)].append(oldItem);
+    }
+
+    QStringList newSubscriptionIndexIds;
     for (VmessItem& item : items) {
-        item.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        item.subId = subscriptionId;
+        const QString reuseKey = serverReuseKey(item);
+        QList<VmessItem>& reusableServers = reusableServersByKey[reuseKey];
+        if (!reusableServers.isEmpty()) {
+            item.indexId = reusableServers.takeFirst().indexId;
+        } else {
+            item.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        }
+
+        item.subId = normalizedId;
         config.servers.append(item);
+        newSubscriptionIndexIds.append(item.indexId);
+    }
+
+    if (!hasServerWithIndexId(config.servers, previousCurrentIndexId)) {
+        const bool currentBelongedToUpdatedSubscription = std::any_of(
+            oldSubscriptionServers.cbegin(),
+            oldSubscriptionServers.cend(),
+            [&previousCurrentIndexId](const VmessItem& item) {
+                return item.indexId == previousCurrentIndexId;
+            });
+        if (currentBelongedToUpdatedSubscription) {
+            if (!newSubscriptionIndexIds.isEmpty()) {
+                config.currentIndexId = newSubscriptionIndexIds.constFirst();
+            } else if (!config.servers.isEmpty()) {
+                config.currentIndexId = config.servers.constFirst().indexId;
+            } else {
+                config.currentIndexId.clear();
+            }
+        } else if (previousCurrentIndexId.trimmed().isEmpty()) {
+            config.currentIndexId.clear();
+        } else {
+            config.currentIndexId = previousCurrentIndexId;
+        }
     }
 
     if (!repository_.save(config)) {
@@ -176,4 +235,43 @@ void SubscriptionService::normalizeSubscriptionIds(QList<SubItem>& items)
             item.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         }
     }
+}
+
+QString SubscriptionService::serverReuseKey(const VmessItem& item)
+{
+    const QString baseKey = QString::number(static_cast<int>(item.configType))
+        + QLatin1Char('|')
+        + normalizedValue(item.address)
+        + QLatin1Char('|')
+        + QString::number(item.port);
+
+    switch (item.configType) {
+    case ConfigType::Shadowsocks:
+        return baseKey + QLatin1Char('|') + normalizedValue(item.security)
+            + QLatin1Char('|') + normalizedValue(item.id);
+    case ConfigType::Naive:
+        return baseKey + QLatin1Char('|') + normalizedValue(item.username)
+            + QLatin1Char('|') + normalizedValue(item.id);
+    case ConfigType::Socks:
+    case ConfigType::HTTP:
+        return baseKey + QLatin1Char('|') + normalizedValue(item.id)
+            + QLatin1Char('|') + normalizedValue(item.security);
+    case ConfigType::VMess:
+    case ConfigType::VLESS:
+    case ConfigType::Trojan:
+    case ConfigType::Hysteria2:
+    case ConfigType::TUIC:
+    case ConfigType::AnyTLS:
+        return baseKey + QLatin1Char('|') + normalizedValue(item.id);
+    case ConfigType::Custom:
+    case ConfigType::WireGuard:
+    case ConfigType::Unknown:
+    default:
+        return baseKey + QLatin1Char('|') + normalizedValue(item.id);
+    }
+}
+
+QString SubscriptionService::normalizedValue(const QString& value)
+{
+    return value.trimmed().toLower();
 }

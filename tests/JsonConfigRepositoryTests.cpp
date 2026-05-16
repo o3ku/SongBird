@@ -69,6 +69,7 @@ private slots:
     void loadReadsRoutingCustomRules();
     void savePersistsRoutingCustomRules();
     void savePersistsSettingsRoutingRuleTabKey();
+    void saveRemovesDeprecatedDeadConfigKeys();
     void loadDefaultsMainRuntimeStateToOffWhenMissing();
     void loadReadsMainRuntimeStateFromUiItem();
     void savePersistsMainRuntimeStateToUiItem();
@@ -76,6 +77,7 @@ private slots:
     void savePersistsRoutingItemDomainStrategy4Singbox();
     void loadReadsGlobalHotkeys();
     void savePersistsGlobalHotkeys();
+    void saveRemovesDeprecatedTls13ConfigKey();
     void loadDefaultsTunIcmpRoutingToRuleWhenMissing();
     void loadDefaultsTunIcmpRoutingToRuleWhenEmptyObject();
     void loadDefaultsTunEnableIpv6AddressToFalseWhenMissing();
@@ -1371,6 +1373,39 @@ void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
     QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
 }
 
+void JsonConfigRepositoryTests::saveRemovesDeprecatedDeadConfigKeys()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject uiItem;
+    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), true);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("keepOlderDedupl"), true);
+    root.insert(QStringLiteral("uiItem"), uiItem);
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    Config config = repository.load();
+    QVERIFY(repository.save(config));
+
+    QFile reloadedFile(configPath);
+    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
+    QVERIFY(document.isObject());
+
+    const QJsonObject savedRoot = document.object();
+    QVERIFY(!savedRoot.contains(QStringLiteral("keepOlderDedupl")));
+    QVERIFY(!savedRoot.value(QStringLiteral("uiItem")).toObject().contains(QStringLiteral("mainQrPreviewVisible")));
+}
+
 void JsonConfigRepositoryTests::loadDefaultsMainRuntimeStateToOffWhenMissing()
 {
     QTemporaryDir tempDir;
@@ -1552,6 +1587,32 @@ void JsonConfigRepositoryTests::savePersistsGlobalHotkeys()
     QVERIFY(reloadedItem.shift);
     QVERIFY(reloadedItem.keyCode.has_value());
     QCOMPARE(reloadedItem.keyCode.value(), 91);
+}
+
+void JsonConfigRepositoryTests::saveRemovesDeprecatedTls13ConfigKey()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("enableSecurityProtocolTls13"), true);
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+    QVERIFY(repository.save(config));
+
+    QFile reloadedFile(configPath);
+    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
+    QVERIFY(document.isObject());
+    QVERIFY(!document.object().contains(QStringLiteral("enableSecurityProtocolTls13")));
 }
 
 void JsonConfigRepositoryTests::loadDefaultsTunIcmpRoutingToRuleWhenMissing()

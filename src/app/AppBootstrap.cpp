@@ -1161,9 +1161,15 @@ void AppBootstrap::wireMainWindow()
         appendResult(result);
         syncWindow();
         if (result.success) {
+            if (mainWindow_ != nullptr) {
+                mainWindow_->setCurrentServerWarning({});
+            }
+            setCurrentActivationPending_ = true;
             if (isCoreRunning()) {
                 if (previousIndexId != config_.currentIndexId) {
                     restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
+                } else {
+                    setCurrentActivationPending_ = false;
                 }
             } else {
                 startCore();
@@ -1213,9 +1219,15 @@ void AppBootstrap::wireMainWindow()
         appendResult(result);
         syncWindow();
         if (result.success) {
+            if (mainWindow_ != nullptr) {
+                mainWindow_->setCurrentServerWarning({});
+            }
+            setCurrentActivationPending_ = true;
             if (isCoreRunning()) {
                 if (previousIndexId != config_.currentIndexId) {
                     restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
+                } else {
+                    setCurrentActivationPending_ = false;
                 }
             } else {
                 startCore();
@@ -1384,7 +1396,6 @@ void AppBootstrap::syncStatusIndicators()
         mainWindow_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
         if (statisticsService_ != nullptr) {
             mainWindow_->setStatisticsSessionState(statisticsState);
-            mainWindow_->setTrafficSummary(buildTrafficSummaryText());
         }
     }
 
@@ -1836,6 +1847,9 @@ void AppBootstrap::handleCoreStarted(
     bool customServer,
     std::optional<bool> startupProxyEnabled)
 {
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setCurrentServerWarning({});
+    }
     coreStartPending_ = false;
     coreReady_ = true;
     disconnectPendingCoreStartConnection();
@@ -1880,6 +1894,17 @@ void AppBootstrap::handleCoreStarted(
         if (!proxyUpdated) {
             appendResult(OperationResult::fail(QStringLiteral(
                 "Failed to apply the configured Global system proxy after starting the core.")));
+            if (setCurrentActivationPending_) {
+                if (mainWindow_ != nullptr) {
+                    mainWindow_->setCurrentServerWarning(
+                        QCoreApplication::translate("AppBootstrap", "Please verify manually"));
+                }
+                appendResult(OperationResult::fail(
+                    QCoreApplication::translate(
+                        "AppBootstrap",
+                        "Node set successfully. It may be inaccessible. Please verify manually.")));
+                setCurrentActivationPending_ = false;
+            }
         } else if (!wasApplied) {
             appendResult(OperationResult::ok(QStringLiteral(
                 "Applied the configured Global system proxy after starting the core.")));
@@ -1888,6 +1913,7 @@ void AppBootstrap::handleCoreStarted(
             managedSystemProxyActive_ = true;
         }
     }
+    setCurrentActivationPending_ = false;
 
     syncStatusIndicators();
 }
@@ -1900,6 +1926,17 @@ void AppBootstrap::handleCoreStartFailed(const QString& message)
     coreTunEnabledAtStart_ = false;
     disconnectPendingCoreStartConnection();
     appendResult(OperationResult::fail(message));
+    if (setCurrentActivationPending_) {
+        if (mainWindow_ != nullptr) {
+            mainWindow_->setCurrentServerWarning(
+                QCoreApplication::translate("AppBootstrap", "Please verify manually"));
+        }
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate(
+                "AppBootstrap",
+                "Node set successfully. It may be inaccessible. Please verify manually.")));
+        setCurrentActivationPending_ = false;
+    }
     stopAuxiliaryCore();
     stopStatisticsSession();
     syncStatusIndicators();
@@ -2279,6 +2316,7 @@ void AppBootstrap::cancelPendingCoreRestarts()
 void AppBootstrap::restartCoreIfRunning(const QString& reason)
 {
     if (!isCoreRunning() || coreStopPending_) {
+        setCurrentActivationPending_ = false;
         return;
     }
 

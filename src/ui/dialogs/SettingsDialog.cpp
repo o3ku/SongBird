@@ -8,6 +8,7 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QFontMetrics>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -232,11 +233,8 @@ void SettingsDialog::setConfig(const Config& config)
     systemProxyExceptionsEdit_->setText(config.systemProxyExceptions);
     systemProxyAdvancedProtocolCombo_->setCurrentText(config.systemProxyAdvancedProtocol);
     pacUrlEdit_->setText(config.pacUrl);
-    autoUpdateIntervalSpin_->setValue(qMax(0, config.autoUpdateInterval));
-    autoUpdateSubIntervalSpin_->setValue(qMax(0, config.autoUpdateSubInterval));
     checkPreReleaseUpdateCheck_->setChecked(config.checkPreReleaseUpdate);
     ignoreGeoUpdateCoreCheck_->setChecked(config.ignoreGeoUpdateCore);
-    enableSecurityProtocolTls13Check_->setChecked(config.enableSecurityProtocolTls13);
 
     const QString normalizedLanguage = config.languageCode.trimmed();
     const int languageIndex = languageCombo_->findData(normalizedLanguage);
@@ -325,11 +323,8 @@ Config SettingsDialog::config() const
     updated.systemProxyExceptions = systemProxyExceptionsEdit_->text().trimmed();
     updated.systemProxyAdvancedProtocol = systemProxyAdvancedProtocolCombo_->currentText().trimmed();
     updated.pacUrl = pacUrlEdit_->text().trimmed();
-    updated.autoUpdateInterval = autoUpdateIntervalSpin_->value();
-    updated.autoUpdateSubInterval = autoUpdateSubIntervalSpin_->value();
     updated.checkPreReleaseUpdate = checkPreReleaseUpdateCheck_->isChecked();
     updated.ignoreGeoUpdateCore = ignoreGeoUpdateCoreCheck_->isChecked();
-    updated.enableSecurityProtocolTls13 = enableSecurityProtocolTls13Check_->isChecked();
     updated.languageCode = languageCombo_->currentData().toString().trimmed();
     updated.routingItems = collectRoutingItems();
     updated.routingCustomRules = collectRoutingCustomRules();
@@ -483,6 +478,7 @@ void SettingsDialog::setupUi()
     subTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     subTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     subTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    AppTheme::applyServerTableStyle(subTable_);
     AppTheme::applyCompactFont(subTable_);
     AppTheme::applyCompactFont(subTable_->horizontalHeader());
 
@@ -504,13 +500,13 @@ void SettingsDialog::setupUi()
     auto* routingTab = new QWidget(this);
     auto* routingLayout = new QVBoxLayout(routingTab);
 
-    auto* baseRouteTitle = new QLabel(tr("Base Route"), routingTab);
-    baseRouteTitle->setObjectName(QStringLiteral("routingBaseRouteTitle"));
-    AppTheme::applyCompactFont(baseRouteTitle);
-    QFont baseRouteTitleFont = baseRouteTitle->font();
+    baseRouteTitleLabel_ = new QLabel(tr("Base Route"), routingTab);
+    baseRouteTitleLabel_->setObjectName(QStringLiteral("routingBaseRouteTitle"));
+    AppTheme::applyCompactFont(baseRouteTitleLabel_);
+    QFont baseRouteTitleFont = baseRouteTitleLabel_->font();
     baseRouteTitleFont.setBold(true);
-    baseRouteTitle->setFont(baseRouteTitleFont);
-    routingLayout->addWidget(baseRouteTitle);
+    baseRouteTitleLabel_->setFont(baseRouteTitleFont);
+    routingLayout->addWidget(baseRouteTitleLabel_);
 
     baseRouteLayout_ = new QHBoxLayout();
     baseRouteLayout_->setObjectName(QStringLiteral("routingBaseRouteLayout"));
@@ -523,17 +519,21 @@ void SettingsDialog::setupUi()
     });
     routingLayout->addLayout(baseRouteLayout_);
 
-    auto* customRulesTitle = new QLabel(tr("Custom Rules"), routingTab);
-    customRulesTitle->setObjectName(QStringLiteral("routingCustomRulesTitle"));
-    AppTheme::applyCompactFont(customRulesTitle);
-    QFont customRulesTitleFont = customRulesTitle->font();
+    customRulesTitleLabel_ = new QLabel(tr("Custom Rules"), routingTab);
+    customRulesTitleLabel_->setObjectName(QStringLiteral("routingCustomRulesTitle"));
+    AppTheme::applyCompactFont(customRulesTitleLabel_);
+    QFont customRulesTitleFont = customRulesTitleLabel_->font();
     customRulesTitleFont.setBold(true);
-    customRulesTitle->setFont(customRulesTitleFont);
-    routingLayout->addWidget(customRulesTitle);
+    customRulesTitleLabel_->setFont(customRulesTitleFont);
+    routingLayout->addWidget(customRulesTitleLabel_);
 
     customRuleTabs_ = new QTabWidget(routingTab);
     customRuleTabs_->setObjectName(QStringLiteral("routingCustomRuleTabs"));
     AppTheme::applyCompactFont(customRuleTabs_);
+    customRuleTabs_->setDocumentMode(true);
+    customRuleTabs_->tabBar()->setDrawBase(false);
+    customRuleTabs_->tabBar()->setExpanding(false);
+    AppTheme::applyCompactFont(customRuleTabs_->tabBar());
 
     const QList<QPair<QString, QString>> customTabs{
         {QStringLiteral("block"), QStringLiteral("Block")},
@@ -619,8 +619,22 @@ void SettingsDialog::setupUi()
         {QStringLiteral("HTTP"), ConfigType::HTTP}
     };
     const QList<CoreType> allCores = availableCoreTypes();
+    const QFontMetrics coreLabelMetrics(coreTab->font());
+    int protocolLabelWidth = 0;
+    for (const CoreProtocolEntry& entry : coreProtocolEntries_) {
+        protocolLabelWidth = qMax(protocolLabelWidth, coreLabelMetrics.horizontalAdvance(entry.name));
+    }
+    const int coreStatusInfoWidth = coreLabelMetrics.horizontalAdvance(tr("Downloading...")) + 20;
 
     // Per-protocol core selection
+    auto* coreTypeTitle = new QLabel(tr("By Protocol"), coreTab);
+    coreTypeTitle->setObjectName(QStringLiteral("coreProtocolSectionTitle"));
+    AppTheme::applyCompactFont(coreTypeTitle);
+    QFont coreTypeTitleFont = coreTypeTitle->font();
+    coreTypeTitleFont.setBold(true);
+    coreTypeTitle->setFont(coreTypeTitleFont);
+    coreLayout->addWidget(coreTypeTitle);
+
     auto* coreTypeWidget = new QWidget(coreTab);
     auto* coreTypeForm = new QFormLayout(coreTypeWidget);
     coreTypeForm->setContentsMargins(0, 0, 0, 0);
@@ -646,25 +660,47 @@ void SettingsDialog::setupUi()
     }
 
     // Installed Cores: one row per available core type, with install/update + "set all" actions
-    auto* coreStatusWidget = new QWidget(coreTab);
-    auto* coreStatusLayout = new QFormLayout(coreStatusWidget);
-    coreStatusLayout->setContentsMargins(0, 0, 0, 0);
+    auto* coreStatusTitle = new QLabel(tr("By Core"), coreTab);
+    coreStatusTitle->setObjectName(QStringLiteral("coreStatusSectionTitle"));
+    AppTheme::applyCompactFont(coreStatusTitle);
+    QFont coreStatusTitleFont = coreStatusTitle->font();
+    coreStatusTitleFont.setBold(true);
+    coreStatusTitle->setFont(coreStatusTitleFont);
 
+    auto* coreStatusWidget = new QWidget(coreTab);
+    auto* coreStatusLayout = new QGridLayout(coreStatusWidget);
+    coreStatusLayout->setContentsMargins(0, 0, 0, 0);
+    coreStatusLayout->setHorizontalSpacing(12);
+    coreStatusLayout->setVerticalSpacing(6);
+    coreStatusLayout->setColumnMinimumWidth(0, protocolLabelWidth);
+    coreStatusLayout->setColumnStretch(0, 0);
+    coreStatusLayout->setColumnMinimumWidth(1, coreStatusInfoWidth);
+    coreStatusLayout->setColumnStretch(1, 0);
+    coreStatusLayout->setColumnStretch(2, 0);
+    coreStatusLayout->setColumnStretch(3, 0);
+    coreStatusLayout->setColumnStretch(4, 1);
+
+    int coreStatusRow = 0;
     for (const CoreType core : allCores) {
         const int coreKey = static_cast<int>(core);
         auto& row = coreStatusRows_[coreKey];
 
+        auto* coreNameLabel = new QLabel(coreTypeDisplayName(core), coreTab);
+        coreNameLabel->setObjectName(QStringLiteral("coreNameLabel_%1").arg(coreKey));
+        coreNameLabel->setMinimumWidth(protocolLabelWidth);
         row.versionLabel = new QLabel(coreTab);
         row.versionLabel->setObjectName(QStringLiteral("coreVersionLabel_%1").arg(coreKey));
         row.statusLabel = new QLabel(coreTab);
         row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
         row.downloadButton = new QPushButton(tr("Install"), coreTab);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
-        AppTheme::applyCompactFont({row.versionLabel, row.statusLabel, row.downloadButton});
+        AppTheme::applyCompactFont({coreNameLabel, row.versionLabel, row.statusLabel, row.downloadButton});
 
         row.setAllButton = new QPushButton(tr("Set All"), coreTab);
         row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
         AppTheme::applyCompactFont(row.setAllButton);
+        row.downloadButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        row.setAllButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         connect(row.setAllButton, &QPushButton::clicked, this, [this, core]() {
             for (int i = 0; i < coreTypeCombos_.size() && i < coreProtocolEntries_.size(); ++i) {
                 auto* combo = coreTypeCombos_.at(i);
@@ -676,19 +712,22 @@ void SettingsDialog::setupUi()
             }
         });
 
-        auto* infoLayout = new QVBoxLayout();
+        auto* infoWidget = new QWidget(coreTab);
+        infoWidget->setFixedWidth(coreStatusInfoWidth);
+        auto* infoLayout = new QVBoxLayout(infoWidget);
         infoLayout->setContentsMargins(0, 0, 0, 0);
         infoLayout->setSpacing(2);
+        row.versionLabel->setFixedWidth(coreStatusInfoWidth);
+        row.statusLabel->setFixedWidth(coreStatusInfoWidth);
         infoLayout->addWidget(row.versionLabel);
         infoLayout->addWidget(row.statusLabel);
 
-        auto* rowLayout = new QHBoxLayout();
-        rowLayout->addLayout(infoLayout);
-        rowLayout->addWidget(row.downloadButton);
-        rowLayout->addWidget(row.setAllButton);
-        rowLayout->addStretch();
-
-        coreStatusLayout->addRow(coreTypeDisplayName(core) + QStringLiteral(":"), rowLayout);
+        coreStatusLayout->addWidget(coreNameLabel, coreStatusRow, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        coreStatusLayout->addWidget(infoWidget, coreStatusRow, 1);
+        coreStatusLayout->addWidget(row.downloadButton, coreStatusRow, 2, Qt::AlignLeft | Qt::AlignVCenter);
+        coreStatusLayout->addWidget(row.setAllButton, coreStatusRow, 3, Qt::AlignLeft | Qt::AlignVCenter);
+        coreStatusLayout->setColumnMinimumWidth(4, 0);
+        ++coreStatusRow;
 
         connect(row.downloadButton, &QPushButton::clicked, this, [this, core]() {
             coreDownloadRequested_ = true;
@@ -698,7 +737,10 @@ void SettingsDialog::setupUi()
     }
 
     coreLayout->addWidget(coreTypeWidget);
+    coreLayout->addSpacing(8);
+    coreLayout->addWidget(coreStatusTitle);
     coreLayout->addWidget(coreStatusWidget);
+    coreLayout->addStretch();
 
     // === Proxy Tab ===
     auto* proxyTab = new QWidget(this);
@@ -732,39 +774,15 @@ void SettingsDialog::setupUi()
     auto* updateTab = new QWidget(this);
     auto* updateLayout = new QFormLayout(updateTab);
 
-    autoUpdateIntervalSpin_ = new QSpinBox(updateTab);
-    autoUpdateIntervalSpin_->setObjectName(QStringLiteral("settingsAutoUpdateIntervalSpin"));
-    autoUpdateIntervalSpin_->setRange(0, 3650);
-    autoUpdateIntervalSpin_->setSpecialValueText(tr("Disabled"));
-
-    autoUpdateSubIntervalSpin_ = new QSpinBox(updateTab);
-    autoUpdateSubIntervalSpin_->setObjectName(QStringLiteral("settingsAutoUpdateSubIntervalSpin"));
-    autoUpdateSubIntervalSpin_->setRange(0, 3650);
-    autoUpdateSubIntervalSpin_->setSpecialValueText(tr("Disabled"));
-
     checkPreReleaseUpdateCheck_ = new QCheckBox(tr("Include pre-release builds"), updateTab);
     ignoreGeoUpdateCoreCheck_ = new QCheckBox(tr("Do not overwrite geo files during core updates"), updateTab);
-    enableSecurityProtocolTls13Check_ = new QCheckBox(tr("Enable TLS 1.3 for downloads"), updateTab);
 
-    auto* updateNote = new QLabel(
-        tr("Intervals are stored for compatibility. A value of 0 disables the scheduled check."),
-        updateTab);
-    updateNote->setWordWrap(true);
-    updateNote->setObjectName(QStringLiteral("settingsUpdateNoteLabel"));
     AppTheme::applyCompactFont({
-        autoUpdateIntervalSpin_,
-        autoUpdateSubIntervalSpin_,
         checkPreReleaseUpdateCheck_,
-        ignoreGeoUpdateCoreCheck_,
-        enableSecurityProtocolTls13Check_,
-        updateNote});
+        ignoreGeoUpdateCoreCheck_});
 
-    updateLayout->addRow(tr("GUI / Core Update Interval"), autoUpdateIntervalSpin_);
-    updateLayout->addRow(tr("Subscription Update Interval"), autoUpdateSubIntervalSpin_);
     updateLayout->addRow(checkPreReleaseUpdateCheck_);
     updateLayout->addRow(ignoreGeoUpdateCoreCheck_);
-    updateLayout->addRow(enableSecurityProtocolTls13Check_);
-    updateLayout->addRow(updateNote);
 
     // === TUN Tab ===
     auto* tunTab = new QWidget(this);
@@ -859,7 +877,9 @@ void SettingsDialog::setupUi()
     addCommonHostsCheck_ = new QCheckBox(tr("Add common hosts (google, github, etc.)"), dnsTab);
     blockBindingQueryCheck_ = new QCheckBox(tr("Block binding query"), dnsTab);
     fakeIpCheck_ = new QCheckBox(tr("Enable FakeIP"), dnsTab);
+    fakeIpCheck_->setObjectName(QStringLiteral("dnsFakeIpCheck"));
     globalFakeIpCheck_ = new QCheckBox(tr("Global FakeIP"), dnsTab);
+    globalFakeIpCheck_->setObjectName(QStringLiteral("dnsGlobalFakeIpCheck"));
     serveStaleCheck_ = new QCheckBox(tr("Serve stale DNS cache"), dnsTab);
     parallelQueryCheck_ = new QCheckBox(tr("Parallel DNS query"), dnsTab);
 
@@ -963,6 +983,9 @@ void SettingsDialog::setupUi()
     connect(enableStatisticsCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
+    connect(fakeIpCheck_, &QCheckBox::toggled, this, [this](bool) {
+        updateFieldState();
+    });
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
@@ -1034,6 +1057,11 @@ void SettingsDialog::updateFieldState()
     }
     if (tunEnableLegacyProtectCheck_ != nullptr) {
         tunEnableLegacyProtectCheck_->setEnabled(tunEnabled);
+    }
+
+    const bool fakeIpEnabled = fakeIpCheck_ != nullptr && fakeIpCheck_->isChecked();
+    if (globalFakeIpCheck_ != nullptr) {
+        globalFakeIpCheck_->setEnabled(fakeIpEnabled);
     }
 }
 
@@ -1416,6 +1444,31 @@ QString SettingsDialog::selectedRoutingCustomRuleTabKey() const
 
 void SettingsDialog::updateRoutingActionState()
 {
+    const bool hasBaseRoutes = !routingItems_.isEmpty();
+
+    if (baseRouteTitleLabel_ != nullptr) {
+        baseRouteTitleLabel_->setText(hasBaseRoutes
+            ? tr("Base Route")
+            : tr("Base Route (No Presets Configured)"));
+        baseRouteTitleLabel_->setToolTip(hasBaseRoutes
+            ? QString()
+            : tr("No base routing preset is configured. Custom rules below are still applied."));
+    }
+
+    if (customRulesTitleLabel_ != nullptr) {
+        customRulesTitleLabel_->setText(hasBaseRoutes
+            ? tr("Custom Rules")
+            : tr("Custom Rules (Still Applied)"));
+        customRulesTitleLabel_->setToolTip(hasBaseRoutes
+            ? tr("Custom rules are evaluated before the selected base route.")
+            : tr("Custom rules are applied even when no base routing preset is configured."));
+    }
+
+    if (customRuleTabs_ != nullptr) {
+        customRuleTabs_->setToolTip(customRulesTitleLabel_ == nullptr
+                ? QString()
+                : customRulesTitleLabel_->toolTip());
+    }
 }
 
 int SettingsDialog::findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const

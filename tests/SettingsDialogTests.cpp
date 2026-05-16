@@ -1,12 +1,15 @@
 #include <QtTest>
 
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QPalette>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QLabel>
+#include <QSpinBox>
 #include <QStackedLayout>
 #include <QTabBar>
 #include <QTabWidget>
@@ -31,15 +34,20 @@ private slots:
     void defaultUserAgentComboRoundTripsConfig();
     void defaultFingerprintComboRoundTripsConfig();
     void mux4SboxProtocolComboRoundTripsConfig();
+    void updateTabDoesNotExposeRemovedTls13Option();
     void coreTypeTableIncludesHttpProtocol();
     void coreTypeTableDefaultsUseConfiguredValue();
     void corePageUsesPlainContentWithoutGroupBoxes();
+    void corePageShowsProtocolAndCoreSectionTitles();
     void routingRuleNetworkAndProcessRoundTripConfig();
     void routingCustomRuleTabsRoundTripConfig();
     void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
     void routingPageUsesCompactCardsAndPlainCustomRuleForms();
     void routingBaseRouteCardsCollapseAroundSelectedCard();
+    void routingPageShowsExplicitEmptyStateWithoutBaseRoutes();
     void settingsDialogUsesCompactUiFontBaseline();
+    void fakeIpToggleControlsGlobalFakeIpCheckbox();
+    void subscriptionTableUsesServerTableStyle();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -306,6 +314,17 @@ void SettingsDialogTests::mux4SboxProtocolComboRoundTripsConfig()
     QCOMPARE(updated.mux4SboxProtocol, QStringLiteral("smux"));
 }
 
+void SettingsDialogTests::updateTabDoesNotExposeRemovedTls13Option()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    const QList<QCheckBox*> checkboxes = dialog.findChildren<QCheckBox*>();
+    for (QCheckBox* checkbox : checkboxes) {
+        QVERIFY(checkbox->text() != QStringLiteral("Enable TLS 1.3 for downloads"));
+    }
+}
+
 void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
 {
     Config config;
@@ -364,6 +383,21 @@ void SettingsDialogTests::corePageUsesPlainContentWithoutGroupBoxes()
         QVERIFY(group->title() != QStringLiteral("Per-Protocol Override"));
         QVERIFY(group->title() != QStringLiteral("Installed Cores"));
     }
+}
+
+void SettingsDialogTests::corePageShowsProtocolAndCoreSectionTitles()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* protocolTitle = dialog.findChild<QLabel*>(QStringLiteral("coreProtocolSectionTitle"));
+    auto* coreTitle = dialog.findChild<QLabel*>(QStringLiteral("coreStatusSectionTitle"));
+    QVERIFY(protocolTitle != nullptr);
+    QVERIFY(coreTitle != nullptr);
+    QCOMPARE(protocolTitle->text(), QStringLiteral("By Protocol"));
+    QCOMPARE(coreTitle->text(), QStringLiteral("By Core"));
+    QVERIFY(protocolTitle->font().bold());
+    QVERIFY(coreTitle->font().bold());
 }
 
 void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
@@ -630,6 +664,33 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
     QVERIFY(first->property("routeTitleBold").toBool());
 }
 
+void SettingsDialogTests::routingPageShowsExplicitEmptyStateWithoutBaseRoutes()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* baseRouteTitle = dialog.findChild<QLabel*>(QStringLiteral("routingBaseRouteTitle"));
+    auto* customRulesTitle = dialog.findChild<QLabel*>(QStringLiteral("routingCustomRulesTitle"));
+    auto* customRuleTabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
+    QVERIFY(baseRouteTitle != nullptr);
+    QVERIFY(customRulesTitle != nullptr);
+    QVERIFY(customRuleTabs != nullptr);
+
+    QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route (No Presets Configured)"));
+    QCOMPARE(customRulesTitle->text(), QStringLiteral("Custom Rules (Still Applied)"));
+    QVERIFY(baseRouteTitle->toolTip().contains(QStringLiteral("Custom rules below are still applied")));
+    QCOMPARE(customRuleTabs->toolTip(), customRulesTitle->toolTip());
+
+    Config config;
+    RoutingItem routing;
+    routing.remarks = QStringLiteral("Builtin");
+    config.routingItems = {routing};
+    dialog.setConfig(config);
+
+    QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route"));
+    QCOMPARE(customRulesTitle->text(), QStringLiteral("Custom Rules"));
+}
+
 void SettingsDialogTests::settingsDialogUsesCompactUiFontBaseline()
 {
     SettingsDialog dialog;
@@ -654,6 +715,45 @@ void SettingsDialogTests::settingsDialogUsesCompactUiFontBaseline()
     QVERIFY(languageCombo->font().pointSizeF() <= baseline);
 }
 
+void SettingsDialogTests::fakeIpToggleControlsGlobalFakeIpCheckbox()
+{
+    Config config;
+    config.fakeIp = false;
+    config.globalFakeIp = true;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* fakeIpCheck = dialog.findChild<QCheckBox*>(QStringLiteral("dnsFakeIpCheck"));
+    auto* globalFakeIpCheck = dialog.findChild<QCheckBox*>(QStringLiteral("dnsGlobalFakeIpCheck"));
+    QVERIFY(fakeIpCheck != nullptr);
+    QVERIFY(globalFakeIpCheck != nullptr);
+
+    QVERIFY(!fakeIpCheck->isChecked());
+    QVERIFY(!globalFakeIpCheck->isEnabled());
+
+    fakeIpCheck->setChecked(true);
+    QVERIFY(globalFakeIpCheck->isEnabled());
+
+    fakeIpCheck->setChecked(false);
+    QVERIFY(!globalFakeIpCheck->isEnabled());
+}
+
+void SettingsDialogTests::subscriptionTableUsesServerTableStyle()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+
+    QVERIFY(subTable->property("serverTableStyle").toBool());
+    QCOMPARE(subTable->palette().color(QPalette::AlternateBase), QColor(QStringLiteral("#f9f9f9")));
+    QVERIFY(!subTable->showGrid());
+}
+
 void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()
 {
     SettingsDialog dialog;
@@ -667,15 +767,20 @@ void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()
     auto* settingsActionBar = dialog.findChild<QWidget*>(QStringLiteral("settingsActionBar"));
     auto* settingsStackContainer = dialog.findChild<QWidget*>(QStringLiteral("settingsStackContainer"));
     auto* settingsStackLayout = dialog.findChild<QStackedLayout*>(QStringLiteral("settingsStackLayout"));
+    auto* routingCustomRuleTabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
     QVERIFY(settingsTabBar != nullptr);
     QVERIFY(settingsTabBarContainer != nullptr);
     QVERIFY(settingsActionBar != nullptr);
     QVERIFY(settingsStackContainer != nullptr);
     QVERIFY(settingsStackLayout != nullptr);
+    QVERIFY(routingCustomRuleTabs != nullptr);
     QCOMPARE(settingsTabBar->objectName(), QStringLiteral("settingsTabBar"));
     QVERIFY(!settingsTabBar->expanding());
     QVERIFY(!settingsTabBar->drawBase());
     QCOMPARE(settingsTabBar->count(), settingsStackLayout->count());
+    QVERIFY(routingCustomRuleTabs->documentMode());
+    QVERIFY(!routingCustomRuleTabs->tabBar()->drawBase());
+    QVERIFY(!routingCustomRuleTabs->tabBar()->expanding());
 
     const QMargins margins = settingsTabBar->contentsMargins();
     QCOMPARE(margins.left(), 0);

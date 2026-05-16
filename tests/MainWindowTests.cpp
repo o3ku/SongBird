@@ -65,6 +65,8 @@ private slots:
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
+    void currentServerStatusAppendsManualVerificationWarning();
+    void transientStatusTemporarilyOverridesBackgroundTaskMessage();
     void requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled();
     void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
@@ -364,7 +366,6 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     MainWindow window;
     window.resize(1000, 640);
     Config config = createServerSelectionConfig();
-    config.mainQrPreviewVisible = true;
     window.restoreUiState(config);
     window.setConfig(config);
     window.show();
@@ -416,7 +417,6 @@ void MainWindowTests::shareLinkTextEditDoesNotForceTallMinimumHeight()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.mainQrPreviewVisible = true;
     window.resize(1000, 640);
     window.restoreUiState(config);
     window.setConfig(config);
@@ -1022,6 +1022,38 @@ void MainWindowTests::currentServerStatusUsesNoServerPlaceholderWhenEmpty()
 
     window.setCurrentServerName(QString());
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
+}
+
+void MainWindowTests::currentServerStatusAppendsManualVerificationWarning()
+{
+    MainWindow window;
+    window.setConfig(Config());
+
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+
+    window.setCurrentServerName(QStringLiteral("Test Server"));
+    window.setCurrentServerWarning(QStringLiteral("Please verify manually"));
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server | Please verify manually"));
+
+    window.setCurrentServerWarning(QString());
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
+}
+
+void MainWindowTests::transientStatusTemporarilyOverridesBackgroundTaskMessage()
+{
+    MainWindow window;
+    window.setBackgroundTaskRunning(true);
+    window.setBackgroundTaskDescription(QStringLiteral("Updating subscriptions"));
+
+    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    QVERIFY(transientStatusLabel != nullptr);
+    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Task: Updating subscriptions"));
+
+    window.showTransientStatus(QStringLiteral("Copied 1 URL(s) to the clipboard."), 50);
+    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Copied 1 URL(s) to the clipboard."));
+
+    QTRY_COMPARE(transientStatusLabel->text(), QStringLiteral("Task: Updating subscriptions"));
 }
 
 void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()

@@ -38,6 +38,16 @@ VmessItem makeServer(const QString& indexId, const QString& subId,
     server.id = uuid;
     return server;
 }
+
+VmessItem makeVmessServer(const QString& indexId, const QString& subId,
+                          const QString& address, int port, const QString& uuid)
+{
+    VmessItem server = makeServer(indexId, subId, uuid);
+    server.configType = ConfigType::VMess;
+    server.address = address;
+    server.port = port;
+    return server;
+}
 } // namespace
 
 class SubscriptionServiceTests : public QObject {
@@ -58,6 +68,10 @@ private slots:
     void testEnableSubscriptionEmptyId();
     void testReplaceSubscriptionServersDeduplicatesByUuid();
     void testReplaceSubscriptionServersClearsOldServers();
+    void testReplaceSubscriptionServersReusesIndexIdForMatchingServer();
+    void testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists();
+    void testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstUpdatedServerWhenActiveServerRemoved();
+    void testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstGlobalServerWhenSubscriptionBecomesEmpty();
     void testReplaceSubscriptionServersEmptyId();
     void testListSubscriptions();
 };
@@ -412,6 +426,118 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersClearsOldServers()
     }
     QVERIFY(foundSub2);
     QVERIFY(foundNewSub1);
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersReusesIndexIdForMatchingServer()
+{
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+    config.servers.append(makeVmessServer(
+        QStringLiteral("old-1"), QStringLiteral("sub-1"),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
+
+    QList<VmessItem> replacement;
+    replacement.append(makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
+
+    auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), replacement);
+
+    QVERIFY(result.success);
+    QCOMPARE(config.servers.size(), 1);
+    QCOMPARE(config.servers[0].indexId, QStringLiteral("old-1"));
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists()
+{
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+    config.servers.append(makeVmessServer(
+        QStringLiteral("old-1"), QStringLiteral("sub-1"),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
+    config.currentIndexId = QStringLiteral("old-1");
+
+    QList<VmessItem> replacement;
+    replacement.append(makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
+
+    auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), replacement);
+
+    QVERIFY(result.success);
+    QCOMPARE(config.currentIndexId, QStringLiteral("old-1"));
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstUpdatedServerWhenActiveServerRemoved()
+{
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+    config.servers.append(makeVmessServer(
+        QStringLiteral("old-1"), QStringLiteral("sub-1"),
+        QStringLiteral("old.example.com"), 443, QStringLiteral("uuid-1")));
+    config.currentIndexId = QStringLiteral("old-1");
+
+    QList<VmessItem> replacement;
+    replacement.append(makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("new-a.example.com"), 443, QStringLiteral("uuid-a")));
+    replacement.append(makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("new-b.example.com"), 8443, QStringLiteral("uuid-b")));
+
+    auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), replacement);
+
+    QVERIFY(result.success);
+    QCOMPARE(config.currentIndexId, config.servers[0].indexId);
+    QCOMPARE(config.servers[0].subId, QStringLiteral("sub-1"));
+    QCOMPARE(config.servers[0].address, QStringLiteral("new-a.example.com"));
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstGlobalServerWhenSubscriptionBecomesEmpty()
+{
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-2"), QStringLiteral("Sub 2"),
+        QStringLiteral("https://b.com")));
+    config.servers.append(makeVmessServer(
+        QStringLiteral("old-1"), QStringLiteral("sub-1"),
+        QStringLiteral("old.example.com"), 443, QStringLiteral("uuid-1")));
+    config.servers.append(makeVmessServer(
+        QStringLiteral("keep-1"), QStringLiteral("sub-2"),
+        QStringLiteral("keep.example.com"), 443, QStringLiteral("uuid-2")));
+    config.currentIndexId = QStringLiteral("old-1");
+
+    auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), QList<VmessItem>());
+
+    QVERIFY(result.success);
+    QCOMPARE(config.currentIndexId, QStringLiteral("keep-1"));
+    QCOMPARE(config.servers.size(), 1);
+    QCOMPARE(config.servers[0].subId, QStringLiteral("sub-2"));
 }
 
 // -- Replace subscription servers fails for empty subscription id --

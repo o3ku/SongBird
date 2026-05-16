@@ -244,6 +244,7 @@ private:
     bool skipTunCleanupOnNextCoreExit_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
+    bool setCurrentActivationPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;
     BackgroundTaskKind activeBackgroundTask_ = BackgroundTaskKind::None;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;

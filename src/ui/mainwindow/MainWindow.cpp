@@ -661,12 +661,34 @@ void MainWindow::appendLog(const QString& message)
 
 void MainWindow::showTransientStatus(const QString& message, int timeoutMs)
 {
-    Q_UNUSED(message)
-    Q_UNUSED(timeoutMs)
+    if (transientStatusTimer_ == nullptr) {
+        transientStatusTimer_ = new QTimer(this);
+        transientStatusTimer_->setSingleShot(true);
+        connect(transientStatusTimer_, &QTimer::timeout, this, &MainWindow::clearTransientStatus);
+    }
+
+    const QString trimmedMessage = message.trimmed();
+    if (trimmedMessage.isEmpty()) {
+        clearTransientStatus();
+        return;
+    }
+
+    transientStatusMessage_ = trimmedMessage;
+    if (timeoutMs > 0) {
+        transientStatusTimer_->start(timeoutMs);
+    } else {
+        transientStatusTimer_->stop();
+    }
+
+    updateStatusIndicators();
 }
 
 void MainWindow::clearTransientStatus()
 {
+    if (transientStatusTimer_ != nullptr) {
+        transientStatusTimer_->stop();
+    }
+    transientStatusMessage_.clear();
     updateStatusIndicators();
 }
 
@@ -802,6 +824,12 @@ void MainWindow::setCurrentServerName(const QString& name)
     updateWindowTitle();
 }
 
+void MainWindow::setCurrentServerWarning(const QString& warning)
+{
+    currentServerWarning_ = warning.trimmed();
+    updateStatusIndicators();
+}
+
 void MainWindow::setRoutingSummary(const QString& routingText, const QString& listenText)
 {
     routingSummary_ = routingText.trimmed();
@@ -817,11 +845,6 @@ void MainWindow::setStatisticsSessionState(const StatisticsSessionState& state)
     }
     updateStatusIndicators();
     updateWindowTitle();
-}
-
-void MainWindow::setTrafficSummary(const QString& text)
-{
-    Q_UNUSED(text)
 }
 
 void MainWindow::setSpeedTestRunning(bool running)
@@ -943,7 +966,6 @@ void MainWindow::captureUiState(Config& config) const
     config.mainSelectedSubId = persistedSubscriptionSelectionId();
     config.mainServerLogSplitPercent = captureSplitPercent(rootSplitter_, serverLogSplitPercent_);
     config.mainServerQrSplitPercent = captureSplitPercent(topSplitter_, serverQrSplitPercent_);
-    config.mainQrPreviewVisible = false;
     config.mainCoreRunning = coreRunning_;
     config.mainProxyEnabled = systemProxyApplied_;
 }
@@ -1890,12 +1912,8 @@ void MainWindow::setupServerView()
     serverView_->setModel(serverFilterModel_);
     serverView_->setSelectionBehavior(QAbstractItemView::SelectRows);
     serverView_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    serverView_->setAlternatingRowColors(true);
     serverView_->setSortingEnabled(false);
-    serverView_->setShowGrid(false);
     serverView_->setMinimumHeight(0);
-    serverView_->setMouseTracking(true);
-    serverView_->viewport()->setMouseTracking(true);
     serverView_->setFrameShape(QFrame::NoFrame);
     serverView_->setContentsMargins(0, 0, 0, 0);
     serverView_->installEventFilter(this);
@@ -2975,8 +2993,11 @@ void MainWindow::updateStatusIndicators()
         const QString currentServerText = currentServerName_.trimmed().isEmpty()
             ? noServerPlaceholderText()
             : currentServerName_.trimmed();
-        currentServerStatusLabel_->setText(tr("Current: %1").arg(
-            currentServerText));
+        QString labelText = tr("Current: %1").arg(currentServerText);
+        if (!currentServerWarning_.isEmpty()) {
+            labelText += QStringLiteral(" | %1").arg(currentServerWarning_);
+        }
+        currentServerStatusLabel_->setText(labelText);
     }
 
     if (routingStatusLabel_ != nullptr) {
@@ -3075,7 +3096,9 @@ void MainWindow::updateStatusIndicators()
     }
 
     if (transientStatusLabel_ != nullptr) {
-        const QString statusText = backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()
+        const QString statusText = !transientStatusMessage_.isEmpty()
+            ? transientStatusMessage_
+            : backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()
             ? tr("Task: %1").arg(backgroundTaskDescription_)
             : tr("Ready");
         transientStatusLabel_->setText(statusText);

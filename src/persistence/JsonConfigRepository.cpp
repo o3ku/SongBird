@@ -240,7 +240,6 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
     }
     config.sysProxyType = root.value(QStringLiteral("sysProxyType")).toInt(0);
     config.enableStatistics = root.value(QStringLiteral("enableStatistics")).toBool(false);
-    config.keepOlderDedup = root.value(QStringLiteral("keepOlderDedupl")).toBool(false);
     config.statisticsFreshRate = root.value(QStringLiteral("statisticsFreshRate")).toInt(1);
     const QJsonObject uiItem = root.value(QStringLiteral("uiItem")).toObject();
     config.showMainOnStartup = uiItem.contains(QStringLiteral("showMainOnStartup"))
@@ -261,9 +260,6 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
         normalizeSplitPercent(uiItem.value(QStringLiteral("mainServerLogSplitPercent")).toInt(60), 60);
     config.mainServerQrSplitPercent =
         normalizeSplitPercent(uiItem.value(QStringLiteral("mainServerQrSplitPercent")).toInt(78), 78);
-    config.mainQrPreviewVisible = uiItem.contains(QStringLiteral("mainQrPreviewVisible"))
-        ? uiItem.value(QStringLiteral("mainQrPreviewVisible")).toBool(false)
-        : false;
     config.mainCoreRunning = uiItem.value(QStringLiteral("mainCoreRunning")).toBool(false);
     config.mainProxyEnabled = uiItem.value(QStringLiteral("mainProxyEnabled")).toBool(false);
     const QJsonObject mainLvColWidth = uiItem.value(QStringLiteral("mainLvColWidth")).toObject();
@@ -330,10 +326,7 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
     config.systemProxyExceptions = root.value(QStringLiteral("systemProxyExceptions")).toString();
     config.systemProxyAdvancedProtocol = root.value(QStringLiteral("systemProxyAdvancedProtocol")).toString();
     config.pacUrl = root.value(QStringLiteral("pacUrl")).toString();
-    config.autoUpdateInterval = root.value(QStringLiteral("autoUpdateInterval")).toInt(0);
-    config.autoUpdateSubInterval = root.value(QStringLiteral("autoUpdateSubInterval")).toInt(0);
     config.checkPreReleaseUpdate = root.value(QStringLiteral("checkPreReleaseUpdate")).toBool(false);
-    config.enableSecurityProtocolTls13 = root.value(QStringLiteral("enableSecurityProtocolTls13")).toBool(false);
     config.trayMenuServersLimit = root.value(QStringLiteral("trayMenuServersLimit")).toInt(0);
     config.servers = parseServers(root.value(QStringLiteral("vmess")).toArray());
     config.subscriptions = parseSubscriptions(root.value(QStringLiteral("subItem")).toArray());
@@ -389,7 +382,7 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
         config.mux4SboxPadding.has_value() ? QJsonValue(config.mux4SboxPadding.value()) : QJsonValue(QJsonValue::Null));
     root.insert(QStringLiteral("sysProxyType"), config.sysProxyType);
     root.insert(QStringLiteral("enableStatistics"), config.enableStatistics);
-    root.insert(QStringLiteral("keepOlderDedupl"), config.keepOlderDedup);
+    root.remove(QStringLiteral("keepOlderDedupl"));
     root.insert(QStringLiteral("statisticsFreshRate"), config.statisticsFreshRate);
     QJsonObject uiItem = root.value(QStringLiteral("uiItem")).toObject();
     uiItem.insert(QStringLiteral("showMainOnStartup"), config.showMainOnStartup);
@@ -403,7 +396,7 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     uiItem.insert(QStringLiteral("settingsRoutingRuleTabKey"), config.settingsRoutingRuleTabKey);
     uiItem.insert(QStringLiteral("mainServerLogSplitPercent"), normalizeSplitPercent(config.mainServerLogSplitPercent, 60));
     uiItem.insert(QStringLiteral("mainServerQrSplitPercent"), normalizeSplitPercent(config.mainServerQrSplitPercent, 78));
-    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), config.mainQrPreviewVisible);
+    uiItem.remove(QStringLiteral("mainQrPreviewVisible"));
     uiItem.insert(QStringLiteral("mainCoreRunning"), config.mainCoreRunning);
     uiItem.insert(QStringLiteral("mainProxyEnabled"), config.mainProxyEnabled);
     QJsonObject mainLvColWidth;
@@ -447,10 +440,8 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     root.insert(QStringLiteral("systemProxyExceptions"), config.systemProxyExceptions);
     root.insert(QStringLiteral("systemProxyAdvancedProtocol"), config.systemProxyAdvancedProtocol);
     root.insert(QStringLiteral("pacUrl"), config.pacUrl);
-    root.insert(QStringLiteral("autoUpdateInterval"), config.autoUpdateInterval);
-    root.insert(QStringLiteral("autoUpdateSubInterval"), config.autoUpdateSubInterval);
     root.insert(QStringLiteral("checkPreReleaseUpdate"), config.checkPreReleaseUpdate);
-    root.insert(QStringLiteral("enableSecurityProtocolTls13"), config.enableSecurityProtocolTls13);
+    root.remove(QStringLiteral("enableSecurityProtocolTls13"));
     root.insert(QStringLiteral("trayMenuServersLimit"), config.trayMenuServersLimit);
     root.insert(QStringLiteral("vmess"), toServerArray(config.servers));
     root.insert(QStringLiteral("subItem"), toSubscriptionArray(config.subscriptions));
