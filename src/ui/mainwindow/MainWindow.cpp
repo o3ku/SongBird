@@ -609,17 +609,45 @@ void MainWindow::updateServerTestResults(const QStringList& indexIds, const QStr
         return;
     }
 
-    if (serverFilterModel_ != nullptr && indexIds.size() > 1) {
-        serverFilterModel_->setDynamicSortFilter(false);
+    const bool temporarilySuspendSort =
+        serverFilterModel_ != nullptr && indexIds.size() > 1 && !serverTableDynamicSortSuspended_;
+    if (temporarilySuspendSort) {
+        setServerTableDynamicSortEnabled(false, false);
     }
 
     for (const QString& indexId : indexIds) {
         serverModel_->updateTestResult(indexId, result);
     }
 
-    if (serverFilterModel_ != nullptr && indexIds.size() > 1) {
-        serverFilterModel_->setDynamicSortFilter(true);
-        serverFilterModel_->invalidate();
+    if (temporarilySuspendSort) {
+        setServerTableDynamicSortEnabled(true, true);
+    }
+}
+
+void MainWindow::setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel)
+{
+    if (serverFilterModel_ == nullptr) {
+        return;
+    }
+
+    serverTableDynamicSortSuspended_ = !enabled;
+    if (serverFilterModel_->dynamicSortFilter() != enabled) {
+        serverFilterModel_->setDynamicSortFilter(enabled);
+    }
+
+    if (enabled && invalidateModel) {
+        int sortColumn = serverSortColumn_;
+        Qt::SortOrder sortOrder = serverSortOrder_;
+        if (sortColumn < 0 && serverView_ != nullptr && serverView_->horizontalHeader() != nullptr) {
+            sortColumn = serverView_->horizontalHeader()->sortIndicatorSection();
+            sortOrder = serverView_->horizontalHeader()->sortIndicatorOrder();
+        }
+
+        if (sortColumn >= 0) {
+            serverFilterModel_->sort(sortColumn, sortOrder);
+        } else {
+            serverFilterModel_->invalidate();
+        }
     }
 }
 
@@ -864,6 +892,7 @@ void MainWindow::setStatisticsSessionState(const StatisticsSessionState& state)
 void MainWindow::setSpeedTestRunning(bool running)
 {
     speedTestRunning_ = running;
+    setServerTableDynamicSortEnabled(!running, !running);
     updateActionState();
 }
 

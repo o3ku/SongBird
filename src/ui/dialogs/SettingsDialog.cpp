@@ -424,6 +424,8 @@ void SettingsDialog::setupUi()
     languageCombo_->addItem(tr("System Default"), QString());
     languageCombo_->addItem(tr("English"), QStringLiteral("en"));
     languageCombo_->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
+
+    tunEnableLegacyProtectCheck_ = new QCheckBox(tr("Enable legacy protection (pre-socks relay for Xray)"), this);
     AppTheme::applyCompactFont({
         showMainOnStartupCheck_,
         autoRunCheck_,
@@ -442,19 +444,17 @@ void SettingsDialog::setupUi()
         trayMenuServersLimitSpin_,
         languageCombo_});
 
-    generalLayout->addRow(showMainOnStartupCheck_);
-    generalLayout->addRow(autoRunCheck_);
-    generalLayout->addRow(allowLanConnectionCheck_);
-    generalLayout->addRow(sniffingEnabledCheck_);
-    generalLayout->addRow(routeOnlyCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, showMainOnStartupCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, autoRunCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, allowLanConnectionCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, sniffingEnabledCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, routeOnlyCheck_);
     generalLayout->addRow(tr("Local Port"), localPortSpin_);
-    generalLayout->addRow(enableFragmentCheck_);
-    generalLayout->addRow(enableCacheFile4SboxCheck_);
-    generalLayout->addRow(defaultAllowInsecureCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableFragmentCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, defaultAllowInsecureCheck_);
     generalLayout->addRow(tr("Default Fingerprint"), defaultFingerprintCombo_);
     generalLayout->addRow(tr("Default User-Agent"), defaultUserAgentCombo_);
-    generalLayout->addRow(tr("sing-box Mux Protocol"), mux4SboxProtocolCombo_);
-    generalLayout->addRow(enableStatisticsCheck_);
+    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableStatisticsCheck_);
     generalLayout->addRow(tr("Statistics Refresh Rate"), statisticsFreshRateSpin_);
     generalLayout->addRow(tr("Tray Menu Server Limit"), trayMenuServersLimitSpin_);
     generalLayout->addRow(tr("Language"), languageCombo_);
@@ -543,6 +543,7 @@ void SettingsDialog::setupUi()
         const QString action = tab.first;
         const QString title = tab.second;
         auto* tabWidget = new QWidget(customRuleTabs_);
+        tabWidget->setProperty("routingCustomRulePage", true);
         auto* tabLayout = new QHBoxLayout(tabWidget);
         tabLayout->setContentsMargins(9, 9, 9, 9);
         tabLayout->setSpacing(12);
@@ -667,36 +668,41 @@ void SettingsDialog::setupUi()
     coreStatusTitleFont.setBold(true);
     coreStatusTitle->setFont(coreStatusTitleFont);
 
-    auto* coreStatusWidget = new QWidget(coreTab);
-    auto* coreStatusLayout = new QGridLayout(coreStatusWidget);
-    coreStatusLayout->setContentsMargins(0, 0, 0, 0);
-    coreStatusLayout->setHorizontalSpacing(12);
-    coreStatusLayout->setVerticalSpacing(6);
-    coreStatusLayout->setColumnMinimumWidth(0, protocolLabelWidth);
-    coreStatusLayout->setColumnStretch(0, 0);
-    coreStatusLayout->setColumnMinimumWidth(1, coreStatusInfoWidth);
-    coreStatusLayout->setColumnStretch(1, 0);
-    coreStatusLayout->setColumnStretch(2, 0);
-    coreStatusLayout->setColumnStretch(3, 0);
-    coreStatusLayout->setColumnStretch(4, 1);
+    coreDetailTabs_ = new QTabWidget(coreTab);
+    coreDetailTabs_->setObjectName(QStringLiteral("coreDetailTabs"));
+    AppTheme::applyCompactFont(coreDetailTabs_);
+    coreDetailTabs_->setDocumentMode(true);
+    coreDetailTabs_->tabBar()->setDrawBase(false);
+    coreDetailTabs_->tabBar()->setExpanding(false);
+    AppTheme::applyCompactFont(coreDetailTabs_->tabBar());
 
-    int coreStatusRow = 0;
     for (const CoreType core : allCores) {
         const int coreKey = static_cast<int>(core);
         auto& row = coreStatusRows_[coreKey];
 
-        auto* coreNameLabel = new QLabel(coreTypeDisplayName(core), coreTab);
+        row.page = new QWidget(coreDetailTabs_);
+        row.page->setProperty("coreDetailPage", true);
+        auto* pageLayout = new QVBoxLayout(row.page);
+        pageLayout->setContentsMargins(9, 9, 9, 9);
+        pageLayout->setSpacing(10);
+
+        auto* statusRow = new QWidget(row.page);
+        auto* statusLayout = new QHBoxLayout(statusRow);
+        statusLayout->setContentsMargins(0, 0, 0, 0);
+        statusLayout->setSpacing(12);
+
+        auto* coreNameLabel = new QLabel(coreTypeDisplayName(core), row.page);
         coreNameLabel->setObjectName(QStringLiteral("coreNameLabel_%1").arg(coreKey));
         coreNameLabel->setMinimumWidth(protocolLabelWidth);
-        row.versionLabel = new QLabel(coreTab);
+        row.versionLabel = new QLabel(row.page);
         row.versionLabel->setObjectName(QStringLiteral("coreVersionLabel_%1").arg(coreKey));
-        row.statusLabel = new QLabel(coreTab);
+        row.statusLabel = new QLabel(row.page);
         row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
-        row.downloadButton = new QPushButton(tr("Install"), coreTab);
+        row.downloadButton = new QPushButton(tr("Install"), row.page);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
         AppTheme::applyCompactFont({coreNameLabel, row.versionLabel, row.statusLabel, row.downloadButton});
 
-        row.setAllButton = new QPushButton(tr("Set All"), coreTab);
+        row.setAllButton = new QPushButton(tr("Set All"), row.page);
         row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
         AppTheme::applyCompactFont(row.setAllButton);
         row.downloadButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -712,7 +718,7 @@ void SettingsDialog::setupUi()
             }
         });
 
-        auto* infoWidget = new QWidget(coreTab);
+        auto* infoWidget = new QWidget(row.page);
         infoWidget->setFixedWidth(coreStatusInfoWidth);
         auto* infoLayout = new QVBoxLayout(infoWidget);
         infoLayout->setContentsMargins(0, 0, 0, 0);
@@ -722,12 +728,41 @@ void SettingsDialog::setupUi()
         infoLayout->addWidget(row.versionLabel);
         infoLayout->addWidget(row.statusLabel);
 
-        coreStatusLayout->addWidget(coreNameLabel, coreStatusRow, 0, Qt::AlignLeft | Qt::AlignVCenter);
-        coreStatusLayout->addWidget(infoWidget, coreStatusRow, 1);
-        coreStatusLayout->addWidget(row.downloadButton, coreStatusRow, 2, Qt::AlignLeft | Qt::AlignVCenter);
-        coreStatusLayout->addWidget(row.setAllButton, coreStatusRow, 3, Qt::AlignLeft | Qt::AlignVCenter);
-        coreStatusLayout->setColumnMinimumWidth(4, 0);
-        ++coreStatusRow;
+        statusLayout->addWidget(coreNameLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        statusLayout->addWidget(infoWidget, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        statusLayout->addWidget(row.downloadButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        statusLayout->addWidget(row.setAllButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        statusLayout->addStretch(1);
+        pageLayout->addWidget(statusRow);
+
+        auto* optionsWidget = new QWidget(row.page);
+        row.optionsLayout = new QVBoxLayout(optionsWidget);
+        row.optionsLayout->setContentsMargins(0, 0, 0, 0);
+        row.optionsLayout->setSpacing(8);
+
+        switch (core) {
+        case CoreType::SingBox: {
+            row.optionsLayout->addWidget(enableCacheFile4SboxCheck_);
+            auto* muxRow = new QWidget(optionsWidget);
+            auto* muxLayout = new QHBoxLayout(muxRow);
+            muxLayout->setContentsMargins(0, 0, 0, 0);
+            muxLayout->setSpacing(8);
+            auto* muxLabel = new QLabel(tr("Mux Protocol"), muxRow);
+            muxLayout->addWidget(muxLabel);
+            muxLayout->addWidget(mux4SboxProtocolCombo_, 1);
+            row.optionsLayout->addWidget(muxRow);
+            break;
+        }
+        case CoreType::Xray:
+            row.optionsLayout->addWidget(tunEnableLegacyProtectCheck_);
+            break;
+        default:
+            break;
+        }
+
+        pageLayout->addWidget(optionsWidget);
+        pageLayout->addStretch(1);
+        coreDetailTabs_->addTab(row.page, coreTypeDisplayName(core));
 
         connect(row.downloadButton, &QPushButton::clicked, this, [this, core]() {
             coreDownloadRequested_ = true;
@@ -739,7 +774,7 @@ void SettingsDialog::setupUi()
     coreLayout->addWidget(coreTypeWidget);
     coreLayout->addSpacing(8);
     coreLayout->addWidget(coreStatusTitle);
-    coreLayout->addWidget(coreStatusWidget);
+    coreLayout->addWidget(coreDetailTabs_, 1);
     coreLayout->addStretch();
 
     // === Proxy Tab ===
@@ -781,8 +816,8 @@ void SettingsDialog::setupUi()
         checkPreReleaseUpdateCheck_,
         ignoreGeoUpdateCoreCheck_});
 
-    updateLayout->addRow(checkPreReleaseUpdateCheck_);
-    updateLayout->addRow(ignoreGeoUpdateCoreCheck_);
+    updateLayout->setWidget(updateLayout->rowCount(), QFormLayout::SpanningRole, checkPreReleaseUpdateCheck_);
+    updateLayout->setWidget(updateLayout->rowCount(), QFormLayout::SpanningRole, ignoreGeoUpdateCoreCheck_);
 
     // === TUN Tab ===
     auto* tunTab = new QWidget(this);
@@ -800,7 +835,7 @@ void SettingsDialog::setupUi()
 
     tunStackCombo_ = new QComboBox(tunTab);
     tunStackCombo_->setObjectName(QStringLiteral("settingsTunStackCombo"));
-    tunStackCombo_->addItems({
+        tunStackCombo_->addItems({
         QStringLiteral("system"),
         QStringLiteral("gvisor"),
         QStringLiteral("mixed")
@@ -810,7 +845,6 @@ void SettingsDialog::setupUi()
     tunIcmpRoutingEdit_ = new QLineEdit(tunTab);
     tunIcmpRoutingEdit_->setObjectName(QStringLiteral("settingsTunIcmpRoutingEdit"));
     tunIcmpRoutingEdit_->setPlaceholderText(tr("Optional ICMP routing preference"));
-    tunEnableLegacyProtectCheck_ = new QCheckBox(tr("Enable legacy protection (pre-socks relay for Xray)"), tunTab);
     AppTheme::applyCompactFont({
         tunEnableCheck_,
         tunAutoRouteCheck_,
@@ -818,18 +852,15 @@ void SettingsDialog::setupUi()
         tunMtuSpin_,
         tunStackCombo_,
         tunEnableIPv6AddressCheck_,
-        tunIcmpRoutingEdit_,
-        tunEnableLegacyProtectCheck_});
+        tunIcmpRoutingEdit_});
 
-    tunLayout->addRow(tunEnableCheck_);
-    tunLayout->addRow(tunAutoRouteCheck_);
-    tunLayout->addRow(tunStrictRouteCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunAutoRouteCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunStrictRouteCheck_);
     tunLayout->addRow(tr("MTU"), tunMtuSpin_);
     tunLayout->addRow(tr("Stack"), tunStackCombo_);
-    tunLayout->addRow(tunEnableIPv6AddressCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableIPv6AddressCheck_);
     tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
-    tunLayout->addRow(tunEnableLegacyProtectCheck_);
-
     // === DNS Tab ===
     auto* dnsTab = new QWidget(this);
     auto* dnsLayout = new QFormLayout(dnsTab);
@@ -911,13 +942,13 @@ void SettingsDialog::setupUi()
     dnsLayout->addRow(tr("Bootstrap DNS"), bootstrapDnsEdit_);
     dnsLayout->addRow(tr("Domain Strategy (Freedom)"), domainStrategyForFreedomCombo_);
     dnsLayout->addRow(tr("Domain Strategy (Proxy)"), domainStrategyForProxyCombo_);
-    dnsLayout->addRow(useSystemHostsCheck_);
-    dnsLayout->addRow(addCommonHostsCheck_);
-    dnsLayout->addRow(blockBindingQueryCheck_);
-    dnsLayout->addRow(fakeIpCheck_);
-    dnsLayout->addRow(globalFakeIpCheck_);
-    dnsLayout->addRow(serveStaleCheck_);
-    dnsLayout->addRow(parallelQueryCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, useSystemHostsCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, addCommonHostsCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, blockBindingQueryCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, fakeIpCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, globalFakeIpCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, serveStaleCheck_);
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, parallelQueryCheck_);
     dnsLayout->addRow(tr("Direct Expected IPs"), directExpectedIpsEdit_);
     dnsLayout->addRow(tr("DNS Hosts"), dnsHostsEdit_);
 

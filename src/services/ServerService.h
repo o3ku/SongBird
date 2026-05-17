@@ -28,6 +28,7 @@ public:
     OperationResult moveServers(Config& config, const QList<QString>& indexIds, ServerMoveOperation operation);
     OperationResult reorderServers(Config& config, const QList<QString>& orderedIndexIds);
     OperationResult setDefaultServer(Config& config, const QString& indexId);
+    OperationResult setTestResult(Config& config, const QString& indexId, const QString& result);
     OperationResult updateTestResult(Config& config, const QString& indexId, const QString& result);
     bool save(Config& config);
     QString resolveCustomConfigPath(const QString& address) const;

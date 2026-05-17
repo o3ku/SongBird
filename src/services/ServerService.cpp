@@ -357,23 +357,34 @@ OperationResult ServerService::setDefaultServer(Config& config, const QString& i
     return OperationResult::ok(QStringLiteral("Default server updated."));
 }
 
-OperationResult ServerService::updateTestResult(Config& config, const QString& indexId, const QString& result)
+OperationResult ServerService::setTestResult(Config& config, const QString& indexId, const QString& result)
 {
-    if (indexId.trimmed().isEmpty()) {
+    const QString trimmedId = indexId.trimmed();
+    if (trimmedId.isEmpty()) {
         return OperationResult::fail(QStringLiteral("No server selected for test result update."));
     }
 
     auto it = std::find_if(
         config.servers.begin(),
         config.servers.end(),
-        [&indexId](const VmessItem& item) {
-            return item.indexId == indexId;
+        [&trimmedId](const VmessItem& item) {
+            return item.indexId == trimmedId;
         });
     if (it == config.servers.end()) {
         return OperationResult::fail(QStringLiteral("The selected server does not exist."));
     }
 
     it->testResult = result.trimmed();
+    return OperationResult::ok();
+}
+
+OperationResult ServerService::updateTestResult(Config& config, const QString& indexId, const QString& result)
+{
+    const OperationResult setResult = setTestResult(config, indexId, result);
+    if (!setResult.success) {
+        return setResult;
+    }
+
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save configuration after updating the test result."));
     }

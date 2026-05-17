@@ -91,6 +91,18 @@ void drawProxyBadge(QPainter& painter, const QRectF& rect, const QColor& fillCol
     painter.drawEllipse(rect);
 }
 
+QRectF resolveProxyBadgeRect(const QPixmap& pixmap)
+{
+    const qreal dpr = qMax(qreal(1.0), pixmap.devicePixelRatio());
+    const QSizeF logicalSize(pixmap.width() / dpr, pixmap.height() / dpr);
+    const qreal badgeDiameter = qMin(logicalSize.width(), logicalSize.height()) * 0.5;
+    return QRectF(
+        logicalSize.width() - badgeDiameter,
+        logicalSize.height() - badgeDiameter,
+        badgeDiameter,
+        badgeDiameter);
+}
+
 } // namespace
 
 TrayController::TrayController(MainWindow* mainWindow, QObject* parent)
@@ -418,15 +430,16 @@ void TrayController::updateTrayIcon()
     }
 
     QPixmap pixmap = resolveTrayBasePixmap(routings_, currentRoutingIndex_, advancedRoutingEnabled_);
+    const QRectF badgeRect = resolveProxyBadgeRect(pixmap);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     switch (systemProxyMode_) {
     case SystemProxyMode::ForcedChange:
-        drawProxyBadge(painter, QRectF(32.0, 32.0, 32.0, 32.0), QColor(QStringLiteral("#00C853")));
+        drawProxyBadge(painter, badgeRect, QColor(QStringLiteral("#00C853")));
         break;
     case SystemProxyMode::Unchanged:
-        drawProxyBadge(painter, QRectF(32.0, 32.0, 32.0, 32.0), QColor(QStringLiteral("#FACC15")));
+        drawProxyBadge(painter, badgeRect, QColor(QStringLiteral("#FACC15")));
         break;
     case SystemProxyMode::ForcedClear:
     default:

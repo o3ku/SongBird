@@ -45,6 +45,7 @@ private:
         ColumnCount
     };
 
+    QHash<QString, int> rowByIndexId_;
     QList<VmessItem> items_;
     QHash<QString, ServerStatItem> statistics_;
     QString currentIndexId_;

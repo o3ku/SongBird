@@ -678,8 +678,13 @@ bool AppBootstrap::run()
             mainWindow_->setSpeedTestRunning(running);
         }
         if (!running) {
+            if (speedTestResultsDirty_ && serverService_ != nullptr && !serverService_->save(config_)) {
+                appendResult(OperationResult::fail(QStringLiteral("Failed to save configuration after updating test results.")));
+            }
+            speedTestResultsDirty_ = false;
             finishBackgroundTask(BackgroundTaskKind::SpeedTest);
         } else {
+            speedTestResultsDirty_ = false;
             syncBackgroundTaskState();
         }
     });
@@ -694,11 +699,12 @@ bool AppBootstrap::run()
             return;
         }
 
-        const OperationResult updateResult = serverService_->updateTestResult(config_, indexId, result);
+        const OperationResult updateResult = serverService_->setTestResult(config_, indexId, result);
         if (!updateResult.success) {
             appendResult(updateResult);
             return;
         }
+        speedTestResultsDirty_ = true;
 
         if (mainWindow_ != nullptr) {
             mainWindow_->updateServerTestResult(indexId, result);

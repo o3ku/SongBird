@@ -158,6 +158,7 @@ private:
     void applyDeferredUiState();
     void applyFrameAdjustedWindowMetrics();
     void updateWindowTitle();
+    void setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel);
     void updateRoutingModeOptions(const Config& config);
     void restoreServerColumnWidths(const QMap<QString, int>& widths);
     QMap<QString, int> captureServerColumnWidths() const;
@@ -299,6 +300,7 @@ private:
     bool tunEnabled_ = false;
     QMap<QString, int> pendingColumnWidths_;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
+    bool serverTableDynamicSortSuspended_ = false;
     int serverSortColumn_ = -1;
     Qt::SortOrder serverSortOrder_ = Qt::AscendingOrder;
     int serverLogSplitPercent_ = 60;

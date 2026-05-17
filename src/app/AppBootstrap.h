@@ -235,6 +235,7 @@ private:
     bool proxyAvailabilityCheckRunning_ = false;
     bool coreUpdateRunning_ = false;
     bool geoUpdateRunning_ = false;
+    bool speedTestResultsDirty_ = false;
     bool coreStartPending_ = false;
     bool coreStopPending_ = false;
     bool coreReady_ = false;

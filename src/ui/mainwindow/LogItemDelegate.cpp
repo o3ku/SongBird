@@ -35,7 +35,7 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     if (selected || hovered) {
         painter->fillRect(
             option.rect,
-            selected ? QColor(QStringLiteral("#c5dbfe")) : QColor(QStringLiteral("#f2f6fc")));
+            selected ? QColor(QStringLiteral("#eceff3")) : QColor(QStringLiteral("#f2f6fc")));
     }
 
     const QStringList visualLines = index.data(LogListModel::VisualLinesRole).toStringList();

@@ -27,6 +27,14 @@ void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> st
 {
     beginResetModel();
     items_ = std::move(items);
+    rowByIndexId_.clear();
+    rowByIndexId_.reserve(items_.size());
+    for (int row = 0; row < items_.size(); ++row) {
+        const QString trimmedId = items_.at(row).indexId.trimmed();
+        if (!trimmedId.isEmpty()) {
+            rowByIndexId_.insert(trimmedId, row);
+        }
+    }
     statistics_.clear();
     for (const ServerStatItem& item : statistics) {
         if (!item.itemId.trimmed().isEmpty()) {
@@ -44,24 +52,26 @@ bool ServerTableModel::updateTestResult(const QString& indexId, const QString& r
         return false;
     }
 
-    for (int row = 0; row < items_.size(); ++row) {
-        VmessItem& item = items_[row];
-        if (item.indexId != trimmedId) {
-            continue;
-        }
+    const auto rowIt = rowByIndexId_.constFind(trimmedId);
+    if (rowIt == rowByIndexId_.constEnd()) {
+        return false;
+    }
 
-        const QString trimmedResult = result.trimmed();
-        if (item.testResult == trimmedResult) {
-            return true;
-        }
+    const int row = rowIt.value();
+    if (row < 0 || row >= items_.size()) {
+        return false;
+    }
 
-        item.testResult = trimmedResult;
-        const QModelIndex changedIndex = index(row, TestResultColumn);
-        emit dataChanged(changedIndex, changedIndex, {Qt::DisplayRole});
+    VmessItem& item = items_[row];
+    const QString trimmedResult = result.trimmed();
+    if (item.testResult == trimmedResult) {
         return true;
     }
 
-    return false;
+    item.testResult = trimmedResult;
+    const QModelIndex changedIndex = index(row, TestResultColumn);
+    emit dataChanged(changedIndex, changedIndex, {Qt::DisplayRole});
+    return true;
 }
 
 const VmessItem* ServerTableModel::itemAt(int row) const

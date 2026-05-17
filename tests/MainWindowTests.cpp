@@ -58,6 +58,7 @@ private slots:
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
+    void speedTestRunningSuspendsDynamicSortingUntilBatchFinishes();
     void serverTableDisablesDragReorderingAndKeepsMultiSelection();
     void serverContextMenuKeepsExistingMultiSelection();
     void serverContextMenuSelectsClickedUnselectedRow();
@@ -778,6 +779,43 @@ void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted(
     QVERIFY(currentIndex.isValid());
     QCOMPARE(currentIndex.data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
     QVERIFY(serverView->selectionModel()->isRowSelected(currentIndex.row(), QModelIndex()));
+}
+
+void MainWindowTests::speedTestRunningSuspendsDynamicSortingUntilBatchFinishes()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.servers[0].testResult = QStringLiteral("20 ms");
+    config.servers[1].testResult = QStringLiteral("30 ms");
+    config.servers[2].testResult = QStringLiteral("10 ms");
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+
+    serverView->sortByColumn(7, Qt::AscendingOrder);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
+    QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
+    QCOMPARE(serverView->model()->index(2, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
+
+    window.setSpeedTestRunning(true);
+    window.updateServerTestResult(QStringLiteral("server-2"), QStringLiteral("5 ms"));
+    QCoreApplication::processEvents();
+
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
+    QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
+    QCOMPARE(serverView->model()->index(2, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
+
+    window.setSpeedTestRunning(false);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
+    QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
+    QCOMPARE(serverView->model()->index(2, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
 }
 
 void MainWindowTests::serverTableDisablesDragReorderingAndKeepsMultiSelection()

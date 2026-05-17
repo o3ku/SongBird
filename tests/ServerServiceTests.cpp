@@ -118,6 +118,7 @@ private slots:
     void reorderServersReturnsOkWhenOrderUnchanged();
 
     // updateTestResult
+    void setTestResultSetsTrimmedResultWithoutSaving();
     void updateTestResultSetsTrimmedResult();
     void updateTestResultRejectsEmptyIndexId();
     void updateTestResultRejectsMissingServer();
@@ -902,6 +903,19 @@ void ServerServiceTests::reorderServersReturnsOkWhenOrderUnchanged()
 // ---------------------------------------------------------------------------
 // updateTestResult
 // ---------------------------------------------------------------------------
+
+void ServerServiceTests::setTestResultSetsTrimmedResultWithoutSaving()
+{
+    Config config = makeConfigWithServers({
+        makeServer(kId1, kAddr1, 100),
+    });
+
+    const OperationResult result = service_->setTestResult(
+        config, kId1, QStringLiteral("  42ms  "));
+    QVERIFY(result.success);
+    QCOMPARE(config.servers.first().testResult, QStringLiteral("42ms"));
+    QVERIFY(mock_->config_.servers.isEmpty());
+}
 
 void ServerServiceTests::updateTestResultSetsTrimmedResult()
 {

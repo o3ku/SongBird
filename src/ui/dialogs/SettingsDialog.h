@@ -10,6 +10,7 @@
 #include <QMap>
 #include <QSpinBox>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QTextEdit>
 
 #include "domain/models/Config.h"
@@ -22,6 +23,9 @@ class QButtonGroup;
 class QHBoxLayout;
 class QStackedLayout;
 class QTabBar;
+class QPushButton;
+class QWidget;
+class QVBoxLayout;
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -80,6 +84,8 @@ private:
         QLabel* statusLabel = nullptr;
         QPushButton* downloadButton = nullptr;
         QPushButton* setAllButton = nullptr;
+        QWidget* page = nullptr;
+        QVBoxLayout* optionsLayout = nullptr;
         QString versionText;
         QString progressText;
     };
@@ -169,6 +175,7 @@ private:
     QList<QComboBox*> coreTypeCombos_;
     QList<CoreProtocolEntry> coreProtocolEntries_;
     QList<CoreType> existingCoreTypes_;
+    QTabWidget* coreDetailTabs_ = nullptr;
     QMap<int, CoreStatusRow> coreStatusRows_;
 
 };
