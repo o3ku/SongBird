@@ -8,7 +8,12 @@
 #include <QUrl>
 
 #include "common/OperationResult.h"
-#include "domain/models/Config.h"
+#include "domain/models/VmessItem.h"
+
+struct CoreUpdateConfig {
+    bool checkPreReleaseUpdate = false;
+    bool ignoreGeoUpdateCore = false;
+};
 
 class CoreUpdateService {
 public:
@@ -36,7 +41,7 @@ public:
 
     OperationResult update(
         CoreType coreType,
-        const Config& config,
+        const CoreUpdateConfig& config,
         const QString& targetDirectory,
         const UpdateOptions& options = {}) const;
 

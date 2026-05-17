@@ -172,7 +172,7 @@ QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
         }
 
         const auto* tableModel = qobject_cast<const ServerTableModel*>(sourceModel());
-        const VmessItem* item = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceIndex.row());
+        const ServerTableRow* item = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceIndex.row());
         if (tableModel != nullptr && item != nullptr
             && !tableModel->currentIndexId().isEmpty()
             && item->indexId == tableModel->currentIndexId()) {
@@ -188,7 +188,7 @@ QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
 bool ServerFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const
 {
     const auto* tableModel = qobject_cast<const ServerTableModel*>(sourceModel());
-    const VmessItem* item = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceRow);
+    const ServerTableRow* item = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceRow);
     if (item == nullptr) {
         return false;
     }
@@ -203,8 +203,8 @@ bool ServerFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex& 
 bool ServerFilterProxyModel::lessThan(const QModelIndex& sourceLeft, const QModelIndex& sourceRight) const
 {
     const auto* tableModel = qobject_cast<const ServerTableModel*>(sourceModel());
-    const VmessItem* leftItem = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceLeft.row());
-    const VmessItem* rightItem = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceRight.row());
+    const ServerTableRow* leftItem = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceLeft.row());
+    const ServerTableRow* rightItem = tableModel == nullptr ? nullptr : tableModel->itemAt(sourceRight.row());
     if (tableModel == nullptr || leftItem == nullptr || rightItem == nullptr) {
         return QSortFilterProxyModel::lessThan(sourceLeft, sourceRight);
     }

@@ -14,6 +14,16 @@ class MainWindow;
 class QMenu;
 class QSystemTrayIcon;
 
+struct TrayServerEntry {
+    QString indexId;
+    QString displayName;
+};
+
+struct TrayRoutingEntry {
+    QString displayName;
+    QString customIconPath;
+};
+
 class TrayController final : public QObject {
     Q_OBJECT
 
@@ -71,8 +81,8 @@ private:
     QString routingSummary_;
     QString statisticsSummary_;
     QString trafficSummary_;
-    QList<VmessItem> servers_;
-    QList<RoutingItem> routings_;
+    QList<TrayServerEntry> servers_;
+    QList<TrayRoutingEntry> routings_;
     QString currentServerId_;
     int currentRoutingIndex_ = -1;
     int serverMenuLimit_ = 0;

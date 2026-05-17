@@ -69,6 +69,7 @@ private slots:
     void loadReadsRoutingCustomRules();
     void savePersistsRoutingCustomRules();
     void savePersistsSettingsRoutingRuleTabKey();
+    void savePreservesUnknownRootFields();
     void saveRemovesDeprecatedDeadConfigKeys();
     void loadDefaultsMainRuntimeStateToOffWhenMissing();
     void loadReadsMainRuntimeStateFromUiItem();
@@ -1371,6 +1372,34 @@ void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
     const Config reloaded = reloadedRepository.load();
 
     QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
+}
+
+void JsonConfigRepositoryTests::savePreservesUnknownRootFields()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("customPreservedField"), QStringLiteral("keep-me"));
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    Config config = repository.load();
+    config.mainCoreRunning = true;
+    QVERIFY(repository.save(config));
+
+    QFile reloadedFile(configPath);
+    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
+    QVERIFY(document.isObject());
+    QCOMPARE(
+        document.object().value(QStringLiteral("customPreservedField")).toString(),
+        QStringLiteral("keep-me"));
 }
 
 void JsonConfigRepositoryTests::saveRemovesDeprecatedDeadConfigKeys()

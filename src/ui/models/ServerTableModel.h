@@ -8,6 +8,20 @@
 #include "domain/models/ServerStatistics.h"
 #include "domain/models/VmessItem.h"
 
+struct ServerTableRow {
+    QString indexId;
+    ConfigType configType = ConfigType::Unknown;
+    QString remarks;
+    QString address;
+    int port = 0;
+    QString security;
+    QString network;
+    QString streamSecurity;
+    QString testResult;
+    QString subId;
+    int sort = 0;
+};
+
 class ServerTableModel final : public QAbstractTableModel {
     Q_OBJECT
 
@@ -20,7 +34,9 @@ public:
 
     void setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId = {});
     bool updateTestResult(const QString& indexId, const QString& result);
-    const VmessItem* itemAt(int row) const;
+    const ServerTableRow* itemAt(int row) const;
+    const ServerTableRow* itemByIndexId(const QString& indexId) const;
+    const ServerTableRow* currentItem() const;
     ServerStatItem statisticAt(int row) const;
     QString currentIndexId() const;
 
@@ -46,7 +62,7 @@ private:
     };
 
     QHash<QString, int> rowByIndexId_;
-    QList<VmessItem> items_;
+    QList<ServerTableRow> items_;
     QHash<QString, ServerStatItem> statistics_;
     QString currentIndexId_;
 };

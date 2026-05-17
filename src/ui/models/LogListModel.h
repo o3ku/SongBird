@@ -10,8 +10,7 @@ class LogListModel final : public QAbstractListModel {
 
 public:
     enum CustomRole {
-        VisualLinesRole = Qt::UserRole + 1,
-        LineCountRole,
+        LineCountRole = Qt::UserRole + 1,
     };
 
     explicit LogListModel(QObject* parent = nullptr);
@@ -28,10 +27,10 @@ public:
 private:
     struct LogEntry {
         QString text;
-        QStringList visualLines;
+        int visualLineCount = 1;
     };
 
-    QStringList computeVisualLines(const QString& text) const;
+    int computeVisualLineCount(const QString& text) const;
 
     QVector<LogEntry> entries_;
     QFont wrapFont_;

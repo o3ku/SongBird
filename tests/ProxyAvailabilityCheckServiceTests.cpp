@@ -11,9 +11,9 @@ private slots:
 
 void ProxyAvailabilityCheckServiceTests::checkRejectsTunMode()
 {
-    Config config;
+    ProxyAvailabilityCheckConfig config;
     config.localPort = 10808;
-    config.tunModeItem.enableTun = true;
+    config.tunEnabled = true;
 
     ProxyAvailabilityCheckService service;
     const OperationResult result = service.check(config);

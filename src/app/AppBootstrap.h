@@ -34,6 +34,7 @@ class QTimer;
 class RoutingService;
 class ConfigBackupService;
 class GeoResourceUpdateService;
+struct CoreUpdateConfig;
 class ServerService;
 class SpeedTestService;
 class StatisticsService;
@@ -126,7 +127,7 @@ private:
         const std::function<void(const OperationResult&)>& completionObserver);
     void runCoreUpdateTask(
         CoreType coreType,
-        Config workerConfig,
+        CoreUpdateConfig workerConfig,
         QString installDirectory,
         QPointer<QObject> progressContextGuard,
         bool skipLocalVersionCheck,

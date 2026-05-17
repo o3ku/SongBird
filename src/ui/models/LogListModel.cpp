@@ -31,10 +31,8 @@ QVariant LogListModel::data(const QModelIndex& index, int role) const
     case Qt::DisplayRole:
     case Qt::ToolTipRole:
         return entry.text;
-    case VisualLinesRole:
-        return entry.visualLines;
     case LineCountRole:
-        return entry.visualLines.size();
+        return entry.visualLineCount;
     default:
         return {};
     }
@@ -53,11 +51,12 @@ void LogListModel::setWrapConfiguration(const QFont& font, int textWidth)
         return;
     }
 
-    emit layoutAboutToBeChanged();
+    const QModelIndex topLeft = index(0, 0);
+    const QModelIndex bottomRight = index(entries_.size() - 1, 0);
     for (LogEntry& entry : entries_) {
-        entry.visualLines = computeVisualLines(entry.text);
+        entry.visualLineCount = computeVisualLineCount(entry.text);
     }
-    emit layoutChanged();
+    emit dataChanged(topLeft, bottomRight, {LineCountRole});
 }
 
 void LogListModel::appendLine(const QString& line)
@@ -71,7 +70,7 @@ void LogListModel::appendLine(const QString& line)
 
     LogEntry entry;
     entry.text = line;
-    entry.visualLines = computeVisualLines(line);
+    entry.visualLineCount = computeVisualLineCount(line);
 
     const int row = entries_.size();
     beginInsertRows(QModelIndex(), row, row);
@@ -118,10 +117,10 @@ QStringList LogListModel::linesAt(const QModelIndexList& indexes) const
     return values;
 }
 
-QStringList LogListModel::computeVisualLines(const QString& text) const
+int LogListModel::computeVisualLineCount(const QString& text) const
 {
     if (textWidth_ <= 0 || text.isEmpty()) {
-        return {text};
+        return 1;
     }
 
     QTextLayout layout(text, wrapFont_);
@@ -130,20 +129,16 @@ QStringList LogListModel::computeVisualLines(const QString& text) const
     layout.setTextOption(option);
     layout.beginLayout();
 
-    QStringList lines;
+    int lineCount = 0;
     forever {
         QTextLine line = layout.createLine();
         if (!line.isValid()) {
             break;
         }
         line.setLineWidth(textWidth_);
-        lines.append(text.mid(line.textStart(), line.textLength()));
+        ++lineCount;
     }
     layout.endLayout();
 
-    if (lines.isEmpty()) {
-        lines.append(text);
-    }
-
-    return lines;
+    return qMax(1, lineCount);
 }

@@ -138,12 +138,10 @@ Config JsonConfigRepository::load()
     lastLoadError_.clear();
     QFile file(configPath_);
     if (!file.exists()) {
-        rawRoot_ = QJsonObject();
-        return parseConfig(rawRoot_);
+        return parseConfig(QJsonObject());
     }
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        rawRoot_ = QJsonObject();
         lastLoadError_ = QStringLiteral("Failed to open configuration file: %1")
                              .arg(QDir::toNativeSeparators(configPath_));
         return {};
@@ -152,7 +150,6 @@ Config JsonConfigRepository::load()
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        rawRoot_ = QJsonObject();
         lastLoadError_ = parseError.error != QJsonParseError::NoError
             ? QStringLiteral("Failed to parse configuration file: %1 (offset %2: %3).")
                   .arg(QDir::toNativeSeparators(configPath_))
@@ -163,13 +160,12 @@ Config JsonConfigRepository::load()
         return {};
     }
 
-    rawRoot_ = document.object();
-    return parseConfig(rawRoot_);
+    return parseConfig(document.object());
 }
 
 bool JsonConfigRepository::save(const Config& config)
 {
-    QJsonObject root = rawRoot_;
+    QJsonObject root = loadExistingRootObject();
     applyConfig(root, config);
 
     const QFileInfo fileInfo(configPath_);
@@ -191,7 +187,6 @@ bool JsonConfigRepository::save(const Config& config)
         return false;
     }
 
-    rawRoot_ = root;
     return true;
 }
 
@@ -203,6 +198,22 @@ QString JsonConfigRepository::configPath() const
 QString JsonConfigRepository::lastLoadError() const
 {
     return lastLoadError_;
+}
+
+QJsonObject JsonConfigRepository::loadExistingRootObject() const
+{
+    QFile file(configPath_);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return {};
+    }
+
+    return document.object();
 }
 
 Config JsonConfigRepository::parseConfig(const QJsonObject& root)

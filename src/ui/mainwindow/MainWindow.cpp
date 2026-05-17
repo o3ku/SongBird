@@ -271,19 +271,6 @@ private:
     }
 };
 
-const VmessItem* resolveActiveServerForWindow(const Config& config)
-{
-    if (!config.currentIndexId.trimmed().isEmpty()) {
-        for (const VmessItem& item : config.servers) {
-            if (item.indexId == config.currentIndexId) {
-                return &item;
-            }
-        }
-    }
-
-    return config.servers.isEmpty() ? nullptr : &config.servers.constFirst();
-}
-
 void configureStyledComboBox(QComboBox* comboBox)
 {
     if (comboBox == nullptr) {
@@ -560,7 +547,19 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& statistics)
 {
-    config_ = config;
+    configSnapshot_.currentIndexId = config.currentIndexId;
+    configSnapshot_.subscriptions = config.subscriptions;
+    configSnapshot_.routingItems = config.routingItems;
+    configSnapshot_.routingIndex = config.routingIndex;
+    configSnapshot_.coreTypeItems = config.coreTypeItems;
+    shareUrlByIndexId_.clear();
+    shareUrlByIndexId_.reserve(config.servers.size());
+    for (const VmessItem& item : config.servers) {
+        const QString shareUrl = ShareUrlBuilder::build(item).trimmed();
+        if (!item.indexId.isEmpty() && !shareUrl.isEmpty()) {
+            shareUrlByIndexId_.insert(item.indexId, shareUrl);
+        }
+    }
     const QString preferredSelectedId = selectedServerId().trimmed();
     if (!preferredSelectedId.isEmpty()) {
         lastSelectedServerId_ = preferredSelectedId;
@@ -818,21 +817,35 @@ void MainWindow::updateCoreToggleAction()
     coreToggleAction_->setChecked(coreRunning_ && !coreTransitionPending_);
 
     QString toolTip = tr("Start or stop the core.");
-    const VmessItem* activeServer = resolveActiveServerForWindow(config_);
+    const ServerTableRow* currentActiveServer = activeServer();
     if (coreTransitionPending_) {
         toolTip = coreProcessRunning_
             ? tr("Core start/stop is in progress.")
             : tr("Core start is in progress.");
-    } else if (activeServer == nullptr) {
+    } else if (currentActiveServer == nullptr) {
         toolTip = tr("No available server. Add or import a server first.");
     } else {
-        const CoreType requiredCore = resolveSelectedCoreType(config_, *activeServer, existingCoreTypes_);
+        Config configForCoreSelection;
+        configForCoreSelection.coreTypeItems = configSnapshot_.coreTypeItems;
+        VmessItem activeServerConfig;
+        activeServerConfig.indexId = currentActiveServer->indexId;
+        activeServerConfig.configType = currentActiveServer->configType;
+        activeServerConfig.address = currentActiveServer->address;
+        activeServerConfig.port = currentActiveServer->port;
+        activeServerConfig.remarks = currentActiveServer->remarks;
+        activeServerConfig.security = currentActiveServer->security;
+        activeServerConfig.network = currentActiveServer->network;
+        activeServerConfig.streamSecurity = currentActiveServer->streamSecurity;
+        activeServerConfig.testResult = currentActiveServer->testResult;
+        activeServerConfig.subId = currentActiveServer->subId;
+        activeServerConfig.sort = currentActiveServer->sort;
+        const CoreType requiredCore = resolveSelectedCoreType(configForCoreSelection, activeServerConfig, existingCoreTypes_);
         if (!existingCoreTypes_.contains(requiredCore)) {
             toolTip = tr("No compatible %1 core is installed for the active server \"%2\".")
                           .arg(coreTypeDisplayName(requiredCore))
-                          .arg(activeServer->remarks.trimmed().isEmpty()
+                          .arg(currentActiveServer->remarks.trimmed().isEmpty()
                                    ? tr("Unnamed server")
-                                   : activeServer->remarks.trimmed());
+                                   : currentActiveServer->remarks.trimmed());
         } else if (coreProcessRunning_) {
             toolTip = tr("Stop the running core.");
         } else {
@@ -960,9 +973,9 @@ void MainWindow::restoreUiState(const Config& config)
 
         // Switch to the tab that contains the current server
         if (!config.currentIndexId.isEmpty()) {
-            const VmessItem* currentServer = nullptr;
+            const ServerTableRow* currentServer = nullptr;
             for (int i = 0; i < serverModel_->rowCount(); ++i) {
-                const VmessItem* item = serverModel_->itemAt(i);
+                const ServerTableRow* item = serverModel_->itemAt(i);
                 if (item != nullptr && item->indexId == config.currentIndexId) {
                     currentServer = item;
                     break;
@@ -1033,7 +1046,7 @@ bool MainWindow::selectSubscriptionTab(const QString& selectionId)
 
 void MainWindow::onServerSelectionChanged()
 {
-    const VmessItem* item = selectedServer();
+    const ServerTableRow* item = selectedServer();
     if (item == nullptr) {
         lastSelectedServerId_.clear();
         clearTransientStatus();
@@ -1063,8 +1076,8 @@ void MainWindow::onServerFilterTextChanged(const QString& text)
 
 void MainWindow::updateActionState()
 {
-    const QList<const VmessItem*> selectedItems = selectedServers();
-    const VmessItem* selectedItem = selectedItems.isEmpty() ? nullptr : selectedItems.constFirst();
+    const QList<const ServerTableRow*> selectedItems = selectedServers();
+    const ServerTableRow* selectedItem = selectedItems.isEmpty() ? nullptr : selectedItems.constFirst();
     const bool hasSelection = selectedItem != nullptr;
     const bool hasSingleSelection = selectedItems.size() == 1;
     const bool hasCustomSelection = hasSingleSelection && selectedItem->configType == ConfigType::Custom;
@@ -1072,8 +1085,8 @@ void MainWindow::updateActionState()
         && (selectedItem->configType == ConfigType::VMess || selectedItem->configType == ConfigType::VLESS)
         && selectedItem->streamSecurity.trimmed().compare(QStringLiteral("reality"), Qt::CaseInsensitive) != 0;
     bool hasShareExports = false;
-    for (const VmessItem* item : selectedItems) {
-        if (item != nullptr && item->configType != ConfigType::Custom && item->configType != ConfigType::Unknown) {
+    for (const ServerTableRow* item : selectedItems) {
+        if (item != nullptr && shareUrlByIndexId_.contains(item->indexId)) {
             hasShareExports = true;
             break;
         }
@@ -1229,7 +1242,7 @@ void MainWindow::updateQrPreview()
         return;
     }
 
-    const QList<const VmessItem*> selectedItems = selectedServers();
+    const QList<const ServerTableRow*> selectedItems = selectedServers();
     if (selectedItems.isEmpty()) {
         shareLinkLabel_->clear();
         shareLinkLabel_->setToolTip(QString());
@@ -1239,8 +1252,8 @@ void MainWindow::updateQrPreview()
         return;
     }
 
-    const VmessItem* firstItem = selectedItems.constFirst();
-    const QString firstShareUrl = firstItem != nullptr ? ShareUrlBuilder::build(*firstItem).trimmed() : QString();
+    const ServerTableRow* firstItem = selectedItems.constFirst();
+    const QString firstShareUrl = firstItem == nullptr ? QString() : shareUrlByIndexId_.value(firstItem->indexId).trimmed();
 
     if (selectedItems.size() == 1) {
         shareLinkLabel_->setPlainText(firstShareUrl);
@@ -1400,7 +1413,7 @@ void MainWindow::updateSelectionForVisibleRows()
         for (int proxyRow = 0; proxyRow < serverFilterModel_->rowCount(); ++proxyRow) {
             const QModelIndex proxyIndex = serverFilterModel_->index(proxyRow, 0);
             const QModelIndex sourceIndex = serverFilterModel_->mapToSource(proxyIndex);
-            const VmessItem* item = serverModel_->itemAt(sourceIndex.row());
+            const ServerTableRow* item = serverModel_->itemAt(sourceIndex.row());
             if (item != nullptr && item->indexId == preferredId) {
                 targetIndex = proxyIndex;
                 break;
@@ -1492,7 +1505,7 @@ QString MainWindow::currentSubscriptionUrl() const
         return {};
     }
 
-    for (const SubItem& item : config_.subscriptions) {
+    for (const SubItem& item : configSnapshot_.subscriptions) {
         if (item.id.trimmed() == subscriptionId) {
             return item.url.trimmed();
         }
@@ -1518,15 +1531,15 @@ QString MainWindow::describeSubscription(const SubItem& item)
         : item.id.trimmed();
 }
 
-QStringList MainWindow::buildShareLinks(const QList<const VmessItem*>& items)
+QStringList MainWindow::buildShareLinks(const QList<const ServerTableRow*>& items) const
 {
     QStringList shareLinks;
-    for (const VmessItem* item : items) {
+    for (const ServerTableRow* item : items) {
         if (item == nullptr) {
             continue;
         }
 
-        const QString shareUrl = ShareUrlBuilder::build(*item).trimmed();
+        const QString shareUrl = shareUrlByIndexId_.value(item->indexId).trimmed();
         if (!shareUrl.isEmpty()) {
             shareLinks.append(shareUrl);
         }
@@ -1604,7 +1617,7 @@ QStringList MainWindow::buildReorderedServerIds(const QList<int>& movedRows, int
     visibleIds.reserve(serverFilterModel_->rowCount());
     for (int proxyRow = 0; proxyRow < serverFilterModel_->rowCount(); ++proxyRow) {
         const QModelIndex sourceIndex = serverFilterModel_->mapToSource(serverFilterModel_->index(proxyRow, 0));
-        const VmessItem* item = serverModel_->itemAt(sourceIndex.row());
+        const ServerTableRow* item = serverModel_->itemAt(sourceIndex.row());
         if (item != nullptr && !item->indexId.isEmpty()) {
             visibleIds.append(item->indexId);
         }
@@ -1656,7 +1669,7 @@ QStringList MainWindow::buildReorderedServerIds(const QList<int>& movedRows, int
     QStringList allIds;
     allIds.reserve(serverModel_->rowCount());
     for (int row = 0; row < serverModel_->rowCount(); ++row) {
-        const VmessItem* item = serverModel_->itemAt(row);
+        const ServerTableRow* item = serverModel_->itemAt(row);
         if (item != nullptr && !item->indexId.isEmpty()) {
             allIds.append(item->indexId);
         }
@@ -2846,6 +2859,27 @@ void MainWindow::updateRoutingModeOptions(const Config& config)
     updateContentSizedComboBox(routingModeCombo_, RoutingComboMinimumCharacters);
 }
 
+void MainWindow::updateRoutingModeOptions(const ConfigSnapshot& config)
+{
+    if (routingModeCombo_ == nullptr) {
+        return;
+    }
+
+    const QSignalBlocker blocker(routingModeCombo_);
+    routingModeCombo_->clear();
+
+    for (int index = 0; index < config.routingItems.size(); ++index) {
+        routingModeCombo_->addItem(describeRoutingMode(config.routingItems.at(index), index), index);
+    }
+
+    const int selectedMode = config.routingItems.isEmpty()
+        ? -1
+        : qBound(0, config.routingIndex, config.routingItems.size() - 1);
+    const int comboIndex = routingModeCombo_->findData(selectedMode);
+    routingModeCombo_->setCurrentIndex(comboIndex >= 0 ? comboIndex : (routingModeCombo_->count() > 0 ? 0 : -1));
+    updateContentSizedComboBox(routingModeCombo_, RoutingComboMinimumCharacters);
+}
+
 void MainWindow::restoreServerColumnWidths(const QMap<QString, int>& widths)
 {
     if (serverView_ == nullptr || serverView_->horizontalHeader() == nullptr) {
@@ -3287,7 +3321,7 @@ void MainWindow::showEvent(QShowEvent* event)
     QMainWindow::showEvent(event);
     applyFrameAdjustedWindowMetrics();
     QTimer::singleShot(0, this, [this]() {
-        updateRoutingModeOptions(config_);
+        updateRoutingModeOptions(configSnapshot_);
         updateQrPreview();
     });
     if (uiStateRestorePending_) {
@@ -3311,19 +3345,24 @@ void MainWindow::showEvent(QShowEvent* event)
 
 QString MainWindow::selectedServerId() const
 {
-    const VmessItem* item = selectedServer();
+    const ServerTableRow* item = selectedServer();
     return item == nullptr ? QString() : item->indexId;
 }
 
-const VmessItem* MainWindow::selectedServer() const
+const ServerTableRow* MainWindow::activeServer() const
 {
-    const QList<const VmessItem*> items = selectedServers();
+    return serverModel_ == nullptr ? nullptr : serverModel_->currentItem();
+}
+
+const ServerTableRow* MainWindow::selectedServer() const
+{
+    const QList<const ServerTableRow*> items = selectedServers();
     return items.isEmpty() ? nullptr : items.constFirst();
 }
 
-QList<const VmessItem*> MainWindow::selectedServers() const
+QList<const ServerTableRow*> MainWindow::selectedServers() const
 {
-    QList<const VmessItem*> items;
+    QList<const ServerTableRow*> items;
     if (serverView_ == nullptr
         || serverView_->selectionModel() == nullptr
         || serverFilterModel_ == nullptr
@@ -3340,7 +3379,7 @@ QList<const VmessItem*> MainWindow::selectedServers() const
         }
 
         seenRows.insert(sourceRow.row());
-        const VmessItem* item = serverModel_->itemAt(sourceRow.row());
+        const ServerTableRow* item = serverModel_->itemAt(sourceRow.row());
         if (item != nullptr) {
             items.append(item);
         }
@@ -3352,8 +3391,8 @@ QList<const VmessItem*> MainWindow::selectedServers() const
 QStringList MainWindow::selectedServerIds() const
 {
     QStringList ids;
-    const QList<const VmessItem*> items = selectedServers();
-    for (const VmessItem* item : items) {
+    const QList<const ServerTableRow*> items = selectedServers();
+    for (const ServerTableRow* item : items) {
         if (item != nullptr && !item->indexId.isEmpty()) {
             ids.append(item->indexId);
         }

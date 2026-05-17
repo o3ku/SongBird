@@ -92,6 +92,10 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     config.blockBindingQuery = true;
     config.parallelQuery = true;
     config.directExpectedIps = QStringLiteral("geoip:private");
+    config.servers = {VmessItem{}};
+    config.subscriptions = {SubItem{}};
+    config.globalHotkeys = {GlobalHotkeyItem{}};
+    config.coreTypeItems = {CoreTypeItem{}};
 
     const Config runtimeConfig = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(config);
 
@@ -117,6 +121,10 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     QVERIFY(runtimeConfig.blockBindingQuery);
     QVERIFY(runtimeConfig.parallelQuery);
     QCOMPARE(runtimeConfig.directExpectedIps, QStringLiteral("geoip:private"));
+    QVERIFY(runtimeConfig.servers.isEmpty());
+    QVERIFY(runtimeConfig.subscriptions.isEmpty());
+    QVERIFY(runtimeConfig.globalHotkeys.isEmpty());
+    QVERIFY(runtimeConfig.coreTypeItems.isEmpty());
 }
 
 void SpeedTestServiceInternalTests::classifyUrlProbeResultFormatsAccessibleLatency()

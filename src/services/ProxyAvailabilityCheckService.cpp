@@ -96,9 +96,9 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
 }
 } // namespace
 
-OperationResult ProxyAvailabilityCheckService::check(const Config& config) const
+OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityCheckConfig& config) const
 {
-    if (config.tunModeItem.enableTun) {
+    if (config.tunEnabled) {
         return OperationResult::fail(
             QCoreApplication::translate(
                 "ProxyAvailabilityCheckService",

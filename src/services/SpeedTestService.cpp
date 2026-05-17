@@ -300,6 +300,8 @@ SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
 }
 
 QString runUrlTest(
+    const Config& probeConfigTemplate,
+    const QString& urlTestUrl,
     const SpeedTestRequestItem& item,
     const QString& customConfigDirectory,
     const std::atomic_bool& cancelled,
@@ -334,7 +336,7 @@ QString runUrlTest(
         return QStringLiteral("Temp dir failed");
     }
 
-    Config runtimeConfig = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(item.runtimeConfig);
+    Config runtimeConfig = probeConfigTemplate;
     runtimeConfig.localPort = socksPort;
 
     const QString configPath = temporaryDirectory.filePath(QStringLiteral("runtime.json"));
@@ -427,7 +429,7 @@ QString runUrlTest(
             ? QStringLiteral("Proxy startup timeout (no core output)")
             : QStringLiteral("Proxy startup timeout: %1").arg(normalizeErrorText(output));
     }
-    const QString url = defaultUrlTestUrl(item.runtimeConfig);
+    const QString url = urlTestUrl;
     log(QStringLiteral("URL Test proxy ready | %1 | type=%2 | port=%3 | url=%4")
             .arg(serverName)
             .arg(readyProxy->name)
@@ -644,6 +646,8 @@ QJsonObject assembleSingBoxBatchConfig(const QList<BatchProbeEntry>& entries)
 // outbound shapes are mixed across flavors or when a TUN-compat sidecar is
 // required for any item.
 bool runBatchedGroup(
+    const Config& probeConfigTemplate,
+    const QString& urlTestUrl,
     const QList<SpeedTestRequestItem>& groupItems,
     const QString& customConfigDirectory,
     const std::atomic_bool& cancelled,
@@ -665,9 +669,8 @@ bool runBatchedGroup(
             return false;
         }
 
-        const Config probeConfig = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(item.runtimeConfig);
         const ClientConfigWriter::GeneratedConfigSet generated = clientConfigWriter.generateClientConfigs(
-            probeConfig,
+            probeConfigTemplate,
             item.runtimeServer,
             0);
 
@@ -702,7 +705,7 @@ bool runBatchedGroup(
         entry.outboundTag = outboundTag;
         entry.inboundTag = inboundTag;
         entry.outbound = outbound;
-        entry.url = defaultUrlTestUrl(item.runtimeConfig);
+        entry.url = urlTestUrl;
         entries.append(entry);
     }
 
@@ -887,6 +890,8 @@ public:
     void runBatch(const Config& config, const QList<SpeedTestRequestItem>& items)
     {
         int completed = 0;
+        const Config probeConfigTemplate = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(config);
+        const QString urlTestUrl = defaultUrlTestUrl(config);
 
         auto logCallback = [this](const QString& message) {
             QMetaObject::invokeMethod(this, [this, message]() {
@@ -946,6 +951,8 @@ public:
             }
 
             const bool batched = runBatchedGroup(
+                probeConfigTemplate,
+                urlTestUrl,
                 groupItems,
                 customConfigDirectory_,
                 cancelled_,
@@ -959,7 +966,7 @@ public:
             // Fallback per-item path (sing-box, TUN-compat aux configs,
             // non-legacy outbound shapes). Reuses the existing concurrent
             // pool so per-server core spawns don't serialize unnecessarily.
-            runFallbackGroup(indices, items, completed);
+            runFallbackGroup(indices, items, probeConfigTemplate, urlTestUrl, completed);
         }
 
         const bool wasCancelled = cancelled_.load();
@@ -972,6 +979,8 @@ private:
     void runFallbackGroup(
         const QList<int>& indices,
         const QList<SpeedTestRequestItem>& items,
+        const Config& probeConfigTemplate,
+        const QString& urlTestUrl,
         int& completed)
     {
         struct PendingItem {
@@ -1027,14 +1036,14 @@ private:
             pending.push_back(PendingItem{
                 item.server.indexId,
                 serverName,
-                std::async(std::launch::async, [this, item]() -> QString {
+                std::async(std::launch::async, [this, item, &probeConfigTemplate, &urlTestUrl]() -> QString {
                     if (item.server.configType == ConfigType::Custom) {
                         return QStringLiteral("Unsupported");
                     }
                     if (cancelled_.load()) {
                         return QStringLiteral("Cancelled");
                     }
-                    return runUrlTest(item, customConfigDirectory_, cancelled_, [this](const QString& message) {
+                    return runUrlTest(probeConfigTemplate, urlTestUrl, item, customConfigDirectory_, cancelled_, [this](const QString& message) {
                         QMetaObject::invokeMethod(this, [this, message]() {
                             emit logGenerated(message);
                         }, Qt::QueuedConnection);

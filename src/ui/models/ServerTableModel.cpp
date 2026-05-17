@@ -7,7 +7,7 @@
 
 namespace {
 
-QString formatAddressDisplay(const VmessItem& item)
+QString formatAddressDisplay(const ServerTableRow& item)
 {
     if (item.port > 0) {
         return QStringLiteral("%1:%2").arg(item.address).arg(item.port);
@@ -26,7 +26,22 @@ ServerTableModel::ServerTableModel(QObject* parent)
 void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId)
 {
     beginResetModel();
-    items_ = std::move(items);
+    items_.clear();
+    items_.reserve(items.size());
+    for (const VmessItem& item : items) {
+        items_.append(ServerTableRow{
+            item.indexId,
+            item.configType,
+            item.remarks,
+            item.address,
+            item.port,
+            item.security,
+            item.network,
+            item.streamSecurity,
+            item.testResult,
+            item.subId,
+            item.sort});
+    }
     rowByIndexId_.clear();
     rowByIndexId_.reserve(items_.size());
     for (int row = 0; row < items_.size(); ++row) {
@@ -62,7 +77,7 @@ bool ServerTableModel::updateTestResult(const QString& indexId, const QString& r
         return false;
     }
 
-    VmessItem& item = items_[row];
+    ServerTableRow& item = items_[row];
     const QString trimmedResult = result.trimmed();
     if (item.testResult == trimmedResult) {
         return true;
@@ -74,7 +89,7 @@ bool ServerTableModel::updateTestResult(const QString& indexId, const QString& r
     return true;
 }
 
-const VmessItem* ServerTableModel::itemAt(int row) const
+const ServerTableRow* ServerTableModel::itemAt(int row) const
 {
     if (row < 0 || row >= items_.size()) {
         return nullptr;
@@ -83,9 +98,33 @@ const VmessItem* ServerTableModel::itemAt(int row) const
     return &items_.at(row);
 }
 
+const ServerTableRow* ServerTableModel::itemByIndexId(const QString& indexId) const
+{
+    const QString trimmedId = indexId.trimmed();
+    if (trimmedId.isEmpty()) {
+        return nullptr;
+    }
+
+    const auto rowIt = rowByIndexId_.constFind(trimmedId);
+    if (rowIt == rowByIndexId_.constEnd()) {
+        return nullptr;
+    }
+
+    return itemAt(rowIt.value());
+}
+
+const ServerTableRow* ServerTableModel::currentItem() const
+{
+    if (const ServerTableRow* current = itemByIndexId(currentIndexId_)) {
+        return current;
+    }
+
+    return items_.isEmpty() ? nullptr : &items_.constFirst();
+}
+
 ServerStatItem ServerTableModel::statisticAt(int row) const
 {
-    const VmessItem* item = itemAt(row);
+    const ServerTableRow* item = itemAt(row);
     if (item == nullptr) {
         return {};
     }
@@ -122,7 +161,7 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
         return {};
     }
 
-    const VmessItem* item = itemAt(index.row());
+    const ServerTableRow* item = itemAt(index.row());
     if (item == nullptr) {
         return {};
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QCloseEvent>
+#include <QHash>
 #include <QMainWindow>
 #include <QMap>
 #include <QStringList>
@@ -32,8 +33,8 @@ class ServerFilterProxyModel;
 class ServerTableModel;
 class ServerTableView;
 class QWidget;
+struct ServerTableRow;
 struct SubItem;
-struct VmessItem;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -128,6 +129,14 @@ private slots:
     void showServerContextMenu(const QPoint& position);
 
 private:
+    struct ConfigSnapshot {
+        QString currentIndexId;
+        QList<SubItem> subscriptions;
+        QList<RoutingItem> routingItems;
+        int routingIndex = 0;
+        QList<CoreTypeItem> coreTypeItems;
+    };
+
     void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -160,6 +169,7 @@ private:
     void updateWindowTitle();
     void setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel);
     void updateRoutingModeOptions(const Config& config);
+    void updateRoutingModeOptions(const ConfigSnapshot& config);
     void restoreServerColumnWidths(const QMap<QString, int>& widths);
     QMap<QString, int> captureServerColumnWidths() const;
     int captureSplitPercent(QSplitter* splitter, int fallback) const;
@@ -173,10 +183,11 @@ private:
     QString currentSubscriptionUrl() const;
     static QString describeSubscription(const SubItem& item);
     static QString describeRoutingMode(const RoutingItem& item, int index);
-    static QStringList buildShareLinks(const QList<const VmessItem*>& items);
+    QStringList buildShareLinks(const QList<const ServerTableRow*>& items) const;
     QStringList buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const;
-    const VmessItem* selectedServer() const;
-    QList<const VmessItem*> selectedServers() const;
+    const ServerTableRow* activeServer() const;
+    const ServerTableRow* selectedServer() const;
+    QList<const ServerTableRow*> selectedServers() const;
     QString selectedServerId() const;
     QStringList selectedServerIds() const;
 
@@ -288,7 +299,8 @@ private:
     bool frameAdjustedWindowMetricsApplied_ = false;
     QString backgroundTaskDescription_;
     QString transientStatusMessage_;
-    Config config_;
+    ConfigSnapshot configSnapshot_;
+    QHash<QString, QString> shareUrlByIndexId_;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;
     QString lastSelectedServerId_;

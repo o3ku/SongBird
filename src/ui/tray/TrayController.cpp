@@ -36,13 +36,13 @@ QIcon loadDefaultTrayIcon()
     return icon;
 }
 
-QIcon resolveCustomRoutingIcon(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
+QIcon resolveCustomRoutingIcon(const QList<TrayRoutingEntry>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
 {
     if (!advancedRoutingEnabled || currentRoutingIndex < 0 || currentRoutingIndex >= routings.size()) {
         return {};
     }
 
-    const QString customIconPath = routings.at(currentRoutingIndex).customIcon.trimmed();
+    const QString customIconPath = routings.at(currentRoutingIndex).customIconPath.trimmed();
     if (customIconPath.isEmpty() || !QFileInfo::exists(customIconPath)) {
         return {};
     }
@@ -51,7 +51,7 @@ QIcon resolveCustomRoutingIcon(const QList<RoutingItem>& routings, int currentRo
     return icon.isNull() ? QIcon() : icon;
 }
 
-QPixmap resolveTrayBasePixmap(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
+QPixmap resolveTrayBasePixmap(const QList<TrayRoutingEntry>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
 {
     QIcon baseIcon = resolveCustomRoutingIcon(routings, currentRoutingIndex, advancedRoutingEnabled);
     if (baseIcon.isNull()) {
@@ -299,7 +299,11 @@ void TrayController::showMessage(const QString& title, const QString& message, b
 
 void TrayController::setServers(const QList<VmessItem>& servers, const QString& currentIndexId, int limit)
 {
-    servers_ = servers;
+    servers_.clear();
+    servers_.reserve(servers.size());
+    for (const VmessItem& item : servers) {
+        servers_.append(TrayServerEntry{item.indexId, describeServer(item)});
+    }
     currentServerId_ = currentIndexId.trimmed();
     serverMenuLimit_ = limit;
     rebuildServerMenu();
@@ -307,7 +311,14 @@ void TrayController::setServers(const QList<VmessItem>& servers, const QString& 
 
 void TrayController::setRoutings(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedEnabled)
 {
-    routings_ = routings;
+    routings_.clear();
+    routings_.reserve(routings.size());
+    for (int index = 0; index < routings.size(); ++index) {
+        const RoutingItem& item = routings.at(index);
+        routings_.append(TrayRoutingEntry{
+            describeRouting(item, index),
+            item.customIcon});
+    }
     currentRoutingIndex_ = currentRoutingIndex;
     advancedRoutingEnabled_ = advancedEnabled;
     rebuildRoutingMenu();
@@ -471,8 +482,8 @@ void TrayController::rebuildServerMenu()
         ? servers_.size()
         : qMin(serverMenuLimit_, servers_.size());
     for (int index = 0; index < effectiveLimit; ++index) {
-        const VmessItem& item = servers_.at(index);
-        QAction* action = serversMenu_->addAction(describeServer(item));
+        const TrayServerEntry& item = servers_.at(index);
+        QAction* action = serversMenu_->addAction(item.displayName);
         action->setCheckable(true);
         action->setChecked(item.indexId == currentServerId_);
         action->setData(item.indexId);
@@ -513,7 +524,7 @@ void TrayController::rebuildRoutingMenu()
     group->setExclusive(true);
 
     for (int index = 0; index < routings_.size(); ++index) {
-        QAction* action = routingsMenu_->addAction(describeRouting(routings_.at(index), index));
+        QAction* action = routingsMenu_->addAction(routings_.at(index).displayName);
         action->setCheckable(true);
         action->setChecked(index == currentRoutingIndex_);
         action->setData(index);

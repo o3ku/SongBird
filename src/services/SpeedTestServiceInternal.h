@@ -104,6 +104,10 @@ inline Config makeUrlTestRuntimeConfig(Config config)
     config.logEnabled = false;
     config.tunModeItem.enableTun = false;
     config.enableCacheFile4Sbox = false;
+    config.servers.clear();
+    config.subscriptions.clear();
+    config.globalHotkeys.clear();
+    config.coreTypeItems.clear();
 
     // Keep URL tests close to the actual "set current server" data path.
     // TUN is disabled because the test exercises the local proxy listener,

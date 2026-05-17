@@ -3021,7 +3021,10 @@ void AppBootstrap::runProxyAvailabilityCheck()
     }
 
     proxyAvailabilityCheckRunning_ = true;
-    const Config workerConfig = config_;
+    const ProxyAvailabilityCheckConfig workerConfig{
+        config_.localPort,
+        config_.tunModeItem.enableTun,
+        config_.speedPingTestUrl};
     QObject* uiContext = mainWindow_.get();
     mainWindow_->showTransientStatus(
         QCoreApplication::translate("AppBootstrap", "Running availability check in the background..."),
@@ -3090,7 +3093,9 @@ void AppBootstrap::updateCore(
     const bool shouldRestartRunningCore = isCoreRunning()
         && activeServer != nullptr
         && resolveRuntimeCoreType(activeServer->coreType) == coreType;
-    const Config workerConfig = config_;
+    const CoreUpdateConfig workerConfig{
+        config_.checkPreReleaseUpdate,
+        config_.ignoreGeoUpdateCore};
     QPointer<QObject> progressContextGuard(progressContext);
     QPointer<QWidget> dialogParentGuard(dialogParent);
     bool stoppedForInstall = false;
@@ -3178,7 +3183,7 @@ void AppBootstrap::updateCore(
 
 void AppBootstrap::runCoreUpdateTask(
     CoreType coreType,
-    Config workerConfig,
+    CoreUpdateConfig workerConfig,
     QString installDirectory,
     QPointer<QObject> progressContextGuard,
     bool skipLocalVersionCheck,
@@ -3327,7 +3332,9 @@ void AppBootstrap::continuePendingCoreUpdate()
     const QString title = QCoreApplication::translate("AppBootstrap", "Install / Update %1 Core")
                               .arg(coreTypeDisplayName(coreType));
     const QString installDirectory = resolveCoreInstallDirectory(coreType);
-    const Config workerConfig = config_;
+    const CoreUpdateConfig workerConfig{
+        config_.checkPreReleaseUpdate,
+        config_.ignoreGeoUpdateCore};
     const QString startupMessage = QCoreApplication::translate("AppBootstrap", "Starting %1 update...")
                                        .arg(coreTypeDisplayName(coreType));
     mainWindow_->appendLog(startupMessage);
@@ -3940,11 +3947,9 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
 
         const CoreType launchCore = resolveLaunchCoreType(*server);
         const VmessItem runtimeServer = runtimeServerForLaunchCore(*server, launchCore);
-        Config runtimeConfig = config_;
 
         items.append(SpeedTestRequestItem{
             *server,
-            runtimeConfig,
             runtimeServer,
             resolveCoreInfo(runtimeServer)});
     }

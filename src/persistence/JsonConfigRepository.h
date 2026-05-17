@@ -45,8 +45,8 @@ private:
     static CoreType parseCoreType(const QJsonValue& value);
     static int toLegacyConfigTypeValue(ConfigType type);
     static QJsonValue toLegacyCoreTypeValue(CoreType type);
+    QJsonObject loadExistingRootObject() const;
 
     QString configPath_;
-    QJsonObject rawRoot_;
     QString lastLoadError_;
 };

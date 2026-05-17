@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QPainter>
 #include <QStyle>
+#include <QTextLayout>
+#include <QTextOption>
 
 LogItemDelegate::LogItemDelegate(QObject* parent)
     : QStyledItemDelegate(parent)
@@ -38,20 +40,37 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
             selected ? QColor(QStringLiteral("#eceff3")) : QColor(QStringLiteral("#f2f6fc")));
     }
 
-    const QStringList visualLines = index.data(LogListModel::VisualLinesRole).toStringList();
-    if (visualLines.isEmpty()) {
+    const QString text = index.data(Qt::DisplayRole).toString();
+    if (text.isEmpty()) {
         return;
     }
 
-    const int lineH = opt.fontMetrics.height();
-    const int ascent = opt.fontMetrics.ascent();
-    const int x = option.rect.left() + HorizontalPadding;
-    int y = option.rect.top() + VerticalPadding;
-
-    painter->setPen(opt.palette.color(selected ? QPalette::HighlightedText : QPalette::Text));
-
-    for (const QString& line : visualLines) {
-        painter->drawText(x, y + ascent, line);
-        y += lineH;
+    const qreal availableWidth = qMax(0, option.rect.width() - 2 * HorizontalPadding);
+    if (availableWidth <= 0) {
+        return;
     }
+
+    QTextLayout layout(text, opt.font);
+    QTextOption textOption;
+    textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(textOption);
+    layout.beginLayout();
+    qreal y = 0.0;
+    forever {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+
+        line.setLineWidth(availableWidth);
+        line.setPosition(QPointF(0.0, y));
+        y += line.height();
+    }
+    layout.endLayout();
+
+    painter->save();
+    painter->setPen(opt.palette.color(selected ? QPalette::HighlightedText : QPalette::Text));
+    painter->translate(option.rect.left() + HorizontalPadding, option.rect.top() + VerticalPadding);
+    layout.draw(painter, QPointF(0.0, 0.0));
+    painter->restore();
 }

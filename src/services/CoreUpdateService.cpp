@@ -773,7 +773,7 @@ CoreUpdateService::CoreUpdateService(
 
 OperationResult CoreUpdateService::update(
     CoreType coreType,
-    const Config& config,
+    const CoreUpdateConfig& config,
     const QString& targetDirectory,
     const UpdateOptions& options) const
 {

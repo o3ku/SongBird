@@ -7,7 +7,6 @@
 #include <atomic>
 #include <thread>
 
-#include "domain/models/Config.h"
 #include "services/CoreUpdateService.h"
 
 class CoreUpdateServiceTests : public QObject {
@@ -46,7 +45,7 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
             return OperationResult::ok();
         });
 
-    Config config;
+    CoreUpdateConfig config;
     config.checkPreReleaseUpdate = false;
     config.ignoreGeoUpdateCore = true;
 
@@ -100,7 +99,7 @@ void CoreUpdateServiceTests::updateFallsBackToBuiltInSingBoxVersionWhenReleaseAp
             return OperationResult::ok();
         });
 
-    Config config;
+    CoreUpdateConfig config;
     config.checkPreReleaseUpdate = false;
     config.ignoreGeoUpdateCore = true;
 
@@ -144,7 +143,7 @@ void CoreUpdateServiceTests::updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInst
             return OperationResult::ok();
         });
 
-    Config config;
+    CoreUpdateConfig config;
     config.checkPreReleaseUpdate = false;
     config.ignoreGeoUpdateCore = true;
 
