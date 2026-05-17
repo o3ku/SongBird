@@ -528,7 +528,7 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
     // Always set the policy so tests can verify it before the window is shown.
     comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    // Defer the actual width calculation until after the first show — font
+    // Defer the actual width calculation until after the first show; font
     // metrics differ before the style has fully resolved.
     if (!comboBox->window()->isVisible()) {
         return;
@@ -762,6 +762,14 @@ void MainWindow::setProxyEnabled(bool enabled)
         enabled);
 }
 
+void MainWindow::setCoreProcessRunning(bool running)
+{
+    coreProcessRunning_ = running;
+    updateActionState();
+    updateStatusIndicators();
+    updateWindowTitle();
+}
+
 void MainWindow::setCoreRunning(bool enabled, bool pending)
 {
     coreRunning_ = enabled;
@@ -784,7 +792,7 @@ void MainWindow::updateCoreToggleAction()
     QString toolTip = tr("Start or stop the core.");
     const VmessItem* activeServer = resolveActiveServerForWindow(config_);
     if (coreTransitionPending_) {
-        toolTip = coreRunning_
+        toolTip = coreProcessRunning_
             ? tr("Core start/stop is in progress.")
             : tr("Core start is in progress.");
     } else if (activeServer == nullptr) {
@@ -797,7 +805,7 @@ void MainWindow::updateCoreToggleAction()
                           .arg(activeServer->remarks.trimmed().isEmpty()
                                    ? tr("Unnamed server")
                                    : activeServer->remarks.trimmed());
-        } else if (coreRunning_) {
+        } else if (coreProcessRunning_) {
             toolTip = tr("Stop the running core.");
         } else {
             toolTip = tr("Start the core with the active server.");
@@ -822,6 +830,12 @@ void MainWindow::setCurrentServerName(const QString& name)
     currentServerName_ = name.trimmed();
     updateStatusIndicators();
     updateWindowTitle();
+}
+
+void MainWindow::setCurrentServerLocation(const QString& location)
+{
+    currentServerLocation_ = location.trimmed();
+    updateStatusIndicators();
 }
 
 void MainWindow::setCurrentServerWarning(const QString& warning)
@@ -903,6 +917,7 @@ void MainWindow::restoreUiState(const Config& config)
     if (qrPanel_ != nullptr) {
         qrPanel_->setVisible(qrPreviewVisible_);
     }
+    coreProcessRunning_ = config.mainCoreRunning;
     coreRunning_ = config.mainCoreRunning;
     coreTransitionPending_ = false;
     systemProxyApplied_ = config.mainProxyEnabled;
@@ -1118,24 +1133,12 @@ void MainWindow::updateActionState()
         testMeAction_->setEnabled(canStartTask);
     }
 
-    if (updateV2RayCoreAction_ != nullptr) {
-        updateV2RayCoreAction_->setEnabled(canStartTask);
-    }
-
     if (updateXrayCoreAction_ != nullptr) {
         updateXrayCoreAction_->setEnabled(canStartTask);
     }
 
     if (updateSingBoxCoreAction_ != nullptr) {
         updateSingBoxCoreAction_->setEnabled(canStartTask);
-    }
-
-    if (updateClashCoreAction_ != nullptr) {
-        updateClashCoreAction_->setEnabled(canStartTask);
-    }
-
-    if (updateClashMetaCoreAction_ != nullptr) {
-        updateClashMetaCoreAction_->setEnabled(canStartTask);
     }
 
     if (updateGeoResourcesAction_ != nullptr) {
@@ -1154,7 +1157,7 @@ void MainWindow::updateActionState()
 
     updateProxyToggleAction();
     if (proxyToggleAction_ != nullptr) {
-        proxyToggleAction_->setEnabled(coreRunning_ && !coreTransitionPending_);
+        proxyToggleAction_->setEnabled(coreProcessRunning_ && !coreTransitionPending_);
     }
 }
 
@@ -1702,16 +1705,10 @@ void MainWindow::setupToolbar()
     updateSubscriptionsAction_->setObjectName(QStringLiteral("updateSubscriptionsAction"));
     testMeAction_ = new QAction(tr("TestMe"), this);
     testMeAction_->setObjectName(QStringLiteral("testMeAction"));
-    updateV2RayCoreAction_ = new QAction(tr("Update V2Ray Core"), this);
-    updateV2RayCoreAction_->setObjectName(QStringLiteral("updateV2RayCoreAction"));
     updateXrayCoreAction_ = new QAction(tr("Update Xray Core"), this);
     updateXrayCoreAction_->setObjectName(QStringLiteral("updateXrayCoreAction"));
     updateSingBoxCoreAction_ = new QAction(tr("Update sing-box Core"), this);
     updateSingBoxCoreAction_->setObjectName(QStringLiteral("updateSingBoxCoreAction"));
-    updateClashCoreAction_ = new QAction(tr("Update Clash Core"), this);
-    updateClashCoreAction_->setObjectName(QStringLiteral("updateClashCoreAction"));
-    updateClashMetaCoreAction_ = new QAction(tr("Update Clash.Meta Core"), this);
-    updateClashMetaCoreAction_->setObjectName(QStringLiteral("updateClashMetaCoreAction"));
     updateGeoResourcesAction_ = new QAction(tr("Update Geo Files"), this);
     updateGeoResourcesAction_->setObjectName(QStringLiteral("updateGeoResourcesAction"));
     removeServerAction_ = new QAction(tr("Remove"), this);
@@ -1766,8 +1763,6 @@ void MainWindow::setupToolbar()
     openRuleObjectDocumentationAction_->setObjectName(QStringLiteral("openRuleObjectDocumentationAction"));
     openLoopbackToolAction_ = new QAction(tr("Loopback"), this);
     openLoopbackToolAction_->setObjectName(QStringLiteral("openLoopbackToolAction"));
-    openV2RayReleasePageAction_ = new QAction(tr("Open V2Ray Releases"), this);
-    openV2RayReleasePageAction_->setObjectName(QStringLiteral("openV2RayReleasePageAction"));
     openXrayReleasePageAction_ = new QAction(tr("Open Xray Releases"), this);
     openXrayReleasePageAction_->setObjectName(QStringLiteral("openXrayReleasePageAction"));
     openSingBoxReleasePageAction_ = new QAction(tr("Open sing-box Releases"), this);
@@ -2235,20 +2230,11 @@ void MainWindow::setupConnections()
     connect(importServerConfigAction_, &QAction::triggered, this, &MainWindow::importServerConfigRequested);
     connect(updateSubscriptionsAction_, &QAction::triggered, this, &MainWindow::updateSubscriptionsRequested);
     connect(testMeAction_, &QAction::triggered, this, &MainWindow::testMeRequested);
-    connect(updateV2RayCoreAction_, &QAction::triggered, this, [this]() {
-        emit updateCoreRequested(static_cast<int>(CoreType::V2Fly));
-    });
     connect(updateXrayCoreAction_, &QAction::triggered, this, [this]() {
         emit updateCoreRequested(static_cast<int>(CoreType::Xray));
     });
     connect(updateSingBoxCoreAction_, &QAction::triggered, this, [this]() {
         emit updateCoreRequested(static_cast<int>(CoreType::SingBox));
-    });
-    connect(updateClashCoreAction_, &QAction::triggered, this, [this]() {
-        emit updateCoreRequested(static_cast<int>(CoreType::Clash));
-    });
-    connect(updateClashMetaCoreAction_, &QAction::triggered, this, [this]() {
-        emit updateCoreRequested(static_cast<int>(CoreType::ClashMeta));
     });
     connect(updateGeoResourcesAction_, &QAction::triggered, this, &MainWindow::updateGeoResourcesRequested);
     connect(removeServerAction_, &QAction::triggered, this, [this]() {
@@ -2349,7 +2335,6 @@ void MainWindow::setupConnections()
         this,
         &MainWindow::openRuleObjectDocumentationRequested);
     connect(openLoopbackToolAction_, &QAction::triggered, this, &MainWindow::openLoopbackToolRequested);
-    connect(openV2RayReleasePageAction_, &QAction::triggered, this, &MainWindow::openV2RayReleasePageRequested);
     connect(openXrayReleasePageAction_, &QAction::triggered, this, &MainWindow::openXrayReleasePageRequested);
     connect(
         openSingBoxReleasePageAction_,
@@ -2994,6 +2979,9 @@ void MainWindow::updateStatusIndicators()
             ? noServerPlaceholderText()
             : currentServerName_.trimmed();
         QString labelText = tr("Current: %1").arg(currentServerText);
+        if (!currentServerLocation_.isEmpty()) {
+            labelText += QStringLiteral(" | %1").arg(currentServerLocation_);
+        }
         if (!currentServerWarning_.isEmpty()) {
             labelText += QStringLiteral(" | %1").arg(currentServerWarning_);
         }
@@ -3011,11 +2999,14 @@ void MainWindow::updateStatusIndicators()
         QString coreStateText;
         QString color;
         if (coreTransitionPending_) {
-            coreStateText = coreRunning_ ? tr("Stopping") : tr("Starting");
+            coreStateText = coreProcessRunning_ ? tr("Stopping") : tr("Starting");
             color = AppTheme::warningStatusColor();
         } else if (coreRunning_) {
             coreStateText = tr("Running");
             color = AppTheme::successStatusColor();
+        } else if (coreProcessRunning_) {
+            coreStateText = tr("Starting");
+            color = AppTheme::warningStatusColor();
         } else {
             coreStateText = tr("Stopped");
             color = AppTheme::errorStatusColor();

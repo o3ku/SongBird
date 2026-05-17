@@ -87,14 +87,6 @@ BuiltInFallbackReleaseDefinition resolveBuiltInFallbackReleaseDefinition(CoreTyp
             QStringLiteral("sing-box-1.13.11-windows-amd64.zip"),
             QStringLiteral("sing-box-1.13.11-windows-386.zip"),
             QStringLiteral("SagerNet/sing-box")};
-    case CoreType::V2Fly:
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
@@ -254,14 +246,6 @@ QString findFirstExistingFile(const QString& directoryPath, const QStringList& p
 CoreUpdateDefinition resolveDefinition(CoreType coreType)
 {
     switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::V2Fly:
-        return CoreUpdateDefinition{
-            CoreType::V2Fly,
-            QStringLiteral("V2Ray"),
-            QUrl(QStringLiteral("https://api.github.com/repos/v2fly/v2ray-core/releases?per_page=20")),
-            QStringList{
-                QStringLiteral("wv2ray.exe"),
-                QStringLiteral("v2ray.exe")}};
     case CoreType::Xray:
         return CoreUpdateDefinition{
             CoreType::Xray,
@@ -277,31 +261,6 @@ CoreUpdateDefinition resolveDefinition(CoreType coreType)
             QStringList{
                 QStringLiteral("sing-box-client.exe"),
                 QStringLiteral("sing-box.exe")}};
-    case CoreType::Clash:
-        return CoreUpdateDefinition{
-            CoreType::Clash,
-            QStringLiteral("Clash"),
-            QUrl(QStringLiteral("https://api.github.com/repos/MetaCubeX/mihomo/releases?per_page=20")),
-            QStringList{
-                QStringLiteral("mihomo*.exe"),
-                QStringLiteral("clash-windows-amd64-v3.exe"),
-                QStringLiteral("clash-windows-amd64.exe"),
-                QStringLiteral("clash-windows-386.exe"),
-                QStringLiteral("clash*.exe")}};
-    case CoreType::ClashMeta:
-        return CoreUpdateDefinition{
-            CoreType::ClashMeta,
-            QStringLiteral("Clash.Meta"),
-            QUrl(QStringLiteral("https://api.github.com/repos/MetaCubeX/mihomo/releases?per_page=20")),
-            QStringList{
-                QStringLiteral("mihomo*.exe"),
-                QStringLiteral("Clash.Meta*.exe"),
-                QStringLiteral("clash.exe")}};
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
@@ -342,14 +301,6 @@ int scoreAssetName(CoreType coreType, const QString& assetName, bool prefer64Bit
     }
 
     switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::V2Fly:
-        if (prefer64Bit && normalized == QStringLiteral("v2ray-windows-64.zip")) {
-            return 400;
-        }
-        if (!prefer64Bit && normalized == QStringLiteral("v2ray-windows-32.zip")) {
-            return 400;
-        }
-        return -1;
     case CoreType::Xray:
         if (prefer64Bit && normalized == QStringLiteral("xray-windows-64.zip")) {
             return 400;
@@ -370,55 +321,6 @@ int scoreAssetName(CoreType coreType, const QString& assetName, bool prefer64Bit
         }
 
         return normalized.contains(QStringLiteral("windows-386.zip")) ? 350 : -1;
-    case CoreType::Clash:
-        if ((!normalized.startsWith(QStringLiteral("clash-"))
-                && !normalized.startsWith(QStringLiteral("mihomo-")))
-            || !normalized.contains(QStringLiteral("windows"))
-            || normalized.contains(QStringLiteral("-go1"))) {
-            return -1;
-        }
-
-        if (prefer64Bit) {
-            if (normalized.contains(QStringLiteral("windows-amd64-compatible"))) {
-                return 390;
-            }
-            if (normalized.contains(QStringLiteral("windows-amd64-v3"))) {
-                return 370;
-            }
-            if (normalized.contains(QStringLiteral("windows-amd64"))) {
-                return 340;
-            }
-            return -1;
-        }
-
-        return normalized.contains(QStringLiteral("windows-386")) ? 330 : -1;
-    case CoreType::ClashMeta:
-        if ((!normalized.startsWith(QStringLiteral("clash.meta-"))
-                && !normalized.startsWith(QStringLiteral("mihomo-")))
-            || !normalized.contains(QStringLiteral("windows"))
-            || normalized.contains(QStringLiteral("-go1"))) {
-            return -1;
-        }
-
-        if (prefer64Bit) {
-            if (normalized.contains(QStringLiteral("windows-amd64-compatible"))) {
-                return 390;
-            }
-            if (normalized.contains(QStringLiteral("windows-amd64-v3"))) {
-                return 370;
-            }
-            if (normalized.contains(QStringLiteral("windows-amd64"))) {
-                return 350;
-            }
-            return -1;
-        }
-
-        return normalized.contains(QStringLiteral("windows-386")) ? 340 : -1;
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return -1;
@@ -587,24 +489,14 @@ QString extractVersionFromOutput(CoreType coreType, const QString& output)
     QRegularExpressionMatch match;
 
     switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::V2Fly:
     case CoreType::Xray:
-        match = QRegularExpression(QStringLiteral("\\b(?:V2Ray|Xray)\\s+([0-9A-Za-z._-]+)"))
+        match = QRegularExpression(QStringLiteral("\\bXray\\s+([0-9A-Za-z._-]+)"))
                     .match(normalizedOutput);
         break;
     case CoreType::SingBox:
         match = QRegularExpression(QStringLiteral("\\bsing-box\\s+version\\s+([0-9A-Za-z._-]+)"))
                     .match(normalizedOutput);
         break;
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-        match = QRegularExpression(QStringLiteral("\\b(v[0-9A-Za-z._-]+)")).match(normalizedOutput);
-        break;
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
@@ -618,19 +510,10 @@ QString extractVersionFromOutput(CoreType coreType, const QString& output)
 QStringList versionCommandArguments(CoreType coreType)
 {
     switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::V2Fly:
     case CoreType::Xray:
         return QStringList{QStringLiteral("-version")};
     case CoreType::SingBox:
         return QStringList{QStringLiteral("version")};
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-        return QStringList{QStringLiteral("-v")};
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
@@ -999,20 +882,6 @@ OperationResult CoreUpdateService::update(
                     &release,
                     &parseError,
                     &stableReleaseUnavailable)) {
-                lastError.clear();
-                break;
-            }
-
-            if (!config.checkPreReleaseUpdate
-                && stableReleaseUnavailable
-                && (definition.type == CoreType::Clash || definition.type == CoreType::ClashMeta)
-                && parseReleasePayload(payload, true, &release, &parseError)) {
-                reportProgress(
-                    progressHandler,
-                    QCoreApplication::translate(
-                        "CoreUpdateService",
-                        "No stable release was found for %1. Falling back to the latest pre-release.")
-                        .arg(definition.displayName));
                 lastError.clear();
                 break;
             }

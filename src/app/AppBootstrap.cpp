@@ -7,15 +7,21 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QGuiApplication>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMetaObject>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
+#include <QNetworkProxy>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPointer>
 #include <QProcess>
 #include <QRegularExpression>
@@ -29,6 +35,7 @@
 #include <QUuid>
 
 #include <memory>
+#include <optional>
 
 #if defined(Q_OS_WIN)
 #include <winsock2.h>
@@ -65,7 +72,6 @@
 #include "services/CoreUpdateService.h"
 #include "services/GeoResourceUpdateService.h"
 #include "services/GrpcStatisticsBackend.h"
-#include "services/ClashRestStatisticsBackend.h"
 #include "services/ProxyAvailabilityCheckService.h"
 #include "services/RoutingService.h"
 #include "services/ServerService.h"
@@ -92,10 +98,11 @@ constexpr auto DefaultIeProxyExceptions =
     "172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*";
 constexpr auto ProjectPageUrl = "https://github.com/o3ku/v2rayq";
 constexpr auto ReleasePageUrl = "https://github.com/o3ku/v2rayq/releases";
-constexpr auto AppReleaseDate = "2026-05-14";
+constexpr auto AppReleaseDate = __DATE__;
 constexpr auto DocumentationUrl = "https://www.v2fly.org/";
 constexpr auto DnsObjectUrl = "https://www.v2fly.org/config/dns.html#dnsobject";
 constexpr auto RuleObjectUrl = "https://www.v2fly.org/config/routing.html#ruleobject";
+constexpr int LocationProbePortOffset = 103;
 
 #if defined(Q_OS_WIN)
 bool isTunAdapterPresent()
@@ -146,16 +153,7 @@ QStringList coreVersionCommandArguments(CoreType coreType)
     case CoreType::SingBox:
         return QStringList{QStringLiteral("version")};
     case CoreType::Xray:
-    case CoreType::V2Fly:
         return QStringList{QStringLiteral("-version")};
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-        return QStringList{QStringLiteral("-v")};
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
@@ -177,25 +175,63 @@ QString extractCoreVersionFromOutput(CoreType coreType, const QString& output)
                     .match(normalizedOutput);
         break;
     case CoreType::Xray:
-    case CoreType::V2Fly:
-        match = QRegularExpression(QStringLiteral("\\b(?:Xray|V2Ray)\\s+([0-9A-Za-z._-]+)"))
+        match = QRegularExpression(QStringLiteral("\\bXray\\s+([0-9A-Za-z._-]+)"))
                     .match(normalizedOutput);
         break;
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-        match = QRegularExpression(QStringLiteral("\\b(v[0-9A-Za-z._-]+)")).match(normalizedOutput);
-        break;
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-    case CoreType::Hysteria:
-    case CoreType::NaiveProxy:
     case CoreType::Unknown:
     default:
         return {};
     }
 
     return match.hasMatch() ? normalizeCoreVersionTag(match.captured(1)) : QString();
+}
+
+QString countryCodeToFlag(const QString& countryCode)
+{
+    const QString code = countryCode.trimmed().toUpper();
+    if (code.size() != 2) {
+        return {};
+    }
+
+    QVector<uint> flagCodePoints;
+    flagCodePoints.reserve(2);
+    for (const QChar ch : code) {
+        if (ch < QLatin1Char('A') || ch > QLatin1Char('Z')) {
+            return {};
+        }
+        flagCodePoints.append(0x1F1E6u + static_cast<uint>(ch.unicode() - QLatin1Char('A').unicode()));
+    }
+    return QString::fromUcs4(flagCodePoints.constData(), flagCodePoints.size());
+}
+
+QString buildLocationSummaryFromPayload(const QByteArray& payload)
+{
+    const QJsonDocument json = QJsonDocument::fromJson(payload);
+    if (!json.isObject()) {
+        return {};
+    }
+
+    const QJsonObject object = json.object();
+    const QString city = object.value(QStringLiteral("city")).toString().trimmed();
+    QString country = object.value(QStringLiteral("country")).toString().trimmed();
+    if (country.isEmpty()) {
+        country = object.value(QStringLiteral("country_name")).toString().trimmed();
+    }
+    QString countryCode = object.value(QStringLiteral("countryCode")).toString().trimmed();
+    if (countryCode.isEmpty()) {
+        countryCode = object.value(QStringLiteral("country_code")).toString().trimmed();
+    }
+
+    QStringList parts;
+    if (!country.isEmpty()) {
+        const QString flag = countryCodeToFlag(countryCode);
+        parts.append(flag.isEmpty() ? country : QStringLiteral("%1 %2").arg(flag, country));
+    }
+    if (!city.isEmpty()) {
+        parts.append(city);
+    }
+
+    return parts.join(QStringLiteral(", "));
 }
 
 QString readCoreVersion(CoreType coreType, const QString& program)
@@ -248,52 +284,16 @@ QStringList buildCoreCandidateDirectories(const QString& configPath)
 QStringList coreExecutableCandidateNames(CoreType coreType)
 {
     switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Clash:
-        return QStringList{
-            QStringLiteral("mihomo*.exe"),
-            QStringLiteral("clash-windows-amd64-v3.exe"),
-            QStringLiteral("clash-windows-amd64.exe"),
-            QStringLiteral("clash-windows-386.exe"),
-            QStringLiteral("clash.exe")
-        };
-    case CoreType::ClashMeta:
-        return QStringList{
-            QStringLiteral("mihomo*.exe"),
-            QStringLiteral("Clash.Meta*.exe"),
-            QStringLiteral("clash.exe")
-        };
-    case CoreType::Hysteria:
-        return QStringList{
-            QStringLiteral("hysteria-windows-amd64.exe"),
-            QStringLiteral("hysteria-windows-386.exe"),
-            QStringLiteral("hysteria.exe")
-        };
-    case CoreType::NaiveProxy:
-        return QStringList{
-            QStringLiteral("naiveproxy.exe"),
-            QStringLiteral("naive.exe")
-        };
     case CoreType::SingBox:
         return QStringList{
             QStringLiteral("sing-box-client.exe"),
             QStringLiteral("sing-box.exe")
         };
-    case CoreType::V2Fly:
-        return QStringList{
-            QStringLiteral("wv2ray.exe"),
-            QStringLiteral("v2ray.exe"),
-            QStringLiteral("SagerNet.exe")
-        };
     case CoreType::Xray:
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
     case CoreType::Unknown:
     default:
         return QStringList{
-            QStringLiteral("xray.exe"),
-            QStringLiteral("v2ray.exe")
-        };
+            QStringLiteral("xray.exe")};
     }
 }
 
@@ -436,7 +436,6 @@ QStringList collectRouteDerivedProxyExceptions(const Config& config)
 
     return derived;
 }
-constexpr auto V2RayReleasePageUrl = "https://github.com/v2fly/v2ray-core/releases";
 constexpr auto XrayReleasePageUrl = "https://github.com/XTLS/Xray-core/releases";
 constexpr auto SingBoxReleasePageUrl = "https://github.com/SagerNet/sing-box/releases";
 constexpr auto GeoReleasePageUrl = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases";
@@ -637,7 +636,6 @@ bool AppBootstrap::run()
     speedTestService_ = std::make_unique<SpeedTestService>(resolveCustomConfigDirectory());
     statisticsService_ = std::make_unique<StatisticsService>(resolveStatisticsFilePath());
     grpcStatisticsBackend_ = std::make_unique<GrpcStatisticsBackend>();
-    clashStatisticsBackend_ = std::make_unique<ClashRestStatisticsBackend>();
     subscriptionService_ = std::make_unique<SubscriptionService>(*repository_);
     geoResourceUpdateService_ = std::make_unique<GeoResourceUpdateService>(
         QFileInfo(resolveConfigPath()).dir().absolutePath());
@@ -726,28 +724,6 @@ bool AppBootstrap::run()
     QObject::connect(
         grpcStatisticsBackend_.get(),
         &GrpcStatisticsBackend::pollingAvailabilityChanged,
-        mainWindow_.get(),
-        [this](bool available) {
-            if (statisticsService_ != nullptr) {
-                statisticsService_->setPollingAvailable(available);
-            }
-        });
-
-    QObject::connect(clashStatisticsBackend_.get(), &ClashRestStatisticsBackend::trafficDeltaReceived, mainWindow_.get(), [this](quint64 up, quint64 down) {
-        if (statisticsService_ == nullptr) {
-            return;
-        }
-
-        const QString activeServerId = statisticsService_->sessionState().activeServerId.trimmed();
-        if (activeServerId.isEmpty()) {
-            return;
-        }
-
-        statisticsService_->applyTrafficDelta(activeServerId, up, down);
-    });
-    QObject::connect(
-        clashStatisticsBackend_.get(),
-        &ClashRestStatisticsBackend::pollingAvailabilityChanged,
         mainWindow_.get(),
         [this](bool available) {
             if (statisticsService_ != nullptr) {
@@ -1108,10 +1084,6 @@ void AppBootstrap::wireMainWindow()
         openLoopbackTool();
     });
 
-    QObject::connect(mainWindow_.get(), &MainWindow::openV2RayReleasePageRequested, mainWindow_.get(), [this]() {
-        openExternalUrl(QString::fromUtf8(V2RayReleasePageUrl));
-    });
-
     QObject::connect(mainWindow_.get(), &MainWindow::openXrayReleasePageRequested, mainWindow_.get(), [this]() {
         openExternalUrl(QString::fromUtf8(XrayReleasePageUrl));
     });
@@ -1373,6 +1345,7 @@ void AppBootstrap::syncStatusIndicators()
     const bool autoRunEnabled = autoRunService_ != nullptr && autoRunService_->isEnabled();
     const bool coreRestartPending = coreRestartTimer_ != nullptr && coreRestartTimer_->isActive();
     const bool corePending = coreStartPending_ || coreStopPending_ || coreRestartPending;
+    const bool coreProcessRunning = isCoreRunning();
     const bool coreRunning = isCoreReady();
     const QString currentServerName = describeServer(findServerById(config_.currentIndexId));
     const QString routingSummary = buildRoutingSummaryText();
@@ -1388,6 +1361,8 @@ void AppBootstrap::syncStatusIndicators()
     if (mainWindow_ != nullptr) {
         mainWindow_->setExistingCoreTypes(existingCoreTypes_);
         mainWindow_->setCurrentServerName(currentServerName);
+        mainWindow_->setCurrentServerLocation(currentServerLocation_);
+        mainWindow_->setCoreProcessRunning(coreProcessRunning);
         mainWindow_->setRoutingSummary(routingSummary, listenSummary);
         mainWindow_->setCoreRunning(coreRunning, corePending);
         mainWindow_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
@@ -1401,6 +1376,7 @@ void AppBootstrap::syncStatusIndicators()
 
     if (trayController_ != nullptr) {
         trayController_->setCurrentServerName(currentServerName);
+        trayController_->setCoreProcessRunning(coreProcessRunning);
         trayController_->setCoreRunning(coreRunning, corePending);
         trayController_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
         trayController_->setAutoRunEnabled(autoRunEnabled);
@@ -1410,6 +1386,77 @@ void AppBootstrap::syncStatusIndicators()
         trayController_->setBackgroundTaskRunning(activeBackgroundTask_ != BackgroundTaskKind::None);
         trayController_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
     }
+}
+
+void AppBootstrap::clearCurrentServerLocation()
+{
+    currentServerLocation_.clear();
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setCurrentServerLocation({});
+    }
+}
+
+void AppBootstrap::queryCurrentServerLocation(const QString& serverIndexId, CoreType runtimeCore)
+{
+    if (!coreReady_ || serverIndexId.trimmed().isEmpty()) {
+        return;
+    }
+
+    clearCurrentServerLocation();
+
+    const VmessItem* activeServer = findServerById(serverIndexId);
+    const bool usesDedicatedProbe = activeServer != nullptr
+        && activeServer->configType != ConfigType::Custom;
+
+    int httpPort = config_.localPort + 1;
+    if (usesDedicatedProbe) {
+        httpPort = config_.localPort + LocationProbePortOffset;
+    }
+    if (httpPort <= 0 || httpPort > 65535) {
+        return;
+    }
+
+    QPointer<QObject> uiContext(mainWindow_.get());
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    const QString activeServerId = serverIndexId.trimmed();
+    QThread* thread = QThread::create([this, uiContext, lifetimeGuard, activeServerId, httpPort]() {
+        QNetworkAccessManager manager;
+        manager.setProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), httpPort));
+
+        QNetworkRequest request(QUrl(QStringLiteral("http://ip-api.com/json/")));
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq/%1").arg(QCoreApplication::applicationVersion()));
+
+        QEventLoop loop;
+        QNetworkReply* reply = manager.get(request);
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+
+        QString location;
+        if (reply->isFinished() && reply->error() == QNetworkReply::NoError) {
+            location = buildLocationSummaryFromPayload(reply->readAll());
+        }
+        reply->deleteLater();
+
+        QObject* target = uiContext.isNull()
+            ? static_cast<QObject*>(QCoreApplication::instance())
+            : uiContext.data();
+        invokeOnUiThread(target, [this, lifetimeGuard, activeServerId, location]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
+            if (!coreReady_ || config_.currentIndexId.trimmed() != activeServerId) {
+                return;
+            }
+            currentServerLocation_ = location.trimmed();
+            if (mainWindow_ != nullptr) {
+                mainWindow_->setCurrentServerLocation(currentServerLocation_);
+            }
+        });
+    });
+    trackBackgroundThread(thread);
+    thread->start();
 }
 
 bool AppBootstrap::reloadConfig()
@@ -1618,6 +1665,7 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         return;
     }
     cancelPendingCoreRestarts();
+    clearCurrentServerLocation();
     if (isTunRuntimeBlocked(config_, isWindowsPlatform(), isProcessElevated())) {
         appendResult(OperationResult::fail(tunAdminRequiredStartMessage()));
         syncStatusIndicators();
@@ -1864,15 +1912,7 @@ void AppBootstrap::handleCoreStarted(
     }
     if (statisticsPort > 0) {
         appendResult(OperationResult::ok(QStringLiteral("Statistics API enabled on 127.0.0.1:%1").arg(statisticsPort)));
-        const bool isClashRuntime = runtimeCore == CoreType::Clash || runtimeCore == CoreType::ClashMeta;
-        if (isClashRuntime) {
-            if (clashStatisticsBackend_ != nullptr) {
-                appendResult(clashStatisticsBackend_->start(
-                    QStringLiteral("127.0.0.1"),
-                    statisticsPort,
-                    qMax(1, config_.statisticsFreshRate)));
-            }
-        } else if (grpcStatisticsBackend_ != nullptr) {
+        if (grpcStatisticsBackend_ != nullptr) {
             appendResult(grpcStatisticsBackend_->start(
                 QStringLiteral("127.0.0.1"),
                 statisticsPort,
@@ -1880,6 +1920,7 @@ void AppBootstrap::handleCoreStarted(
         }
     }
 
+    bool shouldQueryLocation = false;
     const bool shouldRestoreProxy = !startupProxyEnabled.has_value() || startupProxyEnabled.value();
     if (systemProxyService_ != nullptr
         && normalizeSystemProxyMode(config_.sysProxyType) == SystemProxyMode::ForcedChange
@@ -1911,11 +1952,19 @@ void AppBootstrap::handleCoreStarted(
         }
         if (proxyUpdated) {
             managedSystemProxyActive_ = true;
+            shouldQueryLocation = true;
         }
+    } else {
+        clearCurrentServerLocation();
     }
     setCurrentActivationPending_ = false;
 
     syncStatusIndicators();
+    if (shouldQueryLocation) {
+        queryCurrentServerLocation(serverIndexId, runtimeCore);
+    } else {
+        clearCurrentServerLocation();
+    }
 }
 
 void AppBootstrap::handleCoreStartFailed(const QString& message)
@@ -1939,6 +1988,7 @@ void AppBootstrap::handleCoreStartFailed(const QString& message)
     }
     stopAuxiliaryCore();
     stopStatisticsSession();
+    clearCurrentServerLocation();
     syncStatusIndicators();
 }
 
@@ -1954,9 +2004,6 @@ void AppBootstrap::stopStatisticsBackends()
 {
     if (grpcStatisticsBackend_ != nullptr) {
         grpcStatisticsBackend_->stop();
-    }
-    if (clashStatisticsBackend_ != nullptr) {
-        clashStatisticsBackend_->stop();
     }
 }
 
@@ -1977,6 +2024,7 @@ void AppBootstrap::stopCoreInternal(bool immediate, bool clearRestartAfterStop)
 {
     coreStartPending_ = false;
     coreReady_ = false;
+    clearCurrentServerLocation();
     disconnectPendingCoreStartConnection();
     cancelPendingCoreRestarts();
     resumeCoreStartAfterTunCleanup_ = false;
@@ -2116,13 +2164,9 @@ void AppBootstrap::cleanupOrphanCoreProcesses()
 
     static const wchar_t* kCoreProcessNames[] = {
         L"xray.exe",
-        L"v2ray.exe",
+        L"sing-box-client.exe",
         L"sing-box.exe",
-        L"hysteria.exe",
-        L"naive.exe",
         L"tuic.exe",
-        L"clash.exe",
-        L"clash-meta.exe"
     };
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -3747,7 +3791,7 @@ void AppBootstrap::openAboutDialog()
     AboutDialog dialog(mainWindow_.get());
     dialog.setRepoUrl(QString::fromUtf8(ProjectPageUrl));
     dialog.setVersion(QCoreApplication::applicationVersion());
-    dialog.setReleaseDate(QString::fromUtf8(AppReleaseDate));
+    dialog.setReleaseDate(QString::fromLatin1(AppReleaseDate));
     dialog.setConfigPath(QDir::toNativeSeparators(resolveConfigPath()));
     dialog.exec();
 }
@@ -4079,10 +4123,6 @@ QString AppBootstrap::resolveRuntimeConfigPath(const VmessItem& server) const
         }
     }
     const CoreType runtimeCore = resolveEffectiveCoreType(server);
-    if (runtimeCore == CoreType::Clash || runtimeCore == CoreType::ClashMeta) {
-        extension = QStringLiteral("yaml");
-    }
-
     return QDir(runtimeDirectory).filePath(QStringLiteral("config.generated.%1").arg(extension));
 }
 
@@ -4235,28 +4275,11 @@ CoreInfo AppBootstrap::resolveCoreInfo(const VmessItem& server) const
     const QStringList candidates = resolveCoreCandidates(launchCore);
 
     switch (launchCore) {
-    case CoreType::Clash:
-    case CoreType::ClashMeta:
-        info.arguments = QStringList{QStringLiteral("-f"), info.configPlaceholder};
-        info.appendConfigArgument = false;
-        break;
-    case CoreType::NaiveProxy:
-        info.arguments = QStringList{info.configPlaceholder};
-        info.appendConfigArgument = false;
-        break;
     case CoreType::SingBox:
         info.arguments = QStringList{QStringLiteral("run"), QStringLiteral("-c"), info.configPlaceholder};
         info.appendConfigArgument = false;
         break;
-    case CoreType::V2Fly:
-    case CoreType::Hysteria:
-        info.arguments = QStringList();
-        info.appendConfigArgument = true;
-        break;
     case CoreType::Xray:
-    case CoreType::Auto:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
     case CoreType::Unknown:
     default:
         info.arguments = QStringList();

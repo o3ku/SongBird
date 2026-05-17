@@ -16,7 +16,6 @@
 
 #include <utility>
 
-#include "runtime/ClashConfigWriter.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/TunCompatCoreRequirement.h"
 
@@ -35,8 +34,10 @@ const QString kSingBoxRemoteDnsTag = QStringLiteral("remote_dns");
 const QString kSingBoxLocalDnsTag = QStringLiteral("local_local");
 const QString kSingBoxHostsDnsTag = QStringLiteral("hosts_dns");
 const QString kSingBoxFakeDnsTag = QStringLiteral("fake_dns");
+const QString kLocationProbeTag = QStringLiteral("location-probe");
 const QString kLegacyDnsTag = QStringLiteral("dns-module");
 const QString kLegacyDirectDnsTagPrefix = QStringLiteral("direct-dns");
+constexpr int kLocationProbePortOffset = 103;
 const char kSingBoxFakeIpFilterJson[] = R"json(
 {
   "domain": [
@@ -885,11 +886,6 @@ OperationResult ClientConfigWriter::writeClientConfigs(
         return writeCustomConfig(server, filePath);
     }
 
-    const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
-    if (effectiveCore == CoreType::Clash || effectiveCore == CoreType::ClashMeta) {
-        return ClashConfigWriter::writeClientConfig(config, server, filePath, statisticsPort);
-    }
-
     const QFileInfo fileInfo(filePath);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
         return OperationResult::fail(QStringLiteral("Failed to create runtime config directory."));
@@ -976,10 +972,6 @@ OperationResult ClientConfigWriter::validateServer(const VmessItem& server) cons
     const bool realityTransport = isRealityTransport(transportSecurity);
 
     if (realityTransport) {
-        if (runtimeCore == CoreType::V2Fly) {
-            return OperationResult::fail(QStringLiteral("Reality transport requires Xray or sing-box core."));
-        }
-
         if (server.publicKey.trimmed().isEmpty()) {
             return OperationResult::fail(QStringLiteral("Reality transport requires a public key."));
         }
@@ -1344,6 +1336,12 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
     }
 
     QJsonArray rules;
+    QJsonObject locationProbeRule;
+    locationProbeRule.insert(QStringLiteral("type"), QStringLiteral("field"));
+    locationProbeRule.insert(QStringLiteral("outboundTag"), QStringLiteral("proxy"));
+    locationProbeRule.insert(QStringLiteral("inboundTag"), QJsonArray{kLocationProbeTag});
+    rules.append(locationProbeRule);
+
     const RoutingItem* selectedRouting = resolveSelectedRouting(config);
     const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
     for (const RoutingRule& rule : effectiveRules) {
@@ -1856,9 +1854,17 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
     }
 
     QJsonArray rules;
+    QJsonObject locationProbeRule;
+    locationProbeRule.insert(QStringLiteral("action"), QStringLiteral("route"));
+    locationProbeRule.insert(QStringLiteral("outbound"), QStringLiteral("proxy"));
+    locationProbeRule.insert(QStringLiteral("inbound"), QJsonArray{kLocationProbeTag});
+    rules.append(locationProbeRule);
     if (config.tunModeItem.enableTun) {
         route.insert(QStringLiteral("auto_detect_interface"), true);
-        rules = buildTunCompatRejectRules();
+        QJsonArray tunRules = buildTunCompatRejectRules();
+        for (const QJsonValue& rule : tunRules) {
+            rules.append(rule);
+        }
         appendTunCompatProcessRules(rules);
         appendTunIcmpRouteRule(rules, config.tunModeItem);
     }
@@ -2091,6 +2097,7 @@ QJsonArray ClientConfigWriter::buildInbounds(const Config& config) const
     QJsonArray inbounds;
     inbounds.append(buildSocksInbound(config, false, 0));
     inbounds.append(buildHttpInbound(config, false, 1));
+    inbounds.append(buildHttpInboundWithTag(config, kLocationProbeTag, kLocationProbePortOffset));
 
     if (config.allowLanConnection) {
         inbounds.append(buildSocksInbound(config, true, 2));
@@ -2108,6 +2115,7 @@ QJsonArray ClientConfigWriter::buildSingBoxInbounds(const Config& config) const
     }
     inbounds.append(buildSingBoxSocksInbound(config, false, 0));
     inbounds.append(buildSingBoxHttpInbound(config, false, 1));
+    inbounds.append(buildSingBoxHttpInboundWithTag(config, kLocationProbeTag, kLocationProbePortOffset));
 
     if (config.allowLanConnection) {
         inbounds.append(buildSingBoxSocksInbound(config, true, 2));
@@ -2983,8 +2991,17 @@ QJsonObject ClientConfigWriter::buildSocksInbound(const Config& config, bool all
 
 QJsonObject ClientConfigWriter::buildHttpInbound(const Config& config, bool allowLan, int offset)
 {
+    return buildHttpInboundWithTag(
+        config,
+        allowLan ? QStringLiteral("http-lan") : QStringLiteral("http"),
+        offset);
+}
+
+QJsonObject ClientConfigWriter::buildHttpInboundWithTag(const Config& config, const QString& tag, int offset)
+{
     QJsonObject inbound;
-    inbound.insert(QStringLiteral("tag"), allowLan ? QStringLiteral("http-lan") : QStringLiteral("http"));
+    const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
+    inbound.insert(QStringLiteral("tag"), tag);
     inbound.insert(QStringLiteral("port"), config.localPort + offset);
     inbound.insert(QStringLiteral("listen"), allowLan ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1"));
     inbound.insert(QStringLiteral("protocol"), QStringLiteral("http"));
@@ -3039,9 +3056,18 @@ QJsonObject ClientConfigWriter::buildSingBoxSocksInbound(const Config& config, b
 
 QJsonObject ClientConfigWriter::buildSingBoxHttpInbound(const Config& config, bool allowLan, int offset)
 {
+    return buildSingBoxHttpInboundWithTag(
+        config,
+        allowLan ? QStringLiteral("http-lan") : QStringLiteral("http"),
+        offset);
+}
+
+QJsonObject ClientConfigWriter::buildSingBoxHttpInboundWithTag(const Config& config, const QString& tag, int offset)
+{
     QJsonObject inbound;
+    const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
     inbound.insert(QStringLiteral("type"), QStringLiteral("http"));
-    inbound.insert(QStringLiteral("tag"), allowLan ? QStringLiteral("http-lan") : QStringLiteral("http"));
+    inbound.insert(QStringLiteral("tag"), tag);
     inbound.insert(QStringLiteral("listen"), allowLan ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1"));
     inbound.insert(QStringLiteral("listen_port"), config.localPort + offset);
 
@@ -3809,23 +3835,7 @@ QStringList ClientConfigWriter::buildTunCompatDnsProcessNames()
 {
     QStringList processNames{
         QStringLiteral("xray.exe"),
-        QStringLiteral("v2ray.exe"),
-        QStringLiteral("wv2ray.exe"),
-        QStringLiteral("SagerNet.exe"),
-        QStringLiteral("hysteria-windows-amd64.exe"),
-        QStringLiteral("hysteria-windows-386.exe"),
-        QStringLiteral("hysteria.exe"),
-        QStringLiteral("naiveproxy.exe"),
-        QStringLiteral("naive.exe"),
-        QStringLiteral("mihomo-windows-amd64-v1.exe"),
-        QStringLiteral("mihomo-windows-amd64-compatible.exe"),
-        QStringLiteral("mihomo-windows-amd64.exe"),
-        QStringLiteral("mihomo-windows-arm64.exe"),
-        QStringLiteral("clash-windows-amd64-v3.exe"),
-        QStringLiteral("clash-windows-amd64.exe"),
-        QStringLiteral("clash-windows-386.exe"),
-        QStringLiteral("clash.exe"),
-        QStringLiteral("mihomo.exe")};
+    };
 
     QSet<QString> seen;
     QStringList deduplicated;

@@ -52,8 +52,10 @@ public:
     void setAutoRunEnabled(bool enabled);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
+    void setCoreProcessRunning(bool running);
     void setCoreRunning(bool enabled, bool pending = false);
     void setCurrentServerName(const QString& name);
+    void setCurrentServerLocation(const QString& location);
     void setCurrentServerWarning(const QString& warning);
     void setRoutingSummary(const QString& routingText, const QString& listenText);
     void setStatisticsSessionState(const StatisticsSessionState& state);
@@ -110,7 +112,6 @@ signals:
     void openDnsObjectDocumentationRequested();
     void openRuleObjectDocumentationRequested();
     void openLoopbackToolRequested();
-    void openV2RayReleasePageRequested();
     void openXrayReleasePageRequested();
     void openSingBoxReleasePageRequested();
     void openGeoReleasePageRequested();
@@ -221,11 +222,8 @@ private:
     QAction* routingSettingsAction_ = nullptr;
     QAction* updateSubscriptionsAction_ = nullptr;
     QAction* testMeAction_ = nullptr;
-    QAction* updateV2RayCoreAction_ = nullptr;
     QAction* updateXrayCoreAction_ = nullptr;
     QAction* updateSingBoxCoreAction_ = nullptr;
-    QAction* updateClashCoreAction_ = nullptr;
-    QAction* updateClashMetaCoreAction_ = nullptr;
     QAction* updateGeoResourcesAction_ = nullptr;
     QAction* removeServerAction_ = nullptr;
     QAction* moveServerTopAction_ = nullptr;
@@ -253,7 +251,6 @@ private:
     QAction* openDnsObjectDocumentationAction_ = nullptr;
     QAction* openRuleObjectDocumentationAction_ = nullptr;
     QAction* openLoopbackToolAction_ = nullptr;
-    QAction* openV2RayReleasePageAction_ = nullptr;
     QAction* openXrayReleasePageAction_ = nullptr;
     QAction* openSingBoxReleasePageAction_ = nullptr;
     QAction* openGeoReleasePageAction_ = nullptr;
@@ -277,8 +274,10 @@ private:
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;
     bool autoRunEnabled_ = false;
+    bool coreProcessRunning_ = false;
     bool coreRunning_ = false;
     bool coreTransitionPending_ = false;
+    QString currentServerLocation_;
     bool speedTestRunning_ = false;
     QString currentServerWarning_;
     bool backgroundTaskRunning_ = false;

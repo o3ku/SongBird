@@ -81,6 +81,8 @@ private slots:
     void generateClientConfigsOmitsSingBoxSniffOverrideDestinationWhenRouteOnlyTrue();
     void generateClientConfigsAddsUdpDnsHijackRuleWhenSniffingDisabledForNativeSingBoxCore();
     void generateClientConfigsAddsSingBoxClashModeRouteRules();
+    void generateClientConfigsAddsDedicatedLegacyLocationProbeInboundAndRoute();
+    void generateClientConfigsAddsDedicatedSingBoxLocationProbeInboundAndRoute();
     void generateClientConfigsMapsSingBoxBlockRoutingRuleToRejectAction();
     void generateClientConfigsTreatsPlainSingBoxRoutingDomainsAsKeywords();
     void generateClientConfigsSplitsSingBoxRoutingPortsIntoPortAndRangeFields();
@@ -361,7 +363,7 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsHttpAutoCoreToSingBox
     config.tunModeItem.enableTun = false;
 
     VmessItem server = baseServer();
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.configType = ConfigType::HTTP;
     server.id = QStringLiteral("http-user");
     server.security = QStringLiteral("http-pass");
@@ -1317,12 +1319,6 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
     const QJsonObject dnsHijackRule = findRouteRuleByAction(rules, QStringLiteral("hijack-dns"));
     const QJsonArray dnsProcessNames = dnsHijackRule.value(QStringLiteral("process_name")).toArray();
     QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("xray.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("v2ray.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("SagerNet.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("hysteria.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("naiveproxy.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("clash.exe")));
-    QVERIFY(jsonArrayContainsString(dnsProcessNames, QStringLiteral("mihomo.exe")));
     QVERIFY(!jsonArrayContainsString(dnsProcessNames, QStringLiteral("sing-box.exe")));
     QVERIFY(!jsonArrayContainsString(dnsProcessNames, QStringLiteral("sing-box-client.exe")));
 
@@ -1330,12 +1326,6 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
     const QJsonArray directProcessNames = directProcessRule.value(QStringLiteral("process_name")).toArray();
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("v2rayq.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("xray.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("v2ray.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("SagerNet.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("hysteria.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("naiveproxy.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("clash.exe")));
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("mihomo.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box-client.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box.exe")));
 }
@@ -2240,6 +2230,54 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxClashModeRouteRule
     QVERIFY(globalIndex < userRuleIndex);
 }
 
+void ClientConfigWriterTests::generateClientConfigsAddsDedicatedLegacyLocationProbeInboundAndRoute()
+{
+    Config config = legacyConfig();
+    config.tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Xray;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonArray inbounds = generated.primary.root.value(QStringLiteral("inbounds")).toArray();
+    const QJsonObject probeInbound = findObjectByTag(inbounds, QStringLiteral("location-probe"));
+    QCOMPARE(probeInbound.value(QStringLiteral("protocol")).toString(), QStringLiteral("http"));
+    QCOMPARE(probeInbound.value(QStringLiteral("listen")).toString(), QStringLiteral("127.0.0.1"));
+    QCOMPARE(probeInbound.value(QStringLiteral("port")).toInt(), config.localPort + 103);
+
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("routing")).toObject().value(QStringLiteral("rules")).toArray();
+    QVERIFY(!rules.isEmpty());
+    const QJsonObject firstRule = rules.first().toObject();
+    QCOMPARE(firstRule.value(QStringLiteral("type")).toString(), QStringLiteral("field"));
+    QCOMPARE(firstRule.value(QStringLiteral("outboundTag")).toString(), QStringLiteral("proxy"));
+    QVERIFY(jsonArrayContainsString(firstRule.value(QStringLiteral("inboundTag")).toArray(), QStringLiteral("location-probe")));
+}
+
+void ClientConfigWriterTests::generateClientConfigsAddsDedicatedSingBoxLocationProbeInboundAndRoute()
+{
+    Config config = baseConfig();
+    config.tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+
+    const QJsonArray inbounds = generated.primary.root.value(QStringLiteral("inbounds")).toArray();
+    const QJsonObject probeInbound = findObjectByTag(inbounds, QStringLiteral("location-probe"));
+    QCOMPARE(probeInbound.value(QStringLiteral("type")).toString(), QStringLiteral("http"));
+    QCOMPARE(probeInbound.value(QStringLiteral("listen")).toString(), QStringLiteral("127.0.0.1"));
+    QCOMPARE(probeInbound.value(QStringLiteral("listen_port")).toInt(), config.localPort + 103);
+
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
+    QVERIFY(!rules.isEmpty());
+    const QJsonObject firstRule = rules.first().toObject();
+    QCOMPARE(firstRule.value(QStringLiteral("action")).toString(), QStringLiteral("route"));
+    QCOMPARE(firstRule.value(QStringLiteral("outbound")).toString(), QStringLiteral("proxy"));
+    QVERIFY(jsonArrayContainsString(firstRule.value(QStringLiteral("inbound")).toArray(), QStringLiteral("location-probe")));
+}
+
 void ClientConfigWriterTests::generateClientConfigsMapsSingBoxBlockRoutingRuleToRejectAction()
 {
     Config config = baseConfig();
@@ -2585,25 +2623,30 @@ void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelect
     const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("routing")).toObject().value(QStringLiteral("rules")).toArray();
 
-    QVERIFY(rules.size() >= 4);
-    QCOMPARE(rules.at(0).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("block"));
+    QVERIFY(rules.size() >= 5);
+    QCOMPARE(rules.at(0).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("proxy"));
     QVERIFY(jsonArrayContainsString(
-        rules.at(0).toObject().value(QStringLiteral("domain")).toArray(),
+        rules.at(0).toObject().value(QStringLiteral("inboundTag")).toArray(),
+        QStringLiteral("location-probe")));
+
+    QCOMPARE(rules.at(1).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("block"));
+    QVERIFY(jsonArrayContainsString(
+        rules.at(1).toObject().value(QStringLiteral("domain")).toArray(),
         QStringLiteral("geosite:category-ads-all")));
 
-    QCOMPARE(rules.at(1).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("direct"));
+    QCOMPARE(rules.at(2).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("direct"));
     QVERIFY(jsonArrayContainsString(
-        rules.at(1).toObject().value(QStringLiteral("ip")).toArray(),
+        rules.at(2).toObject().value(QStringLiteral("ip")).toArray(),
         QStringLiteral("geoip:private")));
 
-    QCOMPARE(rules.at(2).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("proxy"));
-    QVERIFY(jsonArrayContainsString(
-        rules.at(2).toObject().value(QStringLiteral("domain")).toArray(),
-        QStringLiteral("domain:openai.com")));
-
-    QCOMPARE(rules.at(3).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("direct"));
+    QCOMPARE(rules.at(3).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("proxy"));
     QVERIFY(jsonArrayContainsString(
         rules.at(3).toObject().value(QStringLiteral("domain")).toArray(),
+        QStringLiteral("domain:openai.com")));
+
+    QCOMPARE(rules.at(4).toObject().value(QStringLiteral("outboundTag")).toString(), QStringLiteral("direct"));
+    QVERIFY(jsonArrayContainsString(
+        rules.at(4).toObject().value(QStringLiteral("domain")).toArray(),
         QStringLiteral("geosite:cn")));
 }
 
@@ -2722,7 +2765,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
     setProtocolCore(config, ConfigType::VMess, CoreType::SingBox);
 
     VmessItem server = baseServer();
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
     const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);

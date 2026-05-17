@@ -61,7 +61,6 @@ void CustomServerDialog::setupUi()
     fileRowLayout->addWidget(browseButton_);
 
     coreCombo_ = new QComboBox(this);
-    coreCombo_->addItem(tr("Auto (SingBox)"), static_cast<int>(CoreType::Auto));
     coreCombo_->addItem(QStringLiteral("Xray"), static_cast<int>(CoreType::Xray));
     coreCombo_->addItem(QStringLiteral("sing-box"), static_cast<int>(CoreType::SingBox));
 
@@ -87,7 +86,7 @@ void CustomServerDialog::setupUi()
             this,
             tr("Select Custom Config"),
             filePathEdit_->text().trimmed(),
-            QStringLiteral("Config Files (*.json *.yaml *.yml);;All Files (*.*)"));
+            QStringLiteral("Config Files (*.json);;All Files (*.*)"));
         if (!filePath.trimmed().isEmpty()) {
             filePathEdit_->setText(filePath);
         }

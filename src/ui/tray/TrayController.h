@@ -24,6 +24,7 @@ public:
     bool initialize();
     bool isAvailable() const;
     void setCurrentServerName(const QString& name);
+    void setCoreProcessRunning(bool running);
     void setCoreRunning(bool enabled, bool pending = false);
     void setSystemProxyState(int mode, bool enabled);
     void setAutoRunEnabled(bool enabled);
@@ -75,6 +76,7 @@ private:
     QString currentServerId_;
     int currentRoutingIndex_ = -1;
     int serverMenuLimit_ = 0;
+    bool coreProcessRunning_ = false;
     bool coreRunning_ = false;
     bool coreTransitionPending_ = false;
     bool backgroundTaskRunning_ = false;

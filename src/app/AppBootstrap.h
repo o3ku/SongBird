@@ -29,7 +29,6 @@ class QThread;
 class QWidget;
 class SingleInstanceGuard;
 class GrpcStatisticsBackend;
-class ClashRestStatisticsBackend;
 class QtCoreProcessHost;
 class QTimer;
 class RoutingService;
@@ -95,6 +94,8 @@ private:
     void handleCoreStartFailed(const QString& message);
     void disconnectPendingCoreStartConnection();
     void restartCoreIfRunning(const QString& reason);
+    void clearCurrentServerLocation();
+    void queryCurrentServerLocation(const QString& serverIndexId, CoreType runtimeCore);
     void setSystemProxyMode(SystemProxyMode mode);
     void applySystemProxyModeOnExit(bool windowsShutdown);
     void enableSystemProxy();
@@ -210,7 +211,6 @@ private:
     std::unique_ptr<SpeedTestService> speedTestService_;
     std::unique_ptr<StatisticsService> statisticsService_;
     std::unique_ptr<GrpcStatisticsBackend> grpcStatisticsBackend_;
-    std::unique_ptr<ClashRestStatisticsBackend> clashStatisticsBackend_;
     std::unique_ptr<SubscriptionService> subscriptionService_;
     std::unique_ptr<GeoResourceUpdateService> geoResourceUpdateService_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
@@ -238,6 +238,7 @@ private:
     bool coreStartPending_ = false;
     bool coreStopPending_ = false;
     bool coreReady_ = false;
+    QString currentServerLocation_;
     bool coreTunEnabledAtStart_ = false;
     bool managedSystemProxyActive_ = false;
     bool tunCleanupActive_ = false;

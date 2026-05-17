@@ -1032,27 +1032,20 @@ ConfigType JsonConfigRepository::parseConfigType(const QJsonValue& value)
 CoreType JsonConfigRepository::parseCoreType(const QJsonValue& value)
 {
     if (value.isUndefined() || value.isNull()) {
-        return CoreType::Auto;
+        return CoreType::SingBox;
     }
 
     if (value.isDouble()) {
         switch (value.toInt()) {
         case 1:
-            return CoreType::V2Fly;
         case 2:
             return CoreType::Xray;
         case 3:
-            return CoreType::SagerNet;
         case 4:
-            return CoreType::V2FlyV5;
         case 11:
-            return CoreType::Clash;
         case 12:
-            return CoreType::ClashMeta;
         case 21:
-            return CoreType::Hysteria;
         case 22:
-            return CoreType::NaiveProxy;
         case 24:
             return CoreType::SingBox;
         default:
@@ -1062,36 +1055,36 @@ CoreType JsonConfigRepository::parseCoreType(const QJsonValue& value)
 
     const QString text = value.toString().trimmed();
     if (text.isEmpty()) {
-        return CoreType::Auto;
+        return CoreType::SingBox;
     }
     if (text.compare(QStringLiteral("v2fly"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("v2ray"), Qt::CaseInsensitive) == 0) {
-        return CoreType::V2Fly;
+        return CoreType::Xray;
     }
     if (text.compare(QStringLiteral("xray"), Qt::CaseInsensitive) == 0) {
         return CoreType::Xray;
     }
     if (text.compare(QStringLiteral("sagernet"), Qt::CaseInsensitive) == 0) {
-        return CoreType::SagerNet;
+        return CoreType::Xray;
     }
     if (text.compare(QStringLiteral("v2fly_v5"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("v2ray_v5"), Qt::CaseInsensitive) == 0) {
-        return CoreType::V2FlyV5;
+        return CoreType::Xray;
     }
     if (text.compare(QStringLiteral("clash"), Qt::CaseInsensitive) == 0) {
-        return CoreType::Clash;
+        return CoreType::SingBox;
     }
     if (text.compare(QStringLiteral("clash_meta"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("clash-meta"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("clash.meta"), Qt::CaseInsensitive) == 0) {
-        return CoreType::ClashMeta;
+        return CoreType::SingBox;
     }
     if (text.compare(QStringLiteral("hysteria"), Qt::CaseInsensitive) == 0) {
-        return CoreType::Hysteria;
+        return CoreType::SingBox;
     }
     if (text.compare(QStringLiteral("naiveproxy"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("naive"), Qt::CaseInsensitive) == 0) {
-        return CoreType::NaiveProxy;
+        return CoreType::SingBox;
     }
     if (text.compare(QStringLiteral("sing_box"), Qt::CaseInsensitive) == 0
         || text.compare(QStringLiteral("sing-box"), Qt::CaseInsensitive) == 0) {
@@ -1137,24 +1130,8 @@ int JsonConfigRepository::toLegacyConfigTypeValue(ConfigType type)
 QJsonValue JsonConfigRepository::toLegacyCoreTypeValue(CoreType type)
 {
     switch (type) {
-    case CoreType::Auto:
-        return QJsonValue(QJsonValue::Null);
-    case CoreType::V2Fly:
-        return 1;
     case CoreType::Xray:
         return 2;
-    case CoreType::SagerNet:
-        return 3;
-    case CoreType::V2FlyV5:
-        return 4;
-    case CoreType::Clash:
-        return 11;
-    case CoreType::ClashMeta:
-        return 12;
-    case CoreType::Hysteria:
-        return 21;
-    case CoreType::NaiveProxy:
-        return 22;
     case CoreType::SingBox:
         return 24;
     case CoreType::Unknown:

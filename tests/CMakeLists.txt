@@ -41,43 +41,6 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_share_url_tests)
 endif()
 
-set(QT_V2RAYN_CLASH_CONFIG_WRITER_TEST_SOURCES
-    ClashConfigWriterTests.cpp
-    ../src/runtime/ClashConfigWriter.h
-    ../src/runtime/ClashConfigWriter.cpp
-)
-
-if(QT_VERSION_MAJOR GREATER_EQUAL 6)
-    qt_add_executable(qt_v2rayn_clash_config_writer_tests
-        MANUAL_FINALIZATION
-        ${QT_V2RAYN_CLASH_CONFIG_WRITER_TEST_SOURCES}
-    )
-else()
-    add_executable(qt_v2rayn_clash_config_writer_tests ${QT_V2RAYN_CLASH_CONFIG_WRITER_TEST_SOURCES})
-endif()
-
-target_include_directories(qt_v2rayn_clash_config_writer_tests
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src
-)
-
-target_link_libraries(qt_v2rayn_clash_config_writer_tests
-    PRIVATE
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-        Qt${QT_VERSION_MAJOR}::Network
-)
-
-add_test(NAME clash-config-writer COMMAND qt_v2rayn_clash_config_writer_tests)
-set_tests_properties(clash-config-writer PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=windows"
-    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
-)
-
-if(QT_VERSION_MAJOR GREATER_EQUAL 6)
-    qt_finalize_executable(qt_v2rayn_clash_config_writer_tests)
-endif()
-
 set(QT_V2RAYN_ADD_SERVER_DIALOG_TEST_SOURCES
     AddServerDialogTests.cpp
     ../src/ui/dialogs/AddServerDialog.h
@@ -435,8 +398,6 @@ set(QT_V2RAYN_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ClientConfigWriterTests.cpp
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
-    ../src/runtime/ClashConfigWriter.h
-    ../src/runtime/ClashConfigWriter.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)

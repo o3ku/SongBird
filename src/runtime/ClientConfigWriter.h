@@ -80,11 +80,13 @@ private:
 
     static QJsonObject buildSocksInbound(const Config& config, bool allowLan, int offset);
     static QJsonObject buildHttpInbound(const Config& config, bool allowLan, int offset);
+    static QJsonObject buildHttpInboundWithTag(const Config& config, const QString& tag, int offset);
     static QJsonObject buildSniffing(const Config& config);
     static QJsonObject buildDirectOutbound(const Config& config);
     static QJsonObject buildBlackholeOutbound();
     static QJsonObject buildSingBoxSocksInbound(const Config& config, bool allowLan, int offset);
     static QJsonObject buildSingBoxHttpInbound(const Config& config, bool allowLan, int offset);
+    static QJsonObject buildSingBoxHttpInboundWithTag(const Config& config, const QString& tag, int offset);
     static QJsonObject buildSingBoxDirectOutbound();
     static QJsonObject buildSingBoxBlockOutbound();
     static QJsonObject buildSingBoxTunInbound(const Config& config);

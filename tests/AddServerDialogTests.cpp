@@ -27,7 +27,7 @@ void AddServerDialogTests::alpnRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("keep alpn");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -53,7 +53,7 @@ void AddServerDialogTests::httpupgradeUserAgentRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("keep user-agent");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -77,7 +77,7 @@ void AddServerDialogTests::xhttpExtraRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("keep xhttp extra");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -101,7 +101,7 @@ void AddServerDialogTests::finalmaskRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("keep finalmask");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -123,7 +123,7 @@ void AddServerDialogTests::httpTypeRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::HTTP;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("http proxy");
     server.address = QStringLiteral("example.com");
     server.port = 8080;
@@ -154,14 +154,14 @@ void AddServerDialogTests::newDialogDefaultsToSingBoxCore()
     QCOMPARE(server.coreType, CoreType::SingBox);
     QCOMPARE(coreCombo->count(), 2);
     QCOMPARE(coreCombo->currentData().toInt(), static_cast<int>(CoreType::SingBox));
-    QCOMPARE(coreCombo->findData(static_cast<int>(CoreType::Auto)), -1);
+    QCOMPARE(coreCombo->findData(0), -1);
 }
 
 void AddServerDialogTests::legacyAutoCoreIsShownAsSingBox()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = static_cast<CoreType>(0);
 
     AddServerDialog dialog;
     dialog.setServer(server);
@@ -178,7 +178,7 @@ void AddServerDialogTests::certPemRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("tls cert");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -212,7 +212,7 @@ void AddServerDialogTests::certShaRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("tls pinning");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -232,7 +232,7 @@ void AddServerDialogTests::mldsa65VerifyRoundTripsExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VLESS;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("reality verify");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -253,7 +253,7 @@ void AddServerDialogTests::echFieldsRoundTripExistingServer()
 {
     VmessItem server;
     server.configType = ConfigType::VLESS;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("ech tls");
     server.address = QStringLiteral("example.com");
     server.port = 443;
@@ -275,7 +275,7 @@ void AddServerDialogTests::muxOverrideRoundTripsExplicitDisable()
 {
     VmessItem server;
     server.configType = ConfigType::VMess;
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
     server.remarks = QStringLiteral("keep mux override");
     server.address = QStringLiteral("example.com");
     server.port = 443;

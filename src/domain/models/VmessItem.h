@@ -5,15 +5,7 @@
 #include <QStringList>
 
 enum class CoreType {
-    Auto = 0,
-    V2Fly = 1,
     Xray = 2,
-    SagerNet = 3,
-    V2FlyV5 = 4,
-    Clash = 11,
-    ClashMeta = 12,
-    Hysteria = 21,
-    NaiveProxy = 22,
     SingBox = 24,
     Unknown = 999
 };
@@ -21,24 +13,8 @@ enum class CoreType {
 inline QString coreTypeDisplayName(CoreType type)
 {
     switch (type) {
-    case CoreType::Auto:
-        return QStringLiteral("Auto (SingBox)");
-    case CoreType::V2Fly:
-        return QStringLiteral("V2Ray");
     case CoreType::Xray:
         return QStringLiteral("Xray");
-    case CoreType::SagerNet:
-        return QStringLiteral("SagerNet");
-    case CoreType::V2FlyV5:
-        return QStringLiteral("V2Ray v5");
-    case CoreType::Clash:
-        return QStringLiteral("Clash");
-    case CoreType::ClashMeta:
-        return QStringLiteral("Clash.Meta");
-    case CoreType::Hysteria:
-        return QStringLiteral("Hysteria");
-    case CoreType::NaiveProxy:
-        return QStringLiteral("NaiveProxy");
     case CoreType::SingBox:
         return QStringLiteral("sing-box");
     case CoreType::Unknown:
@@ -50,23 +26,12 @@ inline QString coreTypeDisplayName(CoreType type)
 inline CoreType resolveRuntimeCoreType(CoreType type)
 {
     switch (type) {
-    case CoreType::V2Fly:
-    case CoreType::SagerNet:
-    case CoreType::V2FlyV5:
-        return CoreType::V2Fly;
+    case CoreType::Xray:
+        return CoreType::Xray;
     case CoreType::SingBox:
         return CoreType::SingBox;
-    case CoreType::Clash:
-        return CoreType::Clash;
-    case CoreType::ClashMeta:
-        return CoreType::ClashMeta;
-    case CoreType::Hysteria:
-        return CoreType::Hysteria;
-    case CoreType::NaiveProxy:
-        return CoreType::NaiveProxy;
-    case CoreType::Xray:
-    case CoreType::Auto:
     case CoreType::Unknown:
+        return CoreType::Unknown;
     default:
         return CoreType::Xray;
     }
@@ -124,7 +89,7 @@ inline QString configTypeDisplayName(ConfigType type)
 struct VmessItem {
     QString indexId;
     ConfigType configType = ConfigType::VMess;
-    CoreType coreType = CoreType::Auto;
+    CoreType coreType = CoreType::SingBox;
     QString address;
     int port = 0;
     QString id;

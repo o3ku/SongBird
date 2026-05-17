@@ -65,7 +65,9 @@ private slots:
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
+    void currentServerStatusAppendsLocation();
     void currentServerStatusAppendsManualVerificationWarning();
+    void coreStatusRemainsStartingUntilStrictActivation();
     void transientStatusTemporarilyOverridesBackgroundTaskMessage();
     void requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled();
     void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
@@ -476,6 +478,7 @@ void MainWindowTests::coreToggleButtonUsesCheckedStateAndDisablesDuringTransitio
     QCOMPARE(stopSpy.count(), 0);
     QVERIFY(coreButton->isEnabled());
 
+    window.setCoreProcessRunning(true);
     window.setCoreRunning(true, true);
     QCoreApplication::processEvents();
     QCOMPARE(coreButton->text(), QStringLiteral("START"));
@@ -528,6 +531,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
 
@@ -1024,6 +1028,25 @@ void MainWindowTests::currentServerStatusUsesNoServerPlaceholderWhenEmpty()
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
 }
 
+void MainWindowTests::currentServerStatusAppendsLocation()
+{
+    MainWindow window;
+    window.setConfig(Config());
+
+    auto* currentServerStatusLabel =
+        window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+
+    window.setCurrentServerName(QStringLiteral("Test Server"));
+    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server | United States, Los Angeles"));
+
+    window.setCurrentServerLocation(QString());
+    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
+}
+
 void MainWindowTests::currentServerStatusAppendsManualVerificationWarning()
 {
     MainWindow window;
@@ -1033,11 +1056,38 @@ void MainWindowTests::currentServerStatusAppendsManualVerificationWarning()
     QVERIFY(currentServerStatusLabel != nullptr);
 
     window.setCurrentServerName(QStringLiteral("Test Server"));
+    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     window.setCurrentServerWarning(QStringLiteral("Please verify manually"));
-    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server | Please verify manually"));
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server | United States, Los Angeles | Please verify manually"));
 
     window.setCurrentServerWarning(QString());
-    QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server | United States, Los Angeles"));
+}
+
+void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
+
+    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    QVERIFY(coreStatusLabel != nullptr);
+    QVERIFY(coreButton != nullptr);
+
+    window.setCoreProcessRunning(true);
+    window.setCoreRunning(false, false);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(coreStatusLabel->text(), QStringLiteral("Core: Starting"));
+    QCOMPARE(coreButton->toolTip(), QStringLiteral("Stop the running core."));
+    QVERIFY(!coreButton->isChecked());
+    QVERIFY(coreButton->isEnabled());
 }
 
 void MainWindowTests::transientStatusTemporarilyOverridesBackgroundTaskMessage()
@@ -1210,6 +1260,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     window.setCoreRunning(false, true);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);
+    window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);

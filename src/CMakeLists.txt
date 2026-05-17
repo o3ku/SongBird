@@ -35,8 +35,6 @@ set(QT_V2RAYN_SOURCES
     runtime/ProtocolCoreCompat.h
     runtime/ClientConfigWriter.h
     runtime/ClientConfigWriter.cpp
-    runtime/ClashConfigWriter.h
-    runtime/ClashConfigWriter.cpp
     runtime/ServerConfigWriter.h
     runtime/ServerConfigWriter.cpp
     runtime/ICoreProcessHost.h
@@ -67,8 +65,6 @@ set(QT_V2RAYN_SOURCES
     services/SubscriptionService.cpp
     services/GrpcStatisticsBackend.h
     services/GrpcStatisticsBackend.cpp
-    services/ClashRestStatisticsBackend.h
-    services/ClashRestStatisticsBackend.cpp
     services/GrpcStatisticsParser.h
     services/GrpcStatisticsParser.cpp
     services/StatisticsService.h

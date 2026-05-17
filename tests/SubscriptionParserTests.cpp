@@ -24,15 +24,11 @@ private slots:
     // --- CustomConfigTextParser ---
     void customXrayJson();
     void customSingBoxJson();
-    void customHysteriaJson();
-    void customNaiveProxyJson();
-    void customClashYaml();
     void customEmptyInput();
     void customGarbageInput();
     void customHtmlRejected();
     void customXrayRequiresInboundsOutbounds();
     void customSingBoxRequiresTypeKey();
-    void customClashRequiresAllThreeKeys();
     void customUnknownJsonReturnsEmpty();
 };
 
@@ -253,68 +249,6 @@ void SubscriptionParserTests::customSingBoxJson()
     QCOMPARE(item.remarks, QStringLiteral("singbox_custom"));
 }
 
-void SubscriptionParserTests::customHysteriaJson()
-{
-    const QString json = QStringLiteral(
-        "{"
-        "  \"server\": \"1.2.3.4:443\","
-        "  \"up\": \"100 mbps\","
-        "  \"down\": \"200 mbps\","
-        "  \"listen\": \"127.0.0.1:1080\","
-        "  \"socks5\": {\"listen\": \"127.0.0.1:1081\"}"
-        "}"
-    );
-
-    bool ok = false;
-    const VmessItem item = CustomConfigTextParser::parse(json, nullptr, &ok);
-
-    QVERIFY(ok);
-    QCOMPARE(item.configType, ConfigType::Custom);
-    QCOMPARE(item.coreType, CoreType::Hysteria);
-    QCOMPARE(item.remarks, QStringLiteral("hysteria_custom"));
-}
-
-void SubscriptionParserTests::customNaiveProxyJson()
-{
-    const QString json = QStringLiteral(
-        "{"
-        "  \"listen\": \"https://127.0.0.1:8080\","
-        "  \"proxy\": \"https://user:pass@server:443/path\""
-        "}"
-    );
-
-    bool ok = false;
-    const VmessItem item = CustomConfigTextParser::parse(json, nullptr, &ok);
-
-    QVERIFY(ok);
-    QCOMPARE(item.configType, ConfigType::Custom);
-    QCOMPARE(item.coreType, CoreType::NaiveProxy);
-    QCOMPARE(item.remarks, QStringLiteral("naiveproxy_custom"));
-}
-
-void SubscriptionParserTests::customClashYaml()
-{
-    const QString yaml = QStringLiteral(
-        "port: 7890\n"
-        "socks-port: 7891\n"
-        "proxies:\n"
-        "  - name: my-proxy\n"
-        "    type: ss\n"
-        "    server: 1.2.3.4\n"
-        "    port: 8388\n"
-    );
-
-    bool ok = false;
-    QString ext;
-    const VmessItem item = CustomConfigTextParser::parse(yaml, &ext, &ok);
-
-    QVERIFY(ok);
-    QCOMPARE(item.configType, ConfigType::Custom);
-    QCOMPARE(item.coreType, CoreType::Clash);
-    QCOMPARE(item.remarks, QStringLiteral("clash_custom"));
-    QCOMPARE(ext, QStringLiteral("yaml"));
-}
-
 void SubscriptionParserTests::customEmptyInput()
 {
     bool ok = true;
@@ -332,7 +266,7 @@ void SubscriptionParserTests::customGarbageInput()
 
 void SubscriptionParserTests::customHtmlRejected()
 {
-    // HTML that contains "server", "up", "down", "listen" should be rejected.
+    // HTML that vaguely resembles a config should still be rejected.
     const QString html = QStringLiteral(
         "<html><body>"
         "<p>server: 1.2.3.4</p>"
@@ -346,16 +280,6 @@ void SubscriptionParserTests::customHtmlRejected()
     const VmessItem item = CustomConfigTextParser::parse(html, nullptr, &ok);
     QVERIFY(!ok);
 
-    // Also test the naive proxy path: HTML with listen + proxy
-    const QString htmlNaive = QStringLiteral(
-        "<html><body>"
-        "<p>listen: 127.0.0.1</p>"
-        "<p>proxy: socks5://x</p>"
-        "</body></html>"
-    );
-    bool ok2 = true;
-    const VmessItem item2 = CustomConfigTextParser::parse(htmlNaive, nullptr, &ok2);
-    QVERIFY(!ok2);
 }
 
 void SubscriptionParserTests::customXrayRequiresInboundsOutbounds()
@@ -369,8 +293,6 @@ void SubscriptionParserTests::customXrayRequiresInboundsOutbounds()
 
     bool ok = true;
     const VmessItem item = CustomConfigTextParser::parse(json, nullptr, &ok);
-    // Should not be detected as Xray (no inbounds). Falls through to hysteria/naive checks.
-    // It does not contain server+up+down+listen or listen+proxy without html, so empty.
     QVERIFY(!ok);
 }
 
@@ -389,20 +311,6 @@ void SubscriptionParserTests::customSingBoxRequiresTypeKey()
     QVERIFY(ok);
     // Detected as Xray because outbound has "protocol", not "type".
     QCOMPARE(item.coreType, CoreType::Xray);
-}
-
-void SubscriptionParserTests::customClashRequiresAllThreeKeys()
-{
-    // YAML-like text with only two of the three required keys -> not Clash.
-    const QString partial = QStringLiteral(
-        "port: 7890\n"
-        "socks-port: 7891\n"
-        "# missing the third key\n"
-    );
-
-    bool ok = true;
-    const VmessItem item = CustomConfigTextParser::parse(partial, nullptr, &ok);
-    QVERIFY(!ok);
 }
 
 void SubscriptionParserTests::customUnknownJsonReturnsEmpty()

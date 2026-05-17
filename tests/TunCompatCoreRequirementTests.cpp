@@ -87,7 +87,7 @@ void TunCompatCoreRequirementTests::protocolConfiguredSingBoxDoesNotRequireAuxil
         static_cast<int>(CoreType::SingBox)});
 
     VmessItem server = baseServer();
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
 
     QVERIFY(resolveAuxiliaryTunCompatCoreTypes(config, server).isEmpty());
 }
@@ -129,7 +129,7 @@ void TunCompatCoreRequirementTests::xrayOnlyInstallWithUnconfiguredProtocolRequi
     config.coreTypeItems.clear();
 
     VmessItem server = baseServer();
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
 
     const QList<CoreType> required = resolveAuxiliaryTunCompatCoreTypes(
         config, server, QList<CoreType>{CoreType::Xray});
@@ -145,7 +145,7 @@ void TunCompatCoreRequirementTests::singBoxOnlyInstallWithUnconfiguredProtocolSk
     config.coreTypeItems.clear();
 
     VmessItem server = baseServer();
-    server.coreType = CoreType::Auto;
+    server.coreType = CoreType::SingBox;
 
     QVERIFY(resolveAuxiliaryTunCompatCoreTypes(
         config, server, QList<CoreType>{CoreType::SingBox}).isEmpty());

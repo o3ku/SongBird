@@ -133,7 +133,7 @@ OperationResult ConfigFileImportParser::parseClientConfig(const QString& text, V
     const QJsonObject settings = outbound.value(QStringLiteral("settings")).toObject();
 
     VmessItem parsed;
-    parsed.coreType = CoreType::Auto;
+    parsed.coreType = CoreType::SingBox;
     parsed.network = QStringLiteral("tcp");
     parsed.headerType = QStringLiteral("none");
     parsed.remarks = importRemark(QStringLiteral("client"));
@@ -297,7 +297,7 @@ OperationResult ConfigFileImportParser::parseServerConfig(const QString& text, V
     const QJsonObject settings = inbound.value(QStringLiteral("settings")).toObject();
 
     VmessItem parsed;
-    parsed.coreType = CoreType::Auto;
+    parsed.coreType = CoreType::SingBox;
     const QString listenAddress = inbound.value(QStringLiteral("listen")).toString().trimmed();
     parsed.address = isLoopbackOrAnyAddress(listenAddress) ? QString() : listenAddress;
     parsed.port = inbound.value(QStringLiteral("port")).toInt(0);

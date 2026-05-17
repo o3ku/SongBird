@@ -174,6 +174,16 @@ void TrayController::setCurrentServerName(const QString& name)
     updateMenuText();
 }
 
+void TrayController::setCoreProcessRunning(bool running)
+{
+    if (coreProcessRunning_ == running) {
+        return;
+    }
+
+    coreProcessRunning_ = running;
+    updateMenuText();
+}
+
 void TrayController::setCoreRunning(bool enabled, bool pending)
 {
     if (coreRunning_ == enabled && coreTransitionPending_ == pending) {
@@ -350,7 +360,7 @@ void TrayController::updateMenuText()
     }
 
     if (stopCoreAction_ != nullptr) {
-        stopCoreAction_->setEnabled(coreRunning_ && !coreTransitionPending_);
+        stopCoreAction_->setEnabled(coreProcessRunning_ && !coreTransitionPending_);
     }
 
     if (serversMenu_ != nullptr) {
@@ -380,7 +390,10 @@ void TrayController::updateToolTip()
 
     QString tooltip = QStringLiteral("v2rayq | %1 | %2 | %3 | %4")
                           .arg(currentServerName_.isEmpty() ? trayText("No default server") : currentServerName_)
-                          .arg(trayText("Core %1").arg(coreRunning_ ? trayText("Running") : trayText("Stopped")))
+                          .arg(trayText("Core %1").arg(
+                              coreRunning_ ? trayText("Running")
+                                           : coreProcessRunning_ ? trayText("Starting")
+                                                                 : trayText("Stopped")))
                           .arg(trayText("Proxy %1").arg(proxyText))
                           .arg(trayText("Auto Run %1").arg(autoRunEnabled_ ? trayText("Enabled") : trayText("Disabled")));
     if (!routingSummary_.isEmpty()) {

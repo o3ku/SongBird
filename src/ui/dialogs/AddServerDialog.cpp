@@ -438,10 +438,6 @@ void AddServerDialog::refillSecurityOptions(ConfigType type)
 
 void AddServerDialog::setCoreType(CoreType type)
 {
-    if (type == CoreType::Auto) {
-        type = CoreType::SingBox;
-    }
-
     const int index = coreCombo_->findData(static_cast<int>(type));
     coreCombo_->setCurrentIndex(index >= 0 ? index : 0);
 }

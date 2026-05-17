@@ -22,7 +22,7 @@
 #include "ui/theme/AppTheme.h"
 
 #ifndef QT_V2RAYN_APP_VERSION
-#define QT_V2RAYN_APP_VERSION "0.4.0"
+#define QT_V2RAYN_APP_VERSION "1.0.0"
 #endif
 
 namespace {
