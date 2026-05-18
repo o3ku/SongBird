@@ -4,13 +4,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
-#include <QPushButton>
 #include <QFormLayout>
-#include <QFontMetrics>
 #include <QLineEdit>
+#include <QPushButton>
+#include <QFontMetrics>
 #include <QSpinBox>
 #include <QStackedLayout>
 #include <QTabBar>
+#include <QTextEdit>
 #include <QVBoxLayout>
 
 #include <QWidget>
@@ -138,21 +139,9 @@ void SettingsDialog::setConfig(const Config& config)
     tunEnableIPv6AddressCheck_->setChecked(tun.enableIPv6Address);
     tunIcmpRoutingEdit_->setText(tun.icmpRouting);
 
-    // DNS tab
-    remoteDnsEdit_->setText(config.remoteDns);
-    directDnsEdit_->setText(config.directDns);
-    bootstrapDnsEdit_->setText(config.bootstrapDns);
-    domainStrategyForFreedomCombo_->setCurrentText(config.domainStrategyForFreedom);
-    domainStrategyForProxyCombo_->setCurrentText(config.domainStrategyForProxy);
-    useSystemHostsCheck_->setChecked(config.useSystemHosts);
-    addCommonHostsCheck_->setChecked(config.addCommonHosts);
-    blockBindingQueryCheck_->setChecked(config.blockBindingQuery);
-    fakeIpCheck_->setChecked(config.fakeIp);
-    globalFakeIpCheck_->setChecked(config.globalFakeIp);
-    serveStaleCheck_->setChecked(config.serveStale);
-    parallelQueryCheck_->setChecked(config.parallelQuery);
-    directExpectedIpsEdit_->setText(config.directExpectedIps);
-    dnsHostsEdit_->setPlainText(config.dnsHosts);
+    if (dnsSettingsPage_ != nullptr) {
+        dnsSettingsPage_->setConfig(config);
+    }
 
     const int targetTabIndex = settingsTabBar_ == nullptr || settingsTabBar_->count() == 0
         ? 0
@@ -230,21 +219,9 @@ Config SettingsDialog::config() const
     }
     updated.tunModeItem = tun;
 
-    // DNS
-    updated.remoteDns = remoteDnsEdit_->text().trimmed();
-    updated.directDns = directDnsEdit_->text().trimmed();
-    updated.bootstrapDns = bootstrapDnsEdit_->text().trimmed();
-    updated.domainStrategyForFreedom = domainStrategyForFreedomCombo_->currentText().trimmed();
-    updated.domainStrategyForProxy = domainStrategyForProxyCombo_->currentText().trimmed();
-    updated.useSystemHosts = useSystemHostsCheck_->isChecked();
-    updated.addCommonHosts = addCommonHostsCheck_->isChecked();
-    updated.blockBindingQuery = blockBindingQueryCheck_->isChecked();
-    updated.fakeIp = fakeIpCheck_->isChecked();
-    updated.globalFakeIp = globalFakeIpCheck_->isChecked();
-    updated.serveStale = serveStaleCheck_->isChecked();
-    updated.parallelQuery = parallelQueryCheck_->isChecked();
-    updated.directExpectedIps = directExpectedIpsEdit_->text().trimmed();
-    updated.dnsHosts = dnsHostsEdit_->toPlainText().trimmed();
+    if (dnsSettingsPage_ != nullptr) {
+        dnsSettingsPage_->applyToConfig(updated);
+    }
 
     return updated;
 }
@@ -444,94 +421,9 @@ void SettingsDialog::setupUi()
     tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
     // === DNS Tab ===
     auto* dnsTab = new QWidget(this);
-    auto* dnsLayout = new QFormLayout(dnsTab);
-
-    remoteDnsEdit_ = new QLineEdit(dnsTab);
-    remoteDnsEdit_->setPlaceholderText(QStringLiteral("https://cloudflare-dns.com/dns-query"));
-
-    directDnsEdit_ = new QLineEdit(dnsTab);
-    directDnsEdit_->setPlaceholderText(QStringLiteral("https://dns.alidns.com/dns-query"));
-
-    bootstrapDnsEdit_ = new QLineEdit(dnsTab);
-    bootstrapDnsEdit_->setPlaceholderText(QStringLiteral("223.5.5.5"));
-
-    domainStrategyForFreedomCombo_ = new QComboBox(dnsTab);
-    domainStrategyForFreedomCombo_->setEditable(true);
-    domainStrategyForFreedomCombo_->addItems({
-        QString(),
-        QStringLiteral("AsIs"),
-        QStringLiteral("IPIfNonMatch"),
-        QStringLiteral("IPOnDemand"),
-        QStringLiteral("PreferIPv4"),
-        QStringLiteral("PreferIPv6"),
-        QStringLiteral("PreferIPv4v6"),
-        QStringLiteral("PreferIPv6v4"),
-        QStringLiteral("OnlyIPv4"),
-        QStringLiteral("OnlyIPv6")
-    });
-
-    domainStrategyForProxyCombo_ = new QComboBox(dnsTab);
-    domainStrategyForProxyCombo_->setEditable(true);
-    domainStrategyForProxyCombo_->addItems({
-        QString(),
-        QStringLiteral("AsIs"),
-        QStringLiteral("IPIfNonMatch"),
-        QStringLiteral("IPOnDemand"),
-        QStringLiteral("PreferIPv4"),
-        QStringLiteral("PreferIPv6"),
-        QStringLiteral("PreferIPv4v6"),
-        QStringLiteral("PreferIPv6v4"),
-        QStringLiteral("OnlyIPv4"),
-        QStringLiteral("OnlyIPv6")
-    });
-
-    useSystemHostsCheck_ = new QCheckBox(tr("Use system hosts file"), dnsTab);
-    addCommonHostsCheck_ = new QCheckBox(tr("Add common hosts (google, github, etc.)"), dnsTab);
-    blockBindingQueryCheck_ = new QCheckBox(tr("Block binding query"), dnsTab);
-    fakeIpCheck_ = new QCheckBox(tr("Enable FakeIP"), dnsTab);
-    fakeIpCheck_->setObjectName(QStringLiteral("dnsFakeIpCheck"));
-    globalFakeIpCheck_ = new QCheckBox(tr("Global FakeIP"), dnsTab);
-    globalFakeIpCheck_->setObjectName(QStringLiteral("dnsGlobalFakeIpCheck"));
-    serveStaleCheck_ = new QCheckBox(tr("Serve stale DNS cache"), dnsTab);
-    parallelQueryCheck_ = new QCheckBox(tr("Parallel DNS query"), dnsTab);
-
-    directExpectedIpsEdit_ = new QLineEdit(dnsTab);
-    directExpectedIpsEdit_->setPlaceholderText(QStringLiteral("Comma-separated IPs"));
-
-    dnsHostsEdit_ = new QTextEdit(dnsTab);
-    dnsHostsEdit_->setTabChangesFocus(true);
-    dnsHostsEdit_->setMaximumHeight(120);
-    dnsHostsEdit_->setPlaceholderText(QStringLiteral("domain ip\nexample.com 1.2.3.4"));
-    AppTheme::applyCompactFont({
-        remoteDnsEdit_,
-        directDnsEdit_,
-        bootstrapDnsEdit_,
-        domainStrategyForFreedomCombo_,
-        domainStrategyForProxyCombo_,
-        useSystemHostsCheck_,
-        addCommonHostsCheck_,
-        blockBindingQueryCheck_,
-        fakeIpCheck_,
-        globalFakeIpCheck_,
-        serveStaleCheck_,
-        parallelQueryCheck_,
-        directExpectedIpsEdit_,
-        dnsHostsEdit_});
-
-    dnsLayout->addRow(tr("Remote DNS"), remoteDnsEdit_);
-    dnsLayout->addRow(tr("Direct DNS"), directDnsEdit_);
-    dnsLayout->addRow(tr("Bootstrap DNS"), bootstrapDnsEdit_);
-    dnsLayout->addRow(tr("Domain Strategy (Freedom)"), domainStrategyForFreedomCombo_);
-    dnsLayout->addRow(tr("Domain Strategy (Proxy)"), domainStrategyForProxyCombo_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, useSystemHostsCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, addCommonHostsCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, blockBindingQueryCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, fakeIpCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, globalFakeIpCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, serveStaleCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, parallelQueryCheck_);
-    dnsLayout->addRow(tr("Direct Expected IPs"), directExpectedIpsEdit_);
-    dnsLayout->addRow(tr("DNS Hosts"), dnsHostsEdit_);
+    auto* dnsLayout = new QVBoxLayout(dnsTab);
+    dnsSettingsPage_ = new DnsSettingsPageWidget(dnsTab);
+    dnsLayout->addWidget(dnsSettingsPage_);
 
     // === Settings Pages ===
     settingsTabBar_ = new SettingsTabBar(this);
@@ -595,9 +487,6 @@ void SettingsDialog::setupUi()
     connect(enableStatisticsCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
-    connect(fakeIpCheck_, &QCheckBox::toggled, this, [this](bool) {
-        updateFieldState();
-    });
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
@@ -647,11 +536,6 @@ void SettingsDialog::updateFieldState()
     }
     if (coreSettingsPage_ != nullptr) {
         coreSettingsPage_->setTunOptionsEnabled(tunEnabled);
-    }
-
-    const bool fakeIpEnabled = fakeIpCheck_ != nullptr && fakeIpCheck_->isChecked();
-    if (globalFakeIpCheck_ != nullptr) {
-        globalFakeIpCheck_->setEnabled(fakeIpEnabled);
     }
 }
 

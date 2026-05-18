@@ -48,6 +48,7 @@ private slots:
     void routingPageShowsExplicitEmptyStateWithoutBaseRoutes();
     void settingsDialogUsesCompactUiFontBaseline();
     void fakeIpToggleControlsGlobalFakeIpCheckbox();
+    void dnsPageRoundTripsFields();
     void subscriptionTableUsesServerTableStyle();
     void subscriptionPageRoundTripsSelectedRowsAndItems();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
@@ -739,6 +740,79 @@ void SettingsDialogTests::fakeIpToggleControlsGlobalFakeIpCheckbox()
 
     fakeIpCheck->setChecked(false);
     QVERIFY(!globalFakeIpCheck->isEnabled());
+}
+
+void SettingsDialogTests::dnsPageRoundTripsFields()
+{
+    Config config;
+    config.remoteDns = QStringLiteral("https://one.example/dns-query");
+    config.directDns = QStringLiteral("https://two.example/dns-query");
+    config.bootstrapDns = QStringLiteral("1.1.1.1");
+    config.domainStrategyForFreedom = QStringLiteral("PreferIPv6");
+    config.domainStrategyForProxy = QStringLiteral("PreferIPv4");
+    config.useSystemHosts = true;
+    config.addCommonHosts = true;
+    config.blockBindingQuery = true;
+    config.fakeIp = true;
+    config.globalFakeIp = true;
+    config.serveStale = true;
+    config.parallelQuery = true;
+    config.directExpectedIps = QStringLiteral("geoip:private");
+    config.dnsHosts = QStringLiteral("example.com 1.2.3.4");
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* remoteDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsRemoteDnsEdit"));
+    auto* freedomCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsDomainStrategyForFreedomCombo"));
+    auto* proxyCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsDomainStrategyForProxyCombo"));
+    auto* directExpectedIpsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsDirectExpectedIpsEdit"));
+    auto* dnsHostsEdit = dialog.findChild<QTextEdit*>(QStringLiteral("settingsDnsHostsEdit"));
+    auto* useSystemHostsCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsUseSystemHostsCheck"));
+    auto* addCommonHostsCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsAddCommonHostsCheck"));
+    auto* blockBindingQueryCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsBlockBindingQueryCheck"));
+    auto* fakeIpCheck = dialog.findChild<QCheckBox*>(QStringLiteral("dnsFakeIpCheck"));
+    auto* globalFakeIpCheck = dialog.findChild<QCheckBox*>(QStringLiteral("dnsGlobalFakeIpCheck"));
+    QVERIFY(remoteDnsEdit != nullptr);
+    QVERIFY(freedomCombo != nullptr);
+    QVERIFY(proxyCombo != nullptr);
+    QVERIFY(directExpectedIpsEdit != nullptr);
+    QVERIFY(dnsHostsEdit != nullptr);
+    QVERIFY(useSystemHostsCheck != nullptr);
+    QVERIFY(addCommonHostsCheck != nullptr);
+    QVERIFY(blockBindingQueryCheck != nullptr);
+    QVERIFY(fakeIpCheck != nullptr);
+    QVERIFY(globalFakeIpCheck != nullptr);
+
+    QCOMPARE(remoteDnsEdit->text(), QStringLiteral("https://one.example/dns-query"));
+    QCOMPARE(freedomCombo->currentText(), QStringLiteral("PreferIPv6"));
+    QCOMPARE(proxyCombo->currentText(), QStringLiteral("PreferIPv4"));
+    QVERIFY(useSystemHostsCheck->isChecked());
+    QVERIFY(addCommonHostsCheck->isChecked());
+    QVERIFY(blockBindingQueryCheck->isChecked());
+    QVERIFY(fakeIpCheck->isChecked());
+    QVERIFY(globalFakeIpCheck->isChecked());
+    QCOMPARE(directExpectedIpsEdit->text(), QStringLiteral("geoip:private"));
+    QCOMPARE(dnsHostsEdit->toPlainText(), QStringLiteral("example.com 1.2.3.4"));
+
+    remoteDnsEdit->setText(QStringLiteral("https://changed.example/dns-query"));
+    freedomCombo->setCurrentText(QStringLiteral("OnlyIPv4"));
+    proxyCombo->setCurrentText(QStringLiteral("OnlyIPv6"));
+    useSystemHostsCheck->setChecked(false);
+    addCommonHostsCheck->setChecked(false);
+    blockBindingQueryCheck->setChecked(false);
+    directExpectedIpsEdit->setText(QStringLiteral("1.2.3.0/24"));
+    dnsHostsEdit->setPlainText(QStringLiteral("full:full.example.com 5.6.7.8"));
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.remoteDns, QStringLiteral("https://changed.example/dns-query"));
+    QCOMPARE(updated.domainStrategyForFreedom, QStringLiteral("OnlyIPv4"));
+    QCOMPARE(updated.domainStrategyForProxy, QStringLiteral("OnlyIPv6"));
+    QVERIFY(!updated.useSystemHosts);
+    QVERIFY(!updated.addCommonHosts);
+    QVERIFY(!updated.blockBindingQuery);
+    QCOMPARE(updated.directExpectedIps, QStringLiteral("1.2.3.0/24"));
+    QCOMPARE(updated.dnsHosts, QStringLiteral("full:full.example.com 5.6.7.8"));
 }
 
 void SettingsDialogTests::subscriptionTableUsesServerTableStyle()

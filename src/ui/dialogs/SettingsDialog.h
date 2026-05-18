@@ -18,6 +18,7 @@ class QPushButton;
 class QWidget;
 
 #include "ui/dialogs/CoreSettingsPageWidget.h"
+#include "ui/dialogs/DnsSettingsPageWidget.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 
@@ -76,21 +77,6 @@ private:
     QComboBox* tunStackCombo_ = nullptr;
     QCheckBox* tunEnableIPv6AddressCheck_ = nullptr;
     QLineEdit* tunIcmpRoutingEdit_ = nullptr;
-    // DNS tab
-    QLineEdit* remoteDnsEdit_ = nullptr;
-    QLineEdit* directDnsEdit_ = nullptr;
-    QLineEdit* bootstrapDnsEdit_ = nullptr;
-    QComboBox* domainStrategyForFreedomCombo_ = nullptr;
-    QComboBox* domainStrategyForProxyCombo_ = nullptr;
-    QCheckBox* useSystemHostsCheck_ = nullptr;
-    QCheckBox* addCommonHostsCheck_ = nullptr;
-    QCheckBox* blockBindingQueryCheck_ = nullptr;
-    QCheckBox* fakeIpCheck_ = nullptr;
-    QCheckBox* globalFakeIpCheck_ = nullptr;
-    QCheckBox* serveStaleCheck_ = nullptr;
-    QCheckBox* parallelQueryCheck_ = nullptr;
-    QLineEdit* directExpectedIpsEdit_ = nullptr;
-    QTextEdit* dnsHostsEdit_ = nullptr;
     QPushButton* restoreBackupButton_ = nullptr;
     QDialogButtonBox* buttonBox_ = nullptr;
     bool restoreBackupRequested_ = false;
@@ -105,4 +91,5 @@ private:
     SubscriptionSettingsPageWidget* subscriptionSettingsPage_ = nullptr;
     RoutingSettingsPageWidget* routingSettingsPage_ = nullptr;
     CoreSettingsPageWidget* coreSettingsPage_ = nullptr;
+    DnsSettingsPageWidget* dnsSettingsPage_ = nullptr;
 };
