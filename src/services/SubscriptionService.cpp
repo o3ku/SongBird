@@ -7,38 +7,6 @@
 #include <QUuid>
 
 namespace {
-QList<VmessItem> deduplicateSubscriptionServersByUuid(const QList<VmessItem>& items)
-{
-    QList<VmessItem> deduplicated;
-    QSet<QString> seenKeys;
-
-    for (const VmessItem& item : items) {
-        const QString uuid = item.id.trimmed().toLower();
-        const QString endpointKey = item.address.trimmed().toLower()
-            + QLatin1Char(':') + QString::number(item.port)
-            + QLatin1Char('|') + item.network.trimmed().toLower()
-            + QLatin1Char('|') + item.headerType.trimmed().toLower()
-            + QLatin1Char('|') + item.requestHost.trimmed().toLower()
-            + QLatin1Char('|') + item.path.trimmed().toLower()
-            + QLatin1Char('|') + item.streamSecurity.trimmed().toLower()
-            + QLatin1Char('|') + item.sni.trimmed().toLower()
-            + QLatin1Char('|') + item.flow.trimmed().toLower()
-            + QLatin1Char('|') + item.security.trimmed().toLower();
-        const QString dedupKey = uuid.isEmpty()
-            ? endpointKey
-            : (uuid + QLatin1Char('@') + endpointKey);
-
-        if (seenKeys.contains(dedupKey)) {
-            continue;
-        }
-
-        seenKeys.insert(dedupKey);
-        deduplicated.append(item);
-    }
-
-    return deduplicated;
-}
-
 bool hasServerWithIndexId(const QList<VmessItem>& servers, const QString& indexId)
 {
     if (indexId.trimmed().isEmpty()) {
@@ -188,7 +156,6 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         });
     config.servers.erase(newEnd, config.servers.end());
 
-    items = deduplicateSubscriptionServersByUuid(items);
     QHash<QString, QList<VmessItem>> reusableServersByKey;
     for (const VmessItem& oldItem : oldSubscriptionServers) {
         reusableServersByKey[serverReuseKey(oldItem)].append(oldItem);

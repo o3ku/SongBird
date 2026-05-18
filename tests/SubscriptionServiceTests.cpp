@@ -66,7 +66,7 @@ private slots:
     void testDisableSubscriptionClearsMainSelectedSubId();
     void testEnableSubscriptionNotFound();
     void testEnableSubscriptionEmptyId();
-    void testReplaceSubscriptionServersDeduplicatesByUuid();
+    void testReplaceSubscriptionServersKeepsDuplicateServers();
     void testReplaceSubscriptionServersClearsOldServers();
     void testReplaceSubscriptionServersReusesIndexIdForMatchingServer();
     void testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings();
@@ -342,7 +342,7 @@ void SubscriptionServiceTests::testEnableSubscriptionEmptyId()
 
 // -- Replace subscription servers deduplicates by UUID (case-insensitive, trimmed) --
 
-void SubscriptionServiceTests::testReplaceSubscriptionServersDeduplicatesByUuid()
+void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsDuplicateServers()
 {
     MockConfigRepository repo;
     SubscriptionService service(repo);
@@ -362,13 +362,13 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersDeduplicatesByUuid(
         config, QStringLiteral("sub-1"), newServers);
 
     QVERIFY(result.success);
-    // 3 servers: uuid-abc (first), uuid-def, empty-uuid one
+    // Deduplication is temporarily disabled during subscription updates.
     int sub1Count = 0;
     for (const auto& s : config.servers) {
         if (s.subId == QStringLiteral("sub-1"))
             ++sub1Count;
     }
-    QCOMPARE(sub1Count, 3);
+    QCOMPARE(sub1Count, 4);
 
     // Each server should have been assigned a unique indexId
     QSet<QString> indexIds;
@@ -379,7 +379,7 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersDeduplicatesByUuid(
             indexIds.insert(s.indexId);
         }
     }
-    QCOMPARE(indexIds.size(), 3);
+    QCOMPARE(indexIds.size(), 4);
 }
 
 // -- Replace subscription servers removes old servers for that sub --
