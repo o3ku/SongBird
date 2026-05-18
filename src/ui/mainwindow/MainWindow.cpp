@@ -842,22 +842,34 @@ void MainWindow::setCoreRunning(bool enabled, bool pending)
     updateWindowTitle();
 }
 
-void MainWindow::updateCoreToggleAction()
+bool MainWindow::isProxyCheckedState() const
 {
-    if (coreToggleAction_ == nullptr) {
+    return coreRunning_ && systemProxyApplied_ && !coreTransitionPending_;
+}
+
+bool MainWindow::isProxyUncheckedState() const
+{
+    return !coreProcessRunning_ && !coreRunning_ && !systemProxyApplied_ && !coreTransitionPending_;
+}
+
+void MainWindow::updateProxyToggleAction()
+{
+    if (proxyToggleAction_ == nullptr) {
         return;
     }
 
-    coreToggleAction_->setText(tr("START"));
-    coreToggleAction_->setCheckable(true);
-    coreToggleAction_->setChecked(coreRunning_ && !coreTransitionPending_);
+    proxyToggleAction_->setText(tr("PROXY"));
+    proxyToggleAction_->setCheckable(true);
+    proxyToggleAction_->setChecked(isProxyCheckedState());
 
-    QString toolTip = tr("Start or stop the core.");
+    QString toolTip = tr("Enable or disable proxy.");
     const ServerTableRow* currentActiveServer = activeServer();
     if (coreTransitionPending_) {
-        toolTip = coreProcessRunning_
-            ? tr("Core start/stop is in progress.")
-            : tr("Core start is in progress.");
+        toolTip = tr("Proxy state transition is in progress.");
+    } else if (isProxyCheckedState()) {
+        toolTip = tr("Disable system proxy and stop the running core.");
+    } else if (!isProxyUncheckedState()) {
+        toolTip = tr("Proxy state is synchronizing. Wait until the core and system proxy reach the same target state.");
     } else if (currentActiveServer == nullptr) {
         toolTip = tr("No available server. Add or import a server first.");
     } else {
@@ -875,31 +887,31 @@ void MainWindow::updateCoreToggleAction()
         activeServerConfig.testResult = currentActiveServer->testResult;
         activeServerConfig.subId = currentActiveServer->subId;
         activeServerConfig.sort = currentActiveServer->sort;
-        const CoreType requiredCore = resolveSelectedCoreType(configForCoreSelection, activeServerConfig, existingCoreTypes_);
+        const CoreType requiredCore =
+            resolveSelectedCoreType(configForCoreSelection, activeServerConfig, existingCoreTypes_);
         if (!existingCoreTypes_.contains(requiredCore)) {
             toolTip = tr("No compatible %1 core is installed for the active server \"%2\".")
                           .arg(coreTypeDisplayName(requiredCore))
                           .arg(currentActiveServer->remarks.trimmed().isEmpty()
                                    ? tr("Unnamed server")
                                    : currentActiveServer->remarks.trimmed());
-        } else if (coreProcessRunning_) {
-            toolTip = tr("Stop the running core.");
         } else {
-            toolTip = tr("Start the core with the active server.");
+            toolTip = tr("Start the core with the active server and enable system proxy.");
         }
     }
-    coreToggleAction_->setToolTip(toolTip);
+    proxyToggleAction_->setToolTip(toolTip);
 }
 
-void MainWindow::updateProxyToggleAction()
+void MainWindow::updateTunToggleAction()
 {
-    if (proxyToggleAction_ == nullptr) {
+    if (tunToggleAction_ == nullptr) {
         return;
     }
 
-    proxyToggleAction_->setText(tr("PROXY"));
-    proxyToggleAction_->setCheckable(true);
-    proxyToggleAction_->setChecked(systemProxyApplied_);
+    tunToggleAction_->setText(tr("TUN"));
+    tunToggleAction_->setCheckable(true);
+    tunToggleAction_->setChecked(tunEnabled_);
+    tunToggleAction_->setToolTip(tr("Enable or disable TUN mode."));
 }
 
 void MainWindow::setCurrentServerName(const QString& name)
@@ -975,6 +987,14 @@ void MainWindow::setBackgroundTaskDescription(const QString& description)
     updateStatusIndicators();
 }
 
+void MainWindow::setTunEnabled(bool enabled)
+{
+    tunEnabled_ = enabled;
+    updateActionState();
+    updateStatusIndicators();
+    updateWindowTitle();
+}
+
 void MainWindow::restoreUiState(const Config& config)
 {
     const QSize restoredSize(
@@ -995,10 +1015,11 @@ void MainWindow::restoreUiState(const Config& config)
     if (qrPanel_ != nullptr) {
         qrPanel_->setVisible(qrPreviewVisible_);
     }
-    coreProcessRunning_ = config.mainCoreRunning;
-    coreRunning_ = config.mainCoreRunning;
+    coreProcessRunning_ = false;
+    coreRunning_ = false;
     coreTransitionPending_ = false;
-    systemProxyApplied_ = config.mainProxyEnabled;
+    systemProxyApplied_ = false;
+    tunEnabled_ = config.tunModeItem.enableTun;
     updateActionState();
     updateStatusIndicators();
     updateWindowTitle();
@@ -1059,8 +1080,6 @@ void MainWindow::captureUiState(Config& config) const
     config.mainSelectedSubId = persistedSubscriptionSelectionId();
     config.mainServerLogSplitPercent = captureSplitPercent(rootSplitter_, serverLogSplitPercent_);
     config.mainServerQrSplitPercent = captureSplitPercent(topSplitter_, serverQrSplitPercent_);
-    config.mainCoreRunning = coreRunning_;
-    config.mainProxyEnabled = systemProxyApplied_;
 }
 
 bool MainWindow::selectSubscriptionTab(const QString& selectionId)
@@ -1225,15 +1244,15 @@ void MainWindow::updateActionState()
         updateCurrentSubscriptionShortcutAction_->setEnabled(canStartTask);
     }
 
-    updateCoreToggleAction();
-    const bool startToggleEnabled = hasServers && !coreTransitionPending_;
-    if (coreToggleAction_ != nullptr) {
-        coreToggleAction_->setEnabled(startToggleEnabled);
-    }
-
     updateProxyToggleAction();
     if (proxyToggleAction_ != nullptr) {
-        proxyToggleAction_->setEnabled(coreProcessRunning_ && !coreTransitionPending_);
+        const bool proxyStable = isProxyCheckedState() || isProxyUncheckedState();
+        proxyToggleAction_->setEnabled(hasServers && proxyStable);
+    }
+
+    updateTunToggleAction();
+    if (tunToggleAction_ != nullptr) {
+        tunToggleAction_->setEnabled(!coreTransitionPending_);
     }
 }
 
@@ -1845,12 +1864,12 @@ void MainWindow::setupToolbar()
     openSingBoxReleasePageAction_->setObjectName(QStringLiteral("openSingBoxReleasePageAction"));
     openGeoReleasePageAction_ = new QAction(tr("Open Geo Releases"), this);
     openGeoReleasePageAction_->setObjectName(QStringLiteral("openGeoReleasePageAction"));
-    coreToggleAction_ = new QAction(tr("START"), this);
-    coreToggleAction_->setObjectName(QStringLiteral("coreToggleAction"));
-    coreToggleAction_->setCheckable(true);
     proxyToggleAction_ = new QAction(tr("PROXY"), this);
     proxyToggleAction_->setObjectName(QStringLiteral("proxyToggleAction"));
     proxyToggleAction_->setCheckable(true);
+    tunToggleAction_ = new QAction(tr("TUN"), this);
+    tunToggleAction_->setObjectName(QStringLiteral("tunToggleAction"));
+    tunToggleAction_->setCheckable(true);
     clearStatisticsAction_ = new QAction(tr("Clear Statistics"), this);
     toggleQrPanelAction_ = new QAction(tr("Share"), this);
     toggleQrPanelAction_->setObjectName(QStringLiteral("toggleQrPanelAction"));
@@ -1936,17 +1955,17 @@ void MainWindow::setupToolbar()
 
     createToolbarActionButton(
         toolBar,
-        QStringLiteral("coreToggleButton"),
-        tr("START"),
-        loadToolbarIcon(QStringLiteral("restart.png")),
-        coreToggleAction_);
-    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
-    createToolbarActionButton(
-        toolBar,
         QStringLiteral("proxyToggleButton"),
         tr("PROXY"),
         loadToolbarIcon(QStringLiteral("option.png")),
         proxyToggleAction_);
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
+    createToolbarActionButton(
+        toolBar,
+        QStringLiteral("tunToggleButton"),
+        tr("TUN"),
+        loadToolbarIcon(QStringLiteral("server.png")),
+        tunToggleAction_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
 
     routingModeCombo_ = new StyledComboBox(toolBar);
@@ -1965,8 +1984,8 @@ void MainWindow::setupToolbar()
         loadToolbarIcon(QStringLiteral("share.png")),
         toggleQrPanelAction_);
 
-    updateCoreToggleAction();
     updateProxyToggleAction();
+    updateTunToggleAction();
     updateQrPanelActionText();
 }
 
@@ -2424,24 +2443,22 @@ void MainWindow::setupConnections()
         this,
         &MainWindow::openSingBoxReleasePageRequested);
     connect(openGeoReleasePageAction_, &QAction::triggered, this, &MainWindow::openGeoReleasePageRequested);
-    connect(coreToggleAction_, &QAction::triggered, this, [this]() {
-        if (coreTransitionPending_) {
-            return;
-        }
-        if (coreRunning_) {
-            emit stopCoreRequested();
-            return;
-        }
-
-        emit startCoreRequested();
-    });
     connect(proxyToggleAction_, &QAction::triggered, this, [this]() {
-        if (systemProxyApplied_) {
+        if (isProxyCheckedState()) {
             emit disableSystemProxyRequested();
             return;
         }
 
-        emit enableSystemProxyRequested();
+        if (isProxyUncheckedState()) {
+            emit enableSystemProxyRequested();
+        }
+    });
+    connect(tunToggleAction_, &QAction::triggered, this, [this](bool checked) {
+        if (coreTransitionPending_) {
+            return;
+        }
+
+        emit tunEnabledChanged(checked);
     });
     connect(clearStatisticsAction_, &QAction::triggered, this, &MainWindow::clearStatisticsRequested);
     connect(toggleQrPanelAction_, &QAction::triggered, this, [this](bool checked) {

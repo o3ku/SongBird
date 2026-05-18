@@ -812,11 +812,9 @@ bool AppBootstrap::run()
         }
     }
     uiReady_ = true;
-    if (autoStartCore_ || skipCoreChecks_ || shouldStartCoreOnStartup()) {
-        QTimer::singleShot(0, mainWindow_.get(), [this]() {
-            startCoreOnStartup();
-        });
-    }
+    QTimer::singleShot(0, mainWindow_.get(), [this]() {
+        startCoreOnStartup();
+    });
 
     return true;
 }
@@ -967,6 +965,9 @@ void AppBootstrap::wireMainWindow()
     });
     QObject::connect(mainWindow_.get(), &MainWindow::disableSystemProxyRequested, mainWindow_.get(), [this]() {
         disableSystemProxy();
+    });
+    QObject::connect(mainWindow_.get(), &MainWindow::tunEnabledChanged, mainWindow_.get(), [this](bool enabled) {
+        setTunEnabled(enabled);
     });
     QObject::connect(mainWindow_.get(), &MainWindow::routingModeSelected, mainWindow_.get(), [this](int mode) {
         const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
@@ -1169,16 +1170,6 @@ void AppBootstrap::wireMainWindow()
 
     QObject::connect(mainWindow_.get(), &MainWindow::reloadConfigRequested, mainWindow_.get(), [this]() {
         reloadConfig();
-    });
-
-    QObject::connect(mainWindow_.get(), &MainWindow::startCoreRequested, mainWindow_.get(), [this]() {
-        if (reloadConfig()) {
-            startCore();
-        }
-    });
-
-    QObject::connect(mainWindow_.get(), &MainWindow::stopCoreRequested, mainWindow_.get(), [this]() {
-        stopCore(false);
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::clearStatisticsRequested, mainWindow_.get(), [this]() {
@@ -1530,7 +1521,7 @@ bool AppBootstrap::shouldStartCoreOnStartup() const
         return false;
     }
 
-    return config_.mainCoreRunning && resolveActiveServer() != nullptr;
+    return config_.mainProxyEnabled && resolveActiveServer() != nullptr;
 }
 
 namespace {
@@ -1546,16 +1537,15 @@ VmessItem runtimeServerForLaunchCore(const VmessItem& server, CoreType launchCor
 
 void AppBootstrap::startCoreOnStartup()
 {
-    if (skipCoreChecks_) {
-        appendResult(OperationResult::ok(QStringLiteral("Startup core checks skipped by command line.")));
+    if (config_.mainProxyEnabled) {
+        if (skipCoreChecks_) {
+            appendResult(OperationResult::ok(QStringLiteral("Startup core checks skipped by command line.")));
+        }
+        enableSystemProxy();
         return;
     }
 
-    if (!autoStartCore_ && !shouldStartCoreOnStartup()) {
-        return;
-    }
-
-    startCore(false, config_.mainProxyEnabled);
+    disableSystemProxy();
 }
 
 void AppBootstrap::persistUiState()
@@ -2421,6 +2411,7 @@ void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
 
     const int previousValue = config_.sysProxyType;
     config_.sysProxyType = toLegacySystemProxyModeValue(mode);
+    config_.mainProxyEnabled = mode == SystemProxyMode::ForcedChange;
     if (!serverService_->save(config_)) {
         config_.sysProxyType = previousValue;
         appendResult(OperationResult::fail(QStringLiteral("Failed to save the selected system proxy mode.")));
@@ -2453,7 +2444,7 @@ void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
 
     if (mode == SystemProxyMode::ForcedChange && !isCoreRunning()) {
         appendResult(OperationResult::ok(QStringLiteral("Starting the active core because Global system proxy mode was enabled.")));
-        startCore();
+        startCore(false, true);
         return;
     }
 
@@ -2509,35 +2500,7 @@ void AppBootstrap::enableSystemProxy()
 
 void AppBootstrap::disableSystemProxy()
 {
-    if (serverService_ == nullptr) {
-        appendResult(OperationResult::fail(QStringLiteral("System proxy mode cannot be changed before the configuration service is ready.")));
-        return;
-    }
-
-    const int previousValue = config_.sysProxyType;
-    config_.sysProxyType = toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear);
-    if (!serverService_->save(config_)) {
-        config_.sysProxyType = previousValue;
-        appendResult(OperationResult::fail(QStringLiteral("Failed to save the system proxy mode.")));
-        syncStatusIndicators();
-        return;
-    }
-
-    const bool success = systemProxyService_ == nullptr
-        || systemProxyService_->update(
-            SystemProxyMode::ForcedClear,
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol,
-            config_.pacUrl);
-    appendResult(success
-        ? OperationResult::ok(QStringLiteral("System proxy disabled."))
-        : OperationResult::fail(QStringLiteral("Failed to disable system proxy.")));
-    if (success) {
-        managedSystemProxyActive_ = false;
-    }
-    syncStatusIndicators();
+    setSystemProxyMode(SystemProxyMode::ForcedClear);
 }
 
 void AppBootstrap::toggleAutoRun()
@@ -2558,6 +2521,63 @@ void AppBootstrap::toggleAutoRun()
     }
 
     syncStatusIndicators();
+}
+
+void AppBootstrap::setTunEnabled(bool enabled)
+{
+    if (serverService_ == nullptr) {
+        appendResult(OperationResult::fail(QStringLiteral("TUN mode cannot be changed before the configuration service is ready.")));
+        syncStatusIndicators();
+        return;
+    }
+
+    if (config_.tunModeItem.enableTun == enabled) {
+        syncStatusIndicators();
+        return;
+    }
+
+    const Config previousConfig = config_;
+    Config updatedConfig = config_;
+    updatedConfig.tunModeItem.enableTun = enabled;
+
+    const TunSettingsSaveBehavior tunSaveBehavior = evaluateTunSettingsSaveBehavior(
+        previousConfig,
+        updatedConfig,
+        isWindowsPlatform(),
+        isProcessElevated(),
+        isCoreRunning());
+    const TunSettingsApplyDecision& tunDecision = tunSaveBehavior.applyDecision;
+
+    config_ = tunSaveBehavior.configToPersist;
+    if (!serverService_->save(config_)) {
+        config_ = previousConfig;
+        appendResult(OperationResult::fail(QStringLiteral("Failed to save the TUN mode setting.")));
+        syncWindow();
+        return;
+    }
+
+    appendResult(OperationResult::ok(
+        enabled
+            ? QStringLiteral("TUN mode enabled.")
+            : QStringLiteral("TUN mode disabled.")));
+
+    if (tunSaveBehavior.shouldPromptForAdminRestart) {
+        appendResult(OperationResult::fail(tunAdminRequiredSaveMessage()));
+    }
+
+    syncWindow();
+
+    if (tunDecision.shouldRestartRunningCore) {
+        restartCoreIfRunning(QCoreApplication::translate(
+            "AppBootstrap",
+            "Reloading core after applying TUN mode changes."));
+    } else {
+        syncStatusIndicators();
+    }
+
+    if (tunSaveBehavior.shouldPromptForAdminRestart) {
+        promptRestartAsAdministratorForTun();
+    }
 }
 
 void AppBootstrap::importFromClipboard()

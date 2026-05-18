@@ -1390,7 +1390,6 @@ void JsonConfigRepositoryTests::savePreservesUnknownRootFields()
 
     JsonConfigRepository repository(configPath);
     Config config = repository.load();
-    config.mainCoreRunning = true;
     QVERIFY(repository.save(config));
 
     QFile reloadedFile(configPath);
@@ -1445,7 +1444,6 @@ void JsonConfigRepositoryTests::loadDefaultsMainRuntimeStateToOffWhenMissing()
 
     const Config config = repository.load();
 
-    QVERIFY(!config.mainCoreRunning);
     QVERIFY(!config.mainProxyEnabled);
 }
 
@@ -1459,7 +1457,6 @@ void JsonConfigRepositoryTests::loadReadsMainRuntimeStateFromUiItem()
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
 
     QJsonObject uiItem;
-    uiItem.insert(QStringLiteral("mainCoreRunning"), true);
     uiItem.insert(QStringLiteral("mainProxyEnabled"), true);
 
     QJsonObject root;
@@ -1471,7 +1468,6 @@ void JsonConfigRepositoryTests::loadReadsMainRuntimeStateFromUiItem()
     JsonConfigRepository repository(configPath);
     const Config config = repository.load();
 
-    QVERIFY(config.mainCoreRunning);
     QVERIFY(config.mainProxyEnabled);
 }
 
@@ -1484,7 +1480,6 @@ void JsonConfigRepositoryTests::savePersistsMainRuntimeStateToUiItem()
     JsonConfigRepository repository(configPath);
 
     Config config = repository.load();
-    config.mainCoreRunning = true;
     config.mainProxyEnabled = true;
 
     QVERIFY(repository.save(config));
@@ -1492,7 +1487,6 @@ void JsonConfigRepositoryTests::savePersistsMainRuntimeStateToUiItem()
     JsonConfigRepository reloadedRepository(configPath);
     const Config reloaded = reloadedRepository.load();
 
-    QVERIFY(reloaded.mainCoreRunning);
     QVERIFY(reloaded.mainProxyEnabled);
 }
 

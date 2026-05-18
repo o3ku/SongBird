@@ -61,6 +61,7 @@ public:
     void setAutoRunEnabled(bool enabled);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
+    void setTunEnabled(bool enabled);
     void setCoreProcessRunning(bool running);
     void setCoreRunning(bool enabled, bool pending = false);
     void setCurrentServerName(const QString& name);
@@ -108,6 +109,7 @@ signals:
     void routingModeSelected(int mode);
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
+    void tunEnabledChanged(bool enabled);
     void toggleAutoRunRequested();
     void reloadConfigRequested();
     void restoreBackupRequested();
@@ -124,8 +126,6 @@ signals:
     void openXrayReleasePageRequested();
     void openSingBoxReleasePageRequested();
     void openGeoReleasePageRequested();
-    void startCoreRequested();
-    void stopCoreRequested();
     void clearStatisticsRequested();
     void hiddenToTray();
 
@@ -157,8 +157,8 @@ private:
     void updateStatusIndicators();
     void updateQrPreview();
     void updateQrPanelActionText();
-    void updateCoreToggleAction();
     void updateProxyToggleAction();
+    void updateTunToggleAction();
     void applyLogFilter();
     bool shouldStickLogViewToBottom(bool filterActive) const;
     void updateLogContextActions();
@@ -195,6 +195,8 @@ private:
     static QString describeRoutingMode(const RoutingItem& item, int index);
     QStringList buildShareLinks(const QList<const ServerTableRow*>& items) const;
     QStringList buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const;
+    bool isProxyCheckedState() const;
+    bool isProxyUncheckedState() const;
     const ServerTableRow* activeServer() const;
     const ServerTableRow* selectedServer() const;
     QList<const ServerTableRow*> selectedServers() const;
@@ -276,8 +278,8 @@ private:
     QAction* openXrayReleasePageAction_ = nullptr;
     QAction* openSingBoxReleasePageAction_ = nullptr;
     QAction* openGeoReleasePageAction_ = nullptr;
-    QAction* coreToggleAction_ = nullptr;
     QAction* proxyToggleAction_ = nullptr;
+    QAction* tunToggleAction_ = nullptr;
     QAction* clearStatisticsAction_ = nullptr;
     QAction* toggleQrPanelAction_ = nullptr;
     QAction* selectAllLogAction_ = nullptr;

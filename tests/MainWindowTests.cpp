@@ -47,10 +47,8 @@ private slots:
     void sharePanelShowsSelectedServerShareLink();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
-    void coreToggleButtonUsesCheckedStateAndDisablesDuringTransition();
-    void coreToggleButtonShowsNoServerTooltipWhenNoServersExist();
-    void coreToggleButtonShowsMissingCoreTooltipWhenRequiredCoreIsUnavailable();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
+    void tunToggleButtonUsesCheckedStateAndEmitsSignals();
     void restoreAndCaptureUiStatePreservesRuntimeToggles();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
@@ -339,8 +337,8 @@ void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
 
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("reloadButton")) == nullptr);
     QVERIFY(window.findChild<QComboBox*>(QStringLiteral("systemProxyModeCombo")) == nullptr);
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("coreToggleButton")) != nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
+    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("tunToggleButton")) != nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
     QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
 }
@@ -359,14 +357,14 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     auto* toolBar = window.findChild<QToolBar*>(QStringLiteral("mainToolBar"));
     auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingButton"));
     auto* routingButton = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
     auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
     QVERIFY(toolBar != nullptr);
     QVERIFY(settingsButton != nullptr);
     QVERIFY(routingButton != nullptr);
-    QVERIFY(coreButton != nullptr);
     QVERIFY(proxyButton != nullptr);
+    QVERIFY(tunButton != nullptr);
     QVERIFY(routingCombo != nullptr);
     QCOMPARE(toolBar->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
 
@@ -377,8 +375,8 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     QCOMPARE(margins.bottom(), 2);
     QCOMPARE(settingsButton->height(), 28);
     QCOMPARE(routingButton->height(), 28);
-    QCOMPARE(coreButton->height(), 28);
     QCOMPARE(proxyButton->height(), 28);
+    QCOMPARE(tunButton->height(), 28);
     QCOMPARE(routingCombo->height(), 28);
 }
 
@@ -470,88 +468,11 @@ void MainWindowTests::qrCodeRendererRemovesQuietZone()
     QCOMPARE(image.pixelColor(0, image.height() - 1), QColor(Qt::black));
 }
 
-void MainWindowTests::coreToggleButtonUsesCheckedStateAndDisablesDuringTransition()
-{
-    MainWindow window;
-    Config config = createServerSelectionConfig();
-    window.setConfig(config);
-
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
-    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
-    QVERIFY(coreButton != nullptr);
-    QVERIFY(proxyButton != nullptr);
-    QCOMPARE(coreButton->text(), QStringLiteral("START"));
-    QVERIFY(!coreButton->isChecked());
-
-    QSignalSpy startSpy(&window, SIGNAL(startCoreRequested()));
-    QSignalSpy stopSpy(&window, SIGNAL(stopCoreRequested()));
-    QVERIFY(startSpy.isValid());
-    QVERIFY(stopSpy.isValid());
-
-    QVERIFY(window.findChild<QAction*>(QStringLiteral("coreToggleAction")) != nullptr);
-
-    coreButton->click();
-    QCoreApplication::processEvents();
-
-    QCOMPARE(startSpy.count(), 1);
-    QCOMPARE(stopSpy.count(), 0);
-    QVERIFY(coreButton->isEnabled());
-
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, true);
-    QCoreApplication::processEvents();
-    QCOMPARE(coreButton->text(), QStringLiteral("START"));
-    QVERIFY(!coreButton->isChecked());
-    QVERIFY(!coreButton->isEnabled());
-    QVERIFY(!proxyButton->isEnabled());
-
-    window.setCoreRunning(true, false);
-    QCoreApplication::processEvents();
-    QVERIFY(coreButton->isEnabled());
-    QVERIFY(coreButton->isChecked());
-    QVERIFY(proxyButton->isEnabled());
-
-    coreButton->click();
-    QCoreApplication::processEvents();
-
-    QCOMPARE(startSpy.count(), 1);
-    QCOMPARE(stopSpy.count(), 1);
-}
-
-void MainWindowTests::coreToggleButtonShowsNoServerTooltipWhenNoServersExist()
-{
-    MainWindow window;
-    window.setConfig(Config());
-
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
-    QVERIFY(coreButton != nullptr);
-    QVERIFY(!coreButton->isEnabled());
-    QCOMPARE(coreButton->toolTip(), QStringLiteral("No available server. Add or import a server first."));
-}
-
-void MainWindowTests::coreToggleButtonShowsMissingCoreTooltipWhenRequiredCoreIsUnavailable()
-{
-    MainWindow window;
-    Config config = createServerSelectionConfig();
-    config.coreTypeItems = {
-        CoreTypeItem{static_cast<int>(ConfigType::VMess), static_cast<int>(CoreType::Xray)}};
-    window.setConfig(config);
-    window.setExistingCoreTypes({CoreType::SingBox});
-
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
-    QVERIFY(coreButton != nullptr);
-    QVERIFY(coreButton->isEnabled());
-    QVERIFY(coreButton->toolTip().contains(QStringLiteral("No compatible Xray core is installed")));
-    QVERIFY(coreButton->toolTip().contains(QStringLiteral("First")));
-}
-
 void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
 
     QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
@@ -570,6 +491,8 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(enableSpy.count(), 1);
 
     window.setProxyEnabled(true);
+    window.setCoreProcessRunning(true);
+    window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
     QVERIFY(proxyButton->isChecked());
@@ -577,31 +500,67 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     proxyButton->click();
     QCoreApplication::processEvents();
     QCOMPARE(disableSpy.count(), 1);
+
+    window.setProxyEnabled(false);
+    window.setCoreProcessRunning(true);
+    window.setCoreRunning(true, false);
+    QCoreApplication::processEvents();
+    QVERIFY(!proxyButton->isChecked());
+    QVERIFY(!proxyButton->isEnabled());
+}
+
+void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.tunModeItem.enableTun = false;
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    QSignalSpy tunSpy(&window, SIGNAL(tunEnabledChanged(bool)));
+    QVERIFY(tunSpy.isValid());
+
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
+    QVERIFY(tunButton != nullptr);
+    QCOMPARE(tunButton->text(), QStringLiteral("TUN"));
+    QVERIFY(!tunButton->isChecked());
+    QVERIFY(tunButton->isEnabled());
+
+    tunButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(tunSpy.count(), 1);
+    QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
+
+    window.setTunEnabled(true);
+    QCoreApplication::processEvents();
+    QVERIFY(tunButton->isChecked());
+
+    tunButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(tunSpy.count(), 2);
+    QCOMPARE(tunSpy.at(1).at(0).toBool(), false);
 }
 
 void MainWindowTests::restoreAndCaptureUiStatePreservesRuntimeToggles()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.mainCoreRunning = true;
     config.mainProxyEnabled = true;
 
     window.setConfig(config);
     window.restoreUiState(config);
     QCoreApplication::processEvents();
 
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
-    QVERIFY(coreButton != nullptr);
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
     QVERIFY(proxyButton != nullptr);
-    QVERIFY(coreButton->isChecked());
-    QVERIFY(proxyButton->isChecked());
+    QVERIFY(tunButton != nullptr);
+    QVERIFY(!proxyButton->isChecked());
 
     Config captured;
     window.captureUiState(captured);
 
-    QVERIFY(captured.mainCoreRunning);
-    QVERIFY(captured.mainProxyEnabled);
+    QVERIFY(!captured.mainProxyEnabled);
 }
 
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
@@ -1132,18 +1091,18 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     window.setExistingCoreTypes({CoreType::SingBox});
 
     auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
-    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     QVERIFY(coreStatusLabel != nullptr);
-    QVERIFY(coreButton != nullptr);
+    QVERIFY(proxyButton != nullptr);
 
     window.setCoreProcessRunning(true);
     window.setCoreRunning(false, false);
     QCoreApplication::processEvents();
 
     QCOMPARE(coreStatusLabel->text(), QStringLiteral("Core: Starting"));
-    QCOMPARE(coreButton->toolTip(), QStringLiteral("Stop the running core."));
-    QVERIFY(!coreButton->isChecked());
-    QVERIFY(coreButton->isEnabled());
+    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is synchronizing. Wait until the core and system proxy reach the same target state."));
+    QVERIFY(!proxyButton->isChecked());
+    QVERIFY(!proxyButton->isEnabled());
 }
 
 void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()

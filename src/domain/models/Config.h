@@ -45,7 +45,6 @@ struct Config {
     QString settingsRoutingRuleTabKey;
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
-    bool mainCoreRunning = false;
     bool mainProxyEnabled = false;
     QString speedPingTestUrl;
     QString defIeProxyExceptions;

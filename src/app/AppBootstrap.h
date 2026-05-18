@@ -101,6 +101,7 @@ private:
     void applySystemProxyModeOnExit(bool windowsShutdown);
     void enableSystemProxy();
     void disableSystemProxy();
+    void setTunEnabled(bool enabled);
     void toggleAutoRun();
     void importFromClipboard();
     void importClipboardTextAsync(const QString& text);
