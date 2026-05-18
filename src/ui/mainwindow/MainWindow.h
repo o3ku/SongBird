@@ -40,13 +40,21 @@ class MainWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
+    enum class TransientStatusPriority {
+        Important,
+        Routine
+    };
+
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
     void setConfig(const Config& config, const QList<ServerStatItem>& statistics = {});
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void appendLog(const QString& message);
-    void showTransientStatus(const QString& message, int timeoutMs = 5000);
+    void showTransientStatus(
+        const QString& message,
+        int timeoutMs = 5000,
+        TransientStatusPriority priority = TransientStatusPriority::Important);
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();
@@ -164,6 +172,8 @@ private:
     void copyCurrentSubscriptionUrlToClipboard();
     void copySelectedServerUrlsToClipboard();
     void clearTransientStatus();
+    void refreshTransientStatusLabel();
+    QString currentTransientStatusText() const;
     void applyDeferredUiState();
     void applyFrameAdjustedWindowMetrics();
     void updateWindowTitle();
@@ -281,7 +291,7 @@ private:
     QLineEdit* serverFilterEdit_ = nullptr;
     QLineEdit* logFilterEdit_ = nullptr;
     QToolButton* logStickToBottomButton_ = nullptr;
-    bool logStickToBottomEnabled_ = false;
+    bool logStickToBottomEnabled_ = true;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;

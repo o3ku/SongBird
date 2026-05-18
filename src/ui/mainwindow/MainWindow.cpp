@@ -77,12 +77,39 @@ constexpr int DefaultServerQrSplitPercent = 78;
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
 constexpr int ToolbarControlSpacing = 2;
+constexpr int ToolbarControlHeight = 28;
 constexpr int HeaderFilterMinimumCharacters = 14;
 constexpr int RoutingComboMinimumCharacters = 12;
 constexpr int QrPreviewPadding = 10;
 constexpr int ShareLinkHorizontalPadding = 6;
 constexpr int ShareLinkBottomPadding = 10;
 constexpr int ServerTableNoColumn = 0;
+
+QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& text, int availableWidth)
+{
+    static const QString ellipsis = QStringLiteral("...");
+    if (availableWidth <= 0 || fontMetrics.horizontalAdvance(text) <= availableWidth) {
+        return text;
+    }
+
+    if (fontMetrics.horizontalAdvance(ellipsis) >= availableWidth) {
+        return ellipsis;
+    }
+
+    int low = 0;
+    int high = text.size();
+    while (low < high) {
+        const int mid = (low + high + 1) / 2;
+        const QString candidate = text.left(mid) + ellipsis;
+        if (fontMetrics.horizontalAdvance(candidate) <= availableWidth) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    return text.left(low) + ellipsis;
+}
 
 void applySemanticState(QLabel* label, const QString& state)
 {
@@ -448,6 +475,7 @@ QToolButton* createToolbarMenuButton(
     button->setPopupMode(QToolButton::InstantPopup);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
+    button->setFixedHeight(ToolbarControlHeight);
     toolBar->addWidget(button);
     return button;
 }
@@ -466,6 +494,7 @@ QToolButton* createToolbarActionButton(
     button->setCheckable(action != nullptr && action->isCheckable());
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
+    button->setFixedHeight(ToolbarControlHeight);
 
     if (action != nullptr) {
         QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
@@ -686,8 +715,15 @@ void MainWindow::appendLog(const QString& message)
     logModel_->appendLine(line);
 }
 
-void MainWindow::showTransientStatus(const QString& message, int timeoutMs)
+void MainWindow::showTransientStatus(
+    const QString& message,
+    int timeoutMs,
+    TransientStatusPriority priority)
 {
+    if (priority == TransientStatusPriority::Routine) {
+        return;
+    }
+
     if (transientStatusTimer_ == nullptr) {
         transientStatusTimer_ = new QTimer(this);
         transientStatusTimer_->setSingleShot(true);
@@ -1049,14 +1085,12 @@ void MainWindow::onServerSelectionChanged()
     const ServerTableRow* item = selectedServer();
     if (item == nullptr) {
         lastSelectedServerId_.clear();
-        clearTransientStatus();
         updateQrPreview();
         updateActionState();
         return;
     }
 
     lastSelectedServerId_ = item->indexId;
-    showTransientStatus(tr("Selected %1").arg(item->remarks), 3000);
     updateQrPreview();
     updateActionState();
 }
@@ -1918,6 +1952,7 @@ void MainWindow::setupToolbar()
     routingModeCombo_ = new StyledComboBox(toolBar);
     routingModeCombo_->setObjectName(QStringLiteral("routingModeCombo"));
     AppTheme::applyCompactFont(routingModeCombo_);
+    routingModeCombo_->setFixedHeight(ToolbarControlHeight);
     updateContentSizedComboBox(routingModeCombo_, RoutingComboMinimumCharacters);
     configureStyledComboBox(routingModeCombo_);
     toolBar->addWidget(routingModeCombo_);
@@ -2105,6 +2140,7 @@ void MainWindow::setupServerView()
     logStickToBottomButton_->setToolTip(tr("Stick to bottom"));
     logStickToBottomButton_->setText(QString(QChar(0x2193)));
     logStickToBottomButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    logStickToBottomButton_->setChecked(true);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
     logFilterEdit_ = new QLineEdit(logHeaderRow);
@@ -2131,6 +2167,7 @@ void MainWindow::setupServerView()
     logView_->setWordWrap(false);
     logView_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     logView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    logView_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     logView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     logView_->setMouseTracking(true);
     logView_->setModel(logFilterModel_);
@@ -2201,6 +2238,9 @@ void MainWindow::setupDiagnosticsPanel()
     routingStatusLabel_->setToolTip(tr("Click to open settings."));
     routingStatusLabel_->installEventFilter(this);
     transientStatusLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    transientStatusLabel_->setMinimumWidth(0);
+    transientStatusLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    transientStatusLabel_->installEventFilter(this);
 
     statusBar()->addPermanentWidget(currentServerStatusLabel_);
     statusBar()->addPermanentWidget(routingStatusLabel_);
@@ -2258,7 +2298,7 @@ void MainWindow::setupConnections()
         const QString message =
             tr("Copied subscription content for %1 server(s) to the clipboard.").arg(shareLinks.size());
         appendLog(message);
-        showTransientStatus(message, 3000);
+        showTransientStatus(message, 3000, TransientStatusPriority::Routine);
     });
     connect(copySubscriptionUrlAction_, &QAction::triggered, this, &MainWindow::copyCurrentSubscriptionUrlToClipboard);
     connect(openCustomConfigAction_, &QAction::triggered, this, [this]() {
@@ -2793,7 +2833,10 @@ void MainWindow::copyCurrentSubscriptionUrlToClipboard()
     }
 
     appendLog(tr("Copied subscription URL to the clipboard."));
-    showTransientStatus(tr("Copied subscription URL to the clipboard."), 3000);
+    showTransientStatus(
+        tr("Copied subscription URL to the clipboard."),
+        3000,
+        TransientStatusPriority::Routine);
 }
 
 void MainWindow::copySelectedServerUrlsToClipboard()
@@ -2817,7 +2860,7 @@ void MainWindow::copySelectedServerUrlsToClipboard()
         ? tr("Copied %1 share link(s) to the clipboard.").arg(shareLinks.size())
         : tr("Copied %1 URL(s) to the clipboard.").arg(shareLinks.size());
     appendLog(message);
-    showTransientStatus(message, 3000);
+    showTransientStatus(message, 3000, TransientStatusPriority::Routine);
 }
 
 void MainWindow::applyDeferredUiState()
@@ -3150,12 +3193,7 @@ void MainWindow::updateStatusIndicators()
     }
 
     if (transientStatusLabel_ != nullptr) {
-        const QString statusText = !transientStatusMessage_.isEmpty()
-            ? transientStatusMessage_
-            : backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()
-            ? tr("Task: %1").arg(backgroundTaskDescription_)
-            : tr("Ready");
-        transientStatusLabel_->setText(statusText);
+        refreshTransientStatusLabel();
     }
 
 }
@@ -3233,6 +3271,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         updateQrPreview();
     }
 
+    if (watched == transientStatusLabel_ && event != nullptr
+        && (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
+        refreshTransientStatusLabel();
+    }
+
     if (watched == qrPlaceholder_ && event != nullptr && event->type() == QEvent::Resize) {
         updateQrPreview();
     }
@@ -3245,7 +3288,10 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
             const QString shareUrl = block.text().trimmed();
             if (!shareUrl.isEmpty()) {
                 QApplication::clipboard()->setText(shareUrl);
-                showTransientStatus(tr("Copied share URL to the clipboard."), 2000);
+                showTransientStatus(
+                    tr("Copied share URL to the clipboard."),
+                    2000,
+                    TransientStatusPriority::Routine);
                 return true;
             }
         }
@@ -3323,6 +3369,7 @@ void MainWindow::showEvent(QShowEvent* event)
     QTimer::singleShot(0, this, [this]() {
         updateRoutingModeOptions(configSnapshot_);
         updateQrPreview();
+        refreshTransientStatusLabel();
     });
     if (uiStateRestorePending_) {
         uiStateRestorePending_ = false;
@@ -3341,6 +3388,39 @@ void MainWindow::showEvent(QShowEvent* event)
     QTimer::singleShot(0, this, [this]() {
         restoreServerColumnWidths({});
     });
+}
+
+QString MainWindow::currentTransientStatusText() const
+{
+    if (!transientStatusMessage_.isEmpty()) {
+        return transientStatusMessage_;
+    }
+
+    if (backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()) {
+        return tr("Task: %1").arg(backgroundTaskDescription_);
+    }
+
+    return tr("Ready");
+}
+
+void MainWindow::refreshTransientStatusLabel()
+{
+    if (transientStatusLabel_ == nullptr) {
+        return;
+    }
+
+    const QString fullText = currentTransientStatusText();
+    QString visibleText = fullText;
+    const int availableWidth = transientStatusLabel_->contentsRect().width();
+    if (isVisible() && availableWidth > 0) {
+        visibleText = elideTextWithThreeDots(
+            transientStatusLabel_->fontMetrics(),
+            fullText,
+            availableWidth);
+    }
+
+    transientStatusLabel_->setText(visibleText);
+    transientStatusLabel_->setToolTip(visibleText == fullText ? QString() : fullText);
 }
 
 QString MainWindow::selectedServerId() const

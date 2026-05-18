@@ -69,6 +69,7 @@ private slots:
     void testReplaceSubscriptionServersDeduplicatesByUuid();
     void testReplaceSubscriptionServersClearsOldServers();
     void testReplaceSubscriptionServersReusesIndexIdForMatchingServer();
+    void testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings();
     void testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists();
     void testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstUpdatedServerWhenActiveServerRemoved();
     void testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstGlobalServerWhenSubscriptionBecomesEmpty();
@@ -452,6 +453,43 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersReusesIndexIdForMat
     QVERIFY(result.success);
     QCOMPARE(config.servers.size(), 1);
     QCOMPARE(config.servers[0].indexId, QStringLiteral("old-1"));
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings()
+{
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+
+    QList<VmessItem> replacement;
+
+    VmessItem wsServer = makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1"));
+    wsServer.network = QStringLiteral("ws");
+    wsServer.path = QStringLiteral("/ws-a");
+    wsServer.requestHost = QStringLiteral("cdn-a.example.com");
+
+    VmessItem grpcServer = makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1"));
+    grpcServer.network = QStringLiteral("grpc");
+    grpcServer.path = QStringLiteral("service-b");
+
+    replacement.append(wsServer);
+    replacement.append(grpcServer);
+
+    const auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), replacement);
+
+    QVERIFY(result.success);
+    QCOMPARE(config.servers.size(), 2);
+    QCOMPARE(config.servers[0].network, QStringLiteral("ws"));
+    QCOMPARE(config.servers[1].network, QStringLiteral("grpc"));
 }
 
 void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists()

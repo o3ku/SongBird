@@ -678,6 +678,7 @@ bool AppBootstrap::run()
             mainWindow_->setSpeedTestRunning(running);
         }
         if (!running) {
+            resetSpeedTestProgressState();
             if (speedTestResultsDirty_ && serverService_ != nullptr && !serverService_->save(config_)) {
                 appendResult(OperationResult::fail(QStringLiteral("Failed to save configuration after updating test results.")));
             }
@@ -691,7 +692,10 @@ bool AppBootstrap::run()
     QObject::connect(speedTestService_.get(), &SpeedTestService::logGenerated, mainWindow_.get(), [this](const QString& message) {
         if (mainWindow_ != nullptr) {
             mainWindow_->appendLog(message);
-            mainWindow_->showTransientStatus(message, 3000);
+            mainWindow_->showTransientStatus(
+                message,
+                3000,
+                MainWindow::TransientStatusPriority::Routine);
         }
     });
     QObject::connect(speedTestService_.get(), &SpeedTestService::testResultReady, mainWindow_.get(), [this](const QString& indexId, const QString& result) {
@@ -705,6 +709,11 @@ bool AppBootstrap::run()
             return;
         }
         speedTestResultsDirty_ = true;
+        if (speedTestTotalCount_ > 0) {
+            speedTestCompletedCount_ = qMin(speedTestCompletedCount_ + 1, speedTestTotalCount_);
+            speedTestProgressServerName_ = describeServer(findServerById(indexId));
+            syncBackgroundTaskState();
+        }
 
         if (mainWindow_ != nullptr) {
             mainWindow_->updateServerTestResult(indexId, result);
@@ -1305,6 +1314,18 @@ QString AppBootstrap::backgroundTaskDescription(BackgroundTaskKind kind) const
 {
     switch (kind) {
     case BackgroundTaskKind::SpeedTest:
+        if (speedTestTotalCount_ > 0) {
+            if (!speedTestProgressServerName_.trimmed().isEmpty() && speedTestCompletedCount_ > 0) {
+                return QCoreApplication::translate("AppBootstrap", "Testing %1 (%2/%3)")
+                    .arg(speedTestProgressServerName_.trimmed())
+                    .arg(speedTestCompletedCount_)
+                    .arg(speedTestTotalCount_);
+            }
+
+            return QCoreApplication::translate("AppBootstrap", "Running URL Test (%1/%2)")
+                .arg(speedTestCompletedCount_)
+                .arg(speedTestTotalCount_);
+        }
         return QCoreApplication::translate("AppBootstrap", "Running URL Test");
     case BackgroundTaskKind::SubscriptionUpdate:
         return QCoreApplication::translate("AppBootstrap", "Updating subscriptions");
@@ -1318,6 +1339,13 @@ QString AppBootstrap::backgroundTaskDescription(BackgroundTaskKind kind) const
     default:
         return {};
     }
+}
+
+void AppBootstrap::resetSpeedTestProgressState()
+{
+    speedTestTotalCount_ = 0;
+    speedTestCompletedCount_ = 0;
+    speedTestProgressServerName_.clear();
 }
 
 void AppBootstrap::finishBackgroundTask(BackgroundTaskKind kind)
@@ -2568,7 +2596,10 @@ void AppBootstrap::importClipboardTextAsync(const QString& text)
         "Importing clipboard content in the background...");
     if (mainWindow_ != nullptr) {
         mainWindow_->appendLog(startupMessage);
-        mainWindow_->showTransientStatus(startupMessage, 3000);
+        mainWindow_->showTransientStatus(
+            startupMessage,
+            3000,
+            MainWindow::TransientStatusPriority::Routine);
         mainWindow_->setSubscriptionUpdateRunning(true);
     }
     subscriptionUpdateRunning_ = true;
@@ -2637,7 +2668,10 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
             "AppBootstrap",
             "Importing subscription URLs from the clipboard in the background...");
         mainWindow_->appendLog(message);
-        mainWindow_->showTransientStatus(message, 3000);
+        mainWindow_->showTransientStatus(
+            message,
+            3000,
+            MainWindow::TransientStatusPriority::Routine);
     }
 
     for (auto& server : config_.servers) {
@@ -3028,7 +3062,8 @@ void AppBootstrap::runProxyAvailabilityCheck()
     QObject* uiContext = mainWindow_.get();
     mainWindow_->showTransientStatus(
         QCoreApplication::translate("AppBootstrap", "Running availability check in the background..."),
-        3000);
+        3000,
+        MainWindow::TransientStatusPriority::Routine);
 
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     QThread* thread = QThread::create([this, workerConfig, uiContext, lifetimeGuard]() {
@@ -3140,7 +3175,10 @@ void AppBootstrap::updateCore(
     const QString startupMessage = QCoreApplication::translate("AppBootstrap", "Starting %1 update...")
                                        .arg(coreTypeDisplayName(coreType));
     mainWindow_->appendLog(startupMessage);
-    mainWindow_->showTransientStatus(startupMessage, 3000);
+    mainWindow_->showTransientStatus(
+        startupMessage,
+        3000,
+        MainWindow::TransientStatusPriority::Routine);
 
     coreUpdateRunning_ = true;
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
@@ -3208,7 +3246,10 @@ void AppBootstrap::runCoreUpdateTask(
             }
 
             mainWindow_->appendLog(message);
-            mainWindow_->showTransientStatus(message, 0);
+            mainWindow_->showTransientStatus(
+                message,
+                0,
+                MainWindow::TransientStatusPriority::Routine);
             if (progressObserver) {
                 progressObserver(message);
             }
@@ -3272,7 +3313,10 @@ void AppBootstrap::finalizeCoreUpdate(
                 "Restarting the updated core...");
             if (mainWindow_ != nullptr) {
                 mainWindow_->appendLog(message);
-                mainWindow_->showTransientStatus(message, 0);
+                mainWindow_->showTransientStatus(
+                    message,
+                    0,
+                    MainWindow::TransientStatusPriority::Routine);
             }
             startCore();
         } else if (!result.success) {
@@ -3293,7 +3337,10 @@ void AppBootstrap::finalizeCoreUpdate(
             "Starting the downloaded core...");
         if (mainWindow_ != nullptr) {
             mainWindow_->appendLog(message);
-            mainWindow_->showTransientStatus(message, 0);
+            mainWindow_->showTransientStatus(
+                message,
+                0,
+                MainWindow::TransientStatusPriority::Routine);
         }
         startCore();
     }
@@ -3338,7 +3385,10 @@ void AppBootstrap::continuePendingCoreUpdate()
     const QString startupMessage = QCoreApplication::translate("AppBootstrap", "Starting %1 update...")
                                        .arg(coreTypeDisplayName(coreType));
     mainWindow_->appendLog(startupMessage);
-    mainWindow_->showTransientStatus(startupMessage, 3000);
+    mainWindow_->showTransientStatus(
+        startupMessage,
+        3000,
+        MainWindow::TransientStatusPriority::Routine);
 
     coreUpdateRunning_ = true;
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
@@ -3394,7 +3444,10 @@ void AppBootstrap::updateGeoResources()
     const QString title = QCoreApplication::translate("AppBootstrap", "Update Geo Files");
     const QString message = QCoreApplication::translate("AppBootstrap", "Updating Geo resources in the background...");
     mainWindow_->appendLog(message);
-    mainWindow_->showTransientStatus(message, 3000);
+    mainWindow_->showTransientStatus(
+        message,
+        3000,
+        MainWindow::TransientStatusPriority::Routine);
 
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     QThread* thread = QThread::create([this, targetDirectory, title, uiContext, lifetimeGuard]() {
@@ -3480,7 +3533,10 @@ void AppBootstrap::updateSubscriptionsByIds(
         : resolveActiveServer()->subId.trimmed();
     if (mainWindow_ != nullptr) {
         mainWindow_->appendLog(startupMessage);
-        mainWindow_->showTransientStatus(startupMessage, 3000);
+        mainWindow_->showTransientStatus(
+            startupMessage,
+            3000,
+            MainWindow::TransientStatusPriority::Routine);
     }
 
     // Clear test results as loading indicator.
@@ -3925,6 +3981,7 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
         return;
     }
 
+    resetSpeedTestProgressState();
     if (!tryBeginBackgroundTask(BackgroundTaskKind::SpeedTest)) {
         return;
     }
@@ -3960,10 +4017,15 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
     }
 
     if (!startResult.success) {
+        resetSpeedTestProgressState();
         finishBackgroundTask(BackgroundTaskKind::SpeedTest);
     }
 
     if (startResult.success) {
+        speedTestTotalCount_ = items.size();
+        speedTestCompletedCount_ = 0;
+        speedTestProgressServerName_.clear();
+        syncBackgroundTaskState();
         static const QString pending = QStringLiteral("...");
         QStringList pendingIds;
         for (const auto& item : items) {

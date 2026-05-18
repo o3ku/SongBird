@@ -14,9 +14,19 @@ QList<VmessItem> deduplicateSubscriptionServersByUuid(const QList<VmessItem>& it
 
     for (const VmessItem& item : items) {
         const QString uuid = item.id.trimmed().toLower();
+        const QString endpointKey = item.address.trimmed().toLower()
+            + QLatin1Char(':') + QString::number(item.port)
+            + QLatin1Char('|') + item.network.trimmed().toLower()
+            + QLatin1Char('|') + item.headerType.trimmed().toLower()
+            + QLatin1Char('|') + item.requestHost.trimmed().toLower()
+            + QLatin1Char('|') + item.path.trimmed().toLower()
+            + QLatin1Char('|') + item.streamSecurity.trimmed().toLower()
+            + QLatin1Char('|') + item.sni.trimmed().toLower()
+            + QLatin1Char('|') + item.flow.trimmed().toLower()
+            + QLatin1Char('|') + item.security.trimmed().toLower();
         const QString dedupKey = uuid.isEmpty()
-            ? (item.address.trimmed().toLower() + QLatin1Char(':') + QString::number(item.port))
-            : (uuid + QLatin1Char('@') + item.address.trimmed().toLower() + QLatin1Char(':') + QString::number(item.port));
+            ? endpointKey
+            : (uuid + QLatin1Char('@') + endpointKey);
 
         if (seenKeys.contains(dedupKey)) {
             continue;
@@ -158,6 +168,9 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     const QString& subscriptionId,
     QList<VmessItem> items)
 {
+    lastReplaceInputCount_ = items.size();
+    lastReplaceSavedCount_ = 0;
+
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
         return OperationResult::fail(QStringLiteral("Subscription id is required."));
@@ -198,6 +211,7 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         config.servers.append(item);
         newSubscriptionIndexIds.append(item.indexId);
     }
+    lastReplaceSavedCount_ = items.size();
 
     if (!hasServerWithIndexId(config.servers, previousCurrentIndexId)) {
         const bool currentBelongedToUpdatedSubscription = std::any_of(
@@ -228,6 +242,16 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     return OperationResult::ok(QStringLiteral("Subscription servers replaced."));
 }
 
+int SubscriptionService::lastReplaceInputCount() const
+{
+    return lastReplaceInputCount_;
+}
+
+int SubscriptionService::lastReplaceSavedCount() const
+{
+    return lastReplaceSavedCount_;
+}
+
 void SubscriptionService::normalizeSubscriptionIds(QList<SubItem>& items)
 {
     for (SubItem& item : items) {
@@ -243,12 +267,27 @@ QString SubscriptionService::serverReuseKey(const VmessItem& item)
         + QLatin1Char('|')
         + normalizedValue(item.address)
         + QLatin1Char('|')
-        + QString::number(item.port);
+        + QString::number(item.port)
+        + QLatin1Char('|')
+        + normalizedValue(item.network)
+        + QLatin1Char('|')
+        + normalizedValue(item.headerType)
+        + QLatin1Char('|')
+        + normalizedValue(item.requestHost)
+        + QLatin1Char('|')
+        + normalizedValue(item.path)
+        + QLatin1Char('|')
+        + normalizedValue(item.streamSecurity)
+        + QLatin1Char('|')
+        + normalizedValue(item.sni)
+        + QLatin1Char('|')
+        + normalizedValue(item.flow)
+        + QLatin1Char('|')
+        + normalizedValue(item.security);
 
     switch (item.configType) {
     case ConfigType::Shadowsocks:
-        return baseKey + QLatin1Char('|') + normalizedValue(item.security)
-            + QLatin1Char('|') + normalizedValue(item.id);
+        return baseKey + QLatin1Char('|') + normalizedValue(item.id);
     case ConfigType::Naive:
         return baseKey + QLatin1Char('|') + normalizedValue(item.username)
             + QLatin1Char('|') + normalizedValue(item.id);

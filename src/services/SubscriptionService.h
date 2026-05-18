@@ -18,6 +18,8 @@ public:
     OperationResult setSubscriptionEnabled(Config& config, const QString& subscriptionId, bool enabled);
     OperationResult removeSubscription(Config& config, const QString& subscriptionId);
     OperationResult replaceSubscriptionServers(Config& config, const QString& subscriptionId, QList<VmessItem> items);
+    int lastReplaceInputCount() const;
+    int lastReplaceSavedCount() const;
 
 private:
     static void normalizeSubscriptionIds(QList<SubItem>& items);
@@ -25,4 +27,6 @@ private:
     static QString normalizedValue(const QString& value);
 
     IConfigRepository& repository_;
+    int lastReplaceInputCount_ = 0;
+    int lastReplaceSavedCount_ = 0;
 };

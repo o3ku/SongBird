@@ -69,7 +69,10 @@ private slots:
     void currentServerStatusAppendsLocation();
     void currentServerStatusAppendsManualVerificationWarning();
     void coreStatusRemainsStartingUntilStrictActivation();
+    void serverSelectionDoesNotShowTransientStatusMessage();
+    void routineTransientStatusDoesNotOverrideStatusLabel();
     void transientStatusTemporarilyOverridesBackgroundTaskMessage();
+    void longTransientStatusUsesThreeDotsAndTooltip();
     void requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled();
     void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
@@ -354,7 +357,17 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     MainWindow window;
 
     auto* toolBar = window.findChild<QToolBar*>(QStringLiteral("mainToolBar"));
+    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingButton"));
+    auto* routingButton = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
+    auto* coreButton = window.findChild<QToolButton*>(QStringLiteral("coreToggleButton"));
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
     QVERIFY(toolBar != nullptr);
+    QVERIFY(settingsButton != nullptr);
+    QVERIFY(routingButton != nullptr);
+    QVERIFY(coreButton != nullptr);
+    QVERIFY(proxyButton != nullptr);
+    QVERIFY(routingCombo != nullptr);
     QCOMPARE(toolBar->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
 
     const QMargins margins = toolBar->contentsMargins();
@@ -362,6 +375,11 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     QCOMPARE(margins.top(), 2);
     QCOMPARE(margins.right(), 0);
     QCOMPARE(margins.bottom(), 2);
+    QCOMPARE(settingsButton->height(), 28);
+    QCOMPARE(routingButton->height(), 28);
+    QCOMPARE(coreButton->height(), 28);
+    QCOMPARE(proxyButton->height(), 28);
+    QCOMPARE(routingCombo->height(), 28);
 }
 
 void MainWindowTests::sharePanelShowsSelectedServerShareLink()
@@ -1128,6 +1146,48 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     QVERIFY(coreButton->isEnabled());
 }
 
+void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(transientStatusLabel != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    const QModelIndex secondIndex = serverView->model()->index(1, 0);
+    QVERIFY(secondIndex.isValid());
+    serverView->selectionModel()->select(
+        QItemSelection(secondIndex, secondIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
+}
+
+void MainWindowTests::routineTransientStatusDoesNotOverrideStatusLabel()
+{
+    MainWindow window;
+    window.setBackgroundTaskRunning(true);
+    window.setBackgroundTaskDescription(QStringLiteral("Updating subscriptions"));
+
+    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    QVERIFY(transientStatusLabel != nullptr);
+    const QString backgroundText = transientStatusLabel->text();
+    QCOMPARE(backgroundText, QStringLiteral("Task: Updating subscriptions"));
+
+    window.showTransientStatus(
+        QStringLiteral("Copied 1 URL(s) to the clipboard."),
+        50,
+        MainWindow::TransientStatusPriority::Routine);
+    QCOMPARE(transientStatusLabel->text(), backgroundText);
+}
+
 void MainWindowTests::transientStatusTemporarilyOverridesBackgroundTaskMessage()
 {
     MainWindow window;
@@ -1136,12 +1196,35 @@ void MainWindowTests::transientStatusTemporarilyOverridesBackgroundTaskMessage()
 
     auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
     QVERIFY(transientStatusLabel != nullptr);
-    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Task: Updating subscriptions"));
+    const QString backgroundText = transientStatusLabel->text();
+    QCOMPARE(backgroundText, QStringLiteral("Task: Updating subscriptions"));
 
     window.showTransientStatus(QStringLiteral("Copied 1 URL(s) to the clipboard."), 50);
     QCOMPARE(transientStatusLabel->text(), QStringLiteral("Copied 1 URL(s) to the clipboard."));
 
-    QTRY_COMPARE(transientStatusLabel->text(), QStringLiteral("Task: Updating subscriptions"));
+    QTRY_COMPARE(transientStatusLabel->text(), backgroundText);
+}
+
+void MainWindowTests::longTransientStatusUsesThreeDotsAndTooltip()
+{
+    MainWindow window;
+    window.resize(360, 640);
+    window.show();
+    QCoreApplication::processEvents();
+
+    const QString longMessage =
+        QStringLiteral("This is a deliberately long transient status message that should not fit in the status bar.");
+    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    QVERIFY(transientStatusLabel != nullptr);
+    transientStatusLabel->setFixedWidth(140);
+    QCoreApplication::processEvents();
+
+    window.showTransientStatus(longMessage, 0);
+    QCoreApplication::processEvents();
+
+    QVERIFY(transientStatusLabel->text().endsWith(QStringLiteral("...")));
+    QVERIFY(transientStatusLabel->text().size() < longMessage.size());
+    QCOMPARE(transientStatusLabel->toolTip(), longMessage);
 }
 
 void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()

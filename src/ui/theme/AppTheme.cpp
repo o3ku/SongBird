@@ -42,8 +42,8 @@ public:
             : tableView->property(kServerTableHoveredRowProperty).toInt();
         const bool hovered = !selected && hoveredRow == index.row();
         const QColor rowDividerColor(QStringLiteral("#e1e7ee"));
-        const QColor hoveredDividerColor(QStringLiteral("#9babc5"));
-        const QColor selectedDividerColor(QStringLiteral("#b0c4e3"));
+        const QColor hoveredDividerColor(QStringLiteral("#bccfc5"));
+        const QColor selectedDividerColor(QStringLiteral("#9eb5aa"));
         const QColor baseColor = tableView == nullptr
             ? QColor(QStringLiteral("#ffffff"))
             : tableView->palette().color(QPalette::Base);
@@ -51,9 +51,9 @@ public:
             ? QColor(QStringLiteral("#f9f9f9"))
             : tableView->palette().color(QPalette::AlternateBase);
         const QColor bgColor = selected
-            ? QColor(QStringLiteral("#c5dbfe"))
+            ? QColor(QStringLiteral("#e0ebe5"))
             : (hovered
-                    ? QColor(QStringLiteral("#f2f6fc"))
+                    ? QColor(QStringLiteral("#f2f6f3"))
                     : (((index.row() % 2) != 0) ? alternateBaseColor : baseColor));
 
         styledOption.state &= ~QStyle::State_HasFocus;
@@ -226,17 +226,18 @@ QString buildApplicationStyleSheet()
         "QTabBar#settingsTabBar, QTabBar#subscriptionTabBar, QTabWidget#routingCustomRuleTabs QTabBar { background: transparent; border: none; }"
         "QTabBar#settingsTabBar::tab, QTabBar#subscriptionTabBar::tab { background: transparent; color: #808080; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; }"
         "QTabBar#subscriptionTabBar::tab { padding-top: 9px; }"
-        "QTabBar#settingsTabBar::tab:selected, QTabBar#subscriptionTabBar::tab:selected { background: #8f99a6; color: #ffffff; }"
+        "QTabBar#settingsTabBar::tab:selected { background: #346f59; color: #ffffff; }"
+        "QTabBar#subscriptionTabBar::tab:selected { background: #346f59; color: #ffffff; }"
         "QTabBar#settingsTabBar::tab:hover:!selected, QTabBar#subscriptionTabBar::tab:hover:!selected { background: #dddddd; color: #222222; }"
         "QTabWidget#routingCustomRuleTabs QTabBar { background: transparent; border: 1px solid #bdbdbd; }"
         "QWidget[routingCustomRulePage=\"true\"] { background: #ffffff; border: none; border-left: 1px solid #bdbdbd; border-right: 1px solid #bdbdbd; border-bottom: 1px solid #bdbdbd; }"
         "QTabWidget#coreDetailTabs QTabBar { background: transparent; border: 1px solid #bdbdbd; }"
         "QTabWidget#coreDetailTabs QWidget[coreDetailPage=\"true\"] { background: #ffffff; border: none; border-left: 1px solid #bdbdbd; border-right: 1px solid #bdbdbd; border-bottom: 1px solid #bdbdbd; }"
         "QTabWidget#coreDetailTabs QTabBar::tab { background: transparent; color: #808080; font-weight: 400; padding: 6px 18px 4px 18px; margin: 0px 0px 1px 0px; border: none; border-bottom: 2px solid transparent; }"
-        "QTabWidget#coreDetailTabs QTabBar::tab:selected { color: #111111; border-bottom: 2px solid #111111; }"
+        "QTabWidget#coreDetailTabs QTabBar::tab:selected { color: #346f59; border-bottom: 2px solid #346f59; }"
         "QTabWidget#coreDetailTabs QTabBar::tab:hover:!selected { color: #222222; border-bottom: 2px solid #9f9f9f; }"
         "QTabWidget#routingCustomRuleTabs QTabBar::tab { background: transparent; color: #808080; font-weight: 400; padding: 6px 18px 4px 18px; margin: 0px 0px 1px 0px; border: none; border-bottom: 2px solid transparent; }"
-        "QTabWidget#routingCustomRuleTabs QTabBar::tab:selected { color: #111111; border-bottom: 2px solid #111111; }"
+        "QTabWidget#routingCustomRuleTabs QTabBar::tab:selected { color: #346f59; border-bottom: 2px solid #346f59; }"
         "QTabWidget#routingCustomRuleTabs QTabBar::tab:hover:!selected { color: #222222; border-bottom: 2px solid #9f9f9f; }"
         "#serverHeaderRow { background: #f4f4f4; }"
         "#serverHeaderRow { border-bottom: 1px solid #d0d0d0; }"
@@ -245,10 +246,10 @@ QString buildApplicationStyleSheet()
         "QLineEdit#serverFilterEdit:focus, QLineEdit#logFilterEdit:focus { background: #ffffff; border: 1px solid #7f7f7f; }"
         "#logHeaderRow { background: #f4f4f4; border: none; border-bottom: 1px solid #d0d0d0; }"
         "QToolButton#logStickToBottomButton { background: transparent; border: 1px solid #bdbdbd; padding: 0px; }"
-        "QToolButton#logStickToBottomButton:hover { background: transparent; border: 1px solid #000000; }"
-        "QToolButton#logStickToBottomButton:pressed { background: transparent; border: 1px solid #000000; }"
-        "QToolButton#logStickToBottomButton:checked { background: transparent; border: 1px solid #000000; }"
-        "QToolButton#logStickToBottomButton:checked:hover { background: transparent; border: 1px solid #000000; }"
+        "QToolButton#logStickToBottomButton:hover { background: #f2f6f3; border: 1px solid #9eb5aa; }"
+        "QToolButton#logStickToBottomButton:pressed { background: #e0ebe5; border: 1px solid #9eb5aa; }"
+        "QToolButton#logStickToBottomButton:checked { background: #e0ebe5; border: 1px solid #9eb5aa; }"
+        "QToolButton#logStickToBottomButton:checked:hover { background: #e0ebe5; border: 1px solid #9eb5aa; }"
         "#logPanel { background: transparent; }"
         "#qrPanel { background: #ffffff; }"
         "QWidget#shareContentPanel, QPlainTextEdit#shareLinkLabel { background: #ffffff; }"

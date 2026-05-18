@@ -184,6 +184,7 @@ private:
     void stopStatisticsBackends();
     void stopStatisticsSession();
     QString backgroundTaskDescription(BackgroundTaskKind kind) const;
+    void resetSpeedTestProgressState();
     bool tryBeginBackgroundTask(BackgroundTaskKind kind);
     void finishBackgroundTask(BackgroundTaskKind kind);
     void syncBackgroundTaskState();
@@ -250,6 +251,9 @@ private:
     bool setCurrentActivationPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;
     BackgroundTaskKind activeBackgroundTask_ = BackgroundTaskKind::None;
+    int speedTestTotalCount_ = 0;
+    int speedTestCompletedCount_ = 0;
+    QString speedTestProgressServerName_;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;
     bool pendingCoreUpdateStartAfterSuccess_ = false;
     bool pendingCoreUpdateSkipLocalVersionCheck_ = false;

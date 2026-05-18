@@ -37,7 +37,7 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     if (selected || hovered) {
         painter->fillRect(
             option.rect,
-            selected ? QColor(QStringLiteral("#eceff3")) : QColor(QStringLiteral("#f2f6fc")));
+            selected ? QColor(QStringLiteral("#e0ebe5")) : QColor(QStringLiteral("#f2f6f3")));
     }
 
     const QString text = index.data(Qt::DisplayRole).toString();
@@ -69,7 +69,7 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     layout.endLayout();
 
     painter->save();
-    painter->setPen(opt.palette.color(selected ? QPalette::HighlightedText : QPalette::Text));
+    painter->setPen(opt.palette.color(QPalette::Text));
     painter->translate(option.rect.left() + HorizontalPadding, option.rect.top() + VerticalPadding);
     layout.draw(painter, QPointF(0.0, 0.0));
     painter->restore();

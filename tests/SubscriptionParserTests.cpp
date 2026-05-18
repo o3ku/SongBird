@@ -20,6 +20,11 @@ private slots:
     void subscriptionBase64UrlSafeChars();
     void subscriptionBase64MissingPadding();
     void subscriptionSip008SkipsInvalidEntries();
+    void subscriptionJsonStringArrayOfShareUrls();
+    void subscriptionNestedBase64DecodesRepeatedly();
+    void subscriptionSingBoxOutboundsJson();
+    void subscriptionClashYamlProxies();
+    void subscriptionClashYamlFlowStyleVlessReality();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -205,6 +210,124 @@ void SubscriptionParserTests::subscriptionSip008SkipsInvalidEntries()
     const QList<VmessItem> items = SubscriptionContentParser::parseMany(json);
     QCOMPARE(items.size(), 1);
     QCOMPARE(items[0].remarks, QStringLiteral("valid"));
+}
+
+void SubscriptionParserTests::subscriptionJsonStringArrayOfShareUrls()
+{
+    const QString content = QStringLiteral(
+        "["
+        "\"vmess://eyJ2IjoiMiIsInBzIjoiYXJyYXktdm1lc3MiLCJhZGQiOiIxMC4xMC4wLjEiLCJwb3J0IjoiMTAwMDEiLCJpZCI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImFpZCI6IjAiLCJuZXQiOiJ3cyIsInR5cGUiOiJub25lIiwiaG9zdCI6ImNkbi5leGFtcGxlLmNvbSIsInBhdGgiOiIvd3MiLCJ0bHMiOiJ0bHMifQ==\","
+        "\"trojan://pass123@2.3.4.5:443?sni=t.example.com#array-trojan\""
+        "]"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(content);
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items[0].configType, ConfigType::VMess);
+    QCOMPARE(items[0].remarks, QStringLiteral("array-vmess"));
+    QCOMPARE(items[1].configType, ConfigType::Trojan);
+    QCOMPARE(items[1].remarks, QStringLiteral("array-trojan"));
+}
+
+void SubscriptionParserTests::subscriptionNestedBase64DecodesRepeatedly()
+{
+    const QString link = QStringLiteral(
+        "vmess://eyJ2IjoiMiIsInBzIjoibXVsdGktYjY0IiwiYWRkIjoiMTAuMC4wLjUiLCJwb3J0IjoiMTAwMDEiLCJpZCI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImFpZCI6IjAiLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=");
+    const QByteArray once = link.toUtf8().toBase64();
+    const QByteArray twice = once.toBase64();
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(QString::fromUtf8(twice));
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QStringLiteral("multi-b64"));
+}
+
+void SubscriptionParserTests::subscriptionSingBoxOutboundsJson()
+{
+    const QString json = QStringLiteral(
+        "{"
+        "\"outbounds\":["
+        "  {"
+        "    \"type\":\"vmess\","
+        "    \"tag\":\"sb-vmess\","
+        "    \"server\":\"vmess.example.com\","
+        "    \"server_port\":443,"
+        "    \"uuid\":\"11111111-1111-1111-1111-111111111111\","
+        "    \"security\":\"auto\","
+        "    \"transport\":{\"type\":\"ws\",\"path\":\"/ws\",\"headers\":{\"Host\":\"cdn.example.com\"}},"
+        "    \"tls\":{\"enabled\":true,\"server_name\":\"tls.example.com\"}"
+        "  },"
+        "  {"
+        "    \"type\":\"trojan\","
+        "    \"tag\":\"sb-trojan\","
+        "    \"server\":\"trojan.example.com\","
+        "    \"server_port\":443,"
+        "    \"password\":\"trojan-pass\""
+        "  }"
+        "]"
+        "}"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(json);
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items[0].configType, ConfigType::VMess);
+    QCOMPARE(items[0].remarks, QStringLiteral("sb-vmess"));
+    QCOMPARE(items[0].address, QStringLiteral("vmess.example.com"));
+    QCOMPARE(items[1].configType, ConfigType::Trojan);
+    QCOMPARE(items[1].remarks, QStringLiteral("sb-trojan"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlProxies()
+{
+    const QString yaml = QStringLiteral(
+        "mixed-port: 7890\n"
+        "proxies:\n"
+        "  - name: clash-vmess\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+        "    alterId: 0\n"
+        "    cipher: auto\n"
+        "    tls: true\n"
+        "    network: ws\n"
+        "    ws-path: /ws\n"
+        "  - name: clash-ss\n"
+        "    type: ss\n"
+        "    server: 5.6.7.8\n"
+        "    port: 8388\n"
+        "    cipher: aes-256-gcm\n"
+        "    password: secret\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items[0].configType, ConfigType::VMess);
+    QCOMPARE(items[0].remarks, QStringLiteral("clash-vmess"));
+    QCOMPARE(items[0].path, QStringLiteral("/ws"));
+    QCOMPARE(items[1].configType, ConfigType::Shadowsocks);
+    QCOMPARE(items[1].remarks, QStringLiteral("clash-ss"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlFlowStyleVlessReality()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - { name: HK丨香港1, type: vless, server: f3a9k5d8.gabuit.com, port: 48601, uuid: BAB25126-A72C-4156-818F-8E32738EDE72, udp: true, cipher: auto, tls: true, flow: xtls-rprx-vision, client-fingerprint: chrome, servername: itunes.apple.com, reality-opts: { public-key: Nwa_ddI7yYai9YMz67iFL5FirgFwO9lvvxYM0qozdEQ, short-id: 7b2658c87841 } }\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].configType, ConfigType::VLESS);
+    QCOMPARE(items[0].remarks, QStringLiteral("HK丨香港1"));
+    QCOMPARE(items[0].address, QStringLiteral("f3a9k5d8.gabuit.com"));
+    QCOMPARE(items[0].port, 48601);
+    QCOMPARE(items[0].id, QStringLiteral("BAB25126-A72C-4156-818F-8E32738EDE72"));
+    QCOMPARE(items[0].flow, QStringLiteral("xtls-rprx-vision"));
+    QCOMPARE(items[0].streamSecurity, QStringLiteral("reality"));
+    QCOMPARE(items[0].fingerprint, QStringLiteral("chrome"));
+    QCOMPARE(items[0].sni, QStringLiteral("itunes.apple.com"));
+    QCOMPARE(items[0].publicKey, QStringLiteral("Nwa_ddI7yYai9YMz67iFL5FirgFwO9lvvxYM0qozdEQ"));
+    QCOMPARE(items[0].shortId, QStringLiteral("7b2658c87841"));
 }
 
 // ---------------------------------------------------------------------------

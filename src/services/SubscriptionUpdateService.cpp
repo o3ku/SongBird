@@ -23,6 +23,14 @@ QString subscriptionDisplayName(const SubItem& item)
 
 constexpr int kSubscriptionDownloadTimeoutMs = 30000;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
+
+QString summarizeContentPrefix(const QString& text)
+{
+    QString summary = text.left(120);
+    summary.replace(QChar('\r'), QChar(' '));
+    summary.replace(QChar('\n'), QChar(' '));
+    return summary;
+}
 }
 
 SubscriptionUpdateService::SubscriptionUpdateService(
@@ -185,11 +193,19 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QStringLiteral("%1 download failed: %2").arg(displayName, downloadResult.message));
     }
 
-    const QList<VmessItem> servers = SubscriptionContentParser::parseMany(content);
+    const SubscriptionParseReport parseReport = SubscriptionContentParser::parseManyWithReport(content);
+    const QList<VmessItem> servers = parseReport.items;
     if (servers.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("%1 returned no supported servers.").arg(displayName));
+        QStringList lines;
+        lines.append(QStringLiteral("%1 returned no supported servers.").arg(displayName));
+        lines.append(QStringLiteral("Download preview: %1").arg(summarizeContentPrefix(content)));
+        for (const QString& note : parseReport.notes) {
+            lines.append(note);
+        }
+        return OperationResult::fail(lines.join(QStringLiteral("\n")));
     }
 
+    const int parsedCount = servers.size();
     const OperationResult replaceResult = subscriptionService_.replaceSubscriptionServers(config, item.id, servers);
     if (!replaceResult.success) {
         return OperationResult::fail(QStringLiteral("%1 save failed: %2").arg(displayName, replaceResult.message));
@@ -205,7 +221,22 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     }
 
     const int finalImportedCount = importedCount == nullptr ? servers.size() : *importedCount;
-    return OperationResult::ok(QStringLiteral("%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount));
+    QStringList lines;
+    lines.append(QStringLiteral("%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount));
+    lines.append(
+        QStringLiteral("Subscription parse summary: parsed=%1 dedup-input=%2 saved=%3")
+            .arg(parsedCount)
+            .arg(subscriptionService_.lastReplaceInputCount())
+            .arg(subscriptionService_.lastReplaceSavedCount()));
+    if (subscriptionService_.lastReplaceSavedCount() < subscriptionService_.lastReplaceInputCount()) {
+        lines.append(
+            QStringLiteral("Subscription dedup removed %1 entrie(s).")
+                .arg(subscriptionService_.lastReplaceInputCount() - subscriptionService_.lastReplaceSavedCount()));
+    }
+    for (const QString& note : parseReport.notes) {
+        lines.append(note);
+    }
+    return OperationResult::ok(lines.join(QStringLiteral("\n")));
 }
 
 OperationResult SubscriptionUpdateService::downloadText(
@@ -225,7 +256,8 @@ OperationResult SubscriptionUpdateService::downloadText(
 
     QNetworkRequest request{parsedUrl};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    request.setRawHeader("User-Agent", (userAgent.trimmed().isEmpty() ? QStringLiteral("v2rayq/0.1") : userAgent).toUtf8());
+    const QString defaultUA = QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)");
+    request.setRawHeader("User-Agent", (userAgent.trimmed().isEmpty() ? defaultUA : userAgent).toUtf8());
 
     const QNetworkProxy previousProxy = networkAccessManager_.proxy();
     if (proxyPort > 0) {
@@ -263,7 +295,9 @@ OperationResult SubscriptionUpdateService::downloadText(
             : OperationResult::fail(error);
     }
 
-    *content = QString::fromUtf8(reply->readAll()).trimmed();
+    const QByteArray responseBody = reply->readAll();
+    const QString contentType = QString::fromUtf8(reply->header(QNetworkRequest::ContentTypeHeader).toByteArray()).trimmed();
+    *content = QString::fromUtf8(responseBody).trimmed();
     networkAccessManager_.setProxy(previousProxy);
     reply->deleteLater();
 
@@ -275,5 +309,10 @@ OperationResult SubscriptionUpdateService::downloadText(
         return OperationResult::fail(QStringLiteral("Subscription response is empty."));
     }
 
-    return OperationResult::ok(QStringLiteral("Subscription downloaded."));
+    return OperationResult::ok(
+        QStringLiteral("Subscription downloaded. HTTP %1, content-type=%2, bytes=%3, preview=%4")
+            .arg(statusCode > 0 ? QString::number(statusCode) : QStringLiteral("200"))
+            .arg(contentType.isEmpty() ? QStringLiteral("<empty>") : contentType)
+            .arg(responseBody.size())
+            .arg(summarizeContentPrefix(*content)));
 }
