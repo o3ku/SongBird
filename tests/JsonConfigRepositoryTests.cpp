@@ -73,6 +73,8 @@ private slots:
     void saveRemovesDeprecatedDeadConfigKeys();
     void loadDefaultsMainRuntimeStateToOffWhenMissing();
     void loadReadsMainRuntimeStateFromUiItem();
+    void loadReadsMainQrPreviewVisibleFromUiItem();
+    void savePersistsMainQrPreviewVisible();
     void savePersistsMainRuntimeStateToUiItem();
     void loadReadsRoutingItemDomainStrategy4Singbox();
     void savePersistsRoutingItemDomainStrategy4Singbox();
@@ -1431,7 +1433,7 @@ void JsonConfigRepositoryTests::saveRemovesDeprecatedDeadConfigKeys()
 
     const QJsonObject savedRoot = document.object();
     QVERIFY(!savedRoot.contains(QStringLiteral("keepOlderDedupl")));
-    QVERIFY(!savedRoot.value(QStringLiteral("uiItem")).toObject().contains(QStringLiteral("mainQrPreviewVisible")));
+    QCOMPARE(savedRoot.value(QStringLiteral("uiItem")).toObject().value(QStringLiteral("mainQrPreviewVisible")).toBool(), true);
 }
 
 void JsonConfigRepositoryTests::loadDefaultsMainRuntimeStateToOffWhenMissing()
@@ -1469,6 +1471,46 @@ void JsonConfigRepositoryTests::loadReadsMainRuntimeStateFromUiItem()
     const Config config = repository.load();
 
     QVERIFY(config.mainProxyEnabled);
+}
+
+void JsonConfigRepositoryTests::loadReadsMainQrPreviewVisibleFromUiItem()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject uiItem;
+    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), true);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("uiItem"), uiItem);
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(config.mainQrPreviewVisible);
+}
+
+void JsonConfigRepositoryTests::savePersistsMainQrPreviewVisible()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    JsonConfigRepository repository(configPath);
+
+    Config config;
+    config.mainQrPreviewVisible = true;
+    QVERIFY(repository.save(config));
+
+    const Config reloaded = repository.load();
+    QVERIFY(reloaded.mainQrPreviewVisible);
 }
 
 void JsonConfigRepositoryTests::savePersistsMainRuntimeStateToUiItem()

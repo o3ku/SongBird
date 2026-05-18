@@ -628,21 +628,30 @@ void MainWindowTests::restoreAndCaptureUiStatePreservesRuntimeToggles()
     MainWindow window;
     Config config = createServerSelectionConfig();
     config.mainProxyEnabled = true;
+    config.mainQrPreviewVisible = true;
 
     window.setConfig(config);
     window.restoreUiState(config);
+    window.show();
     QCoreApplication::processEvents();
 
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
+    auto* shareAction = window.findChild<QAction*>(QStringLiteral("toggleQrPanelAction"));
+    auto* qrPanel = window.findChild<QWidget*>(QStringLiteral("qrPanel"));
     QVERIFY(proxyButton != nullptr);
     QVERIFY(tunButton != nullptr);
+    QVERIFY(shareAction != nullptr);
+    QVERIFY(qrPanel != nullptr);
     QVERIFY(!proxyButton->isChecked());
+    QVERIFY(shareAction->isChecked());
+    QVERIFY(qrPanel->isVisible());
 
     Config captured;
     window.captureUiState(captured);
 
     QVERIFY(!captured.mainProxyEnabled);
+    QVERIFY(captured.mainQrPreviewVisible);
 }
 
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()

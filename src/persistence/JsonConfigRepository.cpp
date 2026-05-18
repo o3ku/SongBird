@@ -271,6 +271,7 @@ Config JsonConfigRepository::parseConfig(const QJsonObject& root)
         normalizeSplitPercent(uiItem.value(QStringLiteral("mainServerLogSplitPercent")).toInt(60), 60);
     config.mainServerQrSplitPercent =
         normalizeSplitPercent(uiItem.value(QStringLiteral("mainServerQrSplitPercent")).toInt(78), 78);
+    config.mainQrPreviewVisible = uiItem.value(QStringLiteral("mainQrPreviewVisible")).toBool(false);
     config.mainProxyEnabled = uiItem.value(QStringLiteral("mainProxyEnabled")).toBool(false);
     const QJsonObject mainLvColWidth = uiItem.value(QStringLiteral("mainLvColWidth")).toObject();
     for (auto it = mainLvColWidth.constBegin(); it != mainLvColWidth.constEnd(); ++it) {
@@ -406,7 +407,7 @@ void JsonConfigRepository::applyConfig(QJsonObject& root, const Config& config)
     uiItem.insert(QStringLiteral("settingsRoutingRuleTabKey"), config.settingsRoutingRuleTabKey);
     uiItem.insert(QStringLiteral("mainServerLogSplitPercent"), normalizeSplitPercent(config.mainServerLogSplitPercent, 60));
     uiItem.insert(QStringLiteral("mainServerQrSplitPercent"), normalizeSplitPercent(config.mainServerQrSplitPercent, 78));
-    uiItem.remove(QStringLiteral("mainQrPreviewVisible"));
+    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), config.mainQrPreviewVisible);
     uiItem.remove(QStringLiteral("mainCoreRunning"));
     uiItem.insert(QStringLiteral("mainProxyEnabled"), config.mainProxyEnabled);
     QJsonObject mainLvColWidth;

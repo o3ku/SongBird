@@ -656,10 +656,10 @@ void MainWindow::restoreUiState(const Config& config)
 {
     if (windowLayoutStateController_ != nullptr) {
         windowLayoutStateController_->restoreFromConfig(config);
-        qrPreviewVisible_ = windowLayoutStateController_->qrPreviewVisible();
-        if (sharePanel_ != nullptr) {
-            sharePanel_->setPreviewVisible(qrPreviewVisible_);
-        }
+    }
+    qrPreviewVisible_ = config.mainQrPreviewVisible;
+    if (sharePanel_ != nullptr) {
+        sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
     coreProcessRunning_ = false;
     coreRunning_ = false;
@@ -712,6 +712,7 @@ void MainWindow::captureUiState(Config& config) const
     if (windowLayoutStateController_ != nullptr) {
         windowLayoutStateController_->captureToConfig(config);
     }
+    config.mainQrPreviewVisible = qrPreviewVisible_;
     config.mainSelectedSubId = subscriptionViewController_ == nullptr
         ? QStringLiteral("__unsubscribed__")
         : subscriptionViewController_->persistedSelectionId();
