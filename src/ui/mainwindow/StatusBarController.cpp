@@ -160,7 +160,7 @@ const StatusBarController::Snapshot& StatusBarController::snapshot() const
 
 void StatusBarController::showTransientStatus(const QString& message, int timeoutMs, TransientStatusPriority priority)
 {
-    if (priority == TransientStatusPriority::Routine) {
+    if (priority == TransientStatusPriority::Routine && shouldSuppressRoutineStatus()) {
         return;
     }
 
@@ -398,4 +398,10 @@ QString StatusBarController::currentTransientStatusText() const
     }
 
     return QObject::tr("Ready");
+}
+
+bool StatusBarController::shouldSuppressRoutineStatus() const
+{
+    return !transientStatusMessage_.isEmpty()
+        || (snapshot_.backgroundTaskRunning && !snapshot_.backgroundTaskDescription.isEmpty());
 }

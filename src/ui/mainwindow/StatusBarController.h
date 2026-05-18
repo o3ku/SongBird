@@ -69,6 +69,7 @@ public:
 private:
     void updateStatusIndicators();
     QString currentTransientStatusText() const;
+    bool shouldSuppressRoutineStatus() const;
 
     QWidget* owner_ = nullptr;
     class QLabel* currentServerStatusLabel_ = nullptr;

@@ -79,6 +79,7 @@ private slots:
     void coreStatusRemainsStartingUntilStrictActivation();
     void runtimeStatusLabelsRemainVisibleInStatusBar();
     void serverSelectionDoesNotShowTransientStatusMessage();
+    void routineTransientStatusShowsWhenStatusBarIsIdle();
     void routineTransientStatusDoesNotOverrideStatusLabel();
     void transientStatusTemporarilyOverridesBackgroundTaskMessage();
     void longTransientStatusUsesThreeDotsAndTooltip();
@@ -1423,6 +1424,23 @@ void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
     QCoreApplication::processEvents();
 
     QCOMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
+}
+
+void MainWindowTests::routineTransientStatusShowsWhenStatusBarIsIdle()
+{
+    MainWindow window;
+
+    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    QVERIFY(transientStatusLabel != nullptr);
+    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
+
+    window.showTransientStatus(
+        QStringLiteral("Copied 1 URL(s) to the clipboard."),
+        50,
+        MainWindow::TransientStatusPriority::Routine);
+    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Copied 1 URL(s) to the clipboard."));
+
+    QTRY_COMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
 }
 
 void MainWindowTests::routineTransientStatusDoesNotOverrideStatusLabel()
