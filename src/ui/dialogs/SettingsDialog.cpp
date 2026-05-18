@@ -71,11 +71,12 @@ void SettingsDialog::setConfig(const Config& config)
     if (generalSettingsPage_ != nullptr) {
         generalSettingsPage_->setConfig(config);
     }
-    systemProxyExceptionsEdit_->setText(config.systemProxyExceptions);
-    systemProxyAdvancedProtocolCombo_->setCurrentText(config.systemProxyAdvancedProtocol);
-    pacUrlEdit_->setText(config.pacUrl);
-    checkPreReleaseUpdateCheck_->setChecked(config.checkPreReleaseUpdate);
-    ignoreGeoUpdateCoreCheck_->setChecked(config.ignoreGeoUpdateCore);
+    if (proxySettingsPage_ != nullptr) {
+        proxySettingsPage_->setConfig(config);
+    }
+    if (updateSettingsPage_ != nullptr) {
+        updateSettingsPage_->setConfig(config);
+    }
 
     if (routingSettingsPage_ != nullptr) {
         routingSettingsPage_->setConfig(config);
@@ -128,11 +129,12 @@ Config SettingsDialog::config() const
     if (generalSettingsPage_ != nullptr) {
         generalSettingsPage_->applyToConfig(updated);
     }
-    updated.systemProxyExceptions = systemProxyExceptionsEdit_->text().trimmed();
-    updated.systemProxyAdvancedProtocol = systemProxyAdvancedProtocolCombo_->currentText().trimmed();
-    updated.pacUrl = pacUrlEdit_->text().trimmed();
-    updated.checkPreReleaseUpdate = checkPreReleaseUpdateCheck_->isChecked();
-    updated.ignoreGeoUpdateCore = ignoreGeoUpdateCoreCheck_->isChecked();
+    if (proxySettingsPage_ != nullptr) {
+        proxySettingsPage_->applyToConfig(updated);
+    }
+    if (updateSettingsPage_ != nullptr) {
+        updateSettingsPage_->applyToConfig(updated);
+    }
     if (routingSettingsPage_ != nullptr) {
         updated.routingItems = routingSettingsPage_->routingItems();
         updated.routingCustomRules = routingSettingsPage_->routingCustomRules();
@@ -211,45 +213,15 @@ void SettingsDialog::setupUi()
 
     // === Proxy Tab ===
     auto* proxyTab = new QWidget(this);
-    auto* proxyLayout = new QFormLayout(proxyTab);
-
-    systemProxyExceptionsEdit_ = new QLineEdit(proxyTab);
-    systemProxyExceptionsEdit_->setObjectName(QStringLiteral("settingsSystemProxyExceptionsEdit"));
-    systemProxyExceptionsEdit_->setPlaceholderText(QStringLiteral("localhost;127.*;192.168.*"));
-
-    systemProxyAdvancedProtocolCombo_ = new QComboBox(proxyTab);
-    systemProxyAdvancedProtocolCombo_->setObjectName(QStringLiteral("settingsSystemProxyAdvancedProtocolCombo"));
-    systemProxyAdvancedProtocolCombo_->setEditable(true);
-    systemProxyAdvancedProtocolCombo_->addItems({
-        QString(),
-        QStringLiteral("{ip}:{http_port}"),
-        QStringLiteral("socks={ip}:{socks_port}"),
-        QStringLiteral("http={ip}:{http_port};https={ip}:{http_port};ftp={ip}:{http_port};socks={ip}:{socks_port}"),
-        QStringLiteral("http=http://{ip}:{http_port};https=http://{ip}:{http_port}")
-    });
-    AppTheme::applyCompactFont({systemProxyExceptionsEdit_, systemProxyAdvancedProtocolCombo_});
-
-    proxyLayout->addRow(tr("System Proxy Exceptions"), systemProxyExceptionsEdit_);
-    proxyLayout->addRow(tr("Advanced Proxy Protocol"), systemProxyAdvancedProtocolCombo_);
-
-    pacUrlEdit_ = new QLineEdit(proxyTab);
-    pacUrlEdit_->setObjectName(QStringLiteral("settingsPacUrlEdit"));
-    pacUrlEdit_->setPlaceholderText(tr("Leave empty to use built-in PAC server (http://127.0.0.1:10870/pac)"));
-    pacUrlEdit_->setVisible(false);
+    auto* proxyLayout = new QVBoxLayout(proxyTab);
+    proxySettingsPage_ = new ProxySettingsPageWidget(proxyTab);
+    proxyLayout->addWidget(proxySettingsPage_);
 
     // === Update Tab ===
     auto* updateTab = new QWidget(this);
-    auto* updateLayout = new QFormLayout(updateTab);
-
-    checkPreReleaseUpdateCheck_ = new QCheckBox(tr("Include pre-release builds"), updateTab);
-    ignoreGeoUpdateCoreCheck_ = new QCheckBox(tr("Do not overwrite geo files during core updates"), updateTab);
-
-    AppTheme::applyCompactFont({
-        checkPreReleaseUpdateCheck_,
-        ignoreGeoUpdateCoreCheck_});
-
-    updateLayout->setWidget(updateLayout->rowCount(), QFormLayout::SpanningRole, checkPreReleaseUpdateCheck_);
-    updateLayout->setWidget(updateLayout->rowCount(), QFormLayout::SpanningRole, ignoreGeoUpdateCoreCheck_);
+    auto* updateLayout = new QVBoxLayout(updateTab);
+    updateSettingsPage_ = new UpdateSettingsPageWidget(updateTab);
+    updateLayout->addWidget(updateSettingsPage_);
 
     // === TUN Tab ===
     auto* tunTab = new QWidget(this);

@@ -103,12 +103,16 @@ set(QT_V2RAYN_SOURCES
     ui/dialogs/GlobalHotkeyDialog.cpp
     ui/dialogs/CoreSettingsPageWidget.h
     ui/dialogs/CoreSettingsPageWidget.cpp
+    ui/dialogs/ProxySettingsPageWidget.h
+    ui/dialogs/ProxySettingsPageWidget.cpp
     ui/dialogs/RoutingSettingsPageWidget.h
     ui/dialogs/RoutingSettingsPageWidget.cpp
     ui/dialogs/SubscriptionSettingsPageWidget.h
     ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ui/dialogs/SettingsDialog.h
     ui/dialogs/SettingsDialog.cpp
+    ui/dialogs/UpdateSettingsPageWidget.h
+    ui/dialogs/UpdateSettingsPageWidget.cpp
     ui/theme/AppTheme.h
     ui/theme/AppTheme.cpp
     ui/mainwindow/MainWindow.h

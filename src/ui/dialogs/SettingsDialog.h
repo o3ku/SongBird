@@ -19,8 +19,10 @@ class QWidget;
 #include "ui/dialogs/CoreSettingsPageWidget.h"
 #include "ui/dialogs/DnsSettingsPageWidget.h"
 #include "ui/dialogs/GeneralSettingsPageWidget.h"
+#include "ui/dialogs/ProxySettingsPageWidget.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
+#include "ui/dialogs/UpdateSettingsPageWidget.h"
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -52,11 +54,8 @@ private:
 
     Config config_;
     GeneralSettingsPageWidget* generalSettingsPage_ = nullptr;
-    QLineEdit* systemProxyExceptionsEdit_ = nullptr;
-    QComboBox* systemProxyAdvancedProtocolCombo_ = nullptr;
-    QLineEdit* pacUrlEdit_ = nullptr;
-    QCheckBox* checkPreReleaseUpdateCheck_ = nullptr;
-    QCheckBox* ignoreGeoUpdateCoreCheck_ = nullptr;
+    ProxySettingsPageWidget* proxySettingsPage_ = nullptr;
+    UpdateSettingsPageWidget* updateSettingsPage_ = nullptr;
     QCheckBox* tunEnableCheck_ = nullptr;
     QCheckBox* tunAutoRouteCheck_ = nullptr;
     QCheckBox* tunStrictRouteCheck_ = nullptr;

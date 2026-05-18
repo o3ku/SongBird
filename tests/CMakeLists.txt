@@ -85,12 +85,16 @@ set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     ../src/ui/dialogs/DnsSettingsPageWidget.cpp
     ../src/ui/dialogs/GeneralSettingsPageWidget.h
     ../src/ui/dialogs/GeneralSettingsPageWidget.cpp
+    ../src/ui/dialogs/ProxySettingsPageWidget.h
+    ../src/ui/dialogs/ProxySettingsPageWidget.cpp
     ../src/ui/dialogs/RoutingSettingsPageWidget.h
     ../src/ui/dialogs/RoutingSettingsPageWidget.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ../src/ui/dialogs/SettingsDialog.h
     ../src/ui/dialogs/SettingsDialog.cpp
+    ../src/ui/dialogs/UpdateSettingsPageWidget.h
+    ../src/ui/dialogs/UpdateSettingsPageWidget.cpp
     ../src/ui/theme/AppTheme.h
     ../src/ui/theme/AppTheme.cpp
 )

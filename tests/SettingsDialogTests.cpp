@@ -36,6 +36,8 @@ private slots:
     void defaultUserAgentComboRoundTripsConfig();
     void defaultFingerprintComboRoundTripsConfig();
     void statisticsToggleControlsRefreshRateSpin();
+    void proxySettingsRoundTripsConfig();
+    void updateSettingsRoundTripsConfig();
     void mux4SboxProtocolComboRoundTripsConfig();
     void updateTabDoesNotExposeRemovedTls13Option();
     void coreTypeTableIncludesHttpProtocol();
@@ -341,6 +343,60 @@ void SettingsDialogTests::statisticsToggleControlsRefreshRateSpin()
 
     statisticsCheck->setChecked(true);
     QVERIFY(refreshRateSpin->isEnabled());
+}
+
+void SettingsDialogTests::proxySettingsRoundTripsConfig()
+{
+    Config config;
+    config.systemProxyExceptions = QStringLiteral("localhost;127.*");
+    config.systemProxyAdvancedProtocol = QStringLiteral("{ip}:{http_port}");
+    config.pacUrl = QStringLiteral("http://proxy.example/pac");
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* exceptionsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsSystemProxyExceptionsEdit"));
+    auto* protocolCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsSystemProxyAdvancedProtocolCombo"));
+    auto* pacUrlEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsPacUrlEdit"));
+    QVERIFY(exceptionsEdit != nullptr);
+    QVERIFY(protocolCombo != nullptr);
+    QVERIFY(pacUrlEdit != nullptr);
+    QCOMPARE(exceptionsEdit->text(), QStringLiteral("localhost;127.*"));
+    QCOMPARE(protocolCombo->currentText(), QStringLiteral("{ip}:{http_port}"));
+    QCOMPARE(pacUrlEdit->text(), QStringLiteral("http://proxy.example/pac"));
+
+    exceptionsEdit->setText(QStringLiteral("  10.0.0.0/8  "));
+    protocolCombo->setCurrentText(QStringLiteral("socks={ip}:{socks_port}"));
+    pacUrlEdit->setText(QStringLiteral("  http://proxy.example/custom-pac  "));
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.systemProxyExceptions, QStringLiteral("10.0.0.0/8"));
+    QCOMPARE(updated.systemProxyAdvancedProtocol, QStringLiteral("socks={ip}:{socks_port}"));
+    QCOMPARE(updated.pacUrl, QStringLiteral("http://proxy.example/custom-pac"));
+}
+
+void SettingsDialogTests::updateSettingsRoundTripsConfig()
+{
+    Config config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* preReleaseCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsCheckPreReleaseUpdateCheck"));
+    auto* ignoreGeoCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsIgnoreGeoUpdateCoreCheck"));
+    QVERIFY(preReleaseCheck != nullptr);
+    QVERIFY(ignoreGeoCheck != nullptr);
+    QVERIFY(!preReleaseCheck->isChecked());
+    QVERIFY(ignoreGeoCheck->isChecked());
+
+    preReleaseCheck->setChecked(true);
+    ignoreGeoCheck->setChecked(false);
+
+    const Config updated = dialog.config();
+    QVERIFY(updated.checkPreReleaseUpdate);
+    QVERIFY(!updated.ignoreGeoUpdateCore);
 }
 
 void SettingsDialogTests::mux4SboxProtocolComboRoundTripsConfig()
