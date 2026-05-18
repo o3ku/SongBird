@@ -95,12 +95,34 @@ set(QT_V2RAYN_SOURCES
     ui/dialogs/DnsSettingsDialog.cpp
     ui/dialogs/GlobalHotkeyDialog.h
     ui/dialogs/GlobalHotkeyDialog.cpp
+    ui/dialogs/CoreSettingsPageWidget.h
+    ui/dialogs/CoreSettingsPageWidget.cpp
     ui/dialogs/SettingsDialog.h
     ui/dialogs/SettingsDialog.cpp
     ui/theme/AppTheme.h
     ui/theme/AppTheme.cpp
     ui/mainwindow/MainWindow.h
     ui/mainwindow/MainWindow.cpp
+    ui/mainwindow/LogPanelWidget.h
+    ui/mainwindow/LogPanelWidget.cpp
+    ui/mainwindow/BackgroundTaskActionsController.h
+    ui/mainwindow/BackgroundTaskActionsController.cpp
+    ui/mainwindow/SubscriptionViewController.h
+    ui/mainwindow/SubscriptionViewController.cpp
+    ui/mainwindow/ServerWorkspaceWidget.h
+    ui/mainwindow/ServerWorkspaceWidget.cpp
+    ui/mainwindow/WindowLayoutStateController.h
+    ui/mainwindow/WindowLayoutStateController.cpp
+    ui/mainwindow/SharePanelWidget.h
+    ui/mainwindow/SharePanelWidget.cpp
+    ui/mainwindow/ProxyToolbarController.h
+    ui/mainwindow/ProxyToolbarController.cpp
+    ui/mainwindow/ServerSelectionController.h
+    ui/mainwindow/ServerSelectionController.cpp
+    ui/mainwindow/ServerActionsController.h
+    ui/mainwindow/ServerActionsController.cpp
+    ui/mainwindow/StatusBarController.h
+    ui/mainwindow/StatusBarController.cpp
     ui/mainwindow/LogItemDelegate.h
     ui/mainwindow/LogItemDelegate.cpp
     ui/mainwindow/ServerTableView.h

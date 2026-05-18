@@ -27,6 +27,8 @@ class QPushButton;
 class QWidget;
 class QVBoxLayout;
 
+#include "ui/dialogs/CoreSettingsPageWidget.h"
+
 class SettingsDialog final : public QDialog {
     Q_OBJECT
 
@@ -73,23 +75,6 @@ private:
     void updateSubActionState();
     QList<SubItem> collectSubItems() const;
 
-    // Core tab methods
-    void reloadCoreTypeTable();
-    QList<CoreTypeItem> collectCoreTypeItems() const;
-    void refreshCoreStatusPresentation();
-    QString coreStatusTextForProgress(const QString& message) const;
-
-    struct CoreStatusRow {
-        QLabel* versionLabel = nullptr;
-        QLabel* statusLabel = nullptr;
-        QPushButton* downloadButton = nullptr;
-        QPushButton* setAllButton = nullptr;
-        QWidget* page = nullptr;
-        QVBoxLayout* optionsLayout = nullptr;
-        QString versionText;
-        QString progressText;
-    };
-
     Config config_;
     QCheckBox* showMainOnStartupCheck_ = nullptr;
     QCheckBox* autoRunCheck_ = nullptr;
@@ -98,11 +83,9 @@ private:
     QCheckBox* routeOnlyCheck_ = nullptr;
     QSpinBox* localPortSpin_ = nullptr;
     QCheckBox* enableFragmentCheck_ = nullptr;
-    QCheckBox* enableCacheFile4SboxCheck_ = nullptr;
     QCheckBox* defaultAllowInsecureCheck_ = nullptr;
     QComboBox* defaultFingerprintCombo_ = nullptr;
     QComboBox* defaultUserAgentCombo_ = nullptr;
-    QComboBox* mux4SboxProtocolCombo_ = nullptr;
     QCheckBox* enableStatisticsCheck_ = nullptr;
     QSpinBox* statisticsFreshRateSpin_ = nullptr;
     QSpinBox* trayMenuServersLimitSpin_ = nullptr;
@@ -119,7 +102,6 @@ private:
     QComboBox* tunStackCombo_ = nullptr;
     QCheckBox* tunEnableIPv6AddressCheck_ = nullptr;
     QLineEdit* tunIcmpRoutingEdit_ = nullptr;
-    QCheckBox* tunEnableLegacyProtectCheck_ = nullptr;
     // DNS tab
     QLineEdit* remoteDnsEdit_ = nullptr;
     QLineEdit* directDnsEdit_ = nullptr;
@@ -165,17 +147,6 @@ private:
     QPushButton* addSubButton_ = nullptr;
     QPushButton* removeSubButton_ = nullptr;
     QPushButton* updateSubButton_ = nullptr;
-
-    struct CoreProtocolEntry {
-        QString name;
-        ConfigType configType = ConfigType::VMess;
-    };
-
-    QList<CoreTypeItem> coreTypeItems_;
-    QList<QComboBox*> coreTypeCombos_;
-    QList<CoreProtocolEntry> coreProtocolEntries_;
-    QList<CoreType> existingCoreTypes_;
-    QTabWidget* coreDetailTabs_ = nullptr;
-    QMap<int, CoreStatusRow> coreStatusRows_;
+    CoreSettingsPageWidget* coreSettingsPage_ = nullptr;
 
 };

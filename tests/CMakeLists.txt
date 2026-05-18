@@ -79,6 +79,8 @@ endif()
 
 set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
+    ../src/ui/dialogs/CoreSettingsPageWidget.h
+    ../src/ui/dialogs/CoreSettingsPageWidget.cpp
     ../src/ui/dialogs/SettingsDialog.h
     ../src/ui/dialogs/SettingsDialog.cpp
     ../src/ui/theme/AppTheme.h
@@ -343,6 +345,26 @@ set(QT_V2RAYN_MAIN_WINDOW_TEST_SOURCES
     ../src/third_party/qrcodegen/qrcodegen.cpp
     ../src/ui/mainwindow/MainWindow.h
     ../src/ui/mainwindow/MainWindow.cpp
+    ../src/ui/mainwindow/LogPanelWidget.h
+    ../src/ui/mainwindow/LogPanelWidget.cpp
+    ../src/ui/mainwindow/BackgroundTaskActionsController.h
+    ../src/ui/mainwindow/BackgroundTaskActionsController.cpp
+    ../src/ui/mainwindow/SubscriptionViewController.h
+    ../src/ui/mainwindow/SubscriptionViewController.cpp
+    ../src/ui/mainwindow/ServerWorkspaceWidget.h
+    ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
+    ../src/ui/mainwindow/WindowLayoutStateController.h
+    ../src/ui/mainwindow/WindowLayoutStateController.cpp
+    ../src/ui/mainwindow/SharePanelWidget.h
+    ../src/ui/mainwindow/SharePanelWidget.cpp
+    ../src/ui/mainwindow/ProxyToolbarController.h
+    ../src/ui/mainwindow/ProxyToolbarController.cpp
+    ../src/ui/mainwindow/ServerSelectionController.h
+    ../src/ui/mainwindow/ServerSelectionController.cpp
+    ../src/ui/mainwindow/ServerActionsController.h
+    ../src/ui/mainwindow/ServerActionsController.cpp
+    ../src/ui/mainwindow/StatusBarController.h
+    ../src/ui/mainwindow/StatusBarController.cpp
     ../src/ui/mainwindow/LogItemDelegate.h
     ../src/ui/mainwindow/LogItemDelegate.cpp
     ../src/ui/mainwindow/ServerTableView.h
