@@ -2,6 +2,8 @@ set(QT_V2RAYN_SOURCES
     app/main.cpp
     app/AppBootstrap.h
     app/AppBootstrap.cpp
+    app/SettingsDialogSession.h
+    app/SettingsDialogSession.cpp
     app/SingleInstanceBootstrap.h
     app/SingleInstanceBootstrap.cpp
     app/StartupAdminElevation.h

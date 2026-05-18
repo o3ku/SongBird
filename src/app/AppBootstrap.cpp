@@ -51,6 +51,7 @@
 #include <utility>
 
 #include "app/StartupAdminElevation.h"
+#include "app/SettingsDialogSession.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "app/TunSettingsApplyDecision.h"
 #include "app/TunRuntimeState.h"
@@ -3702,97 +3703,69 @@ void AppBootstrap::openSettingsDialog(int initialTab)
         return;
     }
 
-    SettingsDialog dialog(mainWindow_.get());
-    QPointer<SettingsDialog> dialogGuard(&dialog);
-    dialog.selectTab(initialTab);
-    dialog.setConfig(config_);
     refreshExistingCoreTypes();
-    dialog.setExistingCoreTypes(existingCoreTypes_);
-    const QString configPath = resolveConfigPath();
-    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
-
-    for (const CoreType coreType : availableCoreTypes()) {
-        const QStringList candidates = resolveCoreCandidatesForConfigPath(coreType, configPath);
-        auto* thread = QThread::create([coreType, candidates, dialogGuard, lifetimeGuard]() {
-            if (lifetimeGuard.expired()) {
-                return;
-            }
-
-            const QString version = readCoreVersion(coreType, locateFirstExistingFileInCandidates(candidates));
-            if (!dialogGuard.isNull()) {
-                QMetaObject::invokeMethod(dialogGuard.data(), [dialogGuard, coreType, version]() {
+    SettingsDialogSession session(
+        mainWindow_.get(),
+        [this](QThread* thread) { trackBackgroundThread(thread); },
+        [this](CoreType coreType) { return detectCoreVersion(coreType); },
+        [this](CoreType requestedCoreType, QPointer<SettingsDialog> dialogGuard) {
+            const auto updateStarted = std::make_shared<bool>(false);
+            updateCore(
+                static_cast<int>(requestedCoreType),
+                false,
+                dialogGuard.data(),
+                dialogGuard.data(),
+                false,
+                false,
+                [dialogGuard, requestedCoreType, updateStarted](const QString& message) {
                     if (!dialogGuard.isNull()) {
-                        dialogGuard->setCoreVersion(coreType, version);
+                        if (!*updateStarted) {
+                            dialogGuard->beginCoreUpdate(requestedCoreType);
+                            *updateStarted = true;
+                        }
+                        dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
                     }
-                }, Qt::QueuedConnection);
-            }
+                },
+                [this, dialogGuard, requestedCoreType](const OperationResult& result) {
+                    if (dialogGuard.isNull()) {
+                        return;
+                    }
+
+                    if (result.success) {
+                        dialogGuard->setExistingCoreTypes(existingCoreTypes_);
+                        dialogGuard->setCoreVersion(requestedCoreType, detectCoreVersion(requestedCoreType));
+                    }
+                    dialogGuard->finishCoreUpdate(requestedCoreType, result.success, result.message);
+                });
         });
-        trackBackgroundThread(thread);
-        thread->start();
-    }
 
-    QObject::connect(&dialog, &SettingsDialog::coreDownloadRequested, &dialog, [this, dialogGuard](int coreTypeValue) {
-        if (dialogGuard.isNull()) {
-            return;
-        }
-
-        const CoreType requestedCoreType = static_cast<CoreType>(coreTypeValue);
-        const auto updateStarted = std::make_shared<bool>(false);
-        updateCore(
-            coreTypeValue,
-            false,
-            dialogGuard.data(),
-            dialogGuard.data(),
-            false,
-            false,
-            [dialogGuard, requestedCoreType, updateStarted](const QString& message) {
-                if (!dialogGuard.isNull()) {
-                    if (!*updateStarted) {
-                        dialogGuard->beginCoreUpdate(requestedCoreType);
-                        *updateStarted = true;
-                    }
-                    dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
-                }
-            },
-            [this, dialogGuard, requestedCoreType](const OperationResult& result) {
-                if (dialogGuard.isNull()) {
-                    return;
-                }
-
-                if (result.success) {
-                    dialogGuard->setExistingCoreTypes(existingCoreTypes_);
-                    dialogGuard->setCoreVersion(requestedCoreType, detectCoreVersion(requestedCoreType));
-                }
-                dialogGuard->finishCoreUpdate(requestedCoreType, result.success, result.message);
-            });
-    });
-
-    if (dialog.exec() != QDialog::Accepted) {
+    const SettingsDialogSession::Result sessionResult = session.exec(
+        config_,
+        initialTab,
+        existingCoreTypes_,
+        lifetimeGuard_);
+    if (sessionResult.outcome == SettingsDialogSession::Outcome::Cancelled) {
         return;
     }
 
-    // Handle Restore Backup action - opens file picker but doesn't save settings
-    if (dialog.wasRestoreBackupRequested()) {
+    if (sessionResult.outcome == SettingsDialogSession::Outcome::RestoreBackup) {
         restoreConfigFromBackup();
         return;
     }
 
-    // Handle Update Selected Subscriptions
-    if (dialog.wasUpdateSubRequested()) {
-        const QList<int> selectedRows = dialog.selectedSubRows();
-        const OperationResult saveResult = subscriptionService_->saveSubscriptions(config_, dialog.config().subscriptions);
+    if (sessionResult.outcome == SettingsDialogSession::Outcome::UpdateSubscriptions) {
+        const OperationResult saveResult =
+            subscriptionService_->saveSubscriptions(config_, sessionResult.config.subscriptions);
         appendResult(saveResult);
         if (saveResult.success) {
             syncWindow();
-            updateSelectedSubscriptions(selectedRows);
+            updateSelectedSubscriptions(sessionResult.selectedSubscriptionRows);
         }
-        dialog.clearUpdateSubRequested();
         return;
     }
 
-    // Save settings from dialog
     const Config previousConfig = config_;
-    Config updatedConfig = dialog.config();
+    Config updatedConfig = sessionResult.config;
     const auto normalizeLanguageCode = [](QString value) {
         value = value.trimmed().toLower();
         value.replace(QChar('-'), QChar('_'));
