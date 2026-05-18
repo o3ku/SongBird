@@ -13,6 +13,7 @@
 #include <QStackedLayout>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTextEdit>
 
 #include "ui/dialogs/SettingsDialog.h"

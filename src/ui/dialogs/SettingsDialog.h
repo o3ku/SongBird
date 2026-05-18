@@ -4,30 +4,21 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QLabel>
 #include <QLineEdit>
 #include <QList>
-#include <QMap>
 #include <QSpinBox>
-#include <QTableWidget>
-#include <QTabWidget>
 #include <QTextEdit>
 
 #include "domain/models/Config.h"
 #include "domain/models/CoreTypeItem.h"
 
-#include "domain/models/RoutingItem.h"
-#include "domain/models/SubItem.h"
-
-class QButtonGroup;
-class QHBoxLayout;
 class QStackedLayout;
 class QTabBar;
 class QPushButton;
 class QWidget;
-class QVBoxLayout;
 
 #include "ui/dialogs/CoreSettingsPageWidget.h"
+#include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 
 class SettingsDialog final : public QDialog {
@@ -57,18 +48,6 @@ signals:
 private:
     void setupUi();
     void updateFieldState();
-    void reloadRoutingPresentation(int selectedRow = 0);
-    void updateBaseRouteCardGeometry();
-    void loadRoutingCustomRules(const QList<RoutingRule>& rules);
-    QList<RoutingItem> collectRoutingItems() const;
-    QList<RoutingRule> collectRoutingCustomRules() const;
-    void selectRoutingCustomRuleTab(const QString& key);
-    QString selectedRoutingCustomRuleTabKey() const;
-    void updateRoutingActionState();
-    int findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const;
-    int selectedBaseRouteIndex() const;
-    static QString joinValues(const QStringList& values);
-    static QStringList splitValues(const QString& value);
 
     Config config_;
     QCheckBox* showMainOnStartupCheck_ = nullptr;
@@ -119,25 +98,11 @@ private:
     bool coreDownloadRequested_ = false;
     CoreType requestedCoreDownload_ = CoreType::Unknown;
     CoreType updatingCoreType_ = CoreType::Unknown;
-
-    QList<RoutingItem> routingItems_;
-    QLabel* baseRouteTitleLabel_ = nullptr;
-    QLabel* customRulesTitleLabel_ = nullptr;
-    QButtonGroup* baseRouteButtonGroup_ = nullptr;
-    QHBoxLayout* baseRouteLayout_ = nullptr;
-    QTabWidget* customRuleTabs_ = nullptr;
-    struct CustomRuleEditors {
-        QTextEdit* protocolEdit = nullptr;
-        QLineEdit* portEdit = nullptr;
-        QTextEdit* ipEdit = nullptr;
-        QTextEdit* domainEdit = nullptr;
-    };
-    QMap<QString, CustomRuleEditors> customRuleEditors_;
     QTabBar* settingsTabBar_ = nullptr;
     QStackedLayout* settingsStackLayout_ = nullptr;
     int requestedTabIndex_ = 0;
 
     SubscriptionSettingsPageWidget* subscriptionSettingsPage_ = nullptr;
+    RoutingSettingsPageWidget* routingSettingsPage_ = nullptr;
     CoreSettingsPageWidget* coreSettingsPage_ = nullptr;
-
 };

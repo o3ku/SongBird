@@ -81,6 +81,8 @@ set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
     ../src/ui/dialogs/CoreSettingsPageWidget.h
     ../src/ui/dialogs/CoreSettingsPageWidget.cpp
+    ../src/ui/dialogs/RoutingSettingsPageWidget.h
+    ../src/ui/dialogs/RoutingSettingsPageWidget.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ../src/ui/dialogs/SettingsDialog.h
