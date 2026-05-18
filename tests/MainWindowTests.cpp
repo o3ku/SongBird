@@ -45,9 +45,11 @@ private slots:
     void toolbarRemovesServerButton();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void sharePanelShowsSelectedServerShareLink();
+    void sharePanelClearsWhenSelectionIsCleared();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
+    void systemProxyModeActionEmitsSingleSelectionSignal();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
     void restoreAndCaptureUiStatePreservesRuntimeToggles();
     void logDelegateUsesViewportWidthForSingleLineHeight();
@@ -55,6 +57,7 @@ private slots:
     void logViewRelayoutsItemHeightAfterResize();
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
+    void defaultServerRefreshKeepsCurrentSelectionOnTriggeredRow();
     void speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted();
     void speedTestRunningSuspendsDynamicSortingUntilBatchFinishes();
     void serverTableDisablesDragReorderingAndKeepsMultiSelection();
@@ -432,6 +435,42 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QCOMPARE(shareLinkLabel->property("shareLinkBottomPadding").toInt(), 10);
 }
 
+void MainWindowTests::sharePanelClearsWhenSelectionIsCleared()
+{
+    MainWindow window;
+    window.resize(1000, 640);
+    Config config = createServerSelectionConfig();
+    window.restoreUiState(config);
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* shareAction = window.findChild<QAction*>(QStringLiteral("toggleQrPanelAction"));
+    auto* shareLinkLabel = window.findChild<QPlainTextEdit*>(QStringLiteral("shareLinkLabel"));
+    auto* qrPlaceholder = window.findChild<QLabel*>(QStringLiteral("qrPlaceholder"));
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    auto* copyUrlAction = window.findChild<QAction*>(QStringLiteral("copyUrlAction"));
+    QVERIFY(shareAction != nullptr);
+    QVERIFY(shareLinkLabel != nullptr);
+    QVERIFY(qrPlaceholder != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+    QVERIFY(copyUrlAction != nullptr);
+
+    shareAction->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.servers.constFirst()));
+    QVERIFY(copyUrlAction->isEnabled());
+
+    serverView->clearSelection();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(shareLinkLabel->toPlainText(), QString());
+    QCOMPARE(qrPlaceholder->text(), QStringLiteral("QR preview placeholder"));
+    QVERIFY(!copyUrlAction->isEnabled());
+}
+
 void MainWindowTests::shareLinkTextEditDoesNotForceTallMinimumHeight()
 {
     MainWindow window;
@@ -507,6 +546,24 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCoreApplication::processEvents();
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
+}
+
+void MainWindowTests::systemProxyModeActionEmitsSingleSelectionSignal()
+{
+    MainWindow window;
+    QSignalSpy modeSpy(&window, SIGNAL(systemProxyModeSelected(int)));
+    QVERIFY(modeSpy.isValid());
+
+    auto* clearProxyAction = window.findChild<QAction*>(QStringLiteral("clearProxyAction"));
+    QVERIFY(clearProxyAction != nullptr);
+
+    clearProxyAction->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(modeSpy.count(), 1);
+    QCOMPARE(
+        modeSpy.at(0).at(0).toInt(),
+        toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
 }
 
 void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
@@ -712,6 +769,41 @@ void MainWindowTests::speedTestRefreshKeepsCurrentSelectionOnTriggeredRow()
     window.setConfig(config);
     QCoreApplication::processEvents();
 
+    QCOMPARE(serverView->currentIndex().row(), 1);
+    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+}
+
+void MainWindowTests::defaultServerRefreshKeepsCurrentSelectionOnTriggeredRow()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+
+    serverView->setFocus();
+    serverView->selectRow(1);
+    serverView->setCurrentIndex(serverView->model()->index(1, 2));
+    QCoreApplication::processEvents();
+
+    QSignalSpy spy(&window, SIGNAL(setDefaultServerRequested(QString)));
+    QVERIFY(spy.isValid());
+    connect(&window, &MainWindow::setDefaultServerRequested, &window, [&window, &config](const QString& indexId) {
+        config.currentIndexId = indexId;
+        window.setConfig(config);
+    });
+
+    auto* action = window.findChild<QAction*>(QStringLiteral("setDefaultServerAction"));
+    QVERIFY(action != nullptr);
+    action->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
     QCOMPARE(serverView->currentIndex().row(), 1);
     QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
 }
@@ -1319,7 +1411,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QCOMPARE(rootSplitterMargins.top(), 0);
     QCOMPARE(rootSplitterMargins.right(), 0);
     QCOMPARE(rootSplitterMargins.bottom(), 0);
-    QCOMPARE(rootSplitter->geometry().top(), mainToolBar->geometry().bottom() + 1);
+    QCOMPARE(rootSplitter->mapTo(&window, QPoint(0, 0)).y(), mainToolBar->geometry().bottom() + 1);
     QVERIFY(serverFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);
