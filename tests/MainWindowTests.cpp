@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QClipboard>
+#include <QElapsedTimer>
 #include <QFontMetrics>
 #include <QLabel>
 #include <QLayout>
@@ -21,6 +22,7 @@
 #include <QTextOption>
 #include <QToolBar>
 #include <QToolButton>
+#include <QWidgetList>
 
 #include "domain/models/Config.h"
 #include "subscription/ShareUrlBuilder.h"
@@ -70,6 +72,7 @@ private slots:
     void currentServerStatusAppendsLocation();
     void currentServerStatusAppendsManualVerificationWarning();
     void coreStatusRemainsStartingUntilStrictActivation();
+    void runtimeStatusLabelsRemainVisibleInStatusBar();
     void serverSelectionDoesNotShowTransientStatusMessage();
     void routineTransientStatusDoesNotOverrideStatusLabel();
     void transientStatusTemporarilyOverridesBackgroundTaskMessage();
@@ -152,49 +155,71 @@ bool triggerServerContextMenuAction(
     QStringList* actionTexts = nullptr)
 {
     bool triggered = false;
-
-    QTimer::singleShot(50, [&triggered, actionObjectName, actionTexts]() {
-        auto inspectMenu = [&triggered, &actionObjectName, actionTexts](QMenu* menu) {
-            if (menu == nullptr) {
-                return false;
-            }
-
-            for (QAction* action : menu->actions()) {
-                if (action == nullptr || action->isSeparator()) {
-                    continue;
-                }
-
-                if (actionTexts != nullptr) {
-                    actionTexts->append(action->text());
-                }
-
-                if (action->objectName() == actionObjectName) {
-                    action->trigger();
-                    triggered = true;
-                }
-            }
-
-            menu->close();
-            return true;
-        };
-
-        if (inspectMenu(qobject_cast<QMenu*>(QApplication::activePopupWidget()))) {
-            return;
+    auto inspectMenu = [&triggered, &actionObjectName, actionTexts](QMenu* menu) {
+        if (menu == nullptr) {
+            return false;
         }
 
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (inspectMenu(qobject_cast<QMenu*>(widget))) {
-                return;
+        for (QAction* action : menu->actions()) {
+            if (action == nullptr || action->isSeparator()) {
+                continue;
+            }
+
+            if (actionTexts != nullptr && !actionTexts->contains(action->text())) {
+                actionTexts->append(action->text());
+            }
+
+            if (action->objectName() == actionObjectName) {
+                action->trigger();
+                triggered = true;
             }
         }
-    });
+
+        menu->close();
+        return true;
+    };
 
     QMetaObject::invokeMethod(
         &window,
         "showServerContextMenu",
         Qt::DirectConnection,
         Q_ARG(QPoint, menuPoint));
-    QCoreApplication::processEvents();
+
+    QElapsedTimer timer;
+    timer.start();
+    while (!triggered && timer.elapsed() < 1000) {
+        if (inspectMenu(qobject_cast<QMenu*>(QApplication::activePopupWidget()))) {
+            if (triggered) {
+                break;
+            }
+        }
+
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (inspectMenu(qobject_cast<QMenu*>(widget)) && triggered) {
+                break;
+            }
+        }
+        if (triggered) {
+            break;
+        }
+
+        for (QWidget* widget : QApplication::allWidgets()) {
+            if (inspectMenu(qobject_cast<QMenu*>(widget)) && triggered) {
+                break;
+            }
+        }
+        if (triggered) {
+            break;
+        }
+
+        QTest::qWait(10);
+    }
+
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (auto* menu = qobject_cast<QMenu*>(widget)) {
+            menu->close();
+        }
+    }
 
     return triggered;
 }
@@ -1195,6 +1220,49 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is synchronizing. Wait until the core and system proxy reach the same target state."));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
+}
+
+void MainWindowTests::runtimeStatusLabelsRemainVisibleInStatusBar()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.autoRunEnabled = true;
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    StatisticsSessionState statisticsState;
+    statisticsState.enabled = true;
+    statisticsState.running = true;
+    statisticsState.runtimeConfigReady = true;
+    statisticsState.pollingAvailable = true;
+    statisticsState.statePort = 10808;
+    statisticsState.coreType = CoreType::Xray;
+
+    window.setSystemProxyState(static_cast<int>(SystemProxyMode::ForcedChange), true);
+    window.setCoreProcessRunning(true);
+    window.setCoreRunning(true, false);
+    window.setAutoRunEnabled(true);
+    window.setStatisticsSessionState(statisticsState);
+    QCoreApplication::processEvents();
+
+    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
+    auto* proxyStatusLabel = window.findChild<QLabel*>(QStringLiteral("proxyStatusLabel"));
+    auto* autoRunStatusLabel = window.findChild<QLabel*>(QStringLiteral("autoRunStatusLabel"));
+    auto* statisticsStatusLabel = window.findChild<QLabel*>(QStringLiteral("statisticsStatusLabel"));
+    QVERIFY(coreStatusLabel != nullptr);
+    QVERIFY(proxyStatusLabel != nullptr);
+    QVERIFY(autoRunStatusLabel != nullptr);
+    QVERIFY(statisticsStatusLabel != nullptr);
+
+    QVERIFY(coreStatusLabel->isVisible());
+    QVERIFY(proxyStatusLabel->isVisible());
+    QVERIFY(autoRunStatusLabel->isVisible());
+    QVERIFY(statisticsStatusLabel->isVisible());
+    QCOMPARE(coreStatusLabel->text(), QStringLiteral("Core: Running"));
+    QCOMPARE(proxyStatusLabel->text(), QStringLiteral("Proxy: Global"));
+    QCOMPARE(autoRunStatusLabel->text(), QStringLiteral("Auto Run: Enabled"));
+    QCOMPARE(statisticsStatusLabel->text(), QStringLiteral("Stats API: 127.0.0.1:10808"));
 }
 
 void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
