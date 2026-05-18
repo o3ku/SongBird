@@ -345,7 +345,7 @@ void LogPanelWidget::showLogContextMenu(const QPoint& position)
     }
 
     updateLogContextActions();
-    logContextMenu_->popup(logView_->mapToGlobal(position));
+    logContextMenu_->popup(logView_->viewport()->mapToGlobal(position));
 }
 
 void LogPanelWidget::copySelectedLogLines()

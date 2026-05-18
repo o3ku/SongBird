@@ -24,6 +24,7 @@ void ProxyToolbarController::sync(
         proxyToggleAction_->setChecked(isProxyCheckedState(snapshot));
 
         QString toolTip = QObject::tr("Enable or disable proxy.");
+        bool canEnableProxy = false;
         if (snapshot.coreTransitionPending) {
             toolTip = QObject::tr("Proxy state transition is in progress.");
         } else if (isProxyCheckedState(snapshot)) {
@@ -59,13 +60,14 @@ void ProxyToolbarController::sync(
                                        : activeServer->remarks.trimmed());
             } else {
                 toolTip = QObject::tr("Start the core with the active server and enable system proxy.");
+                canEnableProxy = true;
             }
         }
 
         proxyToggleAction_->setToolTip(toolTip);
         proxyToggleAction_->setEnabled(
             isProxyCheckedState(snapshot)
-            || (snapshot.hasServers && isProxyUncheckedState(snapshot)));
+            || (isProxyUncheckedState(snapshot) && canEnableProxy));
     }
 
     if (tunToggleAction_ != nullptr) {

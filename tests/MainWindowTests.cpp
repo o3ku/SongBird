@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QClipboard>
+#include <QContextMenuEvent>
 #include <QElapsedTimer>
 #include <QFontMetrics>
 #include <QLabel>
@@ -40,6 +41,7 @@ private slots:
     void appendLogPreservesViewportWhenCursorNotAtLastLine();
     void appendLogPreservesViewportWhenFilterActive();
     void logStickToBottomButtonMatchesFilterHeight();
+    void logContextMenuUsesViewportCoordinates();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
@@ -52,6 +54,7 @@ private slots:
     void qrCodeRendererRemovesQuietZone();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
     void proxyToggleButtonRemainsEnabledToDisableActiveProxyWithoutServers();
+    void proxyToggleButtonDisablesWhenNoCompatibleCoreInstalled();
     void systemProxyModeActionEmitsSingleSelectionSignal();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
     void restoreAndCaptureUiStatePreservesRuntimeToggles();
@@ -314,6 +317,34 @@ void MainWindowTests::logStickToBottomButtonMatchesFilterHeight()
     QCOMPARE(stickButton->width(), stickButton->height());
 }
 
+void MainWindowTests::logContextMenuUsesViewportCoordinates()
+{
+    MainWindow window;
+    window.resize(1000, 640);
+    window.show();
+    QCoreApplication::processEvents();
+    appendManyLogs(window, 8, QStringLiteral("context"));
+
+    auto* logView = window.findChild<QListView*>(QStringLiteral("logView"));
+    auto* logMenu = window.findChild<QMenu*>(QStringLiteral("logContextMenu"));
+    QVERIFY(logView != nullptr);
+    QVERIFY(logView->viewport() != nullptr);
+    QVERIFY(logMenu != nullptr);
+    QVERIFY(logView->model() != nullptr);
+    QVERIFY(logView->model()->rowCount() > 0);
+
+    const QPoint menuPoint = logView->visualRect(logView->model()->index(0, 0)).center();
+    const QPoint expectedGlobal = logView->viewport()->mapToGlobal(menuPoint);
+
+    QContextMenuEvent event(QContextMenuEvent::Mouse, menuPoint, expectedGlobal);
+    QApplication::sendEvent(logView->viewport(), &event);
+    QTRY_VERIFY(QApplication::activePopupWidget() == logMenu);
+    QCOMPARE(logMenu->pos(), expectedGlobal);
+
+    logMenu->close();
+    QTRY_VERIFY(QApplication::activePopupWidget() == nullptr);
+}
+
 void MainWindowTests::globalHotkeySettingsActionEmitsSignal()
 {
     MainWindow window;
@@ -539,6 +570,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
     QCoreApplication::processEvents();
 
     QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
@@ -580,6 +612,7 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
     window.setProxyEnabled(true);
     window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
@@ -605,6 +638,30 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     proxyButton->click();
     QCoreApplication::processEvents();
     QCOMPARE(disableSpy.count(), 1);
+}
+
+void MainWindowTests::proxyToggleButtonDisablesWhenNoCompatibleCoreInstalled()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.setExistingCoreTypes({});
+    QCoreApplication::processEvents();
+
+    QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QVERIFY(enableSpy.isValid());
+
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(proxyButton != nullptr);
+    QVERIFY(!proxyButton->isChecked());
+    QVERIFY(!proxyButton->isEnabled());
+    QCOMPARE(
+        proxyButton->toolTip(),
+        QStringLiteral("No compatible sing-box core is installed for the active server \"First\"."));
+
+    proxyButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(enableSpy.count(), 0);
 }
 
 void MainWindowTests::systemProxyModeActionEmitsSingleSelectionSignal()
