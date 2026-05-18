@@ -1,24 +1,24 @@
 #pragma once
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QLineEdit>
 #include <QList>
-#include <QSpinBox>
-#include <QTextEdit>
 
 #include "domain/models/Config.h"
 #include "domain/models/CoreTypeItem.h"
 
+class QCheckBox;
 class QStackedLayout;
+class QSpinBox;
 class QTabBar;
 class QPushButton;
 class QWidget;
 
 #include "ui/dialogs/CoreSettingsPageWidget.h"
 #include "ui/dialogs/DnsSettingsPageWidget.h"
+#include "ui/dialogs/GeneralSettingsPageWidget.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 
@@ -51,25 +51,12 @@ private:
     void updateFieldState();
 
     Config config_;
-    QCheckBox* showMainOnStartupCheck_ = nullptr;
-    QCheckBox* autoRunCheck_ = nullptr;
-    QCheckBox* allowLanConnectionCheck_ = nullptr;
-    QCheckBox* sniffingEnabledCheck_ = nullptr;
-    QCheckBox* routeOnlyCheck_ = nullptr;
-    QSpinBox* localPortSpin_ = nullptr;
-    QCheckBox* enableFragmentCheck_ = nullptr;
-    QCheckBox* defaultAllowInsecureCheck_ = nullptr;
-    QComboBox* defaultFingerprintCombo_ = nullptr;
-    QComboBox* defaultUserAgentCombo_ = nullptr;
-    QCheckBox* enableStatisticsCheck_ = nullptr;
-    QSpinBox* statisticsFreshRateSpin_ = nullptr;
-    QSpinBox* trayMenuServersLimitSpin_ = nullptr;
+    GeneralSettingsPageWidget* generalSettingsPage_ = nullptr;
     QLineEdit* systemProxyExceptionsEdit_ = nullptr;
     QComboBox* systemProxyAdvancedProtocolCombo_ = nullptr;
     QLineEdit* pacUrlEdit_ = nullptr;
     QCheckBox* checkPreReleaseUpdateCheck_ = nullptr;
     QCheckBox* ignoreGeoUpdateCoreCheck_ = nullptr;
-    QComboBox* languageCombo_ = nullptr;
     QCheckBox* tunEnableCheck_ = nullptr;
     QCheckBox* tunAutoRouteCheck_ = nullptr;
     QCheckBox* tunStrictRouteCheck_ = nullptr;

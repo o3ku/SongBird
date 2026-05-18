@@ -83,6 +83,8 @@ set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     ../src/ui/dialogs/CoreSettingsPageWidget.cpp
     ../src/ui/dialogs/DnsSettingsPageWidget.h
     ../src/ui/dialogs/DnsSettingsPageWidget.cpp
+    ../src/ui/dialogs/GeneralSettingsPageWidget.h
+    ../src/ui/dialogs/GeneralSettingsPageWidget.cpp
     ../src/ui/dialogs/RoutingSettingsPageWidget.h
     ../src/ui/dialogs/RoutingSettingsPageWidget.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h

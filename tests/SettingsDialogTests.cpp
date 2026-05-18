@@ -28,12 +28,14 @@ private slots:
     void successfulCoreUpdateFinishRestoresIdleStatus();
     void installedCoreVersionShowsUpdateAction();
     void sniffingEnabledCheckboxRoundTripsConfig();
+    void sniffingToggleControlsRouteOnlyCheckbox();
     void routeOnlyCheckboxRoundTripsConfig();
     void enableFragmentCheckboxRoundTripsConfig();
     void enableCacheFile4SboxCheckboxRoundTripsConfig();
     void defaultAllowInsecureCheckboxRoundTripsConfig();
     void defaultUserAgentComboRoundTripsConfig();
     void defaultFingerprintComboRoundTripsConfig();
+    void statisticsToggleControlsRefreshRateSpin();
     void mux4SboxProtocolComboRoundTripsConfig();
     void updateTabDoesNotExposeRemovedTls13Option();
     void coreTypeTableIncludesHttpProtocol();
@@ -191,6 +193,27 @@ void SettingsDialogTests::sniffingEnabledCheckboxRoundTripsConfig()
     QVERIFY(updated.sniffingEnabled);
 }
 
+void SettingsDialogTests::sniffingToggleControlsRouteOnlyCheckbox()
+{
+    Config config;
+    config.sniffingEnabled = false;
+    config.routeOnly = true;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* sniffingCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsSniffingEnabledCheck"));
+    auto* routeOnlyCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsRouteOnlyCheck"));
+    QVERIFY(sniffingCheck != nullptr);
+    QVERIFY(routeOnlyCheck != nullptr);
+
+    QVERIFY(!sniffingCheck->isChecked());
+    QVERIFY(!routeOnlyCheck->isEnabled());
+
+    sniffingCheck->setChecked(true);
+    QVERIFY(routeOnlyCheck->isEnabled());
+}
+
 void SettingsDialogTests::routeOnlyCheckboxRoundTripsConfig()
 {
     Config config;
@@ -297,6 +320,27 @@ void SettingsDialogTests::defaultFingerprintComboRoundTripsConfig()
 
     const Config updated = dialog.config();
     QCOMPARE(updated.defaultFingerprint, QStringLiteral("edge"));
+}
+
+void SettingsDialogTests::statisticsToggleControlsRefreshRateSpin()
+{
+    Config config;
+    config.enableStatistics = false;
+    config.statisticsFreshRate = 7;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* statisticsCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsEnableStatisticsCheck"));
+    auto* refreshRateSpin = dialog.findChild<QSpinBox*>(QStringLiteral("settingsStatisticsFreshRateSpin"));
+    QVERIFY(statisticsCheck != nullptr);
+    QVERIFY(refreshRateSpin != nullptr);
+
+    QVERIFY(!statisticsCheck->isChecked());
+    QVERIFY(!refreshRateSpin->isEnabled());
+
+    statisticsCheck->setChecked(true);
+    QVERIFY(refreshRateSpin->isEnabled());
 }
 
 void SettingsDialogTests::mux4SboxProtocolComboRoundTripsConfig()

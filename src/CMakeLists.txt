@@ -97,6 +97,8 @@ set(QT_V2RAYN_SOURCES
     ui/dialogs/DnsSettingsDialog.cpp
     ui/dialogs/DnsSettingsPageWidget.h
     ui/dialogs/DnsSettingsPageWidget.cpp
+    ui/dialogs/GeneralSettingsPageWidget.h
+    ui/dialogs/GeneralSettingsPageWidget.cpp
     ui/dialogs/GlobalHotkeyDialog.h
     ui/dialogs/GlobalHotkeyDialog.cpp
     ui/dialogs/CoreSettingsPageWidget.h

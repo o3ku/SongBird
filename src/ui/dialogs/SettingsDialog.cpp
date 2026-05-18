@@ -11,7 +11,6 @@
 #include <QSpinBox>
 #include <QStackedLayout>
 #include <QTabBar>
-#include <QTextEdit>
 #include <QVBoxLayout>
 
 #include <QWidget>
@@ -55,32 +54,6 @@ QStringList singBoxMuxProtocolOptions()
         QString()};
 }
 
-QStringList defaultUserAgentOptions()
-{
-    return {
-        QString(),
-        QStringLiteral("chrome"),
-        QStringLiteral("firefox"),
-        QStringLiteral("edge"),
-        QStringLiteral("golang")};
-}
-
-QStringList defaultFingerprintOptions()
-{
-    return {
-        QStringLiteral("chrome"),
-        QStringLiteral("firefox"),
-        QStringLiteral("safari"),
-        QStringLiteral("ios"),
-        QStringLiteral("android"),
-        QStringLiteral("edge"),
-        QStringLiteral("360"),
-        QStringLiteral("qq"),
-        QStringLiteral("random"),
-        QStringLiteral("randomized"),
-        QString()};
-}
-
 } // namespace
 
 SettingsDialog::SettingsDialog(QWidget* parent)
@@ -95,28 +68,14 @@ void SettingsDialog::setConfig(const Config& config)
 {
     config_ = config;
 
-    showMainOnStartupCheck_->setChecked(config.showMainOnStartup);
-    autoRunCheck_->setChecked(config.autoRunEnabled);
-    allowLanConnectionCheck_->setChecked(config.allowLanConnection);
-    sniffingEnabledCheck_->setChecked(config.sniffingEnabled);
-    routeOnlyCheck_->setChecked(config.routeOnly);
-    localPortSpin_->setValue(config.localPort > 0 ? config.localPort : 10808);
-    enableFragmentCheck_->setChecked(config.enableFragment);
-    defaultAllowInsecureCheck_->setChecked(config.defaultAllowInsecure);
-    defaultFingerprintCombo_->setCurrentText(config.defaultFingerprint);
-    defaultUserAgentCombo_->setCurrentText(config.defaultUserAgent);
-    enableStatisticsCheck_->setChecked(config.enableStatistics);
-    statisticsFreshRateSpin_->setValue(qMax(1, config.statisticsFreshRate));
-    trayMenuServersLimitSpin_->setValue(qMax(0, config.trayMenuServersLimit));
+    if (generalSettingsPage_ != nullptr) {
+        generalSettingsPage_->setConfig(config);
+    }
     systemProxyExceptionsEdit_->setText(config.systemProxyExceptions);
     systemProxyAdvancedProtocolCombo_->setCurrentText(config.systemProxyAdvancedProtocol);
     pacUrlEdit_->setText(config.pacUrl);
     checkPreReleaseUpdateCheck_->setChecked(config.checkPreReleaseUpdate);
     ignoreGeoUpdateCoreCheck_->setChecked(config.ignoreGeoUpdateCore);
-
-    const QString normalizedLanguage = config.languageCode.trimmed();
-    const int languageIndex = languageCombo_->findData(normalizedLanguage);
-    languageCombo_->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
 
     if (routingSettingsPage_ != nullptr) {
         routingSettingsPage_->setConfig(config);
@@ -166,25 +125,14 @@ void SettingsDialog::setExistingCoreTypes(const QList<CoreType>& coreTypes)
 Config SettingsDialog::config() const
 {
     Config updated = config_;
-    updated.showMainOnStartup = showMainOnStartupCheck_->isChecked();
-    updated.autoRunEnabled = autoRunCheck_->isChecked();
-    updated.allowLanConnection = allowLanConnectionCheck_->isChecked();
-    updated.sniffingEnabled = sniffingEnabledCheck_->isChecked();
-    updated.routeOnly = routeOnlyCheck_->isChecked();
-    updated.localPort = localPortSpin_->value();
-    updated.enableFragment = enableFragmentCheck_->isChecked();
-    updated.defaultAllowInsecure = defaultAllowInsecureCheck_->isChecked();
-    updated.defaultFingerprint = defaultFingerprintCombo_->currentText().trimmed();
-    updated.defaultUserAgent = defaultUserAgentCombo_->currentText().trimmed();
-    updated.enableStatistics = enableStatisticsCheck_->isChecked();
-    updated.statisticsFreshRate = statisticsFreshRateSpin_->value();
-    updated.trayMenuServersLimit = trayMenuServersLimitSpin_->value();
+    if (generalSettingsPage_ != nullptr) {
+        generalSettingsPage_->applyToConfig(updated);
+    }
     updated.systemProxyExceptions = systemProxyExceptionsEdit_->text().trimmed();
     updated.systemProxyAdvancedProtocol = systemProxyAdvancedProtocolCombo_->currentText().trimmed();
     updated.pacUrl = pacUrlEdit_->text().trimmed();
     updated.checkPreReleaseUpdate = checkPreReleaseUpdateCheck_->isChecked();
     updated.ignoreGeoUpdateCore = ignoreGeoUpdateCoreCheck_->isChecked();
-    updated.languageCode = languageCombo_->currentData().toString().trimmed();
     if (routingSettingsPage_ != nullptr) {
         updated.routingItems = routingSettingsPage_->routingItems();
         updated.routingCustomRules = routingSettingsPage_->routingCustomRules();
@@ -234,83 +182,9 @@ void SettingsDialog::setupUi()
 
     // === General Tab ===
     auto* generalTab = new QWidget(this);
-    auto* generalLayout = new QFormLayout(generalTab);
-
-    showMainOnStartupCheck_ = new QCheckBox(tr("Show the main window after startup"), generalTab);
-    autoRunCheck_ = new QCheckBox(tr("Enable auto run"), generalTab);
-    allowLanConnectionCheck_ = new QCheckBox(tr("Allow LAN connections"), generalTab);
-    sniffingEnabledCheck_ = new QCheckBox(tr("Enable traffic sniffing"), generalTab);
-    sniffingEnabledCheck_->setObjectName(QStringLiteral("settingsSniffingEnabledCheck"));
-    routeOnlyCheck_ = new QCheckBox(tr("Route only when sniffing"), generalTab);
-    routeOnlyCheck_->setObjectName(QStringLiteral("settingsRouteOnlyCheck"));
-
-    localPortSpin_ = new QSpinBox(generalTab);
-    localPortSpin_->setObjectName(QStringLiteral("settingsLocalPortSpin"));
-    localPortSpin_->setRange(1, 65535);
-
-    enableFragmentCheck_ = new QCheckBox(tr("Enable fragmentation for TLS outbounds"), generalTab);
-    enableFragmentCheck_->setObjectName(QStringLiteral("settingsEnableFragmentCheck"));
-
-    defaultAllowInsecureCheck_ = new QCheckBox(tr("Allow insecure TLS by default"), generalTab);
-    defaultAllowInsecureCheck_->setObjectName(QStringLiteral("settingsDefaultAllowInsecureCheck"));
-
-    defaultFingerprintCombo_ = new QComboBox(generalTab);
-    defaultFingerprintCombo_->setObjectName(QStringLiteral("settingsDefaultFingerprintCombo"));
-    defaultFingerprintCombo_->setEditable(true);
-    defaultFingerprintCombo_->addItems(defaultFingerprintOptions());
-
-    defaultUserAgentCombo_ = new QComboBox(generalTab);
-    defaultUserAgentCombo_->setObjectName(QStringLiteral("settingsDefaultUserAgentCombo"));
-    defaultUserAgentCombo_->setEditable(true);
-    defaultUserAgentCombo_->addItems(defaultUserAgentOptions());
-
-    enableStatisticsCheck_ = new QCheckBox(tr("Enable traffic statistics"), generalTab);
-    statisticsFreshRateSpin_ = new QSpinBox(generalTab);
-    statisticsFreshRateSpin_->setObjectName(QStringLiteral("settingsStatisticsFreshRateSpin"));
-    statisticsFreshRateSpin_->setRange(1, 100);
-    statisticsFreshRateSpin_->setSuffix(tr(" s"));
-
-    trayMenuServersLimitSpin_ = new QSpinBox(generalTab);
-    trayMenuServersLimitSpin_->setObjectName(QStringLiteral("settingsTrayMenuServersLimitSpin"));
-    trayMenuServersLimitSpin_->setRange(0, 999);
-    trayMenuServersLimitSpin_->setSpecialValueText(tr("Auto"));
-
-    languageCombo_ = new QComboBox(generalTab);
-    languageCombo_->setObjectName(QStringLiteral("settingsLanguageCombo"));
-    languageCombo_->addItem(tr("System Default"), QString());
-    languageCombo_->addItem(tr("English"), QStringLiteral("en"));
-    languageCombo_->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
-
-    AppTheme::applyCompactFont({
-        showMainOnStartupCheck_,
-        autoRunCheck_,
-        allowLanConnectionCheck_,
-        sniffingEnabledCheck_,
-        routeOnlyCheck_,
-        localPortSpin_,
-        enableFragmentCheck_,
-        defaultAllowInsecureCheck_,
-        defaultFingerprintCombo_,
-        defaultUserAgentCombo_,
-        enableStatisticsCheck_,
-        statisticsFreshRateSpin_,
-        trayMenuServersLimitSpin_,
-        languageCombo_});
-
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, showMainOnStartupCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, autoRunCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, allowLanConnectionCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, sniffingEnabledCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, routeOnlyCheck_);
-    generalLayout->addRow(tr("Local Port"), localPortSpin_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableFragmentCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, defaultAllowInsecureCheck_);
-    generalLayout->addRow(tr("Default Fingerprint"), defaultFingerprintCombo_);
-    generalLayout->addRow(tr("Default User-Agent"), defaultUserAgentCombo_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableStatisticsCheck_);
-    generalLayout->addRow(tr("Statistics Refresh Rate"), statisticsFreshRateSpin_);
-    generalLayout->addRow(tr("Tray Menu Server Limit"), trayMenuServersLimitSpin_);
-    generalLayout->addRow(tr("Language"), languageCombo_);
+    auto* generalLayout = new QVBoxLayout(generalTab);
+    generalSettingsPage_ = new GeneralSettingsPageWidget(generalTab);
+    generalLayout->addWidget(generalSettingsPage_);
 
     // === Subscriptions Tab ===
     auto* subTab = new QWidget(this);
@@ -484,13 +358,7 @@ void SettingsDialog::setupUi()
     rootLayout->addWidget(settingsStackContainer);
     rootLayout->addWidget(settingsActionBar);
 
-    connect(enableStatisticsCheck_, &QCheckBox::toggled, this, [this](bool) {
-        updateFieldState();
-    });
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool) {
-        updateFieldState();
-    });
-    connect(sniffingEnabledCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
     connect(buttonBox_, &QDialogButtonBox::accepted, this, [this]() {
@@ -505,16 +373,6 @@ void SettingsDialog::setupUi()
 
 void SettingsDialog::updateFieldState()
 {
-    const bool statisticsEnabled = enableStatisticsCheck_ != nullptr && enableStatisticsCheck_->isChecked();
-    if (statisticsFreshRateSpin_ != nullptr) {
-        statisticsFreshRateSpin_->setEnabled(statisticsEnabled);
-    }
-
-    const bool sniffingEnabled = sniffingEnabledCheck_ != nullptr && sniffingEnabledCheck_->isChecked();
-    if (routeOnlyCheck_ != nullptr) {
-        routeOnlyCheck_->setEnabled(sniffingEnabled);
-    }
-
     const bool tunEnabled = tunEnableCheck_ != nullptr && tunEnableCheck_->isChecked();
     if (tunAutoRouteCheck_ != nullptr) {
         tunAutoRouteCheck_->setEnabled(tunEnabled);
