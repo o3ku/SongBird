@@ -51,6 +51,7 @@
 #include <utility>
 
 #include "app/StartupAdminElevation.h"
+#include "app/AppBootstrapUiCommandPlan.h"
 #include "app/SettingsDialogSession.h"
 #include "app/SettingsDialogApplyPlan.h"
 #include "app/SingleInstanceBootstrap.h"
@@ -941,22 +942,7 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::openCustomConfigRequested, mainWindow_.get(), [this](const QString& indexId) {
-        const VmessItem* existing = findServerById(indexId);
-        if (existing == nullptr || existing->configType != ConfigType::Custom) {
-            appendResult(OperationResult::fail(QStringLiteral("The selected custom server could not be found.")));
-            return;
-        }
-
-        const QString filePath = serverService_->resolveCustomConfigPath(existing->address);
-        if (filePath.trimmed().isEmpty() || !QFileInfo::exists(filePath)) {
-            appendResult(OperationResult::fail(QStringLiteral("Custom config file does not exist.")));
-            return;
-        }
-
-        const bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(filePath));
-        appendResult(opened
-            ? OperationResult::ok(QStringLiteral("Opened custom config: %1").arg(QDir::toNativeSeparators(filePath)))
-            : OperationResult::fail(QStringLiteral("Failed to open custom config file.")));
+        openCustomConfigFile(indexId);
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::systemProxyModeSelected, mainWindow_.get(), [this](int mode) {
@@ -975,13 +961,7 @@ void AppBootstrap::wireMainWindow()
         const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
         const int previousRoutingIndex = config_.routingIndex;
         const OperationResult result = routingService_->setRoutingMode(config_, mode >= 0, mode);
-        appendResult(result);
-        syncWindow();
-        if (result.success
-            && (previousAdvancedEnabled != config_.enableRoutingAdvanced
-                || previousRoutingIndex != config_.routingIndex)) {
-            restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."));
-        }
+        handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::toggleAutoRunRequested, mainWindow_.get(), [this]() {
@@ -993,37 +973,7 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::globalHotkeySettingsRequested, mainWindow_.get(), [this]() {
-        if (mainWindow_ == nullptr || serverService_ == nullptr) {
-            return;
-        }
-
-        if (globalHotkeyService_ != nullptr) {
-            globalHotkeyService_->setPaused(true);
-        }
-        GlobalHotkeyDialog dialog(mainWindow_.get());
-        dialog.setHotkeys(config_.globalHotkeys);
-        const int dialogResult = dialog.exec();
-        if (globalHotkeyService_ != nullptr) {
-            globalHotkeyService_->setPaused(false);
-        }
-        if (dialogResult != QDialog::Accepted) {
-            return;
-        }
-
-        const QList<GlobalHotkeyItem> previousHotkeys = config_.globalHotkeys;
-        config_.globalHotkeys = dialog.hotkeys();
-        if (!serverService_->save(config_)) {
-            config_.globalHotkeys = previousHotkeys;
-            appendResult(OperationResult::fail(
-                QCoreApplication::translate("AppBootstrap", "Failed to save global hotkey settings.")));
-            return;
-        }
-
-        appendResult(OperationResult::ok(
-            QCoreApplication::translate("AppBootstrap", "Global hotkey settings saved.")));
-        if (registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
-            appendResult(globalHotkeyService_->registerHotkeys(config_.globalHotkeys));
-        }
+        openGlobalHotkeySettingsDialog();
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::settingsRequested, mainWindow_.get(), [this]() {
@@ -1031,31 +981,7 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::dnsSettingsRequested, mainWindow_.get(), [this]() {
-        if (mainWindow_ == nullptr || serverService_ == nullptr) {
-            return;
-        }
-
-        DnsSettingsDialog dialog(mainWindow_.get());
-        dialog.setConfig(config_);
-        if (dialog.exec() != QDialog::Accepted) {
-            return;
-        }
-
-        const Config previous = config_;
-        config_ = dialog.config();
-        if (!serverService_->save(config_)) {
-            config_ = previous;
-            appendResult(OperationResult::fail(
-                QCoreApplication::translate("AppBootstrap", "Failed to save DNS settings.")));
-            return;
-        }
-
-        appendResult(OperationResult::ok(
-            QCoreApplication::translate("AppBootstrap", "DNS settings saved.")));
-        if (isCoreRunning()) {
-            appendResult(OperationResult::ok(
-                QCoreApplication::translate("AppBootstrap", "Restart the core to apply the new DNS settings.")));
-        }
+        openDnsSettingsDialog();
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::openSettingsAtSubscriptionsTabRequested, mainWindow_.get(), [this]() {
@@ -1148,23 +1074,7 @@ void AppBootstrap::wireMainWindow()
     QObject::connect(mainWindow_.get(), &MainWindow::setDefaultServerRequested, mainWindow_.get(), [this](const QString& indexId) {
         const QString previousIndexId = config_.currentIndexId;
         const OperationResult result = serverService_->setDefaultServer(config_, indexId);
-        appendResult(result);
-        syncWindow();
-        if (result.success) {
-            if (mainWindow_ != nullptr) {
-                mainWindow_->setCurrentServerWarning({});
-            }
-            setCurrentActivationPending_ = true;
-            if (isCoreRunning()) {
-                if (previousIndexId != config_.currentIndexId) {
-                    restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
-                } else {
-                    setCurrentActivationPending_ = false;
-                }
-            } else {
-                startCore();
-            }
-        }
+        handleDefaultServerSelectionResult(result, previousIndexId);
     });
     QObject::connect(mainWindow_.get(), &MainWindow::testServersRequested, mainWindow_.get(), [this](const QStringList& indexIds) {
         startSpeedTest(indexIds);
@@ -1196,33 +1106,14 @@ void AppBootstrap::wireMainWindow()
     QObject::connect(trayController_.get(), &TrayController::defaultServerRequested, mainWindow_.get(), [this](const QString& indexId) {
         const QString previousIndexId = config_.currentIndexId;
         const OperationResult result = serverService_->setDefaultServer(config_, indexId);
-        appendResult(result);
-        syncWindow();
-        if (result.success) {
-            if (mainWindow_ != nullptr) {
-                mainWindow_->setCurrentServerWarning({});
-            }
-            setCurrentActivationPending_ = true;
-            if (isCoreRunning()) {
-                if (previousIndexId != config_.currentIndexId) {
-                    restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
-                } else {
-                    setCurrentActivationPending_ = false;
-                }
-            } else {
-                startCore();
-            }
-        }
+        handleDefaultServerSelectionResult(result, previousIndexId);
     });
 
     QObject::connect(trayController_.get(), &TrayController::routingRequested, mainWindow_.get(), [this](int index) {
         const int previousRoutingIndex = config_.routingIndex;
+        const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
         const OperationResult result = routingService_->selectRouting(config_, index);
-        appendResult(result);
-        syncWindow();
-        if (result.success && previousRoutingIndex != config_.routingIndex) {
-            restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."));
-        }
+        handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
     });
 
     QObject::connect(trayController_.get(), &TrayController::quitRequested, mainWindow_.get(), [this]() {
@@ -3064,6 +2955,145 @@ void AppBootstrap::deleteSubscription(const QString& subscriptionId)
     }
 
     restartCoreIfRunning(QStringLiteral("Reloading core after deleting the active subscription."));
+}
+
+void AppBootstrap::openCustomConfigFile(const QString& indexId)
+{
+    if (serverService_ == nullptr) {
+        return;
+    }
+
+    const VmessItem* existing = findServerById(indexId);
+    if (existing == nullptr || existing->configType != ConfigType::Custom) {
+        appendResult(OperationResult::fail(QStringLiteral("The selected custom server could not be found.")));
+        return;
+    }
+
+    const QString filePath = serverService_->resolveCustomConfigPath(existing->address);
+    if (filePath.trimmed().isEmpty() || !QFileInfo::exists(filePath)) {
+        appendResult(OperationResult::fail(QStringLiteral("Custom config file does not exist.")));
+        return;
+    }
+
+    const bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(filePath));
+    appendResult(opened
+        ? OperationResult::ok(QStringLiteral("Opened custom config: %1").arg(QDir::toNativeSeparators(filePath)))
+        : OperationResult::fail(QStringLiteral("Failed to open custom config file.")));
+}
+
+void AppBootstrap::openGlobalHotkeySettingsDialog()
+{
+    if (mainWindow_ == nullptr || serverService_ == nullptr) {
+        return;
+    }
+
+    if (globalHotkeyService_ != nullptr) {
+        globalHotkeyService_->setPaused(true);
+    }
+    GlobalHotkeyDialog dialog(mainWindow_.get());
+    dialog.setHotkeys(config_.globalHotkeys);
+    const int dialogResult = dialog.exec();
+    if (globalHotkeyService_ != nullptr) {
+        globalHotkeyService_->setPaused(false);
+    }
+    if (dialogResult != QDialog::Accepted) {
+        return;
+    }
+
+    const QList<GlobalHotkeyItem> previousHotkeys = config_.globalHotkeys;
+    config_.globalHotkeys = dialog.hotkeys();
+    if (!serverService_->save(config_)) {
+        config_.globalHotkeys = previousHotkeys;
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate("AppBootstrap", "Failed to save global hotkey settings.")));
+        return;
+    }
+
+    appendResult(OperationResult::ok(
+        QCoreApplication::translate("AppBootstrap", "Global hotkey settings saved.")));
+    if (registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
+        appendResult(globalHotkeyService_->registerHotkeys(config_.globalHotkeys));
+    }
+}
+
+void AppBootstrap::openDnsSettingsDialog()
+{
+    if (mainWindow_ == nullptr || serverService_ == nullptr) {
+        return;
+    }
+
+    DnsSettingsDialog dialog(mainWindow_.get());
+    dialog.setConfig(config_);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    const Config previous = config_;
+    config_ = dialog.config();
+    if (!serverService_->save(config_)) {
+        config_ = previous;
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate("AppBootstrap", "Failed to save DNS settings.")));
+        return;
+    }
+
+    appendResult(OperationResult::ok(
+        QCoreApplication::translate("AppBootstrap", "DNS settings saved.")));
+    if (isCoreRunning()) {
+        appendResult(OperationResult::ok(
+            QCoreApplication::translate("AppBootstrap", "Restart the core to apply the new DNS settings.")));
+    }
+}
+
+void AppBootstrap::handleRoutingSelectionResult(
+    const OperationResult& result,
+    bool previousAdvancedEnabled,
+    int previousRoutingIndex)
+{
+    appendResult(result);
+    syncWindow();
+
+    const RoutingSelectionPlan plan = evaluateRoutingSelectionPlan(
+        result.success,
+        previousAdvancedEnabled,
+        config_.enableRoutingAdvanced,
+        previousRoutingIndex,
+        config_.routingIndex,
+        isCoreRunning());
+    if (plan.shouldRestartRunningCore) {
+        restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."));
+    }
+}
+
+void AppBootstrap::handleDefaultServerSelectionResult(const OperationResult& result, const QString& previousIndexId)
+{
+    appendResult(result);
+    syncWindow();
+
+    const DefaultServerSelectionPlan plan = evaluateDefaultServerSelectionPlan(
+        result.success,
+        previousIndexId,
+        config_.currentIndexId,
+        isCoreRunning());
+    if (!result.success) {
+        return;
+    }
+
+    if (plan.shouldClearCurrentServerWarning && mainWindow_ != nullptr) {
+        mainWindow_->setCurrentServerWarning({});
+    }
+    if (plan.shouldMarkCurrentActivationPending) {
+        setCurrentActivationPending_ = true;
+    }
+    if (plan.shouldRestartRunningCore) {
+        restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
+    }
+    if (plan.shouldClearCurrentActivationPending) {
+        setCurrentActivationPending_ = false;
+    }
+    if (plan.shouldStartCore) {
+        startCore();
+    }
 }
 
 void AppBootstrap::runProxyAvailabilityCheck()

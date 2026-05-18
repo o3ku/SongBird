@@ -149,6 +149,14 @@ private:
     void updateSubscriptionsByIds(const QStringList& subscriptionIds, bool useProxy, const QString& startupMessage);
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);
+    void openCustomConfigFile(const QString& indexId);
+    void openGlobalHotkeySettingsDialog();
+    void openDnsSettingsDialog();
+    void handleRoutingSelectionResult(
+        const OperationResult& result,
+        bool previousAdvancedEnabled,
+        int previousRoutingIndex);
+    void handleDefaultServerSelectionResult(const OperationResult& result, const QString& previousIndexId);
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
     void openSettingsDialog(int initialTab = 0);
