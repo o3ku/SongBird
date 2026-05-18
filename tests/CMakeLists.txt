@@ -155,6 +155,40 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(qt_v2rayn_tun_settings_apply_decision_tests)
 endif()
 
+set(QT_V2RAYN_SETTINGS_DIALOG_APPLY_PLAN_TEST_SOURCES
+    SettingsDialogApplyPlanTests.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(qt_v2rayn_settings_dialog_apply_plan_tests
+        MANUAL_FINALIZATION
+        ${QT_V2RAYN_SETTINGS_DIALOG_APPLY_PLAN_TEST_SOURCES}
+    )
+else()
+    add_executable(qt_v2rayn_settings_dialog_apply_plan_tests ${QT_V2RAYN_SETTINGS_DIALOG_APPLY_PLAN_TEST_SOURCES})
+endif()
+
+target_include_directories(qt_v2rayn_settings_dialog_apply_plan_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(qt_v2rayn_settings_dialog_apply_plan_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+add_test(NAME settings-dialog-apply-plan COMMAND qt_v2rayn_settings_dialog_apply_plan_tests)
+set_tests_properties(settings-dialog-apply-plan PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(qt_v2rayn_settings_dialog_apply_plan_tests)
+endif()
+
 set(QT_V2RAYN_STARTUP_ADMIN_ELEVATION_TEST_SOURCES
     StartupAdminElevationTests.cpp
 )

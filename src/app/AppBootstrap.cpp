@@ -52,6 +52,7 @@
 
 #include "app/StartupAdminElevation.h"
 #include "app/SettingsDialogSession.h"
+#include "app/SettingsDialogApplyPlan.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "app/TunSettingsApplyDecision.h"
 #include "app/TunRuntimeState.h"
@@ -3764,32 +3765,20 @@ void AppBootstrap::openSettingsDialog(int initialTab)
         return;
     }
 
+    applySettingsDialogResult(sessionResult.config);
+}
+
+void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
+{
     const Config previousConfig = config_;
-    Config updatedConfig = sessionResult.config;
-    const auto normalizeLanguageCode = [](QString value) {
-        value = value.trimmed().toLower();
-        value.replace(QChar('-'), QChar('_'));
-        return value;
-    };
-    const bool runningOnWindows = isWindowsPlatform();
-    const bool processElevated = isProcessElevated();
-    const TunSettingsSaveBehavior tunSaveBehavior = evaluateTunSettingsSaveBehavior(
+    const SettingsDialogApplyPlan plan = evaluateSettingsDialogApplyPlan(
         previousConfig,
         updatedConfig,
-        runningOnWindows,
-        processElevated,
+        isWindowsPlatform(),
+        isProcessElevated(),
         isCoreRunning());
-    const TunSettingsApplyDecision& tunDecision = tunSaveBehavior.applyDecision;
 
-    const bool runtimeSettingsChanged =
-        shouldHotApplyRuntimeSettings(previousConfig, updatedConfig, tunDecision);
-    const bool systemProxySettingsChanged = previousConfig.localPort != updatedConfig.localPort
-        || previousConfig.systemProxyExceptions != updatedConfig.systemProxyExceptions
-        || previousConfig.systemProxyAdvancedProtocol != updatedConfig.systemProxyAdvancedProtocol;
-    const bool languageChanged =
-        normalizeLanguageCode(previousConfig.languageCode) != normalizeLanguageCode(updatedConfig.languageCode);
-
-    config_ = tunSaveBehavior.configToPersist;
+    config_ = plan.tunSaveBehavior.configToPersist;
     if (!serverService_->save(config_)) {
         config_ = previousConfig;
         appendResult(OperationResult::fail(
@@ -3799,19 +3788,19 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     }
 
     appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Settings saved.")));
-    if (tunSaveBehavior.shouldPromptForAdminRestart) {
+    if (plan.tunSaveBehavior.shouldPromptForAdminRestart) {
         appendResult(OperationResult::fail(tunAdminRequiredSaveMessage()));
     }
     syncWindow();
 
-    if (previousConfig.autoRunEnabled != updatedConfig.autoRunEnabled && autoRunService_ != nullptr) {
+    if (plan.autoRunChanged && autoRunService_ != nullptr) {
         const bool success = autoRunService_->setEnabled(updatedConfig.autoRunEnabled);
         if (!success) {
             appendResult(OperationResult::fail(QStringLiteral("Failed to update auto run setting.")));
         }
     }
 
-    if (systemProxySettingsChanged
+    if (plan.systemProxySettingsChanged
         && systemProxyService_ != nullptr
         && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::Unchanged) {
         const bool proxyUpdated = systemProxyService_->update(
@@ -3828,7 +3817,7 @@ void AppBootstrap::openSettingsDialog(int initialTab)
         }
     }
 
-    if (runtimeSettingsChanged) {
+    if (plan.runtimeSettingsChanged) {
         restartCoreIfRunning(QCoreApplication::translate(
             "AppBootstrap",
             "Reloading core after applying settings changes."));
@@ -3837,9 +3826,9 @@ void AppBootstrap::openSettingsDialog(int initialTab)
     }
 
     const bool adminRestartInitiated =
-        tunSaveBehavior.shouldPromptForAdminRestart && promptRestartAsAdministratorForTun();
+        plan.tunSaveBehavior.shouldPromptForAdminRestart && promptRestartAsAdministratorForTun();
 
-    if (shouldPromptForLanguageRestartAfterSettingsSave(languageChanged, adminRestartInitiated)) {
+    if (shouldPromptForLanguageRestartAfterSettingsSave(plan.languageChanged, adminRestartInitiated)) {
         promptRestartForLanguageChange();
     }
 }

@@ -16,6 +16,8 @@
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 
+struct SettingsDialogApplyPlan;
+
 class CoreLifecycleService;
 class ClientConfigWriter;
 class ServerConfigWriter;
@@ -150,6 +152,7 @@ private:
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
     void openSettingsDialog(int initialTab = 0);
+    void applySettingsDialogResult(const Config& updatedConfig);
     void openAboutDialog();
     void openExternalUrl(const QString& url);
     void openLoopbackTool();
