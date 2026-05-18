@@ -93,6 +93,8 @@ set(QT_V2RAYN_SETTINGS_DIALOG_TEST_SOURCES
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ../src/ui/dialogs/SettingsDialog.h
     ../src/ui/dialogs/SettingsDialog.cpp
+    ../src/ui/dialogs/TunSettingsPageWidget.h
+    ../src/ui/dialogs/TunSettingsPageWidget.cpp
     ../src/ui/dialogs/UpdateSettingsPageWidget.h
     ../src/ui/dialogs/UpdateSettingsPageWidget.cpp
     ../src/ui/theme/AppTheme.h
@@ -401,6 +403,8 @@ set(QT_V2RAYN_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
     ../src/ui/mainwindow/WindowLayoutStateController.h
     ../src/ui/mainwindow/WindowLayoutStateController.cpp
+    ../src/ui/mainwindow/ServerListController.h
+    ../src/ui/mainwindow/ServerListController.cpp
     ../src/ui/mainwindow/SharePanelWidget.h
     ../src/ui/mainwindow/SharePanelWidget.cpp
     ../src/ui/mainwindow/ProxyToolbarController.h

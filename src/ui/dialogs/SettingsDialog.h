@@ -11,7 +11,6 @@
 
 class QCheckBox;
 class QStackedLayout;
-class QSpinBox;
 class QTabBar;
 class QPushButton;
 class QWidget;
@@ -22,6 +21,7 @@ class QWidget;
 #include "ui/dialogs/ProxySettingsPageWidget.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
+#include "ui/dialogs/TunSettingsPageWidget.h"
 #include "ui/dialogs/UpdateSettingsPageWidget.h"
 
 class SettingsDialog final : public QDialog {
@@ -50,19 +50,12 @@ signals:
 
 private:
     void setupUi();
-    void updateFieldState();
 
     Config config_;
     GeneralSettingsPageWidget* generalSettingsPage_ = nullptr;
     ProxySettingsPageWidget* proxySettingsPage_ = nullptr;
+    TunSettingsPageWidget* tunSettingsPage_ = nullptr;
     UpdateSettingsPageWidget* updateSettingsPage_ = nullptr;
-    QCheckBox* tunEnableCheck_ = nullptr;
-    QCheckBox* tunAutoRouteCheck_ = nullptr;
-    QCheckBox* tunStrictRouteCheck_ = nullptr;
-    QSpinBox* tunMtuSpin_ = nullptr;
-    QComboBox* tunStackCombo_ = nullptr;
-    QCheckBox* tunEnableIPv6AddressCheck_ = nullptr;
-    QLineEdit* tunIcmpRoutingEdit_ = nullptr;
     QPushButton* restoreBackupButton_ = nullptr;
     QDialogButtonBox* buttonBox_ = nullptr;
     bool restoreBackupRequested_ = false;

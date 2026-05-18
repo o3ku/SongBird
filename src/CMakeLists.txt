@@ -111,6 +111,8 @@ set(QT_V2RAYN_SOURCES
     ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ui/dialogs/SettingsDialog.h
     ui/dialogs/SettingsDialog.cpp
+    ui/dialogs/TunSettingsPageWidget.h
+    ui/dialogs/TunSettingsPageWidget.cpp
     ui/dialogs/UpdateSettingsPageWidget.h
     ui/dialogs/UpdateSettingsPageWidget.cpp
     ui/theme/AppTheme.h
@@ -127,6 +129,8 @@ set(QT_V2RAYN_SOURCES
     ui/mainwindow/ServerWorkspaceWidget.cpp
     ui/mainwindow/WindowLayoutStateController.h
     ui/mainwindow/WindowLayoutStateController.cpp
+    ui/mainwindow/ServerListController.h
+    ui/mainwindow/ServerListController.cpp
     ui/mainwindow/SharePanelWidget.h
     ui/mainwindow/SharePanelWidget.cpp
     ui/mainwindow/ProxyToolbarController.h

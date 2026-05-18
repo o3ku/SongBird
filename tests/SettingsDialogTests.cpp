@@ -38,6 +38,9 @@ private slots:
     void statisticsToggleControlsRefreshRateSpin();
     void proxySettingsRoundTripsConfig();
     void updateSettingsRoundTripsConfig();
+    void tunSettingsRoundTripsConfig();
+    void tunToggleControlsDependentFields();
+    void tunToggleControlsCoreLegacyProtect();
     void mux4SboxProtocolComboRoundTripsConfig();
     void updateTabDoesNotExposeRemovedTls13Option();
     void coreTypeTableIncludesHttpProtocol();
@@ -397,6 +400,96 @@ void SettingsDialogTests::updateSettingsRoundTripsConfig()
     const Config updated = dialog.config();
     QVERIFY(updated.checkPreReleaseUpdate);
     QVERIFY(!updated.ignoreGeoUpdateCore);
+}
+
+void SettingsDialogTests::tunSettingsRoundTripsConfig()
+{
+    Config config;
+    config.tunModeItem.enableTun = true;
+    config.tunModeItem.autoRoute = true;
+    config.tunModeItem.strictRoute = false;
+    config.tunModeItem.mtu = 1400;
+    config.tunModeItem.stack = QStringLiteral("gvisor");
+    config.tunModeItem.enableIPv6Address = true;
+    config.tunModeItem.icmpRouting = QStringLiteral("tcp");
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* enableCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableCheck"));
+    auto* autoRouteCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunAutoRouteCheck"));
+    auto* strictRouteCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunStrictRouteCheck"));
+    auto* mtuSpin = dialog.findChild<QSpinBox*>(QStringLiteral("settingsTunMtuSpin"));
+    auto* stackCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsTunStackCombo"));
+    auto* ipv6Check = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableIPv6AddressCheck"));
+    auto* icmpEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsTunIcmpRoutingEdit"));
+    QVERIFY(enableCheck != nullptr);
+    QVERIFY(autoRouteCheck != nullptr);
+    QVERIFY(strictRouteCheck != nullptr);
+    QVERIFY(mtuSpin != nullptr);
+    QVERIFY(stackCombo != nullptr);
+    QVERIFY(ipv6Check != nullptr);
+    QVERIFY(icmpEdit != nullptr);
+    QVERIFY(enableCheck->isChecked());
+    QVERIFY(autoRouteCheck->isEnabled());
+    QCOMPARE(mtuSpin->value(), 1400);
+    QCOMPARE(stackCombo->currentText(), QStringLiteral("gvisor"));
+
+    mtuSpin->setValue(1500);
+    stackCombo->setCurrentText(QStringLiteral("mixed"));
+    icmpEdit->setText(QStringLiteral("udp"));
+    strictRouteCheck->setChecked(true);
+    ipv6Check->setChecked(false);
+
+    const Config updated = dialog.config();
+    QVERIFY(updated.tunModeItem.enableTun);
+    QVERIFY(updated.tunModeItem.autoRoute);
+    QVERIFY(updated.tunModeItem.strictRoute);
+    QCOMPARE(updated.tunModeItem.mtu, 1500);
+    QCOMPARE(updated.tunModeItem.stack, QStringLiteral("mixed"));
+    QVERIFY(!updated.tunModeItem.enableIPv6Address);
+    QCOMPARE(updated.tunModeItem.icmpRouting, QStringLiteral("udp"));
+}
+
+void SettingsDialogTests::tunToggleControlsDependentFields()
+{
+    Config config;
+    config.tunModeItem.enableTun = false;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* enableCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableCheck"));
+    auto* autoRouteCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunAutoRouteCheck"));
+    auto* mtuSpin = dialog.findChild<QSpinBox*>(QStringLiteral("settingsTunMtuSpin"));
+    QVERIFY(enableCheck != nullptr);
+    QVERIFY(autoRouteCheck != nullptr);
+    QVERIFY(mtuSpin != nullptr);
+
+    QVERIFY(!autoRouteCheck->isEnabled());
+    QVERIFY(!mtuSpin->isEnabled());
+
+    enableCheck->setChecked(true);
+    QVERIFY(autoRouteCheck->isEnabled());
+    QVERIFY(mtuSpin->isEnabled());
+}
+
+void SettingsDialogTests::tunToggleControlsCoreLegacyProtect()
+{
+    Config config;
+    config.tunModeItem.enableTun = false;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* enableCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableCheck"));
+    auto* legacyProtectCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableLegacyProtectCheck"));
+    QVERIFY(enableCheck != nullptr);
+    QVERIFY(legacyProtectCheck != nullptr);
+    QVERIFY(!legacyProtectCheck->isEnabled());
+
+    enableCheck->setChecked(true);
+    QVERIFY(legacyProtectCheck->isEnabled());
 }
 
 void SettingsDialogTests::mux4SboxProtocolComboRoundTripsConfig()

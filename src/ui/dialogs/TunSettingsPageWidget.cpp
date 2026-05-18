@@ -1,0 +1,123 @@
+#include "ui/dialogs/TunSettingsPageWidget.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QSpinBox>
+
+#include "ui/theme/AppTheme.h"
+
+TunSettingsPageWidget::TunSettingsPageWidget(QWidget* parent)
+    : QWidget(parent)
+{
+    setupUi();
+    updateFieldState();
+}
+
+void TunSettingsPageWidget::setConfig(const Config& config)
+{
+    const TunModeItem& tun = config.tunModeItem;
+    tunEnableCheck_->setChecked(tun.enableTun);
+    tunAutoRouteCheck_->setChecked(tun.autoRoute);
+    tunStrictRouteCheck_->setChecked(tun.strictRoute);
+    tunMtuSpin_->setValue(tun.mtu > 0 ? tun.mtu : 9000);
+    tunStackCombo_->setCurrentText(tun.stack.isEmpty() ? QStringLiteral("system") : tun.stack);
+    tunEnableIPv6AddressCheck_->setChecked(tun.enableIPv6Address);
+    tunIcmpRoutingEdit_->setText(tun.icmpRouting);
+    updateFieldState();
+}
+
+void TunSettingsPageWidget::applyToConfig(Config& config) const
+{
+    TunModeItem tun;
+    tun.enableTun = tunEnableCheck_->isChecked();
+    tun.autoRoute = tunAutoRouteCheck_->isChecked();
+    tun.strictRoute = tunStrictRouteCheck_->isChecked();
+    tun.mtu = tunMtuSpin_->value();
+    tun.stack = tunStackCombo_->currentText().trimmed();
+    tun.enableIPv6Address = tunEnableIPv6AddressCheck_->isChecked();
+    tun.icmpRouting = tunIcmpRoutingEdit_->text().trimmed();
+    config.tunModeItem = tun;
+}
+
+bool TunSettingsPageWidget::tunEnabled() const
+{
+    return tunEnableCheck_ != nullptr && tunEnableCheck_->isChecked();
+}
+
+void TunSettingsPageWidget::setupUi()
+{
+    auto* tunLayout = new QFormLayout(this);
+
+    tunEnableCheck_ = new QCheckBox(tr("Enable TUN mode (requires admin privileges)"), this);
+    tunEnableCheck_->setObjectName(QStringLiteral("settingsTunEnableCheck"));
+    tunAutoRouteCheck_ = new QCheckBox(tr("Auto route (route all traffic through TUN)"), this);
+    tunAutoRouteCheck_->setObjectName(QStringLiteral("settingsTunAutoRouteCheck"));
+    tunStrictRouteCheck_ = new QCheckBox(tr("Strict route (apply strict routing rules)"), this);
+    tunStrictRouteCheck_->setObjectName(QStringLiteral("settingsTunStrictRouteCheck"));
+
+    tunMtuSpin_ = new QSpinBox(this);
+    tunMtuSpin_->setObjectName(QStringLiteral("settingsTunMtuSpin"));
+    tunMtuSpin_->setRange(0, 99999);
+    tunMtuSpin_->setSpecialValueText(tr("Auto (9000)"));
+
+    tunStackCombo_ = new QComboBox(this);
+    tunStackCombo_->setObjectName(QStringLiteral("settingsTunStackCombo"));
+    tunStackCombo_->addItems({
+        QStringLiteral("system"),
+        QStringLiteral("gvisor"),
+        QStringLiteral("mixed")
+    });
+
+    tunEnableIPv6AddressCheck_ = new QCheckBox(tr("Enable IPv6 address"), this);
+    tunEnableIPv6AddressCheck_->setObjectName(QStringLiteral("settingsTunEnableIPv6AddressCheck"));
+    tunIcmpRoutingEdit_ = new QLineEdit(this);
+    tunIcmpRoutingEdit_->setObjectName(QStringLiteral("settingsTunIcmpRoutingEdit"));
+    tunIcmpRoutingEdit_->setPlaceholderText(tr("Optional ICMP routing preference"));
+
+    AppTheme::applyCompactFont({
+        tunEnableCheck_,
+        tunAutoRouteCheck_,
+        tunStrictRouteCheck_,
+        tunMtuSpin_,
+        tunStackCombo_,
+        tunEnableIPv6AddressCheck_,
+        tunIcmpRoutingEdit_});
+
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunAutoRouteCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunStrictRouteCheck_);
+    tunLayout->addRow(tr("MTU"), tunMtuSpin_);
+    tunLayout->addRow(tr("Stack"), tunStackCombo_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableIPv6AddressCheck_);
+    tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
+
+    connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
+        updateFieldState();
+        emit tunEnabledChanged(enabled);
+    });
+}
+
+void TunSettingsPageWidget::updateFieldState()
+{
+    const bool tunEnabled = tunEnableCheck_ != nullptr && tunEnableCheck_->isChecked();
+    if (tunAutoRouteCheck_ != nullptr) {
+        tunAutoRouteCheck_->setEnabled(tunEnabled);
+    }
+    if (tunStrictRouteCheck_ != nullptr) {
+        tunStrictRouteCheck_->setEnabled(tunEnabled);
+    }
+    if (tunMtuSpin_ != nullptr) {
+        tunMtuSpin_->setEnabled(tunEnabled);
+    }
+    if (tunStackCombo_ != nullptr) {
+        tunStackCombo_->setEnabled(tunEnabled);
+    }
+    if (tunEnableIPv6AddressCheck_ != nullptr) {
+        tunEnableIPv6AddressCheck_->setEnabled(tunEnabled);
+    }
+    if (tunIcmpRoutingEdit_ != nullptr) {
+        tunIcmpRoutingEdit_->setEnabled(tunEnabled);
+    }
+}
