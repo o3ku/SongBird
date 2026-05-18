@@ -1,6 +1,6 @@
 # v2rayq
 
-A lightweight Qt/C++ rewrite of [v2rayN](https://github.com/2dust/v2rayN) — the popular Windows proxy client for V2Ray/Xray.
+A lightweight Qt/C++ rewrite and improvement of [v2rayN](https://github.com/2dust/v2rayN) — the popular Windows proxy client for V2Ray/Xray.
 
 Drop-in compatible with v2rayN's `guiNConfig.json`. No .NET runtime, no NuGet packages, no DLL hell — a single static-linked native binary.
 

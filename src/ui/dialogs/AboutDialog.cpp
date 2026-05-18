@@ -51,11 +51,11 @@ void AboutDialog::setupUi()
     setWindowTitle(tr("About"));
     resize(480, 220);
 
-    auto* titleLabel = new QLabel(tr("v2rayq"), this);
+    auto* titleLabel = new QLabel(tr("V2RAYQ"), this);
     titleLabel->setObjectName(QStringLiteral("aboutTitleLabel"));
 
     auto* summaryLabel = new QLabel(
-        tr("A C++ fork of v2rayN with improvements"),
+        tr("A Qt/C++ rewrite and improvement of v2rayN"),
         this);
     summaryLabel->setObjectName(QStringLiteral("aboutSummaryLabel"));
     summaryLabel->setWordWrap(true);
