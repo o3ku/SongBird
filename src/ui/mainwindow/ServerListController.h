@@ -1,0 +1,51 @@
+#pragma once
+
+#include <functional>
+
+#include <QStringList>
+
+class QLineEdit;
+class ServerFilterProxyModel;
+class ServerTableModel;
+class ServerTableView;
+
+class ServerListController final {
+public:
+    struct Context {
+        ServerTableView* serverView = nullptr;
+        QLineEdit* serverFilterEdit = nullptr;
+        ServerFilterProxyModel* serverFilterModel = nullptr;
+        ServerTableModel* serverModel = nullptr;
+    };
+
+    ServerListController(
+        const Context& context,
+        std::function<void(const QString&)> applyTextFilter,
+        std::function<void()> applyCurrentTabFilter,
+        std::function<void()> updateSelectionForVisibleRows,
+        std::function<void()> updateActionState,
+        std::function<void()> updateQrPreview,
+        std::function<void(const QStringList&)> reorderServersRequested);
+
+    void setup();
+    void setDynamicSortEnabled(bool enabled, bool invalidateModel);
+    bool dynamicSortSuspended() const;
+    void handleFilterTextChanged(const QString& text);
+    void handleSubscriptionFilterChanged();
+    void updateReorderAvailability();
+
+private:
+    void toggleSorting(int logicalIndex);
+    QStringList buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const;
+
+    Context context_;
+    std::function<void(const QString&)> applyTextFilter_;
+    std::function<void()> applyCurrentTabFilter_;
+    std::function<void()> updateSelectionForVisibleRows_;
+    std::function<void()> updateActionState_;
+    std::function<void()> updateQrPreview_;
+    std::function<void(const QStringList&)> reorderServersRequested_;
+    bool dynamicSortSuspended_ = false;
+    int sortColumn_ = -1;
+    Qt::SortOrder sortOrder_ = Qt::AscendingOrder;
+};

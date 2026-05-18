@@ -67,6 +67,7 @@ private slots:
     void serverContextMenuSelectsClickedUnselectedRow();
     void serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection();
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
+    void setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears();
     void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
     void currentServerStatusAppendsLocation();
@@ -1122,6 +1123,42 @@ void MainWindowTests::serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly()
     // Verify blank-area click yields invalid index and the ungrouped tab is selected
     const QPoint blankPoint(serverView->viewport()->rect().center());
     QVERIFY(!serverView->indexAt(blankPoint).isValid());
+}
+
+void MainWindowTests::setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears()
+{
+    MainWindow window;
+    Config initialConfig = createGroupedServerSelectionConfig();
+    window.setConfig(initialConfig);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    auto* subscriptionTabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(subscriptionTabBar != nullptr);
+    QCOMPARE(subscriptionTabBar->tabData(subscriptionTabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    QCOMPARE(serverView->model()->rowCount(), 1);
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
+
+    Config updatedConfig = initialConfig;
+    updatedConfig.subscriptions = {
+        SubItem{
+            QStringLiteral("sub-1"),
+            QStringLiteral("Group 1"),
+            QStringLiteral("https://example.com/sub-1"),
+            true,
+            QStringLiteral("ua")}};
+    updatedConfig.servers.removeLast();
+    updatedConfig.currentIndexId = QStringLiteral("server-1");
+    window.setConfig(updatedConfig);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(subscriptionTabBar->tabData(subscriptionTabBar->currentIndex()).toString(), QStringLiteral("sub:sub-1"));
+    QCOMPARE(serverView->model()->rowCount(), 2);
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
+    QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
 }
 
 void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()

@@ -1709,6 +1709,7 @@ void MainWindow::syncConfigControllers(const Config& config)
     if (subscriptionViewController_ != nullptr) {
         subscriptionViewController_->setSubscriptions(config.subscriptions);
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
+        subscriptionViewController_->applyCurrentTabFilter();
     }
 }
 

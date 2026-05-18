@@ -431,6 +431,8 @@ set(QT_V2RAYN_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/LogPanelWidget.cpp
     ../src/ui/mainwindow/BackgroundTaskActionsController.h
     ../src/ui/mainwindow/BackgroundTaskActionsController.cpp
+    ../src/ui/mainwindow/RoutingModeController.h
+    ../src/ui/mainwindow/RoutingModeController.cpp
     ../src/ui/mainwindow/SubscriptionViewController.h
     ../src/ui/mainwindow/SubscriptionViewController.cpp
     ../src/ui/mainwindow/ServerWorkspaceWidget.h

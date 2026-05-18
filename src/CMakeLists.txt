@@ -123,6 +123,8 @@ set(QT_V2RAYN_SOURCES
     ui/mainwindow/LogPanelWidget.cpp
     ui/mainwindow/BackgroundTaskActionsController.h
     ui/mainwindow/BackgroundTaskActionsController.cpp
+    ui/mainwindow/RoutingModeController.h
+    ui/mainwindow/RoutingModeController.cpp
     ui/mainwindow/SubscriptionViewController.h
     ui/mainwindow/SubscriptionViewController.cpp
     ui/mainwindow/ServerWorkspaceWidget.h
