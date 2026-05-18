@@ -99,6 +99,8 @@ set(QT_V2RAYN_SOURCES
     ui/dialogs/GlobalHotkeyDialog.cpp
     ui/dialogs/CoreSettingsPageWidget.h
     ui/dialogs/CoreSettingsPageWidget.cpp
+    ui/dialogs/SubscriptionSettingsPageWidget.h
+    ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ui/dialogs/SettingsDialog.h
     ui/dialogs/SettingsDialog.cpp
     ui/theme/AppTheme.h

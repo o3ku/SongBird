@@ -1,5 +1,6 @@
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/dialogs/CoreSettingsPageWidget.h"
+#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "common/DialogUtils.h"
 
@@ -12,14 +13,12 @@
 #include <QGridLayout>
 #include <QFontMetrics>
 #include <QGroupBox>
-#include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLayout>
 #include <QPainter>
 #include <QRegularExpression>
-#include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStackedLayout>
@@ -27,10 +26,8 @@
 #include <QStyleOptionButton>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QTableWidgetItem>
 #include <QTextEdit>
 #include <QVBoxLayout>
-#include <QItemSelectionModel>
 
 #include <QWidget>
 
@@ -243,8 +240,9 @@ void SettingsDialog::setConfig(const Config& config)
     loadRoutingCustomRules(config.routingCustomRules);
     selectRoutingCustomRuleTab(config.settingsRoutingRuleTabKey);
 
-    subItems_ = config.subscriptions;
-    reloadSubTable();
+    if (subscriptionSettingsPage_ != nullptr) {
+        subscriptionSettingsPage_->setSubscriptions(config.subscriptions);
+    }
 
     if (coreSettingsPage_ != nullptr) {
         coreSettingsPage_->setConfig(config);
@@ -322,7 +320,9 @@ Config SettingsDialog::config() const
     updated.enableRoutingAdvanced = !updated.routingItems.isEmpty();
     updated.routingIndex = selectedBaseRouteIndex() < 0 ? 0 : selectedBaseRouteIndex();
     updated.settingsRoutingRuleTabKey = selectedRoutingCustomRuleTabKey();
-    updated.subscriptions = collectSubItems();
+    if (subscriptionSettingsPage_ != nullptr) {
+        updated.subscriptions = subscriptionSettingsPage_->subscriptions();
+    }
     if (coreSettingsPage_ != nullptr) {
         updated.enableCacheFile4Sbox = coreSettingsPage_->enableCacheFile4Sbox();
         updated.mux4SboxProtocol = coreSettingsPage_->mux4SboxProtocol();
@@ -449,39 +449,8 @@ void SettingsDialog::setupUi()
     // === Subscriptions Tab ===
     auto* subTab = new QWidget(this);
     auto* subLayout = new QVBoxLayout(subTab);
-
-    subTable_ = new QTableWidget(subTab);
-    subTable_->setColumnCount(4);
-    subTable_->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
-        QStringLiteral("Remarks"),
-        QStringLiteral("URL"),
-        QStringLiteral("User Agent")
-    });
-    subTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    subTable_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    subTable_->verticalHeader()->setVisible(false);
-    subTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    subTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    subTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    subTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    AppTheme::applyServerTableStyle(subTable_);
-    AppTheme::applyCompactFont(subTable_);
-    AppTheme::applyCompactFont(subTable_->horizontalHeader());
-
-    addSubButton_ = new QPushButton(QStringLiteral("Add"), subTab);
-    removeSubButton_ = new QPushButton(QStringLiteral("Remove"), subTab);
-    updateSubButton_ = new QPushButton(QStringLiteral("Update Selected"), subTab);
-    AppTheme::applyCompactFont({addSubButton_, removeSubButton_, updateSubButton_});
-
-    auto* subButtonLayout = new QHBoxLayout();
-    subButtonLayout->addWidget(addSubButton_);
-    subButtonLayout->addWidget(removeSubButton_);
-    subButtonLayout->addWidget(updateSubButton_);
-    subButtonLayout->addStretch(1);
-
-    subLayout->addLayout(subButtonLayout);
-    subLayout->addWidget(subTable_);
+    subscriptionSettingsPage_ = new SubscriptionSettingsPageWidget(subTab);
+    subLayout->addWidget(subscriptionSettingsPage_);
 
     // === Routing Tab ===
     auto* routingTab = new QWidget(this);
@@ -854,28 +823,8 @@ void SettingsDialog::setupUi()
     });
     connect(buttonBox_, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-    // Subscriptions tab connections
-    connect(addSubButton_, &QPushButton::clicked, this, [this]() {
-        appendSubRow(SubItem{ QString(), QStringLiteral("Subscription"), QStringLiteral("https://"), true, QString() });
-        updateSubActionState();
-    });
-    connect(removeSubButton_, &QPushButton::clicked, this, [this]() {
-        QModelIndexList rows = subTable_->selectionModel() == nullptr
-            ? QModelIndexList()
-            : subTable_->selectionModel()->selectedRows();
-        std::sort(rows.begin(), rows.end(), [](const QModelIndex& lhs, const QModelIndex& rhs) {
-            return lhs.row() > rhs.row();
-        });
-        for (const QModelIndex& row : rows) {
-            subTable_->removeRow(row.row());
-        }
-        updateSubActionState();
-    });
-    connect(updateSubButton_, &QPushButton::clicked, this, [this]() {
+    connect(subscriptionSettingsPage_, &SubscriptionSettingsPageWidget::updateRequested, this, [this]() {
         updateSubRequested_ = true;
-    });
-    connect(subTable_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this]() {
-        updateSubActionState();
     });
 
     reloadRoutingPresentation();
@@ -1372,91 +1321,9 @@ QStringList SettingsDialog::splitValues(const QString& value)
     return values;
 }
 
-void SettingsDialog::reloadSubTable()
-{
-    const QSignalBlocker blocker(subTable_);
-    subTable_->setRowCount(0);
-
-    for (const SubItem& item : subItems_) {
-        appendSubRow(item);
-    }
-
-    updateSubActionState();
-}
-
-void SettingsDialog::appendSubRow(const SubItem& item)
-{
-    const int row = subTable_->rowCount();
-    subTable_->insertRow(row);
-
-    auto* enabledItem = new QTableWidgetItem();
-    enabledItem->setFlags(enabledItem->flags() | Qt::ItemIsUserCheckable);
-    enabledItem->setCheckState(item.enabled ? Qt::Checked : Qt::Unchecked);
-
-    auto* remarksItem = new QTableWidgetItem(item.remarks);
-    remarksItem->setData(Qt::UserRole, item.id);
-
-    auto* urlItem = new QTableWidgetItem(item.url);
-    auto* userAgentItem = new QTableWidgetItem(item.userAgent);
-
-    subTable_->setItem(row, 0, enabledItem);
-    subTable_->setItem(row, 1, remarksItem);
-    subTable_->setItem(row, 2, urlItem);
-    subTable_->setItem(row, 3, userAgentItem);
-}
-
-void SettingsDialog::updateSubActionState()
-{
-    const bool hasSelection = !selectedSubRows().isEmpty();
-    if (removeSubButton_ != nullptr) {
-        removeSubButton_->setEnabled(hasSelection);
-    }
-    if (updateSubButton_ != nullptr) {
-        updateSubButton_->setEnabled(hasSelection);
-    }
-}
-
 QList<int> SettingsDialog::selectedSubRows() const
 {
-    QList<int> rows;
-    if (subTable_ == nullptr || subTable_->selectionModel() == nullptr) {
-        return rows;
-    }
-
-    const QModelIndexList indexes = subTable_->selectionModel()->selectedRows();
-    for (const QModelIndex& index : indexes) {
-        rows.append(index.row());
-    }
-
-    std::sort(rows.begin(), rows.end());
-    return rows;
-}
-
-QList<SubItem> SettingsDialog::collectSubItems() const
-{
-    QList<SubItem> items;
-    const int rowCount = subTable_ == nullptr ? 0 : subTable_->rowCount();
-    for (int row = 0; row < rowCount; ++row) {
-        auto* enabledItem = subTable_->item(row, 0);
-        auto* remarksItem = subTable_->item(row, 1);
-        auto* urlItem = subTable_->item(row, 2);
-        auto* userAgentItem = subTable_->item(row, 3);
-
-        SubItem item;
-        if (remarksItem != nullptr) {
-            item.id = remarksItem->data(Qt::UserRole).toString();
-            item.remarks = remarksItem->text().trimmed();
-        }
-        item.enabled = enabledItem == nullptr || enabledItem->checkState() == Qt::Checked;
-        item.url = urlItem == nullptr ? QString() : urlItem->text().trimmed();
-        item.userAgent = userAgentItem == nullptr ? QString() : userAgentItem->text().trimmed();
-
-        if (!item.remarks.isEmpty() || !item.url.isEmpty()) {
-            items.append(item);
-        }
-    }
-
-    return items;
+    return subscriptionSettingsPage_ == nullptr ? QList<int>() : subscriptionSettingsPage_->selectedRows();
 }
 
 void SettingsDialog::setCoreVersion(CoreType coreType, const QString& version)

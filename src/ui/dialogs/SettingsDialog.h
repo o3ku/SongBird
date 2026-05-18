@@ -28,6 +28,7 @@ class QWidget;
 class QVBoxLayout;
 
 #include "ui/dialogs/CoreSettingsPageWidget.h"
+#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -68,12 +69,6 @@ private:
     int selectedBaseRouteIndex() const;
     static QString joinValues(const QStringList& values);
     static QStringList splitValues(const QString& value);
-
-    // Subscriptions tab methods
-    void reloadSubTable();
-    void appendSubRow(const SubItem& item);
-    void updateSubActionState();
-    QList<SubItem> collectSubItems() const;
 
     Config config_;
     QCheckBox* showMainOnStartupCheck_ = nullptr;
@@ -142,11 +137,7 @@ private:
     QStackedLayout* settingsStackLayout_ = nullptr;
     int requestedTabIndex_ = 0;
 
-    QList<SubItem> subItems_;
-    QTableWidget* subTable_ = nullptr;
-    QPushButton* addSubButton_ = nullptr;
-    QPushButton* removeSubButton_ = nullptr;
-    QPushButton* updateSubButton_ = nullptr;
+    SubscriptionSettingsPageWidget* subscriptionSettingsPage_ = nullptr;
     CoreSettingsPageWidget* coreSettingsPage_ = nullptr;
 
 };

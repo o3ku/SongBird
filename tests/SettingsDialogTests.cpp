@@ -48,6 +48,7 @@ private slots:
     void settingsDialogUsesCompactUiFontBaseline();
     void fakeIpToggleControlsGlobalFakeIpCheckbox();
     void subscriptionTableUsesServerTableStyle();
+    void subscriptionPageRoundTripsSelectedRowsAndItems();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -752,6 +753,36 @@ void SettingsDialogTests::subscriptionTableUsesServerTableStyle()
     QVERIFY(subTable->property("serverTableStyle").toBool());
     QCOMPARE(subTable->palette().color(QPalette::AlternateBase), QColor(QStringLiteral("#f9f9f9")));
     QVERIFY(!subTable->showGrid());
+}
+
+void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
+{
+    Config config;
+    config.subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QStringLiteral("ua-a")},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), false, QStringLiteral("ua-b")}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    subTable->selectRow(1);
+
+    const QList<int> rows = dialog.selectedSubRows();
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first(), 1);
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.subscriptions.size(), 2);
+    QCOMPARE(updated.subscriptions.at(0).id, QStringLiteral("sub-1"));
+    QCOMPARE(updated.subscriptions.at(0).remarks, QStringLiteral("A"));
+    QCOMPARE(updated.subscriptions.at(1).id, QStringLiteral("sub-2"));
+    QCOMPARE(updated.subscriptions.at(1).url, QStringLiteral("https://b.example"));
+    QVERIFY(!updated.subscriptions.at(1).enabled);
 }
 
 void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()
