@@ -64,8 +64,8 @@ void ProxyToolbarController::sync(
 
         proxyToggleAction_->setToolTip(toolTip);
         proxyToggleAction_->setEnabled(
-            snapshot.hasServers
-            && (isProxyCheckedState(snapshot) || isProxyUncheckedState(snapshot)));
+            isProxyCheckedState(snapshot)
+            || (snapshot.hasServers && isProxyUncheckedState(snapshot)));
     }
 
     if (tunToggleAction_ != nullptr) {

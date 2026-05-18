@@ -51,6 +51,7 @@ private slots:
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
+    void proxyToggleButtonRemainsEnabledToDisableActiveProxyWithoutServers();
     void systemProxyModeActionEmitsSingleSelectionSignal();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
     void restoreAndCaptureUiStatePreservesRuntimeToggles();
@@ -572,6 +573,38 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCoreApplication::processEvents();
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
+}
+
+void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithoutServers()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    window.setProxyEnabled(true);
+    window.setCoreProcessRunning(true);
+    window.setCoreRunning(true, false);
+    QCoreApplication::processEvents();
+
+    QSignalSpy disableSpy(&window, SIGNAL(disableSystemProxyRequested()));
+    QVERIFY(disableSpy.isValid());
+
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(proxyButton != nullptr);
+    QVERIFY(proxyButton->isChecked());
+    QVERIFY(proxyButton->isEnabled());
+
+    config.servers.clear();
+    config.currentIndexId.clear();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    QVERIFY(proxyButton->isChecked());
+    QVERIFY(proxyButton->isEnabled());
+    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Disable system proxy and stop the running core."));
+
+    proxyButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(disableSpy.count(), 1);
 }
 
 void MainWindowTests::systemProxyModeActionEmitsSingleSelectionSignal()
