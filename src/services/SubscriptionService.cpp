@@ -168,9 +168,6 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     const QString& subscriptionId,
     QList<VmessItem> items)
 {
-    lastReplaceInputCount_ = items.size();
-    lastReplaceSavedCount_ = 0;
-
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
         return OperationResult::fail(QStringLiteral("Subscription id is required."));
@@ -211,7 +208,6 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         config.servers.append(item);
         newSubscriptionIndexIds.append(item.indexId);
     }
-    lastReplaceSavedCount_ = items.size();
 
     if (!hasServerWithIndexId(config.servers, previousCurrentIndexId)) {
         const bool currentBelongedToUpdatedSubscription = std::any_of(
@@ -240,16 +236,6 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     }
 
     return OperationResult::ok(QStringLiteral("Subscription servers replaced."));
-}
-
-int SubscriptionService::lastReplaceInputCount() const
-{
-    return lastReplaceInputCount_;
-}
-
-int SubscriptionService::lastReplaceSavedCount() const
-{
-    return lastReplaceSavedCount_;
 }
 
 void SubscriptionService::normalizeSubscriptionIds(QList<SubItem>& items)
