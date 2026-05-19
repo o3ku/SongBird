@@ -773,7 +773,7 @@ void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 
 void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
 {
-    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Users\\atom.DELL\\AppData\\Local\\v2rayq\\v2rayq\\config.generated.json Format:json}");
+    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBox\\runtime\\config.generated.json Format:json}");
 
     LogListModel model;
     QListView view;
@@ -795,7 +795,7 @@ void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
 
 void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
 {
-    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Users\\atom.DELL\\AppData\\Local\\v2rayq\\v2rayq\\config.generated.json Format:json}");
+    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBox\\runtime\\config.generated.json Format:json}");
 
     LogListModel model;
     QListView view;

@@ -32,14 +32,14 @@ cmake --build build --target qt_v2rayn --parallel
 pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>
 ```
 
-The CMake target is `qt_v2rayn` with `OUTPUT_NAME` set to `v2rayq`, so the binary is `v2rayq.exe`. Tests are opt-in via `-DBUILD_TEST=ON`.
+The CMake target remains `qt_v2rayn` with `OUTPUT_NAME` set to `SongBox`, so the packaged binary is `SongBox.exe`. Tests are opt-in via `-DBUILD_TEST=ON`.
 
 Available presets: `msvc-debug` and `msvc-release`. Both force Qt5 via `QT_V2RAYN_FORCE_MAJOR_VERSION=5`, expect the `QT5_PREFIX_PATH` environment variable, and pin MSVC 2019 (`14.29.30133`) plus the `x64-windows-static-md` vcpkg triplet.
 
 ## Test Names
 
 Each test is a separate executable using QtTest. CTest names (for `-R` filter):
-`share-url-transports`, `clash-config-writer`, `add-server-dialog-roundtrip`, `settings-dialog-download`, `tun-settings-apply-decision`, `startup-admin-elevation`, `app-bootstrap-tun-runtime`, `global-hotkey-dialog-roundtrip`, `windows-global-hotkey-binding-mapping`, `windows-global-hotkey-service-pause`, `main-window-log-scroll`, `client-config-writer-tun-compat`, `tun-compat-core-requirement`, `json-config-repository-defaults`, `config-file-import-parser-stream-settings`, `server-config-writer`, `proxy-availability-check`, `speed-test-service-internal`, `subscription-service`, `routing-service`, `statistics-service`, `core-update-service`, `subscription-parser`, `server-service`, `protocol-core-compat`.
+`share-url-transports`, `clash-config-writer`, `add-server-dialog-roundtrip`, `settings-dialog-download`, `tun-settings-apply-decision`, `startup-admin-elevation`, `app-bootstrap-tun-runtime`, `global-hotkey-dialog-roundtrip`, `windows-global-hotkey-binding-mapping`, `windows-global-hotkey-service-pause`, `main-window-log-scroll`, `client-config-writer-tun-compat`, `tun-compat-core-requirement`, `json-config-repository-defaults`, `config-file-import-parser-stream-settings`, `server-config-writer`, `proxy-availability-check`, `speed-test-service-internal`, `subscription-service`, `routing-service`, `system-proxy-mode`, `statistics-service`, `core-update-service`, `subscription-parser`, `server-service`, `protocol-core-compat`.
 
 The authoritative list lives in `tests/CMakeLists.txt` (search for `add_test(NAME ...)`); update this paragraph when adding or removing tests.
 
