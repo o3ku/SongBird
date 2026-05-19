@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-v2rayq is a pure Qt/C++ rewrite of v2rayN (a Windows proxy/GUI client for V2Ray/Xray). It provides full compatibility with v2rayN's `guiNConfig.json` format while being implemented in Qt/C++ with C++20. The upstream C# reference implementation lives in `ref/v2rayn/`.
+Song Box is a pure Qt/C++ rewrite of v2rayN (a Windows proxy/GUI client for V2Ray/Xray). It provides full compatibility with v2rayN's `guiNConfig.json` format while being implemented in Qt/C++ with C++20. The upstream C# reference implementation lives in `ref/v2rayn/`.
 
 ## Build Commands
 
