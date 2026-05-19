@@ -1515,8 +1515,8 @@ void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()
         auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
         QVERIFY(dialog != nullptr);
         confirmationShown = true;
-        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit v2rayq"));
-        QCOMPARE(dialog->text(), QStringLiteral("Quit v2rayq now?"));
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit Song Box"));
+        QCOMPARE(dialog->text(), QStringLiteral("Quit Song Box now?"));
         QAbstractButton* noButton = dialog->button(QMessageBox::No);
         QVERIFY(noButton != nullptr);
         QTest::mouseClick(noButton, Qt::LeftButton);

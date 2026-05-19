@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(v2rayq VERSION 1.2.0 LANGUAGES CXX)
+project(SongBox VERSION 1.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -156,8 +156,8 @@ if(QT_V2RAYN_ENABLE_GRPC)
     endif()
 endif()
 
-message(STATUS "v2rayq gRPC statistics backend: ${QT_V2RAYN_HAS_GRPC}")
-message(STATUS "v2rayq translation toolchain: ${QT_V2RAYN_HAS_LINGUISTTOOLS}")
+message(STATUS "Song Box gRPC statistics backend: ${QT_V2RAYN_HAS_GRPC}")
+message(STATUS "Song Box translation toolchain: ${QT_V2RAYN_HAS_LINGUISTTOOLS}")
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_standard_project_setup()
@@ -171,8 +171,8 @@ if(BUILD_TEST)
 endif()
 
 set(CPACK_GENERATOR "ZIP")
-set(CPACK_PACKAGE_NAME "v2rayq")
-set(CPACK_PACKAGE_VENDOR "v2rayN")
+set(CPACK_PACKAGE_NAME "SongBox")
+set(CPACK_PACKAGE_VENDOR "Song Box")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)

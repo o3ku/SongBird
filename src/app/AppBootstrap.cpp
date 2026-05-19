@@ -452,14 +452,14 @@ QString tunAdminRequiredStartMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows. Run v2rayq as administrator before starting the core.");
+        "TUN mode requires administrator privileges on Windows. Run Song Box as administrator before starting the core.");
 }
 
 QString tunAdminRequiredSaveMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows. The settings were saved and will take effect after restarting v2rayq as administrator.");
+        "TUN mode requires administrator privileges on Windows. The settings were saved and will take effect after restarting Song Box as administrator.");
 }
 
 QString tunAdminRestartPromptTitle()
@@ -471,14 +471,14 @@ QString tunAdminRestartPromptMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows.\nRestart v2rayq as administrator now to apply the saved TUN setting?");
+        "TUN mode requires administrator privileges on Windows.\nRestart Song Box as administrator now to apply the saved TUN setting?");
 }
 
 QString tunAdminRestartFailureMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "Failed to restart v2rayq with administrator privileges.");
+        "Failed to restart Song Box with administrator privileges.");
 }
 
 QString sanitizeFileNameSegment(QString value)
@@ -1343,7 +1343,7 @@ void AppBootstrap::queryCurrentServerLocation(const QString& serverIndexId, Core
 
         QNetworkRequest request(QUrl(QStringLiteral("http://ip-api.com/json/")));
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq/%1").arg(QCoreApplication::applicationVersion()));
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox/%1").arg(QCoreApplication::applicationVersion()));
 
         QEventLoop loop;
         QNetworkReply* reply = manager.get(request);

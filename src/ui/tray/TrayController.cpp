@@ -132,7 +132,7 @@ bool TrayController::initialize()
     trayIcon_ = new QSystemTrayIcon(this);
     trayIcon_->setObjectName(QStringLiteral("trayIcon"));
     trayIcon_->setIcon(loadDefaultTrayIcon());
-    trayIcon_->setToolTip(QStringLiteral("v2rayq"));
+    trayIcon_->setToolTip(QStringLiteral("Song Box"));
 
     trayMenu_ = new QMenu();
     trayMenu_->setObjectName(QStringLiteral("trayMenu"));
@@ -411,7 +411,7 @@ void TrayController::updateToolTip()
         proxyText += trayText(" (not applied)");
     }
 
-    QString tooltip = QStringLiteral("v2rayq | %1 | %2 | %3 | %4")
+    QString tooltip = QStringLiteral("Song Box | %1 | %2 | %3 | %4")
                           .arg(currentServerName_.isEmpty() ? trayText("No default server") : currentServerName_)
                           .arg(trayText("Core %1").arg(
                               coreRunning_ ? trayText("Running")

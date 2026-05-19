@@ -1324,7 +1324,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
 
     const QJsonObject directProcessRule = findRouteRuleByOutbound(rules, QStringLiteral("direct"));
     const QJsonArray directProcessNames = directProcessRule.value(QStringLiteral("process_name")).toArray();
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("v2rayq.exe")));
+    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("SongBox.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("xray.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box-client.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box.exe")));
@@ -2534,7 +2534,7 @@ void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIn
                 {},
                 {},
                 QStringLiteral("tcp,udp"),
-                QStringList{QStringLiteral("v2rayq.exe")})})};
+                QStringList{QStringLiteral("SongBox.exe")})})};
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
@@ -2545,7 +2545,7 @@ void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIn
     bool foundProcessRule = false;
     for (const QJsonValue& value : rules) {
         const QJsonObject rule = value.toObject();
-        if (jsonArrayContainsString(rule.value(QStringLiteral("process")).toArray(), QStringLiteral("v2rayq.exe"))) {
+        if (jsonArrayContainsString(rule.value(QStringLiteral("process")).toArray(), QStringLiteral("SongBox.exe"))) {
             QCOMPARE(rule.value(QStringLiteral("network")).toString(), QStringLiteral("tcp,udp"));
             foundProcessRule = true;
             break;

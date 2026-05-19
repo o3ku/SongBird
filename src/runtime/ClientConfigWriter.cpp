@@ -3851,7 +3851,7 @@ QStringList ClientConfigWriter::buildTunCompatDnsProcessNames()
 
 QStringList ClientConfigWriter::buildTunCompatDirectProcessNames()
 {
-    QStringList processNames{QStringLiteral("v2rayq.exe")};
+    QStringList processNames{QStringLiteral("SongBox.exe")};
     processNames.append(buildTunCompatDnsProcessNames());
     processNames.append(QStringLiteral("sing-box-client.exe"));
     processNames.append(QStringLiteral("sing-box.exe"));

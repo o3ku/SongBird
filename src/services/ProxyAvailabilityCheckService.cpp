@@ -49,7 +49,7 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
         + url.toString(QUrl::FullyEncoded).toUtf8()
         + QByteArray(" HTTP/1.1\r\nHost: ")
         + hostHeader
-        + QByteArray("\r\nUser-Agent: v2rayq-testme\r\nConnection: close\r\n\r\n");
+        + QByteArray("\r\nUser-Agent: SongBox-testme\r\nConnection: close\r\n\r\n");
 
     QElapsedTimer timer;
     timer.start();
@@ -127,7 +127,7 @@ OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityChec
 
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq-testme"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox-testme"));
 
     QElapsedTimer timer;
     timer.start();

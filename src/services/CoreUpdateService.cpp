@@ -859,7 +859,7 @@ OperationResult CoreUpdateService::update(
                 : downloadBytesWithNetwork(
                     candidateUrl,
                     &payload,
-                    QStringLiteral("v2rayq-core-update"),
+                    QStringLiteral("SongBox-core-update"),
                     kCoreMetadataTimeoutMs,
                     cancelCheck);
             if (isCancelledResult(downloadResult)) {
@@ -1015,7 +1015,7 @@ OperationResult CoreUpdateService::update(
             : downloadBytesWithNetwork(
                 candidateUrl,
                 &packageBytes,
-                QStringLiteral("v2rayq-core-update"),
+                QStringLiteral("SongBox-core-update"),
                 kCoreDownloadTimeoutMs,
                 cancelCheck);
         if (isCancelledResult(downloadResult)) {

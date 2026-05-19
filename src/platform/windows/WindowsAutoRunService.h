@@ -7,5 +7,5 @@ public:
 
 private:
     static constexpr const char* AutoRunRegistryPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    static constexpr const char* AutoRunValueName = "v2rayq";
+    static constexpr const char* AutoRunValueName = "SongBox";
 };

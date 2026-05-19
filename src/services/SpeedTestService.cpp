@@ -240,7 +240,7 @@ SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
     manager.setProxy(QNetworkProxy(proxyType, kLoopbackAddress, proxyPort));
 
     QNetworkRequest request{QUrl(url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq-urltest"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox-urltest"));
 
     QElapsedTimer timer;
     timer.start();

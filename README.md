@@ -1,14 +1,14 @@
-# v2rayq
+# Song Box
 
 A lightweight Qt/C++ rewrite and improvement of [v2rayN](https://github.com/2dust/v2rayN) — the popular Windows proxy client for V2Ray/Xray.
 
 Drop-in compatible with v2rayN's `guiNConfig.json`. No .NET runtime, no NuGet packages, no DLL hell — a single static-linked native binary.
 
-## Why v2rayq?
+## Why Song Box?
 
 ### Lower Resource Usage
 
-- **Native C++, no .NET runtime** — no CLR overhead, no JIT warm-up, no runtime package downloads. Static-linked with vcpkg (`x64-windows-static-md`) producing a single self-contained `v2rayq.exe`.
+- **Native C++, no .NET runtime** — no CLR overhead, no JIT warm-up, no runtime package downloads. Static-linked with vcpkg (`x64-windows-static-md`) producing a single self-contained `SongBox.exe`.
 - **Minimal dependencies** — only Qt Core/GUI/Widgets/Network. Optional protobuf+gRPC auto-detected at configure time.
 - **Plain struct domain models** — no vtables, no heap allocation for data objects. Trivial copy/move everywhere.
 - **O(1) server lookups** — `ServerTableModel` uses hash-based index mapping instead of linear scans through server lists.
@@ -50,7 +50,7 @@ Decision logic, config generation, services, UI dialogs, platform code, and pars
 
 ## Feature Compatibility
 
-| Feature | v2rayq | v2rayN |
+| Feature | Song Box | v2rayN |
 |---------|--------|--------|
 | Config format | `guiNConfig.json` compatible | Original |
 | Server management | Add/edit/duplicate/remove/drag-reorder/filter/QR | Same |

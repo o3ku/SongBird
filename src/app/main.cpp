@@ -114,7 +114,7 @@ void installConfiguredTranslator(QApplication& app, QTranslator& translator, con
         ? QLocale(QLocale::Chinese, QLocale::China)
         : QLocale();
 
-    const QString qmPrefix = QStringLiteral("v2rayq");
+    const QString qmPrefix = QStringLiteral("SongBox");
     const QString qmSeparator = QStringLiteral("_");
 
     // Try embedded resource first, then filesystem
@@ -178,14 +178,14 @@ QString startupAdminPromptMessage()
 {
     return QCoreApplication::translate(
         "main",
-        "v2rayq is not running with administrator privileges.\nRestart as administrator now?");
+        "Song Box is not running with administrator privileges.\nRestart as administrator now?");
 }
 
 QString startupAdminRestartFailureMessage()
 {
     return QCoreApplication::translate(
         "main",
-        "Failed to restart v2rayq with administrator privileges.");
+        "Failed to restart Song Box with administrator privileges.");
 }
 
 } // namespace
@@ -203,8 +203,8 @@ int main(int argc, char* argv[])
 #endif
 
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("v2rayq"));
-    app.setOrganizationName(QStringLiteral("v2rayq"));
+    app.setApplicationName(QStringLiteral("SongBox"));
+    app.setOrganizationName(QStringLiteral("SongBox"));
     app.setApplicationVersion(QStringLiteral(QT_V2RAYN_APP_VERSION));
     AppTheme::applyApplicationTheme(app);
     const QIcon appIcon(QStringLiteral(":/app/logo.ico"));
@@ -222,7 +222,8 @@ int main(int argc, char* argv[])
     installConfiguredTranslator(app, translator, languageCode);
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QCoreApplication::translate("main", "Pure Qt prototype for v2rayN."));
+    parser.setApplicationDescription(
+        QCoreApplication::translate("main", "Song Box is a Qt/C++ rewrite and improvement of v2rayN."));
     parser.addHelpOption();
     parser.addVersionOption();
 
@@ -322,8 +323,8 @@ int main(int argc, char* argv[])
             [](int) {})) {
         DialogUtils::showInformation(
             nullptr,
-            QStringLiteral("v2rayq"),
-            QCoreApplication::translate("main", "Another v2rayq instance is already running."));
+            QStringLiteral("Song Box"),
+            QCoreApplication::translate("main", "Another Song Box instance is already running."));
         return 0;
     }
 

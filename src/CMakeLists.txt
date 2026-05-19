@@ -165,12 +165,12 @@ set(QT_V2RAYN_SOURCES
 
 if(WIN32)
     list(APPEND QT_V2RAYN_SOURCES
-        resources/v2rayq.rc
+        resources/SongBox.rc
     )
 endif()
 
 set(QT_V2RAYN_TRANSLATION_TS_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/../translations/v2rayq_zh_CN.ts
+    ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBox_zh_CN.ts
 )
 
 set(QT_V2RAYN_QT_TRANSLATION_QM_FILES)
@@ -314,7 +314,7 @@ if(QT_V2RAYN_HAS_GRPC)
 endif()
 
 set_target_properties(qt_v2rayn PROPERTIES
-    OUTPUT_NAME "v2rayq"
+    OUTPUT_NAME "SongBox"
 )
 
 if(TARGET qt_v2rayn_translations)
@@ -330,7 +330,7 @@ if(WIN32)
 endif()
 
 if(WIN32 AND MSVC)
-    # The Windows manifest is embedded via resources/v2rayq.rc (RT_MANIFEST).
+    # The Windows manifest is embedded via resources/SongBox.rc (RT_MANIFEST).
     # Disable the linker's auto-generated manifest to avoid LNK4078 conflicts
     # and to keep dpiAwareness=PerMonitorV2 authoritative.
     target_link_options(qt_v2rayn PRIVATE /MANIFEST:NO)

@@ -132,7 +132,7 @@ OperationResult GeoResourceUpdateService::downloadBytes(const QUrl& url, QByteAr
         QNetworkAccessManager manager;
         QNetworkRequest request(candidateUrl);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("v2rayq-geo-update"));
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox-geo-update"));
 
         bool timedOut = false;
         QEventLoop loop;

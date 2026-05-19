@@ -1574,8 +1574,8 @@ bool MainWindow::confirmExit()
 {
     return DialogUtils::askYesNoQuestion(
                this,
-               tr("Quit v2rayq"),
-               tr("Quit v2rayq now?"),
+               tr("Quit Song Box"),
+               tr("Quit Song Box now?"),
                QMessageBox::No)
         == QMessageBox::Yes;
 }
@@ -1591,7 +1591,7 @@ void MainWindow::updateWindowTitle()
     const QString proxyState = systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
     const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
 
-    setWindowTitle(tr("V2RAYQ [%1] [%2] [%3] [%4]")
+    setWindowTitle(tr("Song Box [%1] [%2] [%3] [%4]")
                        .arg(coreName, serverName, proxyState, tunState));
 }
 

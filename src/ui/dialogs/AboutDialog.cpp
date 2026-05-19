@@ -48,14 +48,14 @@ void AboutDialog::setConfigPath(const QString& configPath)
 
 void AboutDialog::setupUi()
 {
-    setWindowTitle(tr("About"));
+    setWindowTitle(tr("About Song Box"));
     resize(480, 220);
 
-    auto* titleLabel = new QLabel(tr("V2RAYQ"), this);
+    auto* titleLabel = new QLabel(tr("Song Box"), this);
     titleLabel->setObjectName(QStringLiteral("aboutTitleLabel"));
 
     auto* summaryLabel = new QLabel(
-        tr("A Qt/C++ rewrite and improvement of v2rayN"),
+        tr("Song Box is a Qt/C++ rewrite and improvement of v2rayN."),
         this);
     summaryLabel->setObjectName(QStringLiteral("aboutSummaryLabel"));
     summaryLabel->setWordWrap(true);

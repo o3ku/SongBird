@@ -28,7 +28,7 @@ void StartupAdminElevationTests::promptsForAdminRestartOnInteractiveWindowsStart
 {
     const StartupAdminElevationDecision decision =
         evaluateStartupAdminElevation(true, false, true, true, QStringList{
-                                                                  QStringLiteral("C:/tools/v2rayq.exe"),
+                                                                  QStringLiteral("C:/tools/SongBox.exe"),
                                                                   QStringLiteral("--config"),
                                                                   QStringLiteral("C:/cfg/guiNConfig.json")});
 
@@ -42,7 +42,7 @@ void StartupAdminElevationTests::skipsPromptWhenTunIsNotConfigured()
 {
     const StartupAdminElevationDecision decision =
         evaluateStartupAdminElevation(true, false, true, false, QStringList{
-                                                                   QStringLiteral("C:/tools/v2rayq.exe"),
+                                                                   QStringLiteral("C:/tools/SongBox.exe"),
                                                                    QStringLiteral("--config"),
                                                                    QStringLiteral("C:/cfg/guiNConfig.json")});
 
@@ -66,7 +66,7 @@ void StartupAdminElevationTests::skipsPromptWhenNonInteractiveEnvironmentIsSet()
         false,
         startupAdminInteractivePromptsEnabled(false, true),
         true,
-        QStringList{QStringLiteral("C:/tools/v2rayq.exe")});
+        QStringList{QStringLiteral("C:/tools/SongBox.exe")});
 
     QVERIFY(!decision.shouldPromptForElevation);
 }
@@ -96,15 +96,15 @@ void StartupAdminElevationTests::relaunchArgumentsDropExecutablePath()
         true,
         true,
         QStringList{
-            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("C:/Program Files/SongBox/SongBox.exe"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
             QStringLiteral("--disable-single-instance")});
 
     QCOMPARE(
         decision.relaunchArguments,
         QStringList({
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
             QStringLiteral("--disable-single-instance")}));
 }
@@ -113,8 +113,8 @@ void StartupAdminElevationTests::inAppAdminRelaunchArgumentsAppendAdminRelaunchM
 {
     const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
         QStringList{
-            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("C:/Program Files/SongBox/SongBox.exe"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden")},
         true,
         4321);
@@ -122,15 +122,15 @@ void StartupAdminElevationTests::inAppAdminRelaunchArgumentsAppendAdminRelaunchM
     QCOMPARE(
         arguments,
         QStringList({
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
             QStringLiteral("--restart-wait-pid=4321"),
             QStringLiteral("--admin-relaunch")}));
 
     const QStringList alreadyBypassed = startupRelaunchArgumentsForRunningInstance(
         QStringList{
-            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("C:/Program Files/SongBox/SongBox.exe"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--admin-relaunch"),
             QStringLiteral("--restart-wait-pid=1111")},
         true,
@@ -139,7 +139,7 @@ void StartupAdminElevationTests::inAppAdminRelaunchArgumentsAppendAdminRelaunchM
     QCOMPARE(
         alreadyBypassed,
         QStringList({
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--restart-wait-pid=4321"),
             QStringLiteral("--admin-relaunch")}));
 }
@@ -148,8 +148,8 @@ void StartupAdminElevationTests::inAppNonAdminRelaunchArgumentsDropAdminRelaunch
 {
     const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
         QStringList{
-            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("C:/Program Files/SongBox/SongBox.exe"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--admin-relaunch"),
             QStringLiteral("--start-hidden")},
         false,
@@ -158,7 +158,7 @@ void StartupAdminElevationTests::inAppNonAdminRelaunchArgumentsDropAdminRelaunch
     QCOMPARE(
         arguments,
         QStringList({
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
             QStringLiteral("--restart-wait-pid=4321")}));
 }
@@ -167,8 +167,8 @@ void StartupAdminElevationTests::inAppRelaunchArgumentsReplacePreviousRestartCon
 {
     const QStringList arguments = startupRelaunchArgumentsForRunningInstance(
         QStringList{
-            QStringLiteral("C:/Program Files/v2rayq/v2rayq.exe"),
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("C:/Program Files/SongBox/SongBox.exe"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--restart-wait-pid=1111"),
             QStringLiteral("--start-hidden")},
         true,
@@ -177,7 +177,7 @@ void StartupAdminElevationTests::inAppRelaunchArgumentsReplacePreviousRestartCon
     QCOMPARE(
         arguments,
         QStringList({
-            QStringLiteral("--config=C:/Program Files/v2rayq/guiNConfig.json"),
+            QStringLiteral("--config=C:/Program Files/SongBox/guiNConfig.json"),
             QStringLiteral("--start-hidden"),
             QStringLiteral("--restart-wait-pid=4321"),
             QStringLiteral("--admin-relaunch")}));
@@ -238,13 +238,13 @@ void StartupAdminElevationTests::windowsShellParametersQuoteWhitespaceAndQuotes(
 {
     const QString parameters = buildWindowsShellExecuteParameters(QStringList{
         QStringLiteral("--config"),
-        QStringLiteral("C:/Program Files/v2rayq/gui \"special\".json"),
+        QStringLiteral("C:/Program Files/SongBox/gui \"special\".json"),
         QStringLiteral("--start-hidden"),
         QStringLiteral("plain")});
 
     QCOMPARE(
         parameters,
-        QStringLiteral("--config \"C:/Program Files/v2rayq/gui \\\"special\\\".json\" --start-hidden plain"));
+        QStringLiteral("--config \"C:/Program Files/SongBox/gui \\\"special\\\".json\" --start-hidden plain"));
 }
 
 QTEST_MAIN(StartupAdminElevationTests)
