@@ -574,8 +574,12 @@ endif()
 
 set(QT_V2RAYN_JSON_CONFIG_REPOSITORY_TEST_SOURCES
     JsonConfigRepositoryTests.cpp
+    ../src/persistence/JsonConfigMigration.h
+    ../src/persistence/JsonConfigMigration.cpp
     ../src/persistence/JsonConfigRepository.h
     ../src/persistence/JsonConfigRepository.cpp
+    ../src/persistence/JsonConfigSerialization.h
+    ../src/persistence/JsonConfigSerialization.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)

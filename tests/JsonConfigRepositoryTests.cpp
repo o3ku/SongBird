@@ -69,6 +69,8 @@ private slots:
     void loadReadsRoutingCustomRules();
     void savePersistsRoutingCustomRules();
     void savePersistsSettingsRoutingRuleTabKey();
+    void loadMigratesLegacyAliasesToCanonicalModel();
+    void saveWritesSchemaVersionAndCanonicalizesLegacyKeys();
     void savePreservesUnknownRootFields();
     void saveRemovesDeprecatedDeadConfigKeys();
     void loadDefaultsMainRuntimeStateToOffWhenMissing();
@@ -1374,6 +1376,95 @@ void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
     const Config reloaded = reloadedRepository.load();
 
     QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
+}
+
+void JsonConfigRepositoryTests::loadMigratesLegacyAliasesToCanonicalModel()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject hotkey;
+    hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
+    hotkey.insert(QStringLiteral("Control"), true);
+    hotkey.insert(QStringLiteral("KeyCode"), 70);
+
+    QJsonObject routing;
+    routing.insert(QStringLiteral("remarks"), QStringLiteral("legacy-route"));
+    routing.insert(QStringLiteral("locked"), true);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("languageCode"), QStringLiteral("zh-CN"));
+    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkey});
+    root.insert(QStringLiteral("routingItems"), QJsonArray{routing});
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QCOMPARE(config.languageCode, QStringLiteral("zh-CN"));
+    QCOMPARE(config.globalHotkeys.size(), 1);
+    QVERIFY(config.globalHotkeys.constFirst().control);
+    QVERIFY(config.globalHotkeys.constFirst().keyCode.has_value());
+    QCOMPARE(config.globalHotkeys.constFirst().keyCode.value(), 70);
+    QVERIFY(config.routingItems.size() >= 1);
+
+    const auto it = std::find_if(
+        config.routingItems.cbegin(),
+        config.routingItems.cend(),
+        [](const RoutingItem& item) { return item.remarks == QStringLiteral("legacy-route"); });
+    QVERIFY(it != config.routingItems.cend());
+    QVERIFY(it->locked);
+}
+
+void JsonConfigRepositoryTests::saveWritesSchemaVersionAndCanonicalizesLegacyKeys()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    QFile file(configPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+
+    QJsonObject hotkey;
+    hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
+
+    QJsonObject routing;
+    routing.insert(QStringLiteral("remarks"), QStringLiteral("legacy-route"));
+    routing.insert(QStringLiteral("locked"), true);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("languageCode"), QStringLiteral("en-US"));
+    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkey});
+    root.insert(QStringLiteral("routingItems"), QJsonArray{routing});
+
+    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
+    file.close();
+
+    JsonConfigRepository repository(configPath);
+    Config config = repository.load();
+    QVERIFY(repository.save(config));
+
+    QFile reloadedFile(configPath);
+    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
+    QVERIFY(document.isObject());
+
+    const QJsonObject savedRoot = document.object();
+    QCOMPARE(savedRoot.value(QStringLiteral("schemaVersion")).toInt(), 1);
+    QVERIFY(savedRoot.contains(QStringLiteral("GlobalHotkeys")));
+    QVERIFY(savedRoot.contains(QStringLiteral("routings")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("globalHotkeys")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("routingItems")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("languageCode")));
+    QCOMPARE(
+        savedRoot.value(QStringLiteral("uiItem")).toObject().value(QStringLiteral("languageCode")).toString(),
+        QStringLiteral("en-US"));
 }
 
 void JsonConfigRepositoryTests::savePreservesUnknownRootFields()

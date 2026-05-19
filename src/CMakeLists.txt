@@ -45,8 +45,12 @@ set(QT_V2RAYN_SOURCES
     runtime/CoreLifecycleService.h
     runtime/CoreLifecycleService.cpp
     persistence/IConfigRepository.h
+    persistence/JsonConfigMigration.h
+    persistence/JsonConfigMigration.cpp
     persistence/JsonConfigRepository.h
     persistence/JsonConfigRepository.cpp
+    persistence/JsonConfigSerialization.h
+    persistence/JsonConfigSerialization.cpp
     services/ServerService.h
     services/ServerService.cpp
     services/ConfigBackupService.h
