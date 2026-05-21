@@ -1,69 +1,74 @@
 # SongBird
 
-A lightweight Qt/C++ rewrite and improvement of [v2rayN](https://github.com/2dust/v2rayN) — the popular Windows proxy client for V2Ray/Xray.
+SongBird is a lightweight native Windows proxy client written in Qt/C++. It started as a rewrite and simplification of [v2rayN](https://github.com/2dust/v2rayN), with a smaller runtime footprint and a single JSON configuration file.
 
-Uses a SongBird-only `songbird.json` configuration. No .NET runtime, no NuGet packages, no DLL hell — a single static-linked native binary.
+Current version: **2.0.0**
 
-## Why SongBird?
+SongBird uses `songbird.json` for user configuration. It does not require the .NET runtime, NuGet packages, or external UI assets at runtime; the application is built as a native `SongBird.exe`.
 
-### Lower Resource Usage
+## Highlights
 
-- **Native C++, no .NET runtime** — no CLR overhead, no JIT warm-up, no runtime package downloads. Static-linked with vcpkg (`x64-windows-static-md`) producing a single self-contained `SongBird.exe`.
-- **Minimal dependencies** — only Qt Core/GUI/Widgets/Network. Optional protobuf+gRPC auto-detected at configure time.
-- **Plain struct domain models** — no vtables, no heap allocation for data objects. Trivial copy/move everywhere.
-- **O(1) server lookups** — `ServerTableModel` uses hash-based index mapping instead of linear scans through server lists.
+### Native Runtime
 
-### Robust Process Management
+- **Qt/C++ application** built with C++20 and Qt 5.
+- **Single native executable** with embedded translations, themes, and SVG resources.
+- **Minimal application dependencies**: Qt Core, GUI, Widgets, Network, and Svg.
+- **Structured config persistence** split by responsibility for collections, policies, state, TUN, and UI settings.
 
-- **Orphaned core process cleanup** — PID-file tracking detects and terminates zombie core processes left behind by crashes or forced exits. v2rayN has no equivalent mechanism.
-- **Forced-kill timer** — graceful `terminate()` followed by a 1500ms `kill()` escalation. No leaked child processes, even on hang.
-- **Stale TUN adapter cleanup** — detects and removes orphaned `singbox_tun` Wintun adapters at startup and after core stop. Prevents network interface accumulation.
-- **Thread-safe shutdown** — background threads (speed test, subscription update, core update) are tracked and joined in ordered teardown with lifetime guards preventing use-after-free on async callbacks.
+### Proxy Lifecycle
 
-### Simplified Operations
+- **Managed core startup** validates the core application before enabling proxy state.
+- **Startup overlay details** show progress such as version checks and download percentage without expanding long URLs into the UI.
+- **Safe core switching** stops the current core before starting another selected server.
+- **Deferred QProcess cleanup** avoids destroying the process sender from inside the finished-signal callback.
+- **System proxy cleanup on normal exit** clears the managed Windows system proxy state.
 
-- **One dialog for all protocols** — a unified server dialog that adapts fields dynamically (VMess, VLESS, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, Custom). v2rayN uses separate dialog forms per protocol.
-- **Data-driven settings** — a single tabbed settings dialog replaces v2rayN's scattered forms. The Core tab auto-generates protocol-to-core mapping rows with live version detection.
-- **Protocol-core auto-detection** — a compatibility matrix auto-selects the best installed core for each protocol, with sing-box as the default fallback. No manual core type configuration needed.
-- **Route-derived proxy exceptions** — automatically extracts `domain:`/`full:` patterns from routing rules with `direct` outbound and adds them to the system proxy bypass list. v2rayN requires manual configuration.
-- **Automatic admin elevation** — reads the config before constructing QApplication; if TUN mode is enabled and the process is not elevated, seamlessly re-launches as administrator. No manual elevation step.
-- **Process-restart handoff** — coordinated restart (for admin elevation or language change) with PID-based wait and single-instance lock retry. No "port still in use" errors.
+### TUN Handling
+
+- **Automatic admin elevation** when TUN needs to be enabled and the current process is not elevated.
+- **Cancel means no change**: cancelling the elevation prompt leaves TUN off and does not restart the app.
+- **Core compatibility checks** keep TUN tied to supported sing-box versions.
+- **Stale TUN cleanup** removes orphaned runtime state around core stop/start paths.
+
+### User Interface
+
+- **Light and dark themes** share the same layout metrics and resource set.
+- **Central toolbar layout** avoids dock-area padding differences and keeps margins consistent.
+- **Server table** keeps the Result column auto-expanding while preserving user-adjusted column widths.
+- **Information panels** can be collapsed by clicking the header.
+- **Tray menus** support routing and server switching with bounded server lists and ellipsized long names.
+- **Active proxy icon** switches to the fire logo while proxy mode is running.
+
+### Server Testing
+
+- **URL test results** are persisted in `songbird.json`.
+- **Subscription updates and deletion** synchronize stored test-result data so stale results are removed.
+- **Tray switch-server menu** sorts candidates by latency, keeps the current server first, and displays only `xxx ms`, `unavailable`, or blank for each result.
+- **Group test action** is available from the server tab context menu.
 
 ### Automation & CLI
 
-- `--config <path>` — custom config file location
-- `--auto-start` / `--start-hidden` — launch behaviors
-- `--skip-core` / `--non-interactive` — suppress core launch and all blocking dialogs (ideal for CI)
-- `--quit-after-ms <ms>` — auto-exit after a timeout
-- `--disable-single-instance` / `--disable-global-hotkeys` — opt out of platform features
-
-### Clean Architecture
-
-- **Composition root** — `AppBootstrap` owns all services as `unique_ptr` and wires dependencies explicitly. No singletons, no global state, no service locator.
-- **Layered separation** — UI (pure presentation), Services (business logic), Runtime (process lifecycle), Domain (plain data), Platform (Windows-specific). Each layer has clear boundaries.
-- **Header-only decision functions** — pure logic (TUN settings, admin elevation, protocol-core compatibility) extracted into testable inline headers with zero linking cost.
-- **`OperationResult` return type** — uniform `{success, message, requiresRestart}` for all fallible operations, replacing v2rayN's inconsistent mix of bools, exceptions, and null checks.
-
-### 26 Dedicated Tests
-
-Decision logic, config generation, services, UI dialogs, platform code, and parsing — each test links only the sources it needs for fast, isolated compilation. v2rayN has no comparable test infrastructure.
+- `--config <path>`: use a specific `songbird.json` file.
+- `--auto-start` / `--start-hidden`: control launch behavior.
+- `--skip-core` / `--non-interactive`: suppress core launch and blocking dialogs for automation.
+- `--quit-after-ms <ms>`: exit automatically after a timeout.
+- `--disable-single-instance` / `--disable-global-hotkeys`: opt out of platform features.
 
 ## Feature Compatibility
 
-| Feature | SongBird | v2rayN |
-|---------|--------|--------|
-| Config format | `songbird.json` only | Original |
-| Server management | Add/edit/duplicate/remove/drag-reorder/filter/QR | Same |
-| Protocols | VMess/VLESS/SS/Trojan/Hysteria2/TUIC/WireGuard/AnyTLS/Naive | Same |
-| Core engines | Xray, V2Ray, sing-box, Clash, ClashMeta | Same |
-| TUN mode | sing-box sidecar with auto-cleanup | sing-box |
-| Statistics | gRPC + REST API | Same |
-| Speed test | Ping/TCP Ping/Real Ping/Download | Same |
-| System proxy | PAC/HTTP/SOCKS with route-derived exceptions | PAC/HTTP/SOCKS |
-| Global hotkeys | Yes | Yes |
-| Translation | Embedded `.qm` resources, single-file distribution | External files |
-| GitHub mirror | Multi-CDN fallback for core downloads | Single source |
-| Drag reorder | Yes | Up/Down buttons only |
+| Feature | SongBird |
+|---------|----------|
+| Config format | `songbird.json` |
+| Server management | Add, edit, duplicate, remove, reorder, filter, QR import/share |
+| Protocols | VMess, VLESS, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, Custom |
+| Core engines | Xray, V2Ray, sing-box, Clash, ClashMeta |
+| TUN mode | sing-box with admin elevation and cleanup |
+| Speed test | Ping, TCP ping, real ping, download, URL test result persistence |
+| System proxy | Managed Windows global proxy on/off |
+| Global hotkeys | Supported |
+| Translation | Embedded `.qm` resources |
+| Themes | Embedded light and dark QSS themes |
+| GitHub mirror | Configurable mirror fallback for core and geo resource updates |
 
 ## Build
 
@@ -72,9 +77,22 @@ cmake --preset msvc-debug
 cmake --build --preset msvc-debug --parallel
 ```
 
-Both checked-in presets (`msvc-debug`, `msvc-release`) are pinned to Qt5 and expect `QT5_PREFIX_PATH` to be set.
+Release build:
 
-Requirements: CMake 3.24+, Ninja, C++20 (MSVC), Qt 5 (Widgets, Network), vcpkg (`D:/vcpkg`).
+```bash
+cmake --preset msvc-release
+cmake --build --preset msvc-release --parallel
+```
+
+The checked-in presets are Windows/MSVC presets pinned to Qt 5 through `SONGBIRD_FORCE_MAJOR_VERSION=5` and expect `QT5_PREFIX_PATH` to be set.
+
+Requirements:
+
+- CMake 3.24+
+- Ninja
+- MSVC with C++20 support
+- Qt 5 with Widgets, Network, and Svg
+- vcpkg toolchain at `D:/vcpkg`
 
 ## Test
 
@@ -83,6 +101,8 @@ cmake --preset msvc-debug -DBUILD_TEST=ON
 cmake --build --preset msvc-debug --parallel
 ctest --test-dir build/msvc-debug --output-on-failure
 ```
+
+The repository currently contains 28 Qt Test executables covering config persistence, runtime decisions, services, subscription parsing, UI behavior, and an end-to-end smoke path.
 
 ## Package
 
@@ -93,6 +113,3 @@ pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>
 ## License
 
 This project is licensed under the same terms as the upstream v2rayN project.
-
-
-
