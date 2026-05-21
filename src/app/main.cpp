@@ -23,7 +23,7 @@
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "1.2.0"
+#define SONGBIRD_APP_VERSION "2.0.0"
 #endif
 
 namespace {
