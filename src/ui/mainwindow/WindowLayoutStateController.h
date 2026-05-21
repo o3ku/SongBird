@@ -53,6 +53,8 @@ private:
     bool uiStateRestorePending_ = false;
     bool initialServerColumnLayoutPending_ = true;
     bool frameAdjustedWindowMetricsApplied_ = false;
+    bool applyingServerColumnWidths_ = false;
+    bool serverColumnsManuallyAdjusted_ = false;
     QMap<QString, int> pendingColumnWidths_;
     int serverLogSplitPercent_ = 60;
     int serverQrSplitPercent_ = 78;

@@ -265,10 +265,10 @@ RoutingSettingsPageWidget::RoutingSettingsPageWidget(QWidget* parent)
 void RoutingSettingsPageWidget::setConfig(const Config& config)
 {
     config_ = config;
-    routingItems_ = config.routingItems;
+    routingItems_ = config.collection().routingItems;
     reloadRoutingPresentation(findInitialRouteIndex(routingItems_, config));
-    loadRoutingCustomRules(config.routingCustomRules);
-    selectRoutingCustomRuleTab(config.settingsRoutingRuleTabKey);
+    loadRoutingCustomRules(config.collection().routingCustomRules);
+    selectRoutingCustomRuleTab(config.ui().settingsRoutingRuleTabKey);
     updateRoutingActionState();
 }
 
@@ -670,8 +670,10 @@ int RoutingSettingsPageWidget::findInitialRouteIndex(const QList<RoutingItem>& i
         return -1;
     }
 
-    if (config.enableRoutingAdvanced && config.routingIndex >= 0 && config.routingIndex < items.size()) {
-        return config.routingIndex;
+    if (config.collection().enableRoutingAdvanced
+        && config.collection().routingIndex >= 0
+        && config.collection().routingIndex < items.size()) {
+        return config.collection().routingIndex;
     }
 
     for (int index = 0; index < items.size(); ++index) {

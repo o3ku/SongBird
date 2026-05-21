@@ -1,11 +1,14 @@
 #include "ui/dialogs/SettingsDialog.h"
 #include "common/DialogUtils.h"
 
+#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QLineEdit>
+#include <QListView>
 #include <QPushButton>
 #include <QFontMetrics>
 #include <QSpinBox>
@@ -70,19 +73,12 @@ void SettingsDialog::setConfig(const Config& config)
     if (generalSettingsPage_ != nullptr) {
         generalSettingsPage_->setConfig(config);
     }
-    if (proxySettingsPage_ != nullptr) {
-        proxySettingsPage_->setConfig(config);
-    }
-    if (updateSettingsPage_ != nullptr) {
-        updateSettingsPage_->setConfig(config);
-    }
-
     if (routingSettingsPage_ != nullptr) {
         routingSettingsPage_->setConfig(config);
     }
 
     if (subscriptionSettingsPage_ != nullptr) {
-        subscriptionSettingsPage_->setSubscriptions(config.subscriptions);
+        subscriptionSettingsPage_->setSubscriptions(config.collection().subscriptions);
     }
 
     if (coreSettingsPage_ != nullptr) {
@@ -125,38 +121,32 @@ Config SettingsDialog::config() const
     if (generalSettingsPage_ != nullptr) {
         generalSettingsPage_->applyToConfig(updated);
     }
-    if (proxySettingsPage_ != nullptr) {
-        proxySettingsPage_->applyToConfig(updated);
-    }
-    if (updateSettingsPage_ != nullptr) {
-        updateSettingsPage_->applyToConfig(updated);
-    }
     if (routingSettingsPage_ != nullptr) {
-        updated.routingItems = routingSettingsPage_->routingItems();
-        updated.routingCustomRules = routingSettingsPage_->routingCustomRules();
-        updated.enableRoutingAdvanced = !updated.routingItems.isEmpty();
-        updated.routingIndex = 0;
-        for (int index = 0; index < updated.routingItems.size(); ++index) {
-            if (updated.routingItems.at(index).locked) {
-                updated.routingIndex = index;
+        updated.collection().routingItems = routingSettingsPage_->routingItems();
+        updated.collection().routingCustomRules = routingSettingsPage_->routingCustomRules();
+        updated.collection().enableRoutingAdvanced = !updated.collection().routingItems.isEmpty();
+        updated.collection().routingIndex = 0;
+        for (int index = 0; index < updated.collection().routingItems.size(); ++index) {
+            if (updated.collection().routingItems.at(index).locked) {
+                updated.collection().routingIndex = index;
                 break;
             }
         }
-        updated.settingsRoutingRuleTabKey = routingSettingsPage_->settingsRoutingRuleTabKey();
+        updated.ui().settingsRoutingRuleTabKey = routingSettingsPage_->settingsRoutingRuleTabKey();
     }
     if (subscriptionSettingsPage_ != nullptr) {
-        updated.subscriptions = subscriptionSettingsPage_->subscriptions();
+        updated.collection().subscriptions = subscriptionSettingsPage_->subscriptions();
     }
     if (coreSettingsPage_ != nullptr) {
-        updated.enableCacheFile4Sbox = coreSettingsPage_->enableCacheFile4Sbox();
+        updated.dns().enableCacheFile4Sbox = coreSettingsPage_->enableCacheFile4Sbox();
         updated.mux4SboxProtocol = coreSettingsPage_->mux4SboxProtocol();
-        updated.coreTypeItems = coreSettingsPage_->collectCoreTypeItems();
+        updated.policy().coreTypeItems = coreSettingsPage_->collectCoreTypeItems();
     }
     if (tunSettingsPage_ != nullptr) {
         tunSettingsPage_->applyToConfig(updated);
     }
     if (coreSettingsPage_ != nullptr) {
-        updated.tunModeItem.enableLegacyProtect = coreSettingsPage_->legacyProtectEnabled();
+        updated.tun().tunModeItem.enableLegacyProtect = coreSettingsPage_->legacyProtectEnabled();
     }
 
     if (dnsSettingsPage_ != nullptr) {
@@ -172,59 +162,18 @@ void SettingsDialog::setupUi()
     resize(720, 540);
     AppTheme::applyCompactFont(this);
 
-    // === General Tab ===
-    auto* generalTab = new QWidget(this);
-    auto* generalLayout = new QVBoxLayout(generalTab);
-    generalSettingsPage_ = new GeneralSettingsPageWidget(generalTab);
-    generalLayout->addWidget(generalSettingsPage_);
-
-    // === Subscriptions Tab ===
-    auto* subTab = new QWidget(this);
-    auto* subLayout = new QVBoxLayout(subTab);
-    subscriptionSettingsPage_ = new SubscriptionSettingsPageWidget(subTab);
-    subLayout->addWidget(subscriptionSettingsPage_);
-
-    // === Routing Tab ===
-    auto* routingTab = new QWidget(this);
-    auto* routingLayout = new QVBoxLayout(routingTab);
-    routingSettingsPage_ = new RoutingSettingsPageWidget(routingTab);
-    routingLayout->addWidget(routingSettingsPage_);
-
-    // === Core Tab ===
-    auto* coreTab = new QWidget(this);
-    auto* coreLayout = new QVBoxLayout(coreTab);
-    coreSettingsPage_ = new CoreSettingsPageWidget(coreTab);
+    generalSettingsPage_ = new GeneralSettingsPageWidget(this);
+    subscriptionSettingsPage_ = new SubscriptionSettingsPageWidget(this);
+    routingSettingsPage_ = new RoutingSettingsPageWidget(this);
+    coreSettingsPage_ = new CoreSettingsPageWidget(this);
     coreSettingsPage_->setCoreDownloadHandler([this](CoreType core) {
         coreDownloadRequested_ = true;
         requestedCoreDownload_ = core;
         emit coreDownloadRequested(static_cast<int>(core));
     });
-    coreLayout->addWidget(coreSettingsPage_);
+    tunSettingsPage_ = new TunSettingsPageWidget(this);
+    dnsSettingsPage_ = new DnsSettingsPageWidget(this);
 
-    // === Proxy Tab ===
-    auto* proxyTab = new QWidget(this);
-    auto* proxyLayout = new QVBoxLayout(proxyTab);
-    proxySettingsPage_ = new ProxySettingsPageWidget(proxyTab);
-    proxyLayout->addWidget(proxySettingsPage_);
-
-    // === Update Tab ===
-    auto* updateTab = new QWidget(this);
-    auto* updateLayout = new QVBoxLayout(updateTab);
-    updateSettingsPage_ = new UpdateSettingsPageWidget(updateTab);
-    updateLayout->addWidget(updateSettingsPage_);
-
-    // === TUN Tab ===
-    auto* tunTab = new QWidget(this);
-    auto* tunLayout = new QVBoxLayout(tunTab);
-    tunSettingsPage_ = new TunSettingsPageWidget(tunTab);
-    tunLayout->addWidget(tunSettingsPage_);
-    // === DNS Tab ===
-    auto* dnsTab = new QWidget(this);
-    auto* dnsLayout = new QVBoxLayout(dnsTab);
-    dnsSettingsPage_ = new DnsSettingsPageWidget(dnsTab);
-    dnsLayout->addWidget(dnsSettingsPage_);
-
-    // === Settings Pages ===
     settingsTabBar_ = new SettingsTabBar(this);
     settingsTabBar_->setObjectName(QStringLiteral("settingsTabBar"));
     settingsTabBar_->setExpanding(false);
@@ -240,17 +189,28 @@ void SettingsDialog::setupUi()
         settingsStackLayout_->addWidget(page);
         settingsTabBar_->addTab(title);
     };
-    addSettingsTab(generalTab, tr("General"));
-    addSettingsTab(subTab, tr("Subscriptions"));
-    addSettingsTab(routingTab, tr("Routing"));
-    addSettingsTab(coreTab, tr("Core"));
-    addSettingsTab(proxyTab, tr("Proxy"));
-    addSettingsTab(tunTab, QStringLiteral("TUN"));
-    addSettingsTab(dnsTab, QStringLiteral("DNS"));
-    addSettingsTab(updateTab, tr("Update"));
+    addSettingsTab(generalSettingsPage_, tr("General"));
+    addSettingsTab(subscriptionSettingsPage_, tr("Subscriptions"));
+    addSettingsTab(routingSettingsPage_, tr("Routing"));
+    addSettingsTab(coreSettingsPage_, tr("Core"));
+    addSettingsTab(tunSettingsPage_, QStringLiteral("TUN"));
+    addSettingsTab(dnsSettingsPage_, QStringLiteral("DNS"));
 
     connect(settingsTabBar_, &QTabBar::currentChanged, settingsStackLayout_, &QStackedLayout::setCurrentIndex);
     connect(settingsStackLayout_, &QStackedLayout::currentChanged, settingsTabBar_, &QTabBar::setCurrentIndex);
+
+    const QList<QComboBox*> settingsCombos = settingsStackContainer->findChildren<QComboBox*>();
+    for (QComboBox* combo : settingsCombos) {
+        auto* popupView = new QListView(combo);
+        popupView->setObjectName(QStringLiteral("settingsComboPopupView"));
+        popupView->setMouseTracking(true);
+        popupView->setUniformItemSizes(true);
+        popupView->setSelectionRectVisible(false);
+        popupView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        popupView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        popupView->setFrameShape(QFrame::NoFrame);
+        combo->setView(popupView);
+    }
 
     auto* settingsTabBarContainer = new QWidget(this);
     settingsTabBarContainer->setObjectName(QStringLiteral("settingsTabBarContainer"));

@@ -36,5 +36,4 @@ private:
     QPushButton* resetButton_ = nullptr;
     QPushButton* saveButton_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
-    QLabel* tipLabel_ = nullptr;
 };

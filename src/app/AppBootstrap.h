@@ -5,12 +5,14 @@
 #include <memory>
 #include <optional>
 
+#include <QHash>
 #include <QList>
 #include <QMetaObject>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
 
+#include "app/CoreStartupCheckpoint.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
@@ -30,7 +32,6 @@ class QTcpServer;
 class QThread;
 class QWidget;
 class SingleInstanceGuard;
-class GrpcStatisticsBackend;
 class QtCoreProcessHost;
 class QTimer;
 class RoutingService;
@@ -39,7 +40,6 @@ class GeoResourceUpdateService;
 struct CoreUpdateConfig;
 class ServerService;
 class SpeedTestService;
-class StatisticsService;
 class SubscriptionService;
 class SubscriptionUpdateService;
 class TrayController;
@@ -77,31 +77,81 @@ private:
     void startCoreOnStartup();
     void appendStartupResourceCheckResults();
     void appendResult(const OperationResult& result);
+    void resetCoreStartupChecklist(const QStringList& steps, bool showOverlay);
+    void prepareCoreStartupChecklist(bool showOverlay);
+    void setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus status, const QString& step, const QString& detail = {});
+    void syncCoreStartupChecklistOverlay();
+    void clearCoreStartupChecklist();
+    void keepCoreStartupChecklistForUserDismissal(const QString& step, const QString& detail);
+    void failCoreStartup(const OperationResult& result);
+    void cleanupAfterFailedCoreStartup();
+    void downloadMissingGeoFilesAndResumeStartup(
+        const CoreInfo& coreInfo,
+        const QString& geoValidationMessage,
+        const QString& checkGeoStep,
+        bool skipTunCleanup,
+        std::optional<bool> startupProxyEnabled,
+        bool showStartupOverlay);
+    void downloadMissingSingBoxRuleSetsAndResumeStartup(
+        const QStringList& missingRuleSetTags,
+        const QString& checkGeoStep,
+        bool skipTunCleanup,
+        std::optional<bool> startupProxyEnabled,
+        bool showStartupOverlay);
+    void downloadMissingCoreAndResumeStartup(
+        CoreType coreType,
+        const OperationResult& missingCoreResult,
+        const QString& downloadCoreStep,
+        bool skipTunCleanup,
+        std::optional<bool> startupProxyEnabled,
+        bool showStartupOverlay);
     void showOperationMessage(
         const QString& title,
         const OperationResult& result,
         QWidget* parent = nullptr,
         bool showDialog = true);
     void persistUiState();
-    void startCore();
-    void startCore(bool skipTunCleanup);
-    void startCore(bool skipTunCleanup, std::optional<bool> startupProxyEnabled);
+    void startCore(bool showStartupOverlay = false);
+    void startCore(bool skipTunCleanup, bool showStartupOverlay);
+    void startCoreInternal(
+        bool skipTunCleanup,
+        std::optional<bool> startupProxyEnabled,
+        bool environmentAlreadyChecked = false,
+        bool showStartupOverlay = false);
     void stopCore(bool immediate = false);
     void stopCoreInternal(bool immediate, bool clearRestartAfterStop);
     void handleCoreStarted(
         const QString& serverIndexId,
         CoreType runtimeCore,
-        int statisticsPort,
+        bool customServer,
+        std::optional<bool> startupProxyEnabled);
+    void validateCoreListeningAndHandleStarted(
+        const QString& serverIndexId,
+        CoreType runtimeCore,
         bool customServer,
         std::optional<bool> startupProxyEnabled);
     void handleCoreStartFailed(const QString& message);
     void disconnectPendingCoreStartConnection();
-    void restartCoreIfRunning(const QString& reason);
+    void restartCoreIfRunning(const QString& reason, bool showStartupOverlay = false);
+    void scheduleCoreStartAfterCoreStopped(bool showStartupOverlay);
     void clearCurrentServerLocation();
-    void queryCurrentServerLocation(const QString& serverIndexId, CoreType runtimeCore);
-    void setSystemProxyMode(SystemProxyMode mode);
+    void queryCurrentServerLocation(
+        const QString& serverIndexId,
+        CoreType runtimeCore,
+        std::optional<bool> startupProxyEnabled);
+    bool applySystemProxyAfterOutboundLocation(std::optional<bool> startupProxyEnabled);
+    void clearCoreStartupChecklistAfterStableRun(const QString& serverIndexId, qint64 coreStartTime);
+    bool saveSystemProxyMode(SystemProxyMode mode);
+    void setSystemProxyMode(
+        SystemProxyMode mode,
+        bool skipTunCleanup = false,
+        bool immediateStop = false,
+        bool showStartupOverlay = false);
+    void clearAppliedSystemProxyAfterCoreStopped();
+    void clearProxyStateAfterCoreStopped();
     void applySystemProxyModeOnExit(bool windowsShutdown);
-    void enableSystemProxy();
+    void cleanupRuntimeForExit(bool windowsShutdown);
+    void enableSystemProxy(bool showStartupOverlay = false);
     void disableSystemProxy();
     void setTunEnabled(bool enabled);
     void toggleAutoRun();
@@ -157,6 +207,10 @@ private:
         bool previousAdvancedEnabled,
         int previousRoutingIndex);
     void handleDefaultServerSelectionResult(const OperationResult& result, const QString& previousIndexId);
+    bool requestDefaultServerSwitchAfterCoreStop(const QString& indexId, bool enableTun);
+    void scheduleDefaultServerSwitchAfterCoreStopped();
+    void switchDefaultServerAfterCoreStopped();
+    void setDefaultServerWithTun(const QString& indexId);
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
     void openSettingsDialog(int initialTab = 0);
@@ -164,6 +218,7 @@ private:
     void openAboutDialog();
     void openExternalUrl(const QString& url);
     void openLoopbackTool();
+    bool askRestartAsAdministratorForTun() const;
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
     bool restartApplication(bool requireAdministrator);
@@ -177,8 +232,6 @@ private:
     QString resolveCustomConfigDirectory() const;
     QString resolveCustomConfigPath(const QString& address) const;
     QString resolveRuntimeConfigPath(const VmessItem& server) const;
-    QString resolveStatisticsFilePath() const;
-    int resolveStatisticsPort() const;
     CoreType resolveLaunchCoreType(const VmessItem& server) const;
     CoreInfo resolveCoreInfo(const VmessItem& server) const;
     CoreType resolveEffectiveCoreType(const VmessItem& server) const;
@@ -188,16 +241,14 @@ private:
     QList<CoreType> detectExistingCoreTypes() const;
     QString detectCoreVersion(CoreType coreType) const;
     QString resolveCoreInstallDirectory(CoreType coreType) const;
-    QString buildTrafficSummaryText() const;
-    QString buildStatisticsSummaryText() const;
     QString buildRoutingSummaryText() const;
     QString buildListenSummaryText() const;
     QString buildSystemProxyExceptions() const;
-    void stopStatisticsBackends();
-    void stopStatisticsSession();
+    bool updateSystemProxyMode(SystemProxyMode mode) const;
     QString backgroundTaskDescription(BackgroundTaskKind kind) const;
     void resetSpeedTestProgressState();
     bool tryBeginBackgroundTask(BackgroundTaskKind kind);
+    bool isCoreStartupBlockingBackgroundTask() const;
     void finishBackgroundTask(BackgroundTaskKind kind);
     void syncBackgroundTaskState();
     void trackBackgroundThread(QThread* thread);
@@ -208,6 +259,7 @@ private:
     void removeStaleTunAdapter();
     void removeStaleSingBoxCache();
     void cleanupOrphanCoreProcesses();
+    void cleanupCoreProcessesUsingConfiguredPorts();
     void handleCoreExited(int exitCode, int status, bool stopRequested, bool auxiliary);
     void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
@@ -223,8 +275,6 @@ private:
     std::unique_ptr<ConfigBackupService> configBackupService_;
     std::unique_ptr<RoutingService> routingService_;
     std::unique_ptr<SpeedTestService> speedTestService_;
-    std::unique_ptr<StatisticsService> statisticsService_;
-    std::unique_ptr<GrpcStatisticsBackend> grpcStatisticsBackend_;
     std::unique_ptr<SubscriptionService> subscriptionService_;
     std::unique_ptr<GeoResourceUpdateService> geoResourceUpdateService_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
@@ -244,6 +294,7 @@ private:
     bool uiStateRestored_ = false;
     bool shutdownUiStatePersisted_ = false;
     bool exitProxyStateApplied_ = false;
+    bool restartHandoffPending_ = false;
     bool windowsShutdownRequested_ = false;
     bool subscriptionUpdateRunning_ = false;
     bool proxyAvailabilityCheckRunning_ = false;
@@ -254,12 +305,26 @@ private:
     bool coreStopPending_ = false;
     bool coreReady_ = false;
     QString currentServerLocation_;
+    QStringList coreStartupSteps_;
+    QHash<QString, CoreStartupCheckpointStatus> coreStartupStepStatus_;
+    QHash<QString, QString> coreStartupStepDetails_;
+    bool coreStartupOverlayRequested_ = false;
+    bool coreStartupOverlayShown_ = false;
+    qint64 coreStartupOverlayShownAtMs_ = 0;
+    int coreStartupOverlayClearGeneration_ = 0;
+    int coreStartupStableRunGeneration_ = 0;
+    bool cancelCoreStartAfterGeoUpdate_ = false;
     bool coreTunEnabledAtStart_ = false;
     bool managedSystemProxyActive_ = false;
     bool tunCleanupActive_ = false;
     bool skipTunCleanupOnNextCoreExit_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
+    bool restartAfterStopShowStartupOverlay_ = false;
+    QString pendingDefaultServerAfterStopId_;
+    bool pendingDefaultServerAfterStopEnableTun_ = false;
+    bool pendingDefaultServerAfterStopShowStartupOverlay_ = false;
+    bool keepCoreStartupChecklistOnNextStop_ = false;
     bool setCurrentActivationPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;
     BackgroundTaskKind activeBackgroundTask_ = BackgroundTaskKind::None;
@@ -279,7 +344,7 @@ private:
     std::atomic_bool shuttingDown_{false};
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
+    int coreCrashRestartCount_ = 0;
+    int auxiliaryCrashRestartCount_ = 0;
+    qint64 coreStartTime_ = 0;
 };
-
-
-

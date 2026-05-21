@@ -22,9 +22,7 @@ QList<GlobalHotkeyAction> actionOrder()
     return {
         GlobalHotkeyAction::ShowForm,
         GlobalHotkeyAction::SystemProxyClear,
-        GlobalHotkeyAction::SystemProxySet,
-        GlobalHotkeyAction::SystemProxyUnchanged,
-        GlobalHotkeyAction::SystemProxyPac
+        GlobalHotkeyAction::SystemProxySet
     };
 }
 
@@ -108,11 +106,6 @@ void GlobalHotkeyDialog::setupUi()
         formLayout->addRow(actionLabel(actions.at(index)), edit);
     }
 
-    tipLabel_ = new QLabel(
-        tr("PAC proxy mode is not available in the current Qt rewrite. Its shortcut is kept for config compatibility."),
-        this);
-    tipLabel_->setWordWrap(true);
-
     auto* buttonBox = new QDialogButtonBox(Qt::Horizontal, this);
     resetButton_ = buttonBox->addButton(tr("Reset"), QDialogButtonBox::ResetRole);
     saveButton_ = buttonBox->addButton(tr("Save"), QDialogButtonBox::AcceptRole);
@@ -129,7 +122,6 @@ void GlobalHotkeyDialog::setupUi()
     connect(cancelButton_, &QPushButton::clicked, this, &QDialog::reject);
 
     layout->addLayout(formLayout);
-    layout->addWidget(tipLabel_);
     layout->addWidget(buttonBox);
 }
 
@@ -204,10 +196,6 @@ QString GlobalHotkeyDialog::actionLabel(GlobalHotkeyAction action)
         return tr("Clear System Proxy");
     case GlobalHotkeyAction::SystemProxySet:
         return tr("Set System Proxy");
-    case GlobalHotkeyAction::SystemProxyUnchanged:
-        return tr("Keep System Proxy Unchanged");
-    case GlobalHotkeyAction::SystemProxyPac:
-        return tr("System Proxy PAC");
     default:
         return QString();
     }

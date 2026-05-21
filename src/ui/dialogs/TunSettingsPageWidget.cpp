@@ -17,7 +17,7 @@ TunSettingsPageWidget::TunSettingsPageWidget(QWidget* parent)
 
 void TunSettingsPageWidget::setConfig(const Config& config)
 {
-    const TunModeItem& tun = config.tunModeItem;
+    const TunModeItem& tun = config.tun().tunModeItem;
     tunEnableCheck_->setChecked(tun.enableTun);
     tunAutoRouteCheck_->setChecked(tun.autoRoute);
     tunStrictRouteCheck_->setChecked(tun.strictRoute);
@@ -38,7 +38,7 @@ void TunSettingsPageWidget::applyToConfig(Config& config) const
     tun.stack = tunStackCombo_->currentText().trimmed();
     tun.enableIPv6Address = tunEnableIPv6AddressCheck_->isChecked();
     tun.icmpRouting = tunIcmpRoutingEdit_->text().trimmed();
-    config.tunModeItem = tun;
+    config.tun().tunModeItem = tun;
 }
 
 bool TunSettingsPageWidget::tunEnabled() const
@@ -88,9 +88,9 @@ void TunSettingsPageWidget::setupUi()
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableCheck_);
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunAutoRouteCheck_);
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunStrictRouteCheck_);
+    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableIPv6AddressCheck_);
     tunLayout->addRow(tr("MTU"), tunMtuSpin_);
     tunLayout->addRow(tr("Stack"), tunStackCombo_);
-    tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableIPv6AddressCheck_);
     tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
 
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool enabled) {

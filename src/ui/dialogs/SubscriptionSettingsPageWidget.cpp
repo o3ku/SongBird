@@ -5,13 +5,69 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
+#include <QLineEdit>
 #include <QPushButton>
+#include <QComboBox>
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
+#include "common/UserAgent.h"
 #include "ui/theme/AppTheme.h"
+
+namespace {
+
+const QString kUaNekobox = QStringLiteral("Nekobox");
+const QString kUaClashVerge = QStringLiteral("ClashVerge");
+
+void enableCustomUserAgentInput(QComboBox* combo, const QString& text = QString())
+{
+    if (combo == nullptr) {
+        return;
+    }
+
+    auto* lineEdit = new QLineEdit(combo);
+    lineEdit->setObjectName(QStringLiteral("uaComboLineEdit"));
+    lineEdit->setText(text);
+    lineEdit->setFrame(false);
+    combo->setLineEdit(lineEdit);
+}
+
+QComboBox* createUserAgentCombo(QWidget* parent, const QString& storedValue)
+{
+    auto* combo = new QComboBox(parent);
+    combo->setObjectName(QStringLiteral("uaCombo"));
+    combo->setFrame(false);
+    combo->addItem(QString());
+    combo->addItem(kUaNekobox);
+    combo->addItem(kUaClashVerge);
+
+    const QString trimmed = storedValue.trimmed();
+    if (trimmed == kUaClashVerge) {
+        combo->setCurrentIndex(2);
+    } else if (trimmed == kUaNekobox || trimmed.isEmpty()) {
+        combo->setCurrentIndex(trimmed.isEmpty() ? 0 : 1);
+        if (trimmed.isEmpty()) {
+            enableCustomUserAgentInput(combo);
+        }
+    } else {
+        combo->setCurrentIndex(0);
+        enableCustomUserAgentInput(combo, trimmed);
+    }
+
+    QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), combo, [combo](int index) {
+        if (index == 0) {
+            enableCustomUserAgentInput(combo);
+        } else {
+            combo->setEditable(false);
+        }
+    });
+
+    return combo;
+}
+
+} // namespace
 
 SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     : QWidget(parent)
@@ -52,7 +108,12 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     layout->addWidget(table_);
 
     connect(addButton_, &QPushButton::clicked, this, [this]() {
-        appendRow(SubItem{QString(), QStringLiteral("Subscription"), QStringLiteral("https://"), true, QString()});
+        appendRow(SubItem{
+            QString(),
+            QStringLiteral("Subscription"),
+            QStringLiteral("https://"),
+            true,
+            QString()});
         updateActionState();
     });
     connect(removeButton_, &QPushButton::clicked, this, [this]() {
@@ -73,6 +134,18 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     });
 }
 
+QString SubscriptionSettingsPageWidget::resolveUserAgent(const QString& storedValue)
+{
+    const QString trimmed = storedValue.trimmed();
+    if (trimmed.isEmpty() || trimmed == kUaNekobox) {
+        return fallbackUserAgent();
+    }
+    if (trimmed == kUaClashVerge) {
+        return QStringLiteral("clash-verge/v2.4");
+    }
+    return trimmed;
+}
+
 void SubscriptionSettingsPageWidget::setSubscriptions(const QList<SubItem>& items)
 {
     items_ = items;
@@ -87,7 +160,6 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
         auto* enabledItem = table_->item(row, 0);
         auto* remarksItem = table_->item(row, 1);
         auto* urlItem = table_->item(row, 2);
-        auto* userAgentItem = table_->item(row, 3);
 
         SubItem item;
         if (remarksItem != nullptr) {
@@ -96,7 +168,7 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
         }
         item.enabled = enabledItem == nullptr || enabledItem->checkState() == Qt::Checked;
         item.url = urlItem == nullptr ? QString() : urlItem->text().trimmed();
-        item.userAgent = userAgentItem == nullptr ? QString() : userAgentItem->text().trimmed();
+        item.userAgent = userAgentAtRow(row);
 
         if (!item.remarks.isEmpty() || !item.url.isEmpty()) {
             items.append(item);
@@ -147,12 +219,32 @@ void SubscriptionSettingsPageWidget::appendRow(const SubItem& item)
     remarksItem->setData(Qt::UserRole, item.id);
 
     auto* urlItem = new QTableWidgetItem(item.url);
-    auto* userAgentItem = new QTableWidgetItem(item.userAgent);
+    auto* userAgentItem = new QTableWidgetItem();
 
     table_->setItem(row, 0, enabledItem);
     table_->setItem(row, 1, remarksItem);
     table_->setItem(row, 2, urlItem);
     table_->setItem(row, 3, userAgentItem);
+    table_->setCellWidget(row, 3, createUserAgentCombo(table_, item.userAgent));
+}
+
+QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const
+{
+    if (table_ == nullptr || row < 0 || row >= table_->rowCount()) {
+        return {};
+    }
+
+    if (auto* combo = qobject_cast<QComboBox*>(table_->cellWidget(row, 3))) {
+        return combo->currentText().trimmed();
+    }
+    if (auto* wrapper = table_->cellWidget(row, 3)) {
+        if (auto* combo = wrapper->findChild<QComboBox*>(QStringLiteral("uaCombo"))) {
+            return combo->currentText().trimmed();
+        }
+    }
+
+    auto* userAgentItem = table_->item(row, 3);
+    return userAgentItem == nullptr ? QString() : userAgentItem->text().trimmed();
 }
 
 void SubscriptionSettingsPageWidget::updateActionState()

@@ -2,7 +2,11 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 #include "runtime/ClientConfigWriter.h"
@@ -16,12 +20,15 @@ private slots:
     void generateClientConfigsDoesNotEmitSingBoxSocksPasswordWithoutUsername();
     void generateClientConfigsBuildsSingBoxHttpOutbound();
     void generateClientConfigsDefaultsHttpAutoCoreToSingBox();
+    void generateClientConfigsUsesWarnSingBoxLogLevelByDefault();
+    void generateClientConfigsMapsConfiguredSingBoxWarningLogLevel();
     void validateServerRejectsInvalidXhttpExtraJson();
     void validateServerRejectsInvalidFinalmaskJson();
     void generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled();
     void generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled();
     void generateClientConfigsUsesDefaultAllowInsecureForLegacyTlsWhenServerValueMissing();
     void generateClientConfigsUsesDefaultUserAgentForLegacyWebSocketWhenServerValueMissing();
+    void generateClientConfigsUsesFallbackUserAgentForLegacyWebSocketWhenNoValueSpecified();
     void generateClientConfigsUsesDefaultUserAgentForLegacyHttpupgradeWhenServerValueMissing();
     void generateClientConfigsUsesServerUserAgentBeforeDefaultForLegacyHttpupgrade();
     void generateClientConfigsUsesDefaultUserAgentForLegacyTcpHttpWhenServerValueMissing();
@@ -81,6 +88,8 @@ private slots:
     void generateClientConfigsOmitsSingBoxSniffOverrideDestinationWhenRouteOnlyTrue();
     void generateClientConfigsAddsUdpDnsHijackRuleWhenSniffingDisabledForNativeSingBoxCore();
     void generateClientConfigsAddsSingBoxClashModeRouteRules();
+    void generateClientConfigsDownloadsSingBoxRemoteRuleSetsThroughProxy();
+    void generateClientConfigsPrefersLocalSingBoxRuleSetsWhenPresent();
     void generateClientConfigsAddsDedicatedLegacyLocationProbeInboundAndRoute();
     void generateClientConfigsAddsDedicatedSingBoxLocationProbeInboundAndRoute();
     void generateClientConfigsMapsSingBoxBlockRoutingRuleToRejectAction();
@@ -108,14 +117,14 @@ Config baseConfig()
     Config config;
     config.localPort = 10808;
     config.sniffingEnabled = true;
-    config.tunModeItem.enableTun = true;
-    config.tunModeItem.enableLegacyProtect = true;
+    config.tun().tunModeItem.enableTun = true;
+    config.tun().tunModeItem.enableLegacyProtect = true;
     return config;
 }
 
 void setProtocolCore(Config& config, ConfigType configType, CoreType coreType)
 {
-    config.coreTypeItems.append(CoreTypeItem{
+    config.policy().coreTypeItems.append(CoreTypeItem{
         static_cast<int>(configType),
         static_cast<int>(coreType)});
 }
@@ -300,7 +309,7 @@ void ClientConfigWriterTests::validateServerRejectsUnsupportedSingBoxTransportFo
 void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxSocksPasswordWithoutUsername()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -311,7 +320,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxSocksPasswo
     server.security = QStringLiteral("auto");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -325,8 +334,8 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxSocksPasswo
 void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHttpOutbound()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -337,7 +346,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHttpOutbound()
     server.sni = QStringLiteral("proxy.example.com");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -360,7 +369,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHttpOutbound()
 void ClientConfigWriterTests::generateClientConfigsDefaultsHttpAutoCoreToSingBox()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -369,7 +378,7 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsHttpAutoCoreToSingBox
     server.security = QStringLiteral("http-pass");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -377,6 +386,37 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsHttpAutoCoreToSingBox
 
     QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("http"));
     QVERIFY(generated.auxiliary.isEmpty());
+}
+
+void ClientConfigWriterTests::generateClientConfigsUsesWarnSingBoxLogLevelByDefault()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject log = generated.primary.root.value(QStringLiteral("log")).toObject();
+    QCOMPARE(log.value(QStringLiteral("level")).toString(), QStringLiteral("warn"));
+}
+
+void ClientConfigWriterTests::generateClientConfigsMapsConfiguredSingBoxWarningLogLevel()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.logLevel = QStringLiteral("warning");
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject log = generated.primary.root.value(QStringLiteral("log")).toObject();
+    QCOMPARE(log.value(QStringLiteral("level")).toString(), QStringLiteral("warn"));
 }
 
 void ClientConfigWriterTests::validateServerRejectsInvalidXhttpExtraJson()
@@ -419,12 +459,12 @@ void ClientConfigWriterTests::validateServerRejectsInvalidFinalmaskJson()
 void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.routeOnly = true;
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject inbound = generated.primary.root.value(QStringLiteral("inbounds")).toArray().at(0).toObject();
     const QJsonObject sniffing = inbound.value(QStringLiteral("sniffing")).toObject();
@@ -436,13 +476,13 @@ void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenE
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.enableFragment = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().enableFragment = true;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -466,14 +506,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyFragmentOutboundWhe
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForLegacyTlsWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
     server.allowInsecure.clear();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -487,14 +527,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForLe
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyWebSocketWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
     server.network = QStringLiteral("ws");
     server.path = QStringLiteral("/ws");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -507,17 +547,43 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
     QCOMPARE(headers.value(QStringLiteral("User-Agent")).toString(), QStringLiteral("Mozilla/5.0"));
 }
 
+void ClientConfigWriterTests::generateClientConfigsUsesFallbackUserAgentForLegacyWebSocketWhenNoValueSpecified()
+{
+    Config config = legacyConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultUserAgent.clear();
+    VmessItem server = baseServer();
+    server.network = QStringLiteral("ws");
+    server.path = QStringLiteral("/ws");
+    server.userAgent.clear();
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    const QJsonObject wsSettings = proxyOutbound.value(QStringLiteral("streamSettings")).toObject()
+                                      .value(QStringLiteral("wsSettings"))
+                                      .toObject();
+    const QJsonObject headers = wsSettings.value(QStringLiteral("headers")).toObject();
+
+    QCOMPARE(
+        headers.value(QStringLiteral("User-Agent")).toString(),
+        QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+}
+
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyHttpupgradeWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
     server.network = QStringLiteral("httpupgrade");
     server.path = QStringLiteral("/upgrade");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -533,14 +599,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
 void ClientConfigWriterTests::generateClientConfigsUsesServerUserAgentBeforeDefaultForLegacyHttpupgrade()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
     server.network = QStringLiteral("httpupgrade");
     server.userAgent = QStringLiteral("CustomUA/1.0");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -556,15 +622,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerUserAgentBeforeDefa
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyTcpHttpWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultUserAgent = QStringLiteral("Mozilla/5.0");
     VmessItem server = baseServer();
     server.network = QStringLiteral("tcp");
     server.headerType = QStringLiteral("http");
     server.requestHost = QStringLiteral("cdn.example.com");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -583,14 +649,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacy
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLegacyTlsWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultFingerprint = QStringLiteral("firefox");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultFingerprint = QStringLiteral("firefox");
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
     server.fingerprint.clear();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -605,7 +671,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLega
 void ClientConfigWriterTests::generateClientConfigsAppliesLegacyFinalmaskOverride()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.network = QStringLiteral("kcp");
     server.headerType = QStringLiteral("wireguard");
@@ -614,7 +680,7 @@ void ClientConfigWriterTests::generateClientConfigsAppliesLegacyFinalmaskOverrid
         QStringLiteral("{\"udp\":[{\"type\":\"mkcp-aes128gcm\",\"settings\":{\"password\":\"override\"}}]}");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -634,14 +700,14 @@ void ClientConfigWriterTests::generateClientConfigsAppliesLegacyFinalmaskOverrid
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsCertificates()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
     server.cert = testPemChain();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -666,14 +732,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsCertificates()
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyPinnedPeerCertSha256()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
     server.certSha = QStringLiteral("sha256/base64-one,sha256/base64-two");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -691,14 +757,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyPinnedPeerCertSha25
 void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersAndHosts()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.directDns = QStringLiteral("223.5.5.5");
-    config.remoteDns = QStringLiteral("https://dns.google/dns-query");
-    config.bootstrapDns = QStringLiteral("119.29.29.29");
-    config.domainStrategyForFreedom = QStringLiteral("UseIPv4");
-    config.domainStrategyForProxy = QStringLiteral("UseIPv6");
-    config.dnsHosts = QStringLiteral("example.com 1.2.3.4");
-    config.routingItems = {
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().directDns = QStringLiteral("223.5.5.5");
+    config.dns().remoteDns = QStringLiteral("https://dns.google/dns-query");
+    config.dns().bootstrapDns = QStringLiteral("119.29.29.29");
+    config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv4");
+    config.dns().domainStrategyForProxy = QStringLiteral("UseIPv6");
+    config.dns().dnsHosts = QStringLiteral("example.com 1.2.3.4");
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("full:cn.example.com")}),
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("full:google.com")})})};
@@ -706,7 +772,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersA
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     QCOMPARE(dns.value(QStringLiteral("tag")).toString(), QStringLiteral("dns-module"));
@@ -779,10 +845,10 @@ void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersA
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalServerForCatchAllDirectRouting()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.directDns = QStringLiteral("223.5.5.5");
-    config.remoteDns = QStringLiteral("8.8.8.8");
-    config.routingItems = {
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().directDns = QStringLiteral("223.5.5.5");
+    config.dns().remoteDns = QStringLiteral("8.8.8.8");
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("direct"),
@@ -795,7 +861,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalSer
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray servers = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("servers")).toArray();
     bool foundDirectFinalServer = false;
@@ -828,14 +894,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalSer
 void ClientConfigWriterTests::generateClientConfigsAddsCommonHostsToLegacyDnsHosts()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = true;
-    config.dnsHosts.clear();
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = true;
+    config.dns().dnsHosts.clear();
 
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject hosts = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("hosts")).toObject();
     QVERIFY(hosts.contains(QStringLiteral("dns.google")));
@@ -851,20 +917,20 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsToLegacyDnsHos
     QVERIFY(hostsFile.write("1.2.3.4 sys.example.com\n") >= 0);
     hostsFile.close();
 
-    QVERIFY(qputenv("V2RAYQ_SYSTEM_HOSTS_PATH", hostsPath.toUtf8()));
+    QVERIFY(qputenv("SONGBIRD_SYSTEM_HOSTS_PATH", hostsPath.toUtf8()));
 
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = false;
-    config.useSystemHosts = true;
-    config.dnsHosts.clear();
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = false;
+    config.dns().useSystemHosts = true;
+    config.dns().dnsHosts.clear();
 
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
-    qunsetenv("V2RAYQ_SYSTEM_HOSTS_PATH");
+    qunsetenv("SONGBIRD_SYSTEM_HOSTS_PATH");
 
     const QJsonObject hosts = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("hosts")).toObject();
     QCOMPARE(hosts.value(QStringLiteral("sys.example.com")).toArray().at(0).toString(), QStringLiteral("1.2.3.4"));
@@ -873,14 +939,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsToLegacyDnsHos
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyServeStaleAndParallelQueryWhenEnabled()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.serveStale = true;
-    config.parallelQuery = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().serveStale = true;
+    config.dns().parallelQuery = true;
 
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     QCOMPARE(dns.value(QStringLiteral("serveStale")).toBool(), true);
@@ -890,14 +956,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyServeStaleAndParall
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityMldsa65Verify()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("reality");
     server.publicKey = QStringLiteral("reality-public-key");
     server.mldsa65Verify = QStringLiteral("mldsa65-public-key");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -912,14 +978,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityMldsa65Verif
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityPublicKeyField()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("reality");
     server.publicKey = QStringLiteral("reality-public-key");
     server.shortId = QStringLiteral("0123456789abcdef");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -935,14 +1001,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyRealityPublicKeyFie
 void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsEchFields()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("tls");
     server.echConfigList = QStringLiteral("ECHCONFIGBASE64");
     server.echForceQuery = QStringLiteral("half");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -958,15 +1024,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsEchFields()
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForSingBoxTlsWhenServerValueMissing()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.streamSecurity = QStringLiteral("tls");
     server.allowInsecure.clear();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -979,15 +1045,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForSi
 void ClientConfigWriterTests::generateClientConfigsUsesSingBoxTlsCertificates()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.streamSecurity = QStringLiteral("tls");
     server.cert = testPemChain();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1008,15 +1074,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesSingBoxTlsCertificates()
 void ClientConfigWriterTests::generateClientConfigsUsesSingBoxPinnedCertificatePublicKeyHashes()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultAllowInsecure = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.streamSecurity = QStringLiteral("tls");
     server.certSha = QStringLiteral("sha256/base64-one,sha256/base64-two");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1033,15 +1099,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesSingBoxPinnedCertificateP
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForSingBoxTlsWhenServerValueMissing()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultFingerprint = QStringLiteral("firefox");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultFingerprint = QStringLiteral("firefox");
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.streamSecurity = QStringLiteral("tls");
     server.fingerprint.clear();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1057,7 +1123,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForSing
 void ClientConfigWriterTests::generateClientConfigsForcesSingBoxRealityTlsInsecureFalse()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.streamSecurity = QStringLiteral("reality");
@@ -1066,7 +1132,7 @@ void ClientConfigWriterTests::generateClientConfigsForcesSingBoxRealityTlsInsecu
     server.shortId = QStringLiteral("0123456789abcdef");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1080,8 +1146,8 @@ void ClientConfigWriterTests::generateClientConfigsForcesSingBoxRealityTlsInsecu
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLegacyRealityWhenServerValueMissing()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.defaultFingerprint = QStringLiteral("firefox");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().defaultFingerprint = QStringLiteral("firefox");
     VmessItem server = baseServer();
     server.streamSecurity = QStringLiteral("reality");
     server.fingerprint.clear();
@@ -1089,7 +1155,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLega
     server.shortId = QStringLiteral("0123456789abcdef");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1104,14 +1170,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesDefaultFingerprintForLega
 void ClientConfigWriterTests::generateClientConfigsAddsDefaultSingBoxWebSocketEarlyDataHeader()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.network = QStringLiteral("ws");
     server.path = QStringLiteral("/ws?ed=2048");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1129,14 +1195,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsDefaultSingBoxWebSocketEa
 void ClientConfigWriterTests::generateClientConfigsOverridesSingBoxWebSocketEarlyDataHeaderFromEh()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.network = QStringLiteral("ws");
     server.path = QStringLiteral("/ws?eh=X-Ed-Header&ed=1024");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1153,14 +1219,14 @@ void ClientConfigWriterTests::generateClientConfigsOverridesSingBoxWebSocketEarl
 void ClientConfigWriterTests::generateClientConfigsUsesTcpNetworkForSingBoxWebSocketTransport()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
     server.network = QStringLiteral("ws");
     server.path = QStringLiteral("/ws");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1176,7 +1242,7 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     QCOMPARE(generated.auxiliary.size(), 1);
 
@@ -1195,11 +1261,11 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
 void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayForXrayWithoutLegacyProtect()
 {
     Config config = tunCompatXrayBaseConfig();
-    config.tunModeItem.enableLegacyProtect = false;
+    config.tun().tunModeItem.enableLegacyProtect = false;
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     QCOMPARE(generated.auxiliary.size(), 1);
 
@@ -1221,7 +1287,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesModernLocalDnsServerForTu
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject compatRoot = generated.auxiliary.constFirst().root;
     const QJsonObject dns = compatRoot.value(QStringLiteral("dns")).toObject();
@@ -1242,7 +1308,7 @@ void ClientConfigWriterTests::generateClientConfigsMovesTunCompatSniffToRouteAct
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject compatRoot = generated.auxiliary.constFirst().root;
     const QJsonObject tunInbound = findObjectByTag(
@@ -1269,7 +1335,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunCompatRejectRules()
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject compatRoot = generated.auxiliary.constFirst().root;
     const QJsonArray rules = compatRoot.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
@@ -1311,7 +1377,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
     const VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject compatRoot = generated.auxiliary.constFirst().root;
     const QJsonArray rules = compatRoot.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
@@ -1324,7 +1390,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
 
     const QJsonObject directProcessRule = findRouteRuleByOutbound(rules, QStringLiteral("direct"));
     const QJsonArray directProcessNames = directProcessRule.value(QStringLiteral("process_name")).toArray();
-    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("SongBox.exe")));
+    QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("SongBird.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("xray.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box-client.exe")));
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box.exe")));
@@ -1337,7 +1403,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunRoutePackForNativeSing
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject route = generated.primary.root.value(QStringLiteral("route")).toObject();
     const QJsonArray rules = route.value(QStringLiteral("rules")).toArray();
@@ -1371,12 +1437,12 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunRoutePackForNativeSing
 void ClientConfigWriterTests::generateClientConfigsUsesDirectIcmpRoutingForNativeSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.icmpRouting = QStringLiteral("direct");
+    config.tun().tunModeItem.icmpRouting = QStringLiteral("direct");
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -1396,12 +1462,12 @@ void ClientConfigWriterTests::generateClientConfigsUsesDirectIcmpRoutingForNativ
 void ClientConfigWriterTests::generateClientConfigsUsesRejectIcmpRoutingForNativeSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.icmpRouting = QStringLiteral("drop");
+    config.tun().tunModeItem.icmpRouting = QStringLiteral("drop");
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -1422,12 +1488,12 @@ void ClientConfigWriterTests::generateClientConfigsUsesRejectIcmpRoutingForNativ
 void ClientConfigWriterTests::generateClientConfigsIgnoresInvalidIcmpRoutingForNativeSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.icmpRouting = QStringLiteral("bogus");
+    config.tun().tunModeItem.icmpRouting = QStringLiteral("bogus");
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -1449,7 +1515,7 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsTunInboundToIpv4OnlyW
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject tunInbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("inbounds")).toArray(),
@@ -1463,13 +1529,13 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsTunInboundToIpv4OnlyW
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisableLegacyMux()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = true;
     VmessItem server = baseServer();
     server.muxEnabled = false;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1483,13 +1549,13 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisabl
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnableLegacyMux()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = false;
     VmessItem server = baseServer();
     server.muxEnabled = true;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1503,14 +1569,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnable
 void ClientConfigWriterTests::generateClientConfigsUsesConfiguredSingBoxMultiplexProtocol()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = true;
     config.mux4SboxProtocol = QStringLiteral("yamux");
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1525,7 +1591,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesConfiguredSingBoxMultiple
 void ClientConfigWriterTests::generateClientConfigsUsesConfiguredSingBoxMultiplexMaxConnectionsAndPadding()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = true;
     config.mux4SboxProtocol = QStringLiteral("yamux");
     config.mux4SboxMaxConnections = 3;
@@ -1534,7 +1600,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesConfiguredSingBoxMultiple
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1550,7 +1616,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesConfiguredSingBoxMultiple
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisableSingBoxMultiplex()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = true;
     config.mux4SboxProtocol = QStringLiteral("yamux");
     VmessItem server = baseServer();
@@ -1558,7 +1624,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisabl
     server.muxEnabled = false;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1570,7 +1636,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToDisabl
 void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnableSingBoxMultiplex()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = false;
     config.mux4SboxProtocol = QStringLiteral("yamux");
     VmessItem server = baseServer();
@@ -1578,7 +1644,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnable
     server.muxEnabled = true;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1593,14 +1659,14 @@ void ClientConfigWriterTests::generateClientConfigsUsesServerMuxOverrideToEnable
 void ClientConfigWriterTests::generateClientConfigsSkipsSingBoxMultiplexWhenConfiguredProtocolEmpty()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.muxEnabled = true;
     config.mux4SboxProtocol.clear();
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -1612,13 +1678,13 @@ void ClientConfigWriterTests::generateClientConfigsSkipsSingBoxMultiplexWhenConf
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxCacheFileExperimentalWhenEnabled()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.enableCacheFile4Sbox = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().enableCacheFile4Sbox = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject experimental = generated.primary.root.value(QStringLiteral("experimental")).toObject();
     const QJsonObject cacheFile = experimental.value(QStringLiteral("cache_file")).toObject();
@@ -1630,19 +1696,19 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxCacheFileExperimen
 void ClientConfigWriterTests::generateClientConfigsBuildsSimpleDnsPackForSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.directDns = QStringLiteral("https://dns.alidns.com/dns-query");
-    config.remoteDns = QStringLiteral("https://dns.google/dns-query");
-    config.bootstrapDns = QStringLiteral("223.5.5.5");
-    config.domainStrategyForFreedom = QStringLiteral("UseIPv4");
-    config.domainStrategyForProxy = QStringLiteral("UseIPv6");
-    config.dnsHosts = QStringLiteral("example.com 1.2.3.4\nfull:full.example.com 5.6.7.8");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().directDns = QStringLiteral("https://dns.alidns.com/dns-query");
+    config.dns().remoteDns = QStringLiteral("https://dns.google/dns-query");
+    config.dns().bootstrapDns = QStringLiteral("223.5.5.5");
+    config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv4");
+    config.dns().domainStrategyForProxy = QStringLiteral("UseIPv6");
+    config.dns().dnsHosts = QStringLiteral("example.com 1.2.3.4\nfull:full.example.com 5.6.7.8");
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     const QJsonArray servers = dns.value(QStringLiteral("servers")).toArray();
@@ -1700,8 +1766,8 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSimpleDnsPackForSingBox
 void ClientConfigWriterTests::generateClientConfigsUsesDirectDnsAsFinalServerForCatchAllDirectRouting()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.routingItems = {
+    config.tun().tunModeItem.enableTun = false;
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("direct"),
@@ -1715,7 +1781,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDirectDnsAsFinalServerFor
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     QCOMPARE(dns.value(QStringLiteral("final")).toString(), QStringLiteral("direct_dns"));
@@ -1724,16 +1790,16 @@ void ClientConfigWriterTests::generateClientConfigsUsesDirectDnsAsFinalServerFor
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxFakeDnsServerAndCacheStorageWhenEnabled()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.enableCacheFile4Sbox = true;
-    config.fakeIp = true;
-    config.globalFakeIp = false;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().enableCacheFile4Sbox = true;
+    config.dns().fakeIp = true;
+    config.dns().globalFakeIp = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     const QJsonObject fakeDns = findObjectByTag(dns.value(QStringLiteral("servers")).toArray(), QStringLiteral("fake_dns"));
@@ -1761,16 +1827,16 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxFakeDnsServerAndCa
 void ClientConfigWriterTests::generateClientConfigsSkipsSimpleDnsRouteResolverForCustomSingBoxDnsObject()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.remoteDns = QStringLiteral(
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().remoteDns = QStringLiteral(
         "{\"servers\":[{\"tag\":\"custom_remote\",\"type\":\"udp\",\"server\":\"8.8.8.8\"}],\"final\":\"custom_remote\"}");
-    config.dnsHosts = QStringLiteral("example.com 1.2.3.4");
+    config.dns().dnsHosts = QStringLiteral("example.com 1.2.3.4");
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     QCOMPARE(findObjectByTag(dns.value(QStringLiteral("servers")).toArray(), QStringLiteral("custom_remote"))
@@ -1796,10 +1862,10 @@ void ClientConfigWriterTests::generateClientConfigsSkipsSimpleDnsRouteResolverFo
 void ClientConfigWriterTests::generateClientConfigsKeepsDirectDnsAheadOfNonGlobalFakeDnsFallback()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.fakeIp = true;
-    config.globalFakeIp = false;
-    config.routingItems = {
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().fakeIp = true;
+    config.dns().globalFakeIp = false;
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("full:direct.example")}),
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("full:proxy.example")})})};
@@ -1808,7 +1874,7 @@ void ClientConfigWriterTests::generateClientConfigsKeepsDirectDnsAheadOfNonGloba
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -1853,15 +1919,15 @@ void ClientConfigWriterTests::generateClientConfigsKeepsDirectDnsAheadOfNonGloba
 void ClientConfigWriterTests::generateClientConfigsUsesLogicalFakeIpFilterWhenGlobalFakeIpEnabled()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.fakeIp = true;
-    config.globalFakeIp = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().fakeIp = true;
+    config.dns().globalFakeIp = true;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -1896,15 +1962,15 @@ void ClientConfigWriterTests::generateClientConfigsUsesLogicalFakeIpFilterWhenGl
 void ClientConfigWriterTests::generateClientConfigsAddsCommonHostsWithoutRouteResolveRuleForSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = true;
-    config.blockBindingQuery = true;
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = true;
+    config.dns().blockBindingQuery = true;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     const QJsonObject hostsDns = findObjectByTag(dns.value(QStringLiteral("servers")).toArray(), QStringLiteral("hosts_dns"));
@@ -1950,21 +2016,21 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsForSingBoxDnsA
     QVERIFY(hostsFile.write("5.6.7.8 system-host.example\n") >= 0);
     hostsFile.close();
 
-    QVERIFY(qputenv("V2RAYQ_SYSTEM_HOSTS_PATH", hostsPath.toUtf8()));
+    QVERIFY(qputenv("SONGBIRD_SYSTEM_HOSTS_PATH", hostsPath.toUtf8()));
 
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = false;
-    config.useSystemHosts = true;
-    config.dnsHosts.clear();
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = false;
+    config.dns().useSystemHosts = true;
+    config.dns().dnsHosts.clear();
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
-    qunsetenv("V2RAYQ_SYSTEM_HOSTS_PATH");
+    qunsetenv("SONGBIRD_SYSTEM_HOSTS_PATH");
 
     const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
     const QJsonObject hostsDns = findObjectByTag(dns.value(QStringLiteral("servers")).toArray(), QStringLiteral("hosts_dns"));
@@ -1987,13 +2053,13 @@ void ClientConfigWriterTests::generateClientConfigsAddsSystemHostsForSingBoxDnsA
 void ClientConfigWriterTests::generateClientConfigsUsesHostsDnsResolverForSingBoxDnsServerHostnames()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = true;
-    config.useSystemHosts = false;
-    config.bootstrapDns = QStringLiteral("https://bootstrap-host.example/dns-query");
-    config.directDns = QStringLiteral("https://direct-host.example/dns-query");
-    config.remoteDns = QStringLiteral("https://dns.google/dns-query");
-    config.dnsHosts =
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = true;
+    config.dns().useSystemHosts = false;
+    config.dns().bootstrapDns = QStringLiteral("https://bootstrap-host.example/dns-query");
+    config.dns().directDns = QStringLiteral("https://direct-host.example/dns-query");
+    config.dns().remoteDns = QStringLiteral("https://dns.google/dns-query");
+    config.dns().dnsHosts =
         QStringLiteral("bootstrap-host.example 1.1.1.1\n"
                        "direct-host.example 2.2.2.2");
 
@@ -2001,7 +2067,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesHostsDnsResolverForSingBo
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray servers = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("servers")).toArray();
     const QJsonObject localDns = findObjectByTag(servers, QStringLiteral("local_local"));
@@ -2016,18 +2082,18 @@ void ClientConfigWriterTests::generateClientConfigsUsesHostsDnsResolverForSingBo
 void ClientConfigWriterTests::generateClientConfigsAddsLegacyDirectExpectedIpsForMatchingDirectGeosite()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.directDns = QStringLiteral("223.5.5.5");
-    config.remoteDns = QStringLiteral("8.8.8.8");
-    config.directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
-    config.routingItems = {
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().directDns = QStringLiteral("223.5.5.5");
+    config.dns().remoteDns = QStringLiteral("8.8.8.8");
+    config.dns().directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray servers = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("servers")).toArray();
     bool foundExpectedIpServer = false;
@@ -2054,16 +2120,16 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyDirectExpectedIpsFo
 void ClientConfigWriterTests::generateClientConfigsAddsPredefinedAnswerForNonFullHostRule()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.addCommonHosts = false;
-    config.blockBindingQuery = false;
-    config.dnsHosts = QStringLiteral("domain:example.com 1.2.3.4");
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().addCommonHosts = false;
+    config.dns().blockBindingQuery = false;
+    config.dns().dnsHosts = QStringLiteral("domain:example.com 1.2.3.4");
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray dnsRules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
     bool foundPredefinedAnswer = false;
@@ -2082,13 +2148,13 @@ void ClientConfigWriterTests::generateClientConfigsAddsPredefinedAnswerForNonFul
 void ClientConfigWriterTests::generateClientConfigsAddsSniffAndDnsHijackRulesForNativeSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2112,14 +2178,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsSniffAndDnsHijackRulesFor
 void ClientConfigWriterTests::generateClientConfigsSetsSingBoxSniffOverrideDestinationWhenRouteOnlyFalse()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = true;
     config.routeOnly = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2138,14 +2204,14 @@ void ClientConfigWriterTests::generateClientConfigsSetsSingBoxSniffOverrideDesti
 void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxSniffOverrideDestinationWhenRouteOnlyTrue()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = true;
     config.routeOnly = true;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2164,13 +2230,13 @@ void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxSniffOverrideDest
 void ClientConfigWriterTests::generateClientConfigsAddsUdpDnsHijackRuleWhenSniffingDisabledForNativeSingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2192,16 +2258,16 @@ void ClientConfigWriterTests::generateClientConfigsAddsUdpDnsHijackRuleWhenSniff
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxClashModeRouteRules()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2230,15 +2296,86 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxClashModeRouteRule
     QVERIFY(globalIndex < userRuleIndex);
 }
 
+void ClientConfigWriterTests::generateClientConfigsDownloadsSingBoxRemoteRuleSetsThroughProxy()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    config.collection().routingItems = {
+        createRoutingItem({
+            createRoutingRule(
+                QStringLiteral("proxy"),
+                QStringList{QStringLiteral("geosite:google")},
+                QStringList{QStringLiteral("geoip:cn")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonArray ruleSets = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rule_set")).toArray();
+
+    bool foundGeositeRuleSet = false;
+    bool foundGeoipRuleSet = false;
+    for (const QJsonValue& value : ruleSets) {
+        const QJsonObject ruleSet = value.toObject();
+        if (ruleSet.value(QStringLiteral("tag")).toString() == QStringLiteral("geosite-google")) {
+            QCOMPARE(ruleSet.value(QStringLiteral("download_detour")).toString(), QStringLiteral("proxy"));
+            foundGeositeRuleSet = true;
+        }
+        if (ruleSet.value(QStringLiteral("tag")).toString() == QStringLiteral("geoip-cn")) {
+            QCOMPARE(ruleSet.value(QStringLiteral("download_detour")).toString(), QStringLiteral("proxy"));
+            foundGeoipRuleSet = true;
+        }
+    }
+
+    QVERIFY(foundGeositeRuleSet);
+    QVERIFY(foundGeoipRuleSet);
+}
+
+void ClientConfigWriterTests::generateClientConfigsPrefersLocalSingBoxRuleSetsWhenPresent()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    config.collection().routingItems = {
+        createRoutingItem({
+            createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    const QString ruleSetDirectoryPath = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("rule-set"));
+    QVERIFY(QDir().mkpath(ruleSetDirectoryPath));
+    const QString localRuleSetPath = QDir(ruleSetDirectoryPath).filePath(QStringLiteral("geosite-google.srs"));
+    QFile localRuleSet(localRuleSetPath);
+    QVERIFY(localRuleSet.open(QIODevice::WriteOnly));
+    QVERIFY(localRuleSet.write("test") > 0);
+    localRuleSet.close();
+    auto cleanupLocalRuleSet = qScopeGuard([localRuleSetPath]() {
+        QFile::remove(localRuleSetPath);
+    });
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonArray ruleSets = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rule_set")).toArray();
+    const QJsonObject ruleSet = findObjectByTag(ruleSets, QStringLiteral("geosite-google"));
+    QCOMPARE(ruleSet.value(QStringLiteral("type")).toString(), QStringLiteral("local"));
+    QCOMPARE(ruleSet.value(QStringLiteral("format")).toString(), QStringLiteral("binary"));
+    QCOMPARE(QFileInfo(ruleSet.value(QStringLiteral("path")).toString()).absoluteFilePath(), QFileInfo(localRuleSetPath).absoluteFilePath());
+    QVERIFY(ruleSet.value(QStringLiteral("url")).isUndefined());
+    QVERIFY(ruleSet.value(QStringLiteral("download_detour")).isUndefined());
+}
+
 void ClientConfigWriterTests::generateClientConfigsAddsDedicatedLegacyLocationProbeInboundAndRoute()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::Xray;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray inbounds = generated.primary.root.value(QStringLiteral("inbounds")).toArray();
     const QJsonObject probeInbound = findObjectByTag(inbounds, QStringLiteral("location-probe"));
@@ -2257,12 +2394,12 @@ void ClientConfigWriterTests::generateClientConfigsAddsDedicatedLegacyLocationPr
 void ClientConfigWriterTests::generateClientConfigsAddsDedicatedSingBoxLocationProbeInboundAndRoute()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray inbounds = generated.primary.root.value(QStringLiteral("inbounds")).toArray();
     const QJsonObject probeInbound = findObjectByTag(inbounds, QStringLiteral("location-probe"));
@@ -2281,16 +2418,16 @@ void ClientConfigWriterTests::generateClientConfigsAddsDedicatedSingBoxLocationP
 void ClientConfigWriterTests::generateClientConfigsMapsSingBoxBlockRoutingRuleToRejectAction()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("block"), QStringList{QStringLiteral("geosite:category-ads-all")})})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2311,16 +2448,16 @@ void ClientConfigWriterTests::generateClientConfigsMapsSingBoxBlockRoutingRuleTo
 void ClientConfigWriterTests::generateClientConfigsTreatsPlainSingBoxRoutingDomainsAsKeywords()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("example.com")})})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2340,16 +2477,16 @@ void ClientConfigWriterTests::generateClientConfigsTreatsPlainSingBoxRoutingDoma
 void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingPortsIntoPortAndRangeFields()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), {}, {}, {}, QStringLiteral("80,443,1000-2000"))})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2374,18 +2511,18 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingPortsInto
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleBeforeUserRulesForIpOnDemand()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.domainStrategy = QStringLiteral("IPOnDemand");
-    config.domainStrategy4Singbox = QStringLiteral("prefer_ipv6");
-    config.routingItems = {
+    config.dns().domainStrategy = QStringLiteral("IPOnDemand");
+    config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv6");
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2410,19 +2547,19 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleBeforeU
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleAfterUserRulesForIpIfNonMatch()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.domainStrategy = QStringLiteral("IPIfNonMatch");
-    config.domainStrategy4Singbox = QStringLiteral("prefer_ipv4");
+    config.dns().domainStrategy = QStringLiteral("IPIfNonMatch");
+    config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv4");
     RoutingItem route = createRoutingItem({
-        createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:telegram")})});
+        createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})});
     route.domainStrategy4Singbox = QStringLiteral("ipv6_only");
-    config.routingItems = {route};
+    config.collection().routingItems = {route};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2435,7 +2572,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleAfterUs
             resolveRuleIndex = i;
         }
         if (firstGeoipRuleIndex < 0
-            && jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-telegram"))) {
+            && jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn"))) {
             firstGeoipRuleIndex = i;
         }
     }
@@ -2448,17 +2585,17 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleAfterUs
 void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterResolveForIpIfNonMatch()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.domainStrategy = QStringLiteral("IPIfNonMatch");
-    config.routingItems = {
+    config.dns().domainStrategy = QStringLiteral("IPIfNonMatch");
+    config.collection().routingItems = {
         createRoutingItem({
-            createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:telegram")})})};
+            createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2470,7 +2607,7 @@ void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterR
         if (rule.value(QStringLiteral("action")).toString() == QStringLiteral("resolve")) {
             resolveRuleIndex = i;
         }
-        if (jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-telegram"))
+        if (jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn"))
             && rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("proxy")) {
             ++geoipRuleCount;
             if (resolveRuleIndex >= 0 && i > resolveRuleIndex) {
@@ -2487,10 +2624,10 @@ void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterR
 void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsForMatchingDirectGeosite()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
-    config.routingItems = {
+    config.dns().directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
@@ -2498,7 +2635,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2523,9 +2660,9 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
 void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -2534,18 +2671,18 @@ void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIn
                 {},
                 {},
                 QStringLiteral("tcp,udp"),
-                QStringList{QStringLiteral("SongBox.exe")})})};
+                QStringList{QStringLiteral("SongBird.exe")})})};
     VmessItem server = baseServer();
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("routing")).toObject().value(QStringLiteral("rules")).toArray();
 
     bool foundProcessRule = false;
     for (const QJsonValue& value : rules) {
         const QJsonObject rule = value.toObject();
-        if (jsonArrayContainsString(rule.value(QStringLiteral("process")).toArray(), QStringLiteral("SongBox.exe"))) {
+        if (jsonArrayContainsString(rule.value(QStringLiteral("process")).toArray(), QStringLiteral("SongBird.exe"))) {
             QCOMPARE(rule.value(QStringLiteral("network")).toString(), QStringLiteral("tcp,udp"));
             foundProcessRule = true;
             break;
@@ -2558,9 +2695,9 @@ void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIn
 void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNameAndPathRules()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -2577,7 +2714,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNa
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
@@ -2605,14 +2742,14 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNa
 void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute()
 {
     Config config = legacyConfig();
-    config.tunModeItem.enableTun = false;
-    config.enableRoutingAdvanced = true;
-    config.routingIndex = 0;
-    config.routingCustomRules = {
+    config.tun().tunModeItem.enableTun = false;
+    config.collection().enableRoutingAdvanced = true;
+    config.collection().routingIndex = 0;
+    config.collection().routingCustomRules = {
         createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("domain:openai.com")}),
         createRoutingRule(QStringLiteral("direct"), {}, QStringList{QStringLiteral("geoip:private")}),
         createRoutingRule(QStringLiteral("block"), QStringList{QStringLiteral("geosite:category-ads-all")})};
-    config.routingItems = {
+    config.collection().routingItems = {
         createRoutingItem(QList<RoutingRule>{
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
@@ -2620,7 +2757,7 @@ void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelect
     server.coreType = CoreType::Xray;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("routing")).toObject().value(QStringLiteral("rules")).toArray();
 
     QVERIFY(rules.size() >= 5);
@@ -2653,17 +2790,17 @@ void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelect
 void ClientConfigWriterTests::generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.remoteDns = QStringLiteral("1.1.1.1");
-    config.directDns = QStringLiteral("223.5.5.5");
-    config.routingCustomRules = {
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().remoteDns = QStringLiteral("1.1.1.1");
+    config.dns().directDns = QStringLiteral("223.5.5.5");
+    config.collection().routingCustomRules = {
         createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("domain:ftp.sh")})};
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
     const QJsonArray dnsRules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
 
     bool foundDirectDnsRule = false;
@@ -2689,7 +2826,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     QVERIFY(generated.auxiliary.isEmpty());
 }
@@ -2697,7 +2834,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
 void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHysteria2Outbound()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -2712,7 +2849,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHysteria2Outboun
     server.allowInsecure = QStringLiteral("1");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -2735,23 +2872,23 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSingBoxHysteria2Outboun
 void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxDnsAndDefaultResolverWhenDnsInputsAreEmpty()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
-    config.enableRoutingAdvanced = false;
-    config.routingItems.clear();
-    config.routingCustomRules.clear();
-    config.remoteDns.clear();
-    config.directDns.clear();
-    config.bootstrapDns.clear();
-    config.dnsHosts.clear();
-    config.addCommonHosts = false;
-    config.useSystemHosts = false;
-    config.fakeIp = false;
+    config.tun().tunModeItem.enableTun = false;
+    config.collection().enableRoutingAdvanced = false;
+    config.collection().routingItems.clear();
+    config.collection().routingCustomRules.clear();
+    config.dns().remoteDns.clear();
+    config.dns().directDns.clear();
+    config.dns().bootstrapDns.clear();
+    config.dns().dnsHosts.clear();
+    config.dns().addCommonHosts = false;
+    config.dns().useSystemHosts = false;
+    config.dns().fakeIp = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     QVERIFY(generated.primary.root.value(QStringLiteral("dns")).isUndefined());
 
@@ -2768,7 +2905,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
     server.coreType = CoreType::SingBox;
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     QVERIFY(generated.auxiliary.isEmpty());
 }
@@ -2776,7 +2913,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotCreateTunCompatRelayFo
 void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -2789,7 +2926,7 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForA
     server.allowInsecure = QStringLiteral("1");
 
     ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server, 0);
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject proxyOutbound = findObjectByTag(
         generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
@@ -2801,3 +2938,4 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForA
 QTEST_MAIN(ClientConfigWriterTests)
 
 #include "ClientConfigWriterTests.moc"
+

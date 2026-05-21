@@ -1,12 +1,10 @@
 #include "ui/mainwindow/ServerWorkspaceWidget.h"
 
 #include <QAbstractItemView>
-#include <QEvent>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QLabel>
 #include <QLineEdit>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -22,7 +20,7 @@
 namespace {
 
 constexpr int HeaderFilterMinimumCharacters = 14;
-constexpr int ServerResultColumn = 7;
+constexpr int ServerResultColumn = 4;
 
 int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
 {
@@ -68,6 +66,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     serverView_->setMinimumHeight(0);
     serverView_->setFrameShape(QFrame::NoFrame);
     serverView_->setContentsMargins(0, 0, 0, 0);
+    serverView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     serverView_->verticalHeader()->setVisible(false);
     const int rowHeight = serverView_->fontMetrics().height() + 8;
     serverView_->verticalHeader()->setDefaultSectionSize(rowHeight);
@@ -99,27 +98,18 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     subscriptionTabBar_->setAutoHide(false);
     subscriptionTabBar_->setUsesScrollButtons(true);
 
-    loadingOverlay_ = new QWidget(serverView_->viewport());
-    loadingOverlay_->setObjectName(QStringLiteral("loadingOverlay"));
-    auto* loadingLabel = new QLabel(tr("Updating subscriptions..."), loadingOverlay_);
-    loadingLabel->setAlignment(Qt::AlignCenter);
-    auto* loadingLayout = new QVBoxLayout(loadingOverlay_);
-    loadingLayout->addWidget(loadingLabel);
-    loadingOverlay_->hide();
-    serverView_->viewport()->installEventFilter(this);
-
     auto* subscriptionTabBarContainer = new QWidget(this);
     subscriptionTabBarContainer->setObjectName(QStringLiteral("subscriptionTabBarContainer"));
     subscriptionTabBarContainer->setAttribute(Qt::WA_StyledBackground, true);
     auto* subscriptionTabBarLayout = new QHBoxLayout(subscriptionTabBarContainer);
-    subscriptionTabBarLayout->setContentsMargins(0, 0, 0, 0);
+    subscriptionTabBarLayout->setContentsMargins(6, 4, 4, 4);
     subscriptionTabBarLayout->setSpacing(6);
-    subscriptionTabBarLayout->addWidget(subscriptionTabBar_, 1, Qt::AlignBottom);
+    subscriptionTabBarLayout->addWidget(subscriptionTabBar_, 1, Qt::AlignVCenter);
 
     serverFilterEdit_ = new QLineEdit(this);
     serverFilterEdit_->setObjectName(QStringLiteral("serverFilterEdit"));
     AppTheme::applyCompactFont(serverFilterEdit_);
-    serverFilterEdit_->setClearButtonEnabled(true);
+    serverFilterEdit_->setClearButtonEnabled(false);
     serverFilterEdit_->setPlaceholderText(tr("Filter servers"));
     configureContentSizedLineEdit(serverFilterEdit_, HeaderFilterMinimumCharacters);
     subscriptionTabBarLayout->addWidget(serverFilterEdit_, 0, Qt::AlignVCenter);
@@ -137,7 +127,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     serverHeaderRow->setObjectName(QStringLiteral("serverHeaderRow"));
     serverHeaderRow->setAttribute(Qt::WA_StyledBackground, true);
     auto* serverHeaderLayout = new QHBoxLayout(serverHeaderRow);
-    serverHeaderLayout->setContentsMargins(0, 0, 2, 0);
+    serverHeaderLayout->setContentsMargins(0, 0, 0, 0);
     serverHeaderLayout->setSpacing(0);
     serverHeaderLayout->addWidget(subscriptionTabBarContainer);
     serverPanelLayout->addWidget(serverHeaderRow);
@@ -203,36 +193,4 @@ QSplitter* ServerWorkspaceWidget::topSplitter() const
 QSplitter* ServerWorkspaceWidget::rootSplitter() const
 {
     return rootSplitter_;
-}
-
-void ServerWorkspaceWidget::setSubscriptionUpdateRunning(bool running)
-{
-    if (loadingOverlay_ == nullptr || serverView_ == nullptr || serverView_->viewport() == nullptr) {
-        return;
-    }
-
-    if (running) {
-        loadingOverlay_->setGeometry(serverView_->viewport()->rect());
-        loadingOverlay_->raise();
-        loadingOverlay_->show();
-        serverView_->setEnabled(false);
-    } else {
-        loadingOverlay_->hide();
-        serverView_->setEnabled(true);
-    }
-}
-
-bool ServerWorkspaceWidget::eventFilter(QObject* watched, QEvent* event)
-{
-    if (serverView_ != nullptr
-        && serverView_->viewport() != nullptr
-        && watched == serverView_->viewport()
-        && event != nullptr
-        && event->type() == QEvent::Resize
-        && loadingOverlay_ != nullptr
-        && loadingOverlay_->isVisible()) {
-        loadingOverlay_->setGeometry(serverView_->viewport()->rect());
-    }
-
-    return QWidget::eventFilter(watched, event);
 }

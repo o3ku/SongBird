@@ -45,29 +45,41 @@ inline std::set<int>& reservedProxyPorts()
     return ports;
 }
 
-inline bool reserveProxyPorts(int socksPort, int httpPort)
+inline bool reserveProxyPorts(int socksPort, int httpPort, int locationProbePort = 0)
 {
-    if (socksPort <= 0 || httpPort <= 0 || socksPort == httpPort) {
+    if (socksPort <= 0
+        || httpPort <= 0
+        || socksPort == httpPort
+        || locationProbePort == socksPort
+        || locationProbePort == httpPort) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(reservedProxyPortsMutex());
     std::set<int>& ports = reservedProxyPorts();
-    if (ports.contains(socksPort) || ports.contains(httpPort)) {
+    if (ports.contains(socksPort)
+        || ports.contains(httpPort)
+        || (locationProbePort > 0 && ports.contains(locationProbePort))) {
         return false;
     }
 
     ports.insert(socksPort);
     ports.insert(httpPort);
+    if (locationProbePort > 0) {
+        ports.insert(locationProbePort);
+    }
     return true;
 }
 
-inline void releaseProxyPorts(int socksPort, int httpPort)
+inline void releaseProxyPorts(int socksPort, int httpPort, int locationProbePort = 0)
 {
     std::lock_guard<std::mutex> lock(reservedProxyPortsMutex());
     std::set<int>& ports = reservedProxyPorts();
     ports.erase(socksPort);
     ports.erase(httpPort);
+    if (locationProbePort > 0) {
+        ports.erase(locationProbePort);
+    }
 }
 
 inline void resetGlobalState()
@@ -100,14 +112,13 @@ inline std::optional<ReadyProxy> detectReadyProxy(
 inline Config makeUrlTestRuntimeConfig(Config config)
 {
     config.allowLanConnection = false;
-    config.enableStatistics = false;
     config.logEnabled = false;
-    config.tunModeItem.enableTun = false;
-    config.enableCacheFile4Sbox = false;
-    config.servers.clear();
-    config.subscriptions.clear();
-    config.globalHotkeys.clear();
-    config.coreTypeItems.clear();
+    config.tun().tunModeItem.enableTun = false;
+    config.dns().enableCacheFile4Sbox = false;
+    config.collection().servers.clear();
+    config.collection().subscriptions.clear();
+    config.collection().globalHotkeys.clear();
+    config.policy().coreTypeItems.clear();
 
     // Keep URL tests close to the actual "set current server" data path.
     // TUN is disabled because the test exercises the local proxy listener,

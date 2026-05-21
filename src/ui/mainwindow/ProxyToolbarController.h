@@ -15,8 +15,8 @@ public:
         bool coreRunning = false;
         bool coreTransitionPending = false;
         bool systemProxyApplied = false;
+        bool outboundLocationAvailable = false;
         bool tunEnabled = false;
-        bool hasServers = false;
         QList<CoreType> existingCoreTypes;
         QList<CoreTypeItem> coreTypeItems;
     };
@@ -26,13 +26,15 @@ public:
     void sync(
         const Snapshot& snapshot,
         const ServerTableRow* activeServer);
+    bool shouldDisableProxy(const Snapshot& snapshot) const;
+    bool shouldEnableProxy(const Snapshot& snapshot, const ServerTableRow* activeServer) const;
     void refresh(
         bool coreProcessRunning,
         bool coreRunning,
         bool coreTransitionPending,
         bool systemProxyApplied,
+        bool outboundLocationAvailable,
         bool tunEnabled,
-        bool hasServers,
         const QList<CoreType>& existingCoreTypes,
         const QList<CoreTypeItem>& coreTypeItems,
         const ServerTableRow* activeServer);

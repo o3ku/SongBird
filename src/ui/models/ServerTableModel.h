@@ -5,7 +5,6 @@
 #include <QList>
 #include <QString>
 
-#include "domain/models/ServerStatistics.h"
 #include "domain/models/VmessItem.h"
 
 struct ServerTableRow {
@@ -19,7 +18,6 @@ struct ServerTableRow {
     QString streamSecurity;
     QString testResult;
     QString subId;
-    int sort = 0;
 };
 
 class ServerTableModel final : public QAbstractTableModel {
@@ -32,12 +30,11 @@ public:
 
     explicit ServerTableModel(QObject* parent = nullptr);
 
-    void setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId = {});
+    void setItems(QList<VmessItem> items, QString currentIndexId = {});
     bool updateTestResult(const QString& indexId, const QString& result);
     const ServerTableRow* itemAt(int row) const;
     const ServerTableRow* itemByIndexId(const QString& indexId) const;
     const ServerTableRow* currentItem() const;
-    ServerStatItem statisticAt(int row) const;
     QString currentIndexId() const;
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -54,15 +51,11 @@ private:
         TypeColumn,
         RemarksColumn,
         AddressColumn,
-        SecurityColumn,
-        NetworkColumn,
-        StreamSecurityColumn,
         TestResultColumn,
         ColumnCount
     };
 
     QHash<QString, int> rowByIndexId_;
     QList<ServerTableRow> items_;
-    QHash<QString, ServerStatItem> statistics_;
     QString currentIndexId_;
 };

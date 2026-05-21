@@ -19,6 +19,7 @@ public:
     bool rowsReorderEnabled() const;
     void setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler);
     bool moveSelectedRowsTo(int targetRow);
+    void flashAttention(int durationMs = 1600);
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -31,6 +32,7 @@ protected:
 private:
     int resolveDropRow(const QPoint& viewportPosition) const;
     bool requestMoveSelectedRows(int targetRow);
+    void setAttentionHighlighted(bool highlighted);
 
     std::function<void(const QList<int>& rows, int targetRow)> rowsMoveHandler_;
     bool rowsReorderEnabled_ = true;

@@ -26,11 +26,16 @@ public:
     bool isRunning() const override;
 
 private:
+    enum class ProcessCleanupMode {
+        DeleteNow,
+        DeleteLater
+    };
+
     QStringList buildArguments(const CoreInfo& coreInfo, const QString& configFilePath) const;
     void bindOutputSignals();
     void emitBufferedOutput(QProcess::ProcessChannel channel);
     void flushBufferedOutput(bool flushPartialLines);
-    void resetProcessState();
+    void resetProcessState(ProcessCleanupMode cleanupMode = ProcessCleanupMode::DeleteNow);
     void scheduleForcedKill();
 
     std::unique_ptr<QProcess> process_;

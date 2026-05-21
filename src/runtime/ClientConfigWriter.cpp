@@ -16,15 +16,13 @@
 
 #include <utility>
 
+#include "common/UserAgent.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/TunCompatCoreRequirement.h"
 
 namespace {
 
-const QString kStatisticsTag = QStringLiteral("api");
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
-const QString kStatisticsProtocol = QStringLiteral("dokodemo-door");
-const QString kStatisticsService = QStringLiteral("StatsService");
 const QString kDefaultAccessLogFileName = QStringLiteral("Vaccess.log");
 const QString kDefaultErrorLogFileName = QStringLiteral("Verror.log");
 const QString kPemBeginMarker = QStringLiteral("-----BEGIN CERTIFICATE-----");
@@ -37,6 +35,7 @@ const QString kSingBoxFakeDnsTag = QStringLiteral("fake_dns");
 const QString kLocationProbeTag = QStringLiteral("location-probe");
 const QString kLegacyDnsTag = QStringLiteral("dns-module");
 const QString kLegacyDirectDnsTagPrefix = QStringLiteral("direct-dns");
+const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 constexpr int kLocationProbePortOffset = 103;
 const char kSingBoxFakeIpFilterJson[] = R"json(
 {
@@ -258,9 +257,13 @@ bool isValidJsonObjectText(const QString& value)
 
 QString resolveLegacyUserAgent(const Config& config, const VmessItem& server)
 {
-    return server.userAgent.trimmed().isEmpty()
-        ? config.defaultUserAgent.trimmed()
-        : server.userAgent.trimmed();
+    const QString serverUserAgent = server.userAgent.trimmed();
+    if (!serverUserAgent.isEmpty()) {
+        return serverUserAgent;
+    }
+
+    const QString defaultUserAgent = config.dns().defaultUserAgent.trimmed();
+    return defaultUserAgent.isEmpty() ? fallbackUserAgent() : defaultUserAgent;
 }
 
 QStringList splitPemCertificates(const QString& value)
@@ -318,7 +321,7 @@ QList<RoutingRule> effectiveRoutingRules(const Config& config, const RoutingItem
         QStringLiteral("proxy")};
 
     for (const QString& outboundTag : customOrder) {
-        for (const RoutingRule& rule : config.routingCustomRules) {
+        for (const RoutingRule& rule : config.collection().routingCustomRules) {
             if (!rule.enabled || rule.outboundTag.compare(outboundTag, Qt::CaseInsensitive) != 0) {
                 continue;
             }
@@ -649,7 +652,7 @@ QMap<QString, QString> loadSystemHosts()
 {
     QMap<QString, QString> hosts;
 
-    const QString overridePath = qEnvironmentVariable("V2RAYQ_SYSTEM_HOSTS_PATH").trimmed();
+    const QString overridePath = qEnvironmentVariable("SONGBIRD_SYSTEM_HOSTS_PATH").trimmed();
     if (!overridePath.isEmpty()) {
         mergeSystemHostsFromFile(overridePath, hosts);
         return hosts;
@@ -833,6 +836,17 @@ QJsonObject createLegacyDnsServer(
     return server;
 }
 
+QString resolveLocalSingBoxRuleSetPath(const QString& tag)
+{
+    const QString fileName = QStringLiteral("%1.srs").arg(tag);
+    const QString path = QDir(QCoreApplication::applicationDirPath())
+                             .filePath(QStringLiteral("%1/%2").arg(kSingBoxRuleSetDirectoryName, fileName));
+    const QFileInfo fileInfo(path);
+    return fileInfo.exists() && fileInfo.isFile()
+        ? fileInfo.absoluteFilePath()
+        : QString();
+}
+
 } // namespace
 
 ClientConfigWriter::ClientConfigWriter(QString customConfigDirectory)
@@ -856,17 +870,15 @@ QList<CoreType> ClientConfigWriter::effectiveExistingCoreTypes() const
 OperationResult ClientConfigWriter::writeClientConfig(
     const Config& config,
     const VmessItem& server,
-    const QString& filePath,
-    int statisticsPort) const
+    const QString& filePath) const
 {
-    return writeClientConfigs(config, server, filePath, statisticsPort, nullptr);
+    return writeClientConfigs(config, server, filePath, nullptr);
 }
 
 OperationResult ClientConfigWriter::writeClientConfigs(
     const Config& config,
     const VmessItem& server,
     const QString& filePath,
-    int statisticsPort,
     QStringList* auxiliaryPaths) const
 {
     if (server.address.trimmed().isEmpty()) {
@@ -891,7 +903,7 @@ OperationResult ClientConfigWriter::writeClientConfigs(
         return OperationResult::fail(QStringLiteral("Failed to create runtime config directory."));
     }
 
-    const GeneratedConfigSet generated = generateClientConfigs(config, server, statisticsPort);
+    const GeneratedConfigSet generated = generateClientConfigs(config, server);
     const OperationResult primaryWriteResult = writeGeneratedConfig(generated.primary, filePath);
     if (!primaryWriteResult.success) {
         return primaryWriteResult;
@@ -945,12 +957,11 @@ OperationResult ClientConfigWriter::writeCustomConfig(const VmessItem& server, c
 
 ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs(
     const Config& config,
-    const VmessItem& server,
-    int statisticsPort) const
+    const VmessItem& server) const
 {
     GeneratedConfigSet generated;
     generated.primary.fileName = QStringLiteral("config.generated.json");
-    generated.primary.root = buildRoot(config, server, statisticsPort);
+    generated.primary.root = buildRoot(config, server);
 
     if (requiresTunCompatSingBoxCore(config, server, effectiveExistingCoreTypes())) {
         // The local rewrite has not split upstream's non-legacy Xray TUN relay path yet.
@@ -1044,32 +1055,25 @@ OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& 
     return OperationResult::ok(QStringLiteral("Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
 }
 
-QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem& server, int statisticsPort) const
+QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem& server) const
 {
     const bool requiresSingBox = server.configType == ConfigType::AnyTLS
         || server.configType == ConfigType::Naive;
     const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
     const bool useSingBox = requiresSingBox || effectiveCore == CoreType::SingBox;
     return useSingBox
-        ? buildSingBoxRoot(config, server, statisticsPort)
-        : buildLegacyRoot(config, server, statisticsPort);
+        ? buildSingBoxRoot(config, server)
+        : buildLegacyRoot(config, server);
 }
 
-QJsonObject ClientConfigWriter::buildLegacyRoot(const Config& config, const VmessItem& server, int statisticsPort) const
+QJsonObject ClientConfigWriter::buildLegacyRoot(const Config& config, const VmessItem& server) const
 {
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildLog(config));
-    QJsonArray inbounds = buildInbounds(config);
-    if (config.enableStatistics && statisticsPort > 0) {
-        appendLegacyStatisticsInbound(inbounds, statisticsPort);
-    }
-    root.insert(QStringLiteral("inbounds"), inbounds);
+    root.insert(QStringLiteral("inbounds"), buildInbounds(config));
     root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
 
-    QJsonObject routing = buildLegacyRouting(config);
-    if (config.enableStatistics && statisticsPort > 0) {
-        appendLegacyStatisticsRouteRule(routing);
-    }
+    const QJsonObject routing = buildLegacyRouting(config);
     if (!routing.isEmpty()) {
         root.insert(QStringLiteral("routing"), routing);
     }
@@ -1079,16 +1083,10 @@ QJsonObject ClientConfigWriter::buildLegacyRoot(const Config& config, const Vmes
         root.insert(QStringLiteral("dns"), dns);
     }
 
-    if (config.enableStatistics && statisticsPort > 0) {
-        root.insert(QStringLiteral("stats"), QJsonObject());
-        root.insert(QStringLiteral("api"), buildLegacyApi());
-        root.insert(QStringLiteral("policy"), buildLegacyPolicy());
-    }
-
     return root;
 }
 
-QJsonObject ClientConfigWriter::buildSingBoxRoot(const Config& config, const VmessItem& server, int statisticsPort) const
+QJsonObject ClientConfigWriter::buildSingBoxRoot(const Config& config, const VmessItem& server) const
 {
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildSingBoxLog(config));
@@ -1101,7 +1099,7 @@ QJsonObject ClientConfigWriter::buildSingBoxRoot(const Config& config, const Vme
         root.insert(QStringLiteral("dns"), dns);
     }
 
-    const QJsonObject experimental = buildSingBoxExperimental(config, statisticsPort);
+    const QJsonObject experimental = buildSingBoxExperimental(config);
     if (!experimental.isEmpty()) {
         root.insert(QStringLiteral("experimental"), experimental);
     }
@@ -1132,19 +1130,19 @@ QJsonObject ClientConfigWriter::buildTunCompatSingBoxRoot(const Config& config) 
 
 QJsonObject ClientConfigWriter::buildLegacyDns(const Config& config) const
 {
-    if (isCustomDnsObjectText(config.remoteDns)) {
+    if (isCustomDnsObjectText(config.dns().remoteDns)) {
         QJsonParseError parseError;
-        const QJsonDocument document = QJsonDocument::fromJson(config.remoteDns.trimmed().toUtf8(), &parseError);
+        const QJsonDocument document = QJsonDocument::fromJson(config.dns().remoteDns.trimmed().toUtf8(), &parseError);
         if (parseError.error == QJsonParseError::NoError && document.isObject()) {
             return document.object();
         }
     }
 
-    const QStringList remoteDnsAddresses = splitDnsAddresses(config.remoteDns);
-    const QStringList directDnsAddresses = splitDnsAddresses(config.directDns);
-    const QStringList bootstrapDnsAddresses = splitDnsAddresses(config.bootstrapDns);
-    const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dnsHosts);
-    const QMap<QString, QString> systemHostsMap = config.useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
+    const QStringList remoteDnsAddresses = splitDnsAddresses(config.dns().remoteDns);
+    const QStringList directDnsAddresses = splitDnsAddresses(config.dns().directDns);
+    const QStringList bootstrapDnsAddresses = splitDnsAddresses(config.dns().bootstrapDns);
+    const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dns().dnsHosts);
+    const QMap<QString, QString> systemHostsMap = config.dns().useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
     const RoutingItem* selectedRouting = resolveSelectedRouting(config);
     const bool useDirectFinal = usesDirectDnsAsFinalServer(selectedRouting);
 
@@ -1163,7 +1161,7 @@ QJsonObject ClientConfigWriter::buildLegacyDns(const Config& config) const
     QStringList expectedIpDomains;
     QStringList expectedIps;
     QSet<QString> expectedIpRegionNames;
-    for (const QString& item : config.directExpectedIps.split(QRegularExpression(QStringLiteral("[,;]")), Qt::SkipEmptyParts)) {
+    for (const QString& item : config.dns().directExpectedIps.split(QRegularExpression(QStringLiteral("[,;]")), Qt::SkipEmptyParts)) {
         const QString trimmed = item.trimmed();
         if (trimmed.isEmpty()) {
             continue;
@@ -1288,15 +1286,15 @@ QJsonObject ClientConfigWriter::buildLegacyDns(const Config& config) const
     QJsonObject dns;
     dns.insert(QStringLiteral("tag"), kLegacyDnsTag);
     dns.insert(QStringLiteral("servers"), serverArray);
-    if (config.serveStale) {
+    if (config.dns().serveStale) {
         dns.insert(QStringLiteral("serveStale"), true);
     }
-    if (config.parallelQuery) {
+    if (config.dns().parallelQuery) {
         dns.insert(QStringLiteral("enableParallelQuery"), true);
     }
-    if (config.addCommonHosts || config.useSystemHosts || !hostsMap.isEmpty()) {
+    if (config.dns().addCommonHosts || config.dns().useSystemHosts || !hostsMap.isEmpty()) {
         QJsonObject hostsObject;
-        if (config.addCommonHosts) {
+        if (config.dns().addCommonHosts) {
             for (auto it = kPredefinedHosts.constBegin(); it != kPredefinedHosts.constEnd(); ++it) {
                 QJsonArray values;
                 for (const QString& value : it.value()) {
@@ -1327,12 +1325,12 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
 {
     QJsonObject routing;
 
-    if (!config.domainStrategy.trimmed().isEmpty()) {
-        routing.insert(QStringLiteral("domainStrategy"), config.domainStrategy.trimmed());
+    if (!config.dns().domainStrategy.trimmed().isEmpty()) {
+        routing.insert(QStringLiteral("domainStrategy"), config.dns().domainStrategy.trimmed());
     }
 
-    if (!config.domainMatcher.trimmed().isEmpty()) {
-        routing.insert(QStringLiteral("domainMatcher"), config.domainMatcher.trimmed());
+    if (!config.dns().domainMatcher.trimmed().isEmpty()) {
+        routing.insert(QStringLiteral("domainMatcher"), config.dns().domainMatcher.trimmed());
     }
 
     QJsonArray rules;
@@ -1348,8 +1346,8 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
         appendLegacyRoutingRule(rules, rule);
     }
 
-    if (!isCustomDnsObjectText(config.remoteDns)) {
-        const QStringList directDnsAddresses = splitDnsAddresses(config.directDns);
+    if (!isCustomDnsObjectText(config.dns().remoteDns)) {
+        const QStringList directDnsAddresses = splitDnsAddresses(config.dns().directDns);
         QStringList directDomains;
         for (const RoutingRule& rule : effectiveRules) {
             if (rule.outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
@@ -1381,7 +1379,7 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
             }
         }
 
-        if (!directDnsAddresses.isEmpty() || !splitDnsAddresses(config.remoteDns).isEmpty()) {
+        if (!directDnsAddresses.isEmpty() || !splitDnsAddresses(config.dns().remoteDns).isEmpty()) {
             QJsonObject dnsFinalRule;
             dnsFinalRule.insert(QStringLiteral("type"), QStringLiteral("field"));
             dnsFinalRule.insert(
@@ -1399,96 +1397,26 @@ QJsonObject ClientConfigWriter::buildLegacyRouting(const Config& config) const
     return routing;
 }
 
-QJsonObject ClientConfigWriter::buildLegacyApi() const
-{
-    QJsonObject api;
-    api.insert(QStringLiteral("tag"), kStatisticsTag);
-
-    QJsonArray services;
-    services.append(kStatisticsService);
-    api.insert(QStringLiteral("services"), services);
-    return api;
-}
-
-QJsonObject ClientConfigWriter::buildLegacyPolicy() const
-{
-    QJsonObject policy;
-    QJsonObject system;
-    system.insert(QStringLiteral("statsOutboundDownlink"), true);
-    system.insert(QStringLiteral("statsOutboundUplink"), true);
-    policy.insert(QStringLiteral("system"), system);
-    return policy;
-}
-
-QJsonObject ClientConfigWriter::buildSingBoxExperimental(const Config& config, int statisticsPort) const
+QJsonObject ClientConfigWriter::buildSingBoxExperimental(const Config& config) const
 {
     QJsonObject experimental;
 
-    if (config.enableStatistics && statisticsPort > 0) {
-        QJsonObject stats;
-        stats.insert(QStringLiteral("enabled"), true);
-        stats.insert(QStringLiteral("inbounds"), buildSingBoxStatisticsInboundTags(config));
-        stats.insert(QStringLiteral("outbounds"), buildSingBoxStatisticsOutboundTags());
-
-        QJsonObject api;
-        api.insert(QStringLiteral("listen"), QStringLiteral("%1:%2").arg(kLoopbackAddress).arg(statisticsPort));
-        api.insert(QStringLiteral("stats"), stats);
-        experimental.insert(QStringLiteral("v2ray_api"), api);
-    }
-
-    if (config.enableCacheFile4Sbox) {
+    if (config.dns().enableCacheFile4Sbox) {
         QJsonObject cacheFile;
         cacheFile.insert(QStringLiteral("enabled"), true);
         cacheFile.insert(
             QStringLiteral("path"),
             QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("cache.db")));
-        cacheFile.insert(QStringLiteral("store_fakeip"), config.fakeIp);
+        cacheFile.insert(QStringLiteral("store_fakeip"), config.dns().fakeIp);
         experimental.insert(QStringLiteral("cache_file"), cacheFile);
     }
 
     return experimental;
 }
 
-void ClientConfigWriter::appendLegacyStatisticsInbound(QJsonArray& inbounds, int statisticsPort) const
-{
-    if (statisticsPort <= 0 || containsLegacyApiInbound(inbounds)) {
-        return;
-    }
-
-    QJsonObject inbound;
-    inbound.insert(QStringLiteral("tag"), kStatisticsTag);
-    inbound.insert(QStringLiteral("listen"), kLoopbackAddress);
-    inbound.insert(QStringLiteral("port"), statisticsPort);
-    inbound.insert(QStringLiteral("protocol"), kStatisticsProtocol);
-
-    QJsonObject settings;
-    settings.insert(QStringLiteral("address"), kLoopbackAddress);
-    inbound.insert(QStringLiteral("settings"), settings);
-    inbounds.append(inbound);
-}
-
-void ClientConfigWriter::appendLegacyStatisticsRouteRule(QJsonObject& routing) const
-{
-    QJsonArray rules = routing.value(QStringLiteral("rules")).toArray();
-    if (!containsLegacyApiRoute(rules)) {
-        QJsonObject rule;
-        rule.insert(QStringLiteral("type"), QStringLiteral("field"));
-        rule.insert(QStringLiteral("outboundTag"), kStatisticsTag);
-
-        QJsonArray inboundTags;
-        inboundTags.append(kStatisticsTag);
-        rule.insert(QStringLiteral("inboundTag"), inboundTags);
-        rules.append(rule);
-    }
-
-    if (!rules.isEmpty()) {
-        routing.insert(QStringLiteral("rules"), rules);
-    }
-}
-
 QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
 {
-    const QString remoteDns = config.remoteDns.trimmed();
+    const QString remoteDns = config.dns().remoteDns.trimmed();
     if (!remoteDns.isEmpty()) {
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(remoteDns.toUtf8(), &parseError);
@@ -1506,13 +1434,13 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
     dns.insert(QStringLiteral("independent_cache"), true);
 
     QJsonArray servers;
-    QJsonObject localDns = parseSingBoxDnsAddress(config.bootstrapDns);
+    QJsonObject localDns = parseSingBoxDnsAddress(config.dns().bootstrapDns);
     if (!localDns.isEmpty()) {
         localDns.insert(QStringLiteral("tag"), kSingBoxLocalDnsTag);
         servers.append(localDns);
     }
 
-    QJsonObject remoteDnsServer = parseSingBoxDnsAddress(config.remoteDns);
+    QJsonObject remoteDnsServer = parseSingBoxDnsAddress(config.dns().remoteDns);
     if (!remoteDnsServer.isEmpty()) {
         remoteDnsServer.insert(QStringLiteral("tag"), kSingBoxRemoteDnsTag);
         remoteDnsServer.insert(QStringLiteral("detour"), QStringLiteral("proxy"));
@@ -1520,17 +1448,17 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         servers.append(remoteDnsServer);
     }
 
-    QJsonObject directDnsServer = parseSingBoxDnsAddress(config.directDns);
+    QJsonObject directDnsServer = parseSingBoxDnsAddress(config.dns().directDns);
     if (!directDnsServer.isEmpty()) {
         directDnsServer.insert(QStringLiteral("tag"), kSingBoxDirectDnsTag);
         directDnsServer.insert(QStringLiteral("domain_resolver"), kSingBoxLocalDnsTag);
         servers.append(directDnsServer);
     }
 
-    const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dnsHosts);
-    const QMap<QString, QString> systemHostsMap = config.useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
+    const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dns().dnsHosts);
+    const QMap<QString, QString> systemHostsMap = config.dns().useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
     QJsonObject predefinedHosts;
-    if (config.addCommonHosts) {
+    if (config.dns().addCommonHosts) {
         for (auto it = kPredefinedHosts.constBegin(); it != kPredefinedHosts.constEnd(); ++it) {
             QJsonArray answers;
             for (const QString& value : it.value()) {
@@ -1598,7 +1526,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         servers.append(hostsDnsServer);
     }
 
-    if (config.fakeIp) {
+    if (config.dns().fakeIp) {
         QJsonObject fakeDnsServer;
         fakeDnsServer.insert(QStringLiteral("tag"), kSingBoxFakeDnsTag);
         fakeDnsServer.insert(QStringLiteral("type"), QStringLiteral("fakeip"));
@@ -1636,7 +1564,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         QJsonObject proxyRule;
         proxyRule.insert(QStringLiteral("server"), kSingBoxRemoteDnsTag);
         proxyRule.insert(QStringLiteral("clash_mode"), QStringLiteral("Global"));
-        const QString proxyStrategy = mapDomainStrategyToSingBox(config.domainStrategyForProxy);
+        const QString proxyStrategy = mapDomainStrategyToSingBox(config.dns().domainStrategyForProxy);
         if (!proxyStrategy.isEmpty()) {
             proxyRule.insert(QStringLiteral("strategy"), proxyStrategy);
         }
@@ -1647,7 +1575,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         QJsonObject directRule;
         directRule.insert(QStringLiteral("server"), kSingBoxDirectDnsTag);
         directRule.insert(QStringLiteral("clash_mode"), QStringLiteral("Direct"));
-        const QString directStrategy = mapDomainStrategyToSingBox(config.domainStrategyForFreedom);
+        const QString directStrategy = mapDomainStrategyToSingBox(config.dns().domainStrategyForFreedom);
         if (!directStrategy.isEmpty()) {
             directRule.insert(QStringLiteral("strategy"), directStrategy);
         }
@@ -1690,7 +1618,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         rules.append(rule);
     }
 
-    if (config.blockBindingQuery) {
+    if (config.dns().blockBindingQuery) {
         QJsonObject blockBindingRule;
         blockBindingRule.insert(QStringLiteral("query_type"), QJsonArray{64, 65});
         blockBindingRule.insert(QStringLiteral("action"), QStringLiteral("predefined"));
@@ -1698,7 +1626,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         rules.append(blockBindingRule);
     }
 
-    if (config.fakeIp && config.globalFakeIp) {
+    if (config.dns().fakeIp && config.dns().globalFakeIp) {
         QJsonObject filterRule = buildSingBoxFakeIpFilterRule();
         if (!filterRule.isEmpty()) {
             filterRule.insert(QStringLiteral("invert"), true);
@@ -1720,7 +1648,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
     QStringList expectedIpCidrs;
     QStringList expectedIpGeoips;
     QSet<QString> expectedIpRegionNames;
-    for (const QString& item : config.directExpectedIps.split(QRegularExpression(QStringLiteral("[,;]")), Qt::SkipEmptyParts)) {
+    for (const QString& item : config.dns().directExpectedIps.split(QRegularExpression(QStringLiteral("[,;]")), Qt::SkipEmptyParts)) {
         const QString trimmed = item.trimmed();
         if (trimmed.isEmpty()) {
             continue;
@@ -1741,8 +1669,8 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
 
     const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
     if (!effectiveRules.isEmpty()) {
-        const QString directStrategy = mapDomainStrategyToSingBox(config.domainStrategyForFreedom);
-        const QString proxyStrategy = mapDomainStrategyToSingBox(config.domainStrategyForProxy);
+        const QString directStrategy = mapDomainStrategyToSingBox(config.dns().domainStrategyForFreedom);
+        const QString proxyStrategy = mapDomainStrategyToSingBox(config.dns().domainStrategyForProxy);
 
         for (const RoutingRule& sourceRule : effectiveRules) {
             if (!sourceRule.enabled) {
@@ -1805,7 +1733,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
                 rule.insert(QStringLiteral("action"), QStringLiteral("predefined"));
                 rule.insert(QStringLiteral("rcode"), QStringLiteral("NXDOMAIN"));
             } else {
-                if (config.fakeIp && !config.globalFakeIp) {
+                if (config.dns().fakeIp && !config.dns().globalFakeIp) {
                     QJsonObject fakeRule = rule;
                     fakeRule.insert(QStringLiteral("server"), kSingBoxFakeDnsTag);
                     fakeRule.insert(QStringLiteral("query_type"), QJsonArray{1, 28});
@@ -1822,7 +1750,7 @@ QJsonObject ClientConfigWriter::buildSingBoxDns(const Config& config) const
         }
     }
 
-    if (config.fakeIp && !config.globalFakeIp && !useDirectFinal) {
+    if (config.dns().fakeIp && !config.dns().globalFakeIp && !useDirectFinal) {
         QJsonObject fakeDnsRule;
         fakeDnsRule.insert(QStringLiteral("server"), kSingBoxFakeDnsTag);
         fakeDnsRule.insert(QStringLiteral("query_type"), QJsonArray{1, 28});
@@ -1841,12 +1769,12 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
 {
     QJsonObject route;
     route.insert(QStringLiteral("final"), QStringLiteral("proxy"));
-    const bool customDnsObject = isCustomDnsObjectText(config.remoteDns);
-    const bool hasDirectDnsServer = !parseSingBoxDnsAddress(config.directDns).isEmpty();
+    const bool customDnsObject = isCustomDnsObjectText(config.dns().remoteDns);
+    const bool hasDirectDnsServer = !parseSingBoxDnsAddress(config.dns().directDns).isEmpty();
     if (!customDnsObject && hasDirectDnsServer) {
         QJsonObject defaultDomainResolver;
         defaultDomainResolver.insert(QStringLiteral("server"), kSingBoxDirectDnsTag);
-        const QString directDnsStrategy = mapDomainStrategyToSingBox(config.domainStrategyForFreedom);
+        const QString directDnsStrategy = mapDomainStrategyToSingBox(config.dns().domainStrategyForFreedom);
         if (!directDnsStrategy.isEmpty()) {
             defaultDomainResolver.insert(QStringLiteral("strategy"), directDnsStrategy);
         }
@@ -1859,14 +1787,14 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
     locationProbeRule.insert(QStringLiteral("outbound"), QStringLiteral("proxy"));
     locationProbeRule.insert(QStringLiteral("inbound"), QJsonArray{kLocationProbeTag});
     rules.append(locationProbeRule);
-    if (config.tunModeItem.enableTun) {
+    if (config.tun().tunModeItem.enableTun) {
         route.insert(QStringLiteral("auto_detect_interface"), true);
         QJsonArray tunRules = buildTunCompatRejectRules();
         for (const QJsonValue& rule : tunRules) {
             rules.append(rule);
         }
         appendTunCompatProcessRules(rules);
-        appendTunIcmpRouteRule(rules, config.tunModeItem);
+        appendTunIcmpRouteRule(rules, config.tun().tunModeItem);
     }
     appendSingBoxSniffRules(rules, config);
 
@@ -1874,8 +1802,8 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
         QJsonObject hostsResolveRule;
         hostsResolveRule.insert(QStringLiteral("action"), QStringLiteral("resolve"));
         int hostsMatchCount = 0;
-        const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dnsHosts);
-        const QMap<QString, QString> systemHostsMap = config.useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
+        const QMap<QString, QStringList> hostsMap = parseHostsToDictionary(config.dns().dnsHosts);
+        const QMap<QString, QString> systemHostsMap = config.dns().useSystemHosts ? loadSystemHosts() : QMap<QString, QString>{};
         for (auto it = systemHostsMap.constBegin(); it != systemHostsMap.constEnd(); ++it) {
             if (appendSingBoxDomainField(hostsResolveRule, it.key(), true)) {
                 ++hostsMatchCount;
@@ -1902,7 +1830,7 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
     rules.append(globalModeRule);
 
     const RoutingItem* selectedRouting = resolveSelectedRouting(config);
-    QString singBoxDomainStrategy = config.domainStrategy4Singbox.trimmed();
+    QString singBoxDomainStrategy = config.dns().domainStrategy4Singbox.trimmed();
     if (selectedRouting != nullptr && !selectedRouting->domainStrategy4Singbox.trimmed().isEmpty()) {
         singBoxDomainStrategy = selectedRouting->domainStrategy4Singbox.trimmed();
     }
@@ -1916,7 +1844,7 @@ QJsonObject ClientConfigWriter::buildSingBoxRoute(const Config& config) const
         rules.append(resolveRule);
     };
 
-    const QString legacyDomainStrategy = config.domainStrategy.trimmed();
+    const QString legacyDomainStrategy = config.dns().domainStrategy.trimmed();
     const bool reapplyIpRulesAfterResolve = legacyDomainStrategy.compare(QStringLiteral("IPIfNonMatch"), Qt::CaseInsensitive) == 0;
     QList<RoutingRule> ipRulesAfterResolve;
     if (legacyDomainStrategy.compare(QStringLiteral("IPOnDemand"), Qt::CaseInsensitive) == 0) {
@@ -1968,7 +1896,7 @@ QJsonObject ClientConfigWriter::buildTunCompatSingBoxRoute(const Config& config)
 
     QJsonArray rules = buildTunCompatRejectRules();
     appendTunCompatProcessRules(rules);
-    appendTunIcmpRouteRule(rules, config.tunModeItem);
+    appendTunIcmpRouteRule(rules, config.tun().tunModeItem);
     appendSingBoxSniffRules(rules, config);
 
     route.insert(QStringLiteral("rules"), rules);
@@ -2088,7 +2016,7 @@ QJsonObject ClientConfigWriter::buildSingBoxLog(const Config& config) const
 {
     QJsonObject log;
     log.insert(QStringLiteral("disabled"), false);
-    log.insert(QStringLiteral("level"), QStringLiteral("info"));
+    log.insert(QStringLiteral("level"), normalizeSingBoxLogLevel(config.logLevel));
     return log;
 }
 
@@ -2110,7 +2038,7 @@ QJsonArray ClientConfigWriter::buildInbounds(const Config& config) const
 QJsonArray ClientConfigWriter::buildSingBoxInbounds(const Config& config) const
 {
     QJsonArray inbounds;
-    if (config.tunModeItem.enableTun) {
+    if (config.tun().tunModeItem.enableTun) {
         inbounds.append(buildSingBoxTunInbound(config));
     }
     inbounds.append(buildSingBoxSocksInbound(config, false, 0));
@@ -2129,7 +2057,7 @@ QJsonArray ClientConfigWriter::buildOutbounds(const Config& config, const VmessI
 {
     QJsonArray outbounds;
     QJsonObject primaryOutbound = buildPrimaryOutbound(config, server);
-    if (config.enableFragment) {
+    if (config.dns().enableFragment) {
         const QJsonObject streamSettings = primaryOutbound.value(QStringLiteral("streamSettings")).toObject();
         if (!streamSettings.value(QStringLiteral("security")).toString().trimmed().isEmpty()) {
             QJsonObject updatedStreamSettings = streamSettings;
@@ -2162,7 +2090,7 @@ QJsonObject ClientConfigWriter::buildPrimaryOutbound(const Config& config, const
     QJsonObject outbound;
     outbound.insert(QStringLiteral("tag"), QStringLiteral("proxy"));
     outbound.insert(QStringLiteral("streamSettings"), buildStreamSettings(config, server));
-    if (!config.domainStrategyForProxy.trimmed().isEmpty()
+    if (!config.dns().domainStrategyForProxy.trimmed().isEmpty()
         && server.configType != ConfigType::Socks
         && server.configType != ConfigType::HTTP
         && server.configType != ConfigType::Custom
@@ -2170,7 +2098,7 @@ QJsonObject ClientConfigWriter::buildPrimaryOutbound(const Config& config, const
         && server.configType != ConfigType::Hysteria2
         && server.configType != ConfigType::TUIC
         && server.configType != ConfigType::WireGuard) {
-        outbound.insert(QStringLiteral("targetStrategy"), config.domainStrategyForProxy.trimmed());
+        outbound.insert(QStringLiteral("targetStrategy"), config.dns().domainStrategyForProxy.trimmed());
     }
 
     if (server.configType == ConfigType::Shadowsocks) {
@@ -2746,7 +2674,7 @@ QJsonObject ClientConfigWriter::buildStreamSettings(const Config& config, const 
         tlsSettings.insert(QStringLiteral("serverName"), resolveServerName(server));
         tlsSettings.insert(
             QStringLiteral("allowInsecure"),
-            resolveAllowInsecure(server.allowInsecure, config.defaultAllowInsecure));
+            resolveAllowInsecure(server.allowInsecure, config.dns().defaultAllowInsecure));
         if (!fingerprint.isEmpty()) {
             tlsSettings.insert(QStringLiteral("fingerprint"), fingerprint);
         }
@@ -2795,7 +2723,7 @@ QJsonObject ClientConfigWriter::buildSingBoxTls(const Config& config, const Vmes
 
     QJsonObject tls;
     tls.insert(QStringLiteral("enabled"), true);
-    tls.insert(QStringLiteral("insecure"), resolveAllowInsecure(server.allowInsecure, config.defaultAllowInsecure));
+    tls.insert(QStringLiteral("insecure"), resolveAllowInsecure(server.allowInsecure, config.dns().defaultAllowInsecure));
 
     const QString serverName = resolveServerName(server).trimmed();
     if (!serverName.isEmpty()) {
@@ -3001,8 +2929,14 @@ QJsonObject ClientConfigWriter::buildHttpInboundWithTag(const Config& config, co
 {
     QJsonObject inbound;
     const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
+    int port = config.localPort + offset;
+    if (!allowLan && offset == 1 && config.localHttpPort > 0) {
+        port = config.localHttpPort;
+    } else if (tag == kLocationProbeTag && config.localLocationProbePort > 0) {
+        port = config.localLocationProbePort;
+    }
     inbound.insert(QStringLiteral("tag"), tag);
-    inbound.insert(QStringLiteral("port"), config.localPort + offset);
+    inbound.insert(QStringLiteral("port"), port);
     inbound.insert(QStringLiteral("listen"), allowLan ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1"));
     inbound.insert(QStringLiteral("protocol"), QStringLiteral("http"));
 
@@ -3066,10 +3000,16 @@ QJsonObject ClientConfigWriter::buildSingBoxHttpInboundWithTag(const Config& con
 {
     QJsonObject inbound;
     const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
+    int port = config.localPort + offset;
+    if (!allowLan && offset == 1 && config.localHttpPort > 0) {
+        port = config.localHttpPort;
+    } else if (tag == kLocationProbeTag && config.localLocationProbePort > 0) {
+        port = config.localLocationProbePort;
+    }
     inbound.insert(QStringLiteral("type"), QStringLiteral("http"));
     inbound.insert(QStringLiteral("tag"), tag);
     inbound.insert(QStringLiteral("listen"), allowLan ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1"));
-    inbound.insert(QStringLiteral("listen_port"), config.localPort + offset);
+    inbound.insert(QStringLiteral("listen_port"), port);
 
     if (allowLan && !config.inboundUser.trimmed().isEmpty() && !config.inboundPassword.trimmed().isEmpty()) {
         QJsonArray users;
@@ -3090,8 +3030,8 @@ QJsonObject ClientConfigWriter::buildDirectOutbound(const Config& config)
     outbound.insert(QStringLiteral("protocol"), QStringLiteral("freedom"));
 
     QJsonObject settings;
-    if (!config.domainStrategyForFreedom.trimmed().isEmpty()) {
-        settings.insert(QStringLiteral("domainStrategy"), config.domainStrategyForFreedom.trimmed());
+    if (!config.dns().domainStrategyForFreedom.trimmed().isEmpty()) {
+        settings.insert(QStringLiteral("domainStrategy"), config.dns().domainStrategyForFreedom.trimmed());
         settings.insert(QStringLiteral("userLevel"), 0);
     }
 
@@ -3138,7 +3078,7 @@ QJsonArray ClientConfigWriter::buildTunCompatSingBoxOutbounds(const Config& conf
 
 QJsonObject ClientConfigWriter::buildSingBoxTunInbound(const Config& config)
 {
-    const TunModeItem& tun = config.tunModeItem;
+    const TunModeItem& tun = config.tun().tunModeItem;
     QJsonObject inbound;
     inbound.insert(QStringLiteral("type"), QStringLiteral("tun"));
     inbound.insert(QStringLiteral("tag"), QStringLiteral("tun-in"));
@@ -3178,14 +3118,14 @@ QJsonObject ClientConfigWriter::buildSingBoxSocksOutbound(
 
 const RoutingItem* ClientConfigWriter::resolveSelectedRouting(const Config& config)
 {
-    if (config.enableRoutingAdvanced) {
-        if (config.routingIndex >= 0 && config.routingIndex < config.routingItems.size()) {
-            return &config.routingItems.at(config.routingIndex);
+    if (config.collection().enableRoutingAdvanced) {
+        if (config.collection().routingIndex >= 0 && config.collection().routingIndex < config.collection().routingItems.size()) {
+            return &config.collection().routingItems.at(config.collection().routingIndex);
         }
         return nullptr;
     }
 
-    for (const RoutingItem& item : config.routingItems) {
+    for (const RoutingItem& item : config.collection().routingItems) {
         if (item.locked) {
             return &item;
         }
@@ -3560,49 +3500,18 @@ void ClientConfigWriter::populateSingBoxIpFields(QJsonObject& rule, const QStrin
     }
 }
 
-bool ClientConfigWriter::containsLegacyApiInbound(const QJsonArray& inbounds)
-{
-    for (const QJsonValue& value : inbounds) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        if (value.toObject().value(QStringLiteral("tag")).toString() == kStatisticsTag) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool ClientConfigWriter::containsLegacyApiRoute(const QJsonArray& rules)
-{
-    for (const QJsonValue& value : rules) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        const QJsonObject rule = value.toObject();
-        if (rule.value(QStringLiteral("outboundTag")).toString() != kStatisticsTag) {
-            continue;
-        }
-
-        const QJsonArray inboundTags = rule.value(QStringLiteral("inboundTag")).toArray();
-        for (const QJsonValue& inboundTag : inboundTags) {
-            if (inboundTag.toString() == kStatisticsTag) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 void ClientConfigWriter::migrateGeoToRuleSet(QJsonObject& root)
 {
+    // Rule-sets that have been removed from SagerNet repositories and will
+    // return 404, causing sing-box to crash on startup.
+    const QSet<QString> kUnavailableRuleSets = {
+        QStringLiteral("geosite-gfw"),
+        QStringLiteral("geoip-telegram"),
+    };
+
     QSet<QString> allRuleSetTags;
 
-    auto processRules = [&allRuleSetTags](QJsonArray& rules) {
+    auto processRules = [&allRuleSetTags, &kUnavailableRuleSets](QJsonArray& rules) {
         for (int i = 0; i < rules.size(); ++i) {
             QJsonObject rule = rules[i].toObject();
             QJsonArray ruleSetTags = rule.take(QStringLiteral("rule_set")).toArray();
@@ -3612,6 +3521,9 @@ void ClientConfigWriter::migrateGeoToRuleSet(QJsonObject& root)
                 QJsonArray values = rule.take(QStringLiteral("geosite")).toArray();
                 for (const QJsonValue& v : values) {
                     const QString tag = QStringLiteral("geosite-%1").arg(v.toString());
+                    if (kUnavailableRuleSets.contains(tag)) {
+                        continue;
+                    }
                     ruleSetTags.append(tag);
                     allRuleSetTags.insert(tag);
                 }
@@ -3622,6 +3534,9 @@ void ClientConfigWriter::migrateGeoToRuleSet(QJsonObject& root)
                 QJsonArray values = rule.take(QStringLiteral("geoip")).toArray();
                 for (const QJsonValue& v : values) {
                     const QString tag = QStringLiteral("geoip-%1").arg(v.toString());
+                    if (kUnavailableRuleSets.contains(tag)) {
+                        continue;
+                    }
                     ruleSetTags.append(tag);
                     allRuleSetTags.insert(tag);
                 }
@@ -3657,14 +3572,21 @@ void ClientConfigWriter::migrateGeoToRuleSet(QJsonObject& root)
         for (const QString& tag : allRuleSetTags) {
             QJsonObject def;
             def.insert(QStringLiteral("tag"), tag);
-            def.insert(QStringLiteral("type"), QStringLiteral("remote"));
             def.insert(QStringLiteral("format"), QStringLiteral("binary"));
-            if (tag.startsWith(QStringLiteral("geosite-"))) {
-                def.insert(QStringLiteral("url"),
-                    QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%1.srs").arg(tag));
-            } else if (tag.startsWith(QStringLiteral("geoip-"))) {
-                def.insert(QStringLiteral("url"),
-                    QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%1.srs").arg(tag));
+            const QString localPath = resolveLocalSingBoxRuleSetPath(tag);
+            if (!localPath.isEmpty()) {
+                def.insert(QStringLiteral("type"), QStringLiteral("local"));
+                def.insert(QStringLiteral("path"), localPath);
+            } else {
+                def.insert(QStringLiteral("type"), QStringLiteral("remote"));
+                def.insert(QStringLiteral("download_detour"), QStringLiteral("proxy"));
+                if (tag.startsWith(QStringLiteral("geosite-"))) {
+                    def.insert(QStringLiteral("url"),
+                        QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%1.srs").arg(tag));
+                } else if (tag.startsWith(QStringLiteral("geoip-"))) {
+                    def.insert(QStringLiteral("url"),
+                        QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%1.srs").arg(tag));
+                }
             }
             ruleSetDefinitions.append(def);
         }
@@ -3672,26 +3594,6 @@ void ClientConfigWriter::migrateGeoToRuleSet(QJsonObject& root)
     }
 
     root.insert(QStringLiteral("route"), route);
-}
-
-QJsonArray ClientConfigWriter::buildSingBoxStatisticsInboundTags(const Config& config)
-{
-    QJsonArray tags;
-    tags.append(QStringLiteral("socks"));
-    tags.append(QStringLiteral("http"));
-    if (config.allowLanConnection) {
-        tags.append(QStringLiteral("socks-lan"));
-        tags.append(QStringLiteral("http-lan"));
-    }
-    return tags;
-}
-
-QJsonArray ClientConfigWriter::buildSingBoxStatisticsOutboundTags()
-{
-    return QJsonArray{
-        QStringLiteral("proxy"),
-        QStringLiteral("direct"),
-        QStringLiteral("block")};
 }
 
 QStringList ClientConfigWriter::normalizeRuleValues(
@@ -3821,7 +3723,7 @@ QString ClientConfigWriter::resolveServerName(const VmessItem& server)
 QString ClientConfigWriter::resolveFingerprint(const Config& config, const VmessItem& server)
 {
     return server.fingerprint.trimmed().isEmpty()
-        ? config.defaultFingerprint.trimmed()
+        ? config.dns().defaultFingerprint.trimmed()
         : server.fingerprint.trimmed();
 }
 
@@ -3851,7 +3753,7 @@ QStringList ClientConfigWriter::buildTunCompatDnsProcessNames()
 
 QStringList ClientConfigWriter::buildTunCompatDirectProcessNames()
 {
-    QStringList processNames{QStringLiteral("SongBox.exe")};
+    QStringList processNames{QStringLiteral("SongBird.exe")};
     processNames.append(buildTunCompatDnsProcessNames());
     processNames.append(QStringLiteral("sing-box-client.exe"));
     processNames.append(QStringLiteral("sing-box.exe"));
@@ -3914,3 +3816,4 @@ QString ClientConfigWriter::resolveCustomConfigPath(const QString& address) cons
 
     return trimmed;
 }
+

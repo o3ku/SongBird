@@ -23,8 +23,8 @@ namespace {
 Config baseConfig()
 {
     Config config;
-    config.tunModeItem.enableTun = true;
-    config.tunModeItem.enableLegacyProtect = true;
+    config.tun().tunModeItem.enableTun = true;
+    config.tun().tunModeItem.enableLegacyProtect = true;
     return config;
 }
 
@@ -35,7 +35,7 @@ Config baseConfig()
 Config baseConfigWithXrayForVMess()
 {
     Config config = baseConfig();
-    config.coreTypeItems.append(CoreTypeItem{
+    config.policy().coreTypeItems.append(CoreTypeItem{
         static_cast<int>(ConfigType::VMess),
         static_cast<int>(CoreType::Xray)});
     return config;
@@ -64,7 +64,7 @@ void TunCompatCoreRequirementTests::xrayTunRequiresAuxiliarySingBoxCore()
 void TunCompatCoreRequirementTests::xrayTunWithoutLegacyProtectStillRequiresAuxiliarySingBoxCore()
 {
     Config config = baseConfigWithXrayForVMess();
-    config.tunModeItem.enableLegacyProtect = false;
+    config.tun().tunModeItem.enableLegacyProtect = false;
 
     const QList<CoreType> required = resolveAuxiliaryTunCompatCoreTypes(config, baseServer());
 
@@ -82,7 +82,7 @@ void TunCompatCoreRequirementTests::singBoxCoreDoesNotRequireAuxiliarySingBoxCor
 void TunCompatCoreRequirementTests::protocolConfiguredSingBoxDoesNotRequireAuxiliarySingBoxCore()
 {
     Config config = baseConfig();
-    config.coreTypeItems.append(CoreTypeItem{
+    config.policy().coreTypeItems.append(CoreTypeItem{
         static_cast<int>(ConfigType::VMess),
         static_cast<int>(CoreType::SingBox)});
 
@@ -112,7 +112,7 @@ void TunCompatCoreRequirementTests::customConfigDoesNotRequireAuxiliarySingBoxCo
 void TunCompatCoreRequirementTests::disabledTunDoesNotRequireAuxiliarySingBoxCore()
 {
     Config config = baseConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     QVERIFY(resolveAuxiliaryTunCompatCoreTypes(config, baseServer()).isEmpty());
 }
@@ -126,7 +126,7 @@ void TunCompatCoreRequirementTests::xrayOnlyInstallWithUnconfiguredProtocolRequi
     // therefore demand a sing-box sidecar, even though resolvePreferredCoreType
     // (the pre-fix path that ignored installed cores) would have picked SingBox.
     Config config = baseConfig();
-    config.coreTypeItems.clear();
+    config.policy().coreTypeItems.clear();
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
@@ -142,7 +142,7 @@ void TunCompatCoreRequirementTests::singBoxOnlyInstallWithUnconfiguredProtocolSk
     // Mirror of the above: only sing-box installed and no protocol config ->
     // launch picks sing-box, no sidecar is needed.
     Config config = baseConfig();
-    config.coreTypeItems.clear();
+    config.policy().coreTypeItems.clear();
 
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;

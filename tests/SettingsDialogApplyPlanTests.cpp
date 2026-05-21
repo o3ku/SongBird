@@ -10,23 +10,22 @@ private slots:
     void computesTunProxyAndLanguageFlagsFromUpdatedSettings();
     void blocksRuntimeHotApplyWhenConfiguredTunNeedsElevation();
     void normalizesLanguageCodesBeforeRestartPromptComparison();
+    void detectsThemeChangeAfterNormalizingNames();
 };
 
 void SettingsDialogApplyPlanTests::computesTunProxyAndLanguageFlagsFromUpdatedSettings()
 {
     Config previous;
     previous.localPort = 10808;
-    previous.autoRunEnabled = false;
-    previous.languageCode = QStringLiteral("en");
-    previous.systemProxyExceptions = QStringLiteral("localhost");
+    previous.ui().autoRunEnabled = false;
+    previous.ui().languageCode = QStringLiteral("en");
     previous.systemProxyAdvancedProtocol = QStringLiteral("{ip}:{http_port}");
 
     Config updated = previous;
     updated.localPort = 20808;
-    updated.autoRunEnabled = true;
-    updated.languageCode = QStringLiteral("zh-CN");
-    updated.systemProxyExceptions = QStringLiteral("localhost;127.*");
-    updated.tunModeItem.enableTun = true;
+    updated.ui().autoRunEnabled = true;
+    updated.ui().languageCode = QStringLiteral("zh-CN");
+    updated.tun().tunModeItem.enableTun = true;
 
     const SettingsDialogApplyPlan plan =
         evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
@@ -45,7 +44,7 @@ void SettingsDialogApplyPlanTests::blocksRuntimeHotApplyWhenConfiguredTunNeedsEl
 
     Config updated = previous;
     updated.localPort = previous.localPort + 1;
-    updated.tunModeItem.enableTun = true;
+    updated.tun().tunModeItem.enableTun = true;
 
     const SettingsDialogApplyPlan plan =
         evaluateSettingsDialogApplyPlan(previous, updated, true, false, true);
@@ -59,16 +58,33 @@ void SettingsDialogApplyPlanTests::blocksRuntimeHotApplyWhenConfiguredTunNeedsEl
 void SettingsDialogApplyPlanTests::normalizesLanguageCodesBeforeRestartPromptComparison()
 {
     Config previous;
-    previous.languageCode = QStringLiteral("zh_CN");
+    previous.ui().languageCode = QStringLiteral("zh_CN");
 
     Config updated = previous;
-    updated.languageCode = QStringLiteral("zh-CN");
+    updated.ui().languageCode = QStringLiteral("zh-CN");
 
     const SettingsDialogApplyPlan plan =
         evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
 
     QVERIFY(!plan.languageChanged);
     QVERIFY(!shouldPromptForLanguageRestartAfterSettingsSave(plan.languageChanged, false));
+}
+
+void SettingsDialogApplyPlanTests::detectsThemeChangeAfterNormalizingNames()
+{
+    Config previous;
+    previous.ui().themeName = QStringLiteral("light");
+
+    Config updated = previous;
+    updated.ui().themeName = QStringLiteral("Dark");
+
+    SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
+    QVERIFY(plan.themeChanged);
+
+    updated.ui().themeName = QStringLiteral("LIGHT");
+    plan = evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
+    QVERIFY(!plan.themeChanged);
 }
 
 QTEST_MAIN(SettingsDialogApplyPlanTests)

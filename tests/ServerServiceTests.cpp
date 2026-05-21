@@ -17,7 +17,7 @@ public:
 };
 
 VmessItem makeServer(const QString& indexId, const QString& address, int port,
-                     ConfigType configType = ConfigType::VMess, int sort = 0)
+                     ConfigType configType = ConfigType::VMess)
 {
     VmessItem item;
     item.indexId = indexId;
@@ -25,7 +25,6 @@ VmessItem makeServer(const QString& indexId, const QString& address, int port,
     item.address = address;
     item.port = port;
     item.remarks = QStringLiteral("%1:%2").arg(address).arg(port);
-    item.sort = sort;
     return item;
 }
 
@@ -33,10 +32,10 @@ Config makeConfigWithServers(std::initializer_list<VmessItem> servers)
 {
     Config config;
     for (const VmessItem& s : servers) {
-        config.servers.append(s);
+        config.collection().servers.append(s);
     }
-    if (!config.servers.isEmpty()) {
-        config.currentIndexId = config.servers.first().indexId;
+    if (!config.collection().servers.isEmpty()) {
+        config.currentIndexId = config.collection().servers.first().indexId;
     }
     return config;
 }
@@ -53,7 +52,6 @@ private slots:
     // addServer
     void addServerGeneratesIndexId();
     void addServerGeneratesAutoRemarksWhenEmpty();
-    void addServerSetsSort();
     void addServerSetsDefaultWhenNoneSelected();
     void addServerDoesNotOverrideExistingDefault();
     void addServerRejectsEmptyAddress();
@@ -64,7 +62,6 @@ private slots:
     // updateServer
     void updateServerModifiesExisting();
     void updateServerPreservesIndexId();
-    void updateServerPreservesSort();
     void updateServerPreservesSubId();
     void updateServerPreservesTestResult();
     void updateServerGeneratesAutoRemarksWhenEmpty();
@@ -128,10 +125,6 @@ private slots:
     void saveDelegatesToRepository();
     void saveReturnsFalseWhenRepositoryFails();
 
-    // sort normalization
-    void sortValuesNormalizedAfterDuplicate();
-    void sortValuesNormalizedAfterMove();
-
     // list
     void listReturnsConfigServers();
 
@@ -181,9 +174,9 @@ void ServerServiceTests::addServerGeneratesIndexId()
 
     const OperationResult result = service_->addServer(config, item);
     QVERIFY(result.success);
-    QVERIFY(!config.servers.first().indexId.isEmpty());
+    QVERIFY(!config.collection().servers.first().indexId.isEmpty());
     // Must be a valid UUID without braces
-    const QUuid parsed(config.servers.first().indexId);
+    const QUuid parsed(config.collection().servers.first().indexId);
     QVERIFY(!parsed.isNull());
 }
 
@@ -196,23 +189,7 @@ void ServerServiceTests::addServerGeneratesAutoRemarksWhenEmpty()
     item.remarks.clear();
 
     service_->addServer(config, item);
-    QCOMPARE(config.servers.first().remarks, QStringLiteral("10.0.0.1:443"));
-}
-
-void ServerServiceTests::addServerSetsSort()
-{
-    Config config;
-    VmessItem a;
-    a.address = kAddr1;
-    a.port = 100;
-    service_->addServer(config, a);
-    QCOMPARE(config.servers.first().sort, 10);
-
-    VmessItem b;
-    b.address = kAddr2;
-    b.port = 200;
-    service_->addServer(config, b);
-    QCOMPARE(config.servers.last().sort, 20);
+    QCOMPARE(config.collection().servers.first().remarks, QStringLiteral("10.0.0.1:443"));
 }
 
 void ServerServiceTests::addServerSetsDefaultWhenNoneSelected()
@@ -225,14 +202,14 @@ void ServerServiceTests::addServerSetsDefaultWhenNoneSelected()
     item.port = 443;
 
     service_->addServer(config, item);
-    QCOMPARE(config.currentIndexId, config.servers.first().indexId);
+    QCOMPARE(config.currentIndexId, config.collection().servers.first().indexId);
 }
 
 void ServerServiceTests::addServerDoesNotOverrideExistingDefault()
 {
     Config config;
     config.currentIndexId = kId1;
-    config.servers.append(makeServer(kId1, kAddr1, 100));
+    config.collection().servers.append(makeServer(kId1, kAddr1, 100));
 
     VmessItem item;
     item.address = kAddr2;
@@ -252,7 +229,7 @@ void ServerServiceTests::addServerRejectsEmptyAddress()
     const OperationResult result = service_->addServer(config, item);
     QVERIFY(!result.success);
     QVERIFY(result.message.contains(QStringLiteral("address")));
-    QVERIFY(config.servers.isEmpty());
+    QVERIFY(config.collection().servers.isEmpty());
 }
 
 void ServerServiceTests::addServerRejectsInvalidPort()
@@ -265,7 +242,7 @@ void ServerServiceTests::addServerRejectsInvalidPort()
     const OperationResult result = service_->addServer(config, item);
     QVERIFY(!result.success);
     QVERIFY(result.message.contains(QStringLiteral("port")));
-    QVERIFY(config.servers.isEmpty());
+    QVERIFY(config.collection().servers.isEmpty());
 }
 
 void ServerServiceTests::addServerReturnsFailureWhenSaveFails()
@@ -293,9 +270,9 @@ void ServerServiceTests::addServerAppendsToList()
     b.port = 200;
     service_->addServer(config, b);
 
-    QCOMPARE(config.servers.size(), 2);
-    QCOMPARE(config.servers.first().address, kAddr1);
-    QCOMPARE(config.servers.last().address, kAddr2);
+    QCOMPARE(config.collection().servers.size(), 2);
+    QCOMPARE(config.collection().servers.first().address, kAddr1);
+    QCOMPARE(config.collection().servers.last().address, kAddr2);
 }
 
 // ---------------------------------------------------------------------------
@@ -314,8 +291,8 @@ void ServerServiceTests::updateServerModifiesExisting()
 
     const OperationResult result = service_->updateServer(config, kId1, updated);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.first().address, kAddr2);
-    QCOMPARE(config.servers.first().port, 200);
+    QCOMPARE(config.collection().servers.first().address, kAddr2);
+    QCOMPARE(config.collection().servers.first().port, 200);
 }
 
 void ServerServiceTests::updateServerPreservesIndexId()
@@ -329,21 +306,7 @@ void ServerServiceTests::updateServerPreservesIndexId()
     updated.port = 200;
 
     service_->updateServer(config, kId1, updated);
-    QCOMPARE(config.servers.first().indexId, kId1);
-}
-
-void ServerServiceTests::updateServerPreservesSort()
-{
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100, ConfigType::VMess, 42),
-    });
-
-    VmessItem updated;
-    updated.address = kAddr2;
-    updated.port = 200;
-
-    service_->updateServer(config, kId1, updated);
-    QCOMPARE(config.servers.first().sort, 42);
+    QCOMPARE(config.collection().servers.first().indexId, kId1);
 }
 
 void ServerServiceTests::updateServerPreservesSubId()
@@ -358,7 +321,7 @@ void ServerServiceTests::updateServerPreservesSubId()
     updated.subId = QStringLiteral("should-be-ignored");
 
     service_->updateServer(config, kId1, updated);
-    QCOMPARE(config.servers.first().subId, QStringLiteral("sub-abc"));
+    QCOMPARE(config.collection().servers.first().subId, QStringLiteral("sub-abc"));
 }
 
 void ServerServiceTests::updateServerPreservesTestResult()
@@ -373,7 +336,7 @@ void ServerServiceTests::updateServerPreservesTestResult()
     updated.testResult = QStringLiteral("should-be-ignored");
 
     service_->updateServer(config, kId1, updated);
-    QCOMPARE(config.servers.first().testResult, QStringLiteral("150ms"));
+    QCOMPARE(config.collection().servers.first().testResult, QStringLiteral("150ms"));
 }
 
 void ServerServiceTests::updateServerGeneratesAutoRemarksWhenEmpty()
@@ -388,7 +351,7 @@ void ServerServiceTests::updateServerGeneratesAutoRemarksWhenEmpty()
     updated.remarks.clear();
 
     service_->updateServer(config, kId1, updated);
-    QCOMPARE(config.servers.first().remarks, QStringLiteral("10.0.0.2:200"));
+    QCOMPARE(config.collection().servers.first().remarks, QStringLiteral("10.0.0.2:200"));
 }
 
 void ServerServiceTests::updateServerRejectsEmptyIndexId()
@@ -471,10 +434,10 @@ void ServerServiceTests::duplicateServerCreatesCopyWithNewIndexId()
 
     const OperationResult result = service_->duplicateServer(config, kId1);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 2);
+    QCOMPARE(config.collection().servers.size(), 2);
 
-    const VmessItem& original = config.servers.first();
-    const VmessItem& dup = config.servers.last();
+    const VmessItem& original = config.collection().servers.first();
+    const VmessItem& dup = config.collection().servers.last();
     QVERIFY(original.indexId != dup.indexId);
     QVERIFY(!dup.indexId.isEmpty());
 }
@@ -486,7 +449,7 @@ void ServerServiceTests::duplicateServerClearsSubId()
     Config config = makeConfigWithServers({original});
 
     service_->duplicateServer(config, kId1);
-    QVERIFY(config.servers.last().subId.isEmpty());
+    QVERIFY(config.collection().servers.last().subId.isEmpty());
 }
 
 void ServerServiceTests::duplicateServerClearsTestResult()
@@ -496,7 +459,7 @@ void ServerServiceTests::duplicateServerClearsTestResult()
     Config config = makeConfigWithServers({original});
 
     service_->duplicateServer(config, kId1);
-    QVERIFY(config.servers.last().testResult.isEmpty());
+    QVERIFY(config.collection().servers.last().testResult.isEmpty());
 }
 
 void ServerServiceTests::duplicateServerAppendsCopySuffix()
@@ -506,7 +469,7 @@ void ServerServiceTests::duplicateServerAppendsCopySuffix()
     Config config = makeConfigWithServers({original});
 
     service_->duplicateServer(config, kId1);
-    QCOMPARE(config.servers.last().remarks, QStringLiteral("my-server copy"));
+    QCOMPARE(config.collection().servers.last().remarks, QStringLiteral("my-server copy"));
 }
 
 void ServerServiceTests::duplicateServerInsertsAfterOriginal()
@@ -520,12 +483,12 @@ void ServerServiceTests::duplicateServerInsertsAfterOriginal()
     service_->duplicateServer(config, kId2);
     // Original order: 0=id1, 1=id2, 2=id3
     // After duplicate of id2: 0=id1, 1=id2, 2=dup(id2), 3=id3
-    QCOMPARE(config.servers.size(), 4);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
-    QCOMPARE(config.servers.at(1).indexId, kId2);
-    QVERIFY(config.servers.at(2).indexId != kId2);
-    QCOMPARE(config.servers.at(2).address, kAddr2); // same address as original
-    QCOMPARE(config.servers.at(3).indexId, kId3);
+    QCOMPARE(config.collection().servers.size(), 4);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId2);
+    QVERIFY(config.collection().servers.at(2).indexId != kId2);
+    QCOMPARE(config.collection().servers.at(2).address, kAddr2); // same address as original
+    QCOMPARE(config.collection().servers.at(3).indexId, kId3);
 }
 
 void ServerServiceTests::duplicateServerRejectsEmptyIndexId()
@@ -567,8 +530,8 @@ void ServerServiceTests::removeServerRemovesByIndexId()
 
     const OperationResult result = service_->removeServers(config, {kId1});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.first().indexId, kId2);
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers.first().indexId, kId2);
 }
 
 void ServerServiceTests::removeServersRemovesMultiple()
@@ -581,8 +544,8 @@ void ServerServiceTests::removeServersRemovesMultiple()
 
     const OperationResult result = service_->removeServers(config, {kId1, kId3});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.first().indexId, kId2);
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers.first().indexId, kId2);
 }
 
 void ServerServiceTests::removeServerUpdatesDefaultIfRemoved()
@@ -618,7 +581,7 @@ void ServerServiceTests::removeServerClearsDefaultIfNoneLeft()
     config.currentIndexId = kId1;
 
     service_->removeServers(config, {kId1});
-    QVERIFY(config.servers.isEmpty());
+    QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.currentIndexId.isEmpty());
 }
 
@@ -630,7 +593,7 @@ void ServerServiceTests::removeServerReturnsOkForEmptyList()
 
     const OperationResult result = service_->removeServers(config, {});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 1);
+    QCOMPARE(config.collection().servers.size(), 1);
 }
 
 void ServerServiceTests::removeServerReturnsFailureWhenSaveFails()
@@ -705,8 +668,8 @@ void ServerServiceTests::moveServerUp()
 
     const OperationResult result = service_->moveServers(config, {kId2}, ServerMoveOperation::Up);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId2);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
 }
 
 void ServerServiceTests::moveServerDown()
@@ -718,8 +681,8 @@ void ServerServiceTests::moveServerDown()
 
     const OperationResult result = service_->moveServers(config, {kId1}, ServerMoveOperation::Down);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId2);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
 }
 
 void ServerServiceTests::moveServerTop()
@@ -732,9 +695,9 @@ void ServerServiceTests::moveServerTop()
 
     const OperationResult result = service_->moveServers(config, {kId3}, ServerMoveOperation::Top);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId3);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
-    QCOMPARE(config.servers.at(2).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId2);
 }
 
 void ServerServiceTests::moveServerBottom()
@@ -747,9 +710,9 @@ void ServerServiceTests::moveServerBottom()
 
     const OperationResult result = service_->moveServers(config, {kId1}, ServerMoveOperation::Bottom);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId2);
-    QCOMPARE(config.servers.at(1).indexId, kId3);
-    QCOMPARE(config.servers.at(2).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId1);
 }
 
 void ServerServiceTests::moveServerUpDoesNothingAtTop()
@@ -762,8 +725,8 @@ void ServerServiceTests::moveServerUpDoesNothingAtTop()
     const OperationResult result = service_->moveServers(config, {kId1}, ServerMoveOperation::Up);
     // No move occurred: still reports success but order unchanged
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
-    QCOMPARE(config.servers.at(1).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId2);
 }
 
 void ServerServiceTests::moveServerDownDoesNothingAtBottom()
@@ -775,8 +738,8 @@ void ServerServiceTests::moveServerDownDoesNothingAtBottom()
 
     const OperationResult result = service_->moveServers(config, {kId2}, ServerMoveOperation::Down);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
-    QCOMPARE(config.servers.at(1).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId2);
 }
 
 void ServerServiceTests::moveServerReturnsOkForEmptyList()
@@ -814,10 +777,10 @@ void ServerServiceTests::moveServerReordersMultipleSelectedUp()
     const OperationResult result = service_->moveServers(
         config, {kId3, kId4}, ServerMoveOperation::Up);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
-    QCOMPARE(config.servers.at(1).indexId, kId3);
-    QCOMPARE(config.servers.at(2).indexId, kId4);
-    QCOMPARE(config.servers.at(3).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId4);
+    QCOMPARE(config.collection().servers.at(3).indexId, kId2);
 }
 
 void ServerServiceTests::moveServerReordersMultipleSelectedDown()
@@ -835,10 +798,10 @@ void ServerServiceTests::moveServerReordersMultipleSelectedDown()
     const OperationResult result = service_->moveServers(
         config, {kId1, kId2}, ServerMoveOperation::Down);
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId3);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
-    QCOMPARE(config.servers.at(2).indexId, kId2);
-    QCOMPARE(config.servers.at(3).indexId, kId4);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(3).indexId, kId4);
 }
 
 // ---------------------------------------------------------------------------
@@ -855,9 +818,9 @@ void ServerServiceTests::reorderServersAppliesNewOrder()
 
     const OperationResult result = service_->reorderServers(config, {kId3, kId1, kId2});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId3);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
-    QCOMPARE(config.servers.at(2).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId2);
 }
 
 void ServerServiceTests::reorderServersAppendsUnlistedAtEnd()
@@ -871,9 +834,9 @@ void ServerServiceTests::reorderServersAppendsUnlistedAtEnd()
     // Reorder only mentions kId3 and kId1; kId2 should be at end
     const OperationResult result = service_->reorderServers(config, {kId3, kId1});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId3);
-    QCOMPARE(config.servers.at(1).indexId, kId1);
-    QCOMPARE(config.servers.at(2).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId3);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId2);
 }
 
 void ServerServiceTests::reorderServersReturnsOkForEmptyList()
@@ -884,7 +847,7 @@ void ServerServiceTests::reorderServersReturnsOkForEmptyList()
 
     const OperationResult result = service_->reorderServers(config, {});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
 }
 
 void ServerServiceTests::reorderServersReturnsOkWhenOrderUnchanged()
@@ -896,8 +859,8 @@ void ServerServiceTests::reorderServersReturnsOkWhenOrderUnchanged()
 
     const OperationResult result = service_->reorderServers(config, {kId1, kId2});
     QVERIFY(result.success);
-    QCOMPARE(config.servers.at(0).indexId, kId1);
-    QCOMPARE(config.servers.at(1).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId2);
 }
 
 // ---------------------------------------------------------------------------
@@ -913,8 +876,8 @@ void ServerServiceTests::setTestResultSetsTrimmedResultWithoutSaving()
     const OperationResult result = service_->setTestResult(
         config, kId1, QStringLiteral("  42ms  "));
     QVERIFY(result.success);
-    QCOMPARE(config.servers.first().testResult, QStringLiteral("42ms"));
-    QVERIFY(mock_->config_.servers.isEmpty());
+    QCOMPARE(config.collection().servers.first().testResult, QStringLiteral("42ms"));
+    QVERIFY(mock_->config_.collection().servers.isEmpty());
 }
 
 void ServerServiceTests::updateTestResultSetsTrimmedResult()
@@ -926,7 +889,7 @@ void ServerServiceTests::updateTestResultSetsTrimmedResult()
     const OperationResult result = service_->updateTestResult(
         config, kId1, QStringLiteral("  42ms  "));
     QVERIFY(result.success);
-    QCOMPARE(config.servers.first().testResult, QStringLiteral("42ms"));
+    QCOMPARE(config.collection().servers.first().testResult, QStringLiteral("42ms"));
 }
 
 void ServerServiceTests::updateTestResultRejectsEmptyIndexId()
@@ -970,8 +933,8 @@ void ServerServiceTests::saveDelegatesToRepository()
 
     const bool ok = service_->save(config);
     QVERIFY(ok);
-    QCOMPARE(mock_->config_.servers.size(), 1);
-    QCOMPARE(mock_->config_.servers.first().indexId, kId1);
+    QCOMPARE(mock_->config_.collection().servers.size(), 1);
+    QCOMPARE(mock_->config_.collection().servers.first().indexId, kId1);
 }
 
 void ServerServiceTests::saveReturnsFalseWhenRepositoryFails()
@@ -979,44 +942,6 @@ void ServerServiceTests::saveReturnsFalseWhenRepositoryFails()
     mock_->saveSucceeds_ = false;
     Config config;
     QVERIFY(!service_->save(config));
-}
-
-// ---------------------------------------------------------------------------
-// sort normalization
-// ---------------------------------------------------------------------------
-
-void ServerServiceTests::sortValuesNormalizedAfterDuplicate()
-{
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100),
-        makeServer(kId2, kAddr2, 200),
-    });
-    config.servers[0].sort = 5;
-    config.servers[1].sort = 100;
-
-    service_->duplicateServer(config, kId1);
-    QCOMPARE(config.servers.size(), 3);
-    QCOMPARE(config.servers.at(0).sort, 10);
-    QCOMPARE(config.servers.at(1).sort, 20);
-    QCOMPARE(config.servers.at(2).sort, 30);
-}
-
-void ServerServiceTests::sortValuesNormalizedAfterMove()
-{
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100),
-        makeServer(kId2, kAddr2, 200),
-        makeServer(kId3, kAddr3, 300),
-    });
-    config.servers[0].sort = 7;
-    config.servers[1].sort = 50;
-    config.servers[2].sort = 999;
-
-    service_->moveServers(config, {kId3}, ServerMoveOperation::Top);
-    QCOMPARE(config.servers.at(0).indexId, kId3);
-    QCOMPARE(config.servers.at(0).sort, 10);
-    QCOMPARE(config.servers.at(1).sort, 20);
-    QCOMPARE(config.servers.at(2).sort, 30);
 }
 
 // ---------------------------------------------------------------------------

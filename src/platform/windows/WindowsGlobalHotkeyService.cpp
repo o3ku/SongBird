@@ -204,12 +204,6 @@ bool WindowsGlobalHotkeyService::nativeEventFilter(const QByteArray& eventType, 
         case GlobalHotkeyAction::SystemProxyClear:
             emit disableProxyRequested();
             break;
-        case GlobalHotkeyAction::SystemProxyUnchanged:
-            emit keepProxyUnchangedRequested();
-            break;
-        case GlobalHotkeyAction::SystemProxyPac:
-            emit pacProxyRequested();
-            break;
         default:
             break;
         }

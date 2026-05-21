@@ -6,6 +6,7 @@
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFontMetrics>
 #include <QLabel>
 #include <QLayout>
@@ -16,6 +17,7 @@
 #include <QComboBox>
 #include <QMenu>
 #include <QPointer>
+#include <QPushButton>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyleOptionViewItem>
@@ -41,23 +43,24 @@ private slots:
     void appendLogPreservesViewportWhenCursorNotAtLastLine();
     void appendLogPreservesViewportWhenFilterActive();
     void logStickToBottomButtonMatchesFilterHeight();
+    void informationHeaderClickTogglesLogCollapse();
     void logContextMenuUsesViewportCoordinates();
     void globalHotkeySettingsActionEmitsSignal();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
-    void toolbarReplacesReloadAndProxyModeComboWithToggleButtons();
-    void toolbarRemovesServerButton();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
+    void runtimeToolbarButtonsUseRoutingComboDefaultBorder();
     void sharePanelShowsSelectedServerShareLink();
     void sharePanelClearsWhenSelectionIsCleared();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
     void qrCodeRendererRemovesQuietZone();
     void proxyToggleButtonUsesCheckedStateAndEmitsSignals();
     void proxyToggleButtonRemainsEnabledToDisableActiveProxyWithoutServers();
-    void proxyToggleButtonDisablesWhenNoCompatibleCoreInstalled();
-    void systemProxyModeActionEmitsSingleSelectionSignal();
+    void proxyToggleButtonAllowsStartWhenNoCompatibleCoreInstalled();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
-    void restoreAndCaptureUiStatePreservesRuntimeToggles();
+    void tunToggleButtonAlsoEnablesProxyWhenBothWereOff();
+    void tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyStateWasStale();
+    void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
@@ -72,6 +75,10 @@ private slots:
     void serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection();
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears();
+    void coreStartupChecklistOverlayCoversMainWindowUntilCleared();
+    void coreStartupChecklistOverlayShowsCoreDownloadProgress();
+    void coreStartupChecklistOverlayShowsGeoDownloadProgress();
+    void subscriptionUpdateOverlayCentersTextWithoutActionArea();
     void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
     void currentServerStatusAppendsLocation();
@@ -91,6 +98,16 @@ private slots:
 
 namespace {
 
+QString emojiMark(ushort codePoint)
+{
+    return QString(QChar(codePoint));
+}
+
+QString checklistItem(ushort mark, const QString& text)
+{
+    return QStringLiteral("%1 %2").arg(emojiMark(mark), text);
+}
+
 void appendManyLogs(MainWindow& window, int count, const QString& prefix)
 {
     for (int index = 0; index < count; ++index) {
@@ -109,22 +126,21 @@ void scrollToMiddle(QListView* logView)
     QCoreApplication::processEvents();
 }
 
-VmessItem createServer(const QString& id, const QString& remarks, int sort)
+VmessItem createServer(const QString& id, const QString& remarks, int sequence)
 {
     VmessItem item;
     item.indexId = id;
     item.remarks = remarks;
-    item.address = QStringLiteral("127.0.0.%1").arg(sort);
-    item.port = 10000 + sort;
+    item.address = QStringLiteral("127.0.0.%1").arg(sequence);
+    item.port = 10000 + sequence;
     item.configType = ConfigType::VMess;
-    item.sort = sort;
     return item;
 }
 
 Config createServerSelectionConfig()
 {
     Config config;
-    config.servers = {
+    config.collection().servers = {
         createServer(QStringLiteral("server-1"), QStringLiteral("First"), 1),
         createServer(QStringLiteral("server-2"), QStringLiteral("Second"), 2),
         createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3)};
@@ -135,7 +151,7 @@ Config createServerSelectionConfig()
 Config createGroupedServerSelectionConfig()
 {
     Config config = createServerSelectionConfig();
-    config.subscriptions = {
+    config.collection().subscriptions = {
         SubItem{
             QStringLiteral("sub-1"),
             QStringLiteral("Group 1"),
@@ -148,9 +164,9 @@ Config createGroupedServerSelectionConfig()
             QStringLiteral("https://example.com/sub-2"),
             true,
             QStringLiteral("ua")}};
-    config.servers[0].subId = QStringLiteral("sub-1");
-    config.servers[1].subId = QStringLiteral("sub-1");
-    config.servers[2].subId = QStringLiteral("sub-2");
+    config.collection().servers[0].subId = QStringLiteral("sub-1");
+    config.collection().servers[1].subId = QStringLiteral("sub-1");
+    config.collection().servers[2].subId = QStringLiteral("sub-2");
     return config;
 }
 
@@ -318,6 +334,35 @@ void MainWindowTests::logStickToBottomButtonMatchesFilterHeight()
     QCOMPARE(stickButton->width(), stickButton->height());
 }
 
+void MainWindowTests::informationHeaderClickTogglesLogCollapse()
+{
+    MainWindow window;
+    window.resize(1000, 640);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* logHeaderRow = window.findChild<QWidget*>(QStringLiteral("logHeaderRow"));
+    auto* logView = window.findChild<QListView*>(QStringLiteral("logView"));
+    auto* filterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
+    QVERIFY(logHeaderRow != nullptr);
+    QVERIFY(logView != nullptr);
+    QVERIFY(filterEdit != nullptr);
+    QVERIFY(logView->isVisible());
+
+    QTest::mouseClick(logHeaderRow, Qt::LeftButton, Qt::NoModifier, QPoint(6, logHeaderRow->height() / 2));
+    QCoreApplication::processEvents();
+    QVERIFY(!logView->isVisible());
+    QCOMPARE(window.findChild<QWidget*>(QStringLiteral("logPanel"))->maximumHeight(), logHeaderRow->sizeHint().height());
+
+    QTest::mouseClick(filterEdit, Qt::LeftButton, Qt::NoModifier, QPoint(4, filterEdit->height() / 2));
+    QCoreApplication::processEvents();
+    QVERIFY(!logView->isVisible());
+
+    QTest::mouseClick(logHeaderRow, Qt::LeftButton, Qt::NoModifier, QPoint(6, logHeaderRow->height() / 2));
+    QCoreApplication::processEvents();
+    QVERIFY(logView->isVisible());
+}
+
 void MainWindowTests::logContextMenuUsesViewportCoordinates()
 {
     MainWindow window;
@@ -393,25 +438,6 @@ void MainWindowTests::routingToolbarButtonEmitsRoutingSettingsSignal()
     QCOMPARE(spy.count(), 1);
 }
 
-void MainWindowTests::toolbarReplacesReloadAndProxyModeComboWithToggleButtons()
-{
-    MainWindow window;
-
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("reloadButton")) == nullptr);
-    QVERIFY(window.findChild<QComboBox*>(QStringLiteral("systemProxyModeCombo")) == nullptr);
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton")) != nullptr);
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("tunToggleButton")) != nullptr);
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("stopCoreButton")) == nullptr);
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("proxyOffButton")) == nullptr);
-}
-
-void MainWindowTests::toolbarRemovesServerButton()
-{
-    MainWindow window;
-
-    QVERIFY(window.findChild<QToolButton*>(QStringLiteral("serverButton")) == nullptr);
-}
-
 void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
 {
     MainWindow window;
@@ -422,24 +448,56 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
     auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
+    auto* toolbarHost = window.findChild<QWidget*>(QStringLiteral("mainToolbarHost"));
     QVERIFY(toolBar != nullptr);
     QVERIFY(settingsButton != nullptr);
     QVERIFY(routingButton != nullptr);
     QVERIFY(proxyButton != nullptr);
     QVERIFY(tunButton != nullptr);
     QVERIFY(routingCombo != nullptr);
+    QVERIFY(toolbarHost != nullptr);
     QCOMPARE(toolBar->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
 
-    const QMargins margins = toolBar->contentsMargins();
-    QCOMPARE(margins.left(), 0);
-    QCOMPARE(margins.top(), 2);
-    QCOMPARE(margins.right(), 0);
-    QCOMPARE(margins.bottom(), 2);
+    auto* toolbarLayout = toolbarHost->layout();
+    QVERIFY(toolbarLayout != nullptr);
+    toolbarLayout->activate();
+    const QMargins margins = toolbarLayout->contentsMargins();
+    QCOMPARE(margins.left(), 4);
+    QCOMPARE(margins.top(), 4);
+    QCOMPARE(margins.right(), 4);
+    QCOMPARE(margins.bottom(), 4);
+    QCOMPARE(toolbarHost->height(), 37);
+    QCOMPARE(toolBar->height(), 28);
+    QCOMPARE(toolBar->mapTo(toolbarHost, QPoint(0, 0)).y(), 4);
+    QCOMPARE(settingsButton->mapTo(toolbarHost, QPoint(0, 0)).y(), 4);
     QCOMPARE(settingsButton->height(), 28);
     QCOMPARE(routingButton->height(), 28);
     QCOMPARE(proxyButton->height(), 28);
     QCOMPARE(tunButton->height(), 28);
     QCOMPARE(routingCombo->height(), 28);
+}
+
+void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
+{
+    QFile darkTheme(QStringLiteral(":/themes/Dark.qss"));
+    QVERIFY(darkTheme.open(QIODevice::ReadOnly));
+    const QString darkStyle = QString::fromUtf8(darkTheme.readAll());
+    QVERIFY(darkStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QComboBox#routingModeCombo { border: 1px solid #4c5967;")));
+    QVERIFY(darkStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { border: 1px solid #4c5967;")));
+    QVERIFY(darkStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QToolButton#qrCodeButton { border: 1px solid #4c5967;")));
+
+    QFile lightTheme(QStringLiteral(":/themes/Light.qss"));
+    QVERIFY(lightTheme.open(QIODevice::ReadOnly));
+    const QString lightStyle = QString::fromUtf8(lightTheme.readAll());
+    QVERIFY(lightStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QComboBox#routingModeCombo { border: 1px solid #d0d5dd;")));
+    QVERIFY(lightStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { border: 1px solid #d0d5dd;")));
+    QVERIFY(lightStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QToolButton#qrCodeButton { border: 1px solid #d0d5dd;")));
 }
 
 void MainWindowTests::sharePanelShowsSelectedServerShareLink()
@@ -472,7 +530,7 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QVERIFY(shareContentLayout != nullptr);
     QCOMPARE(shareButton->text(), QStringLiteral("Share"));
     QCOMPARE(shareAction->text(), QStringLiteral("Share"));
-    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.servers.constFirst()));
+    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.collection().servers.constFirst()));
     QCOMPARE(shareContentPanel->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
     QCOMPARE(shareContentLayout->count(), 2);
     QCOMPARE(shareContentLayout->contentsMargins().top(), 0);
@@ -519,7 +577,7 @@ void MainWindowTests::sharePanelClearsWhenSelectionIsCleared()
     shareAction->trigger();
     QCoreApplication::processEvents();
 
-    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.servers.constFirst()));
+    QCOMPARE(shareLinkLabel->toPlainText(), ShareUrlBuilder::build(config.collection().servers.constFirst()));
     QVERIFY(copyUrlAction->isEnabled());
 
     serverView->clearSelection();
@@ -594,7 +652,13 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
+    QVERIFY(!proxyButton->isChecked());
+    QVERIFY(!proxyButton->isEnabled());
+
+    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    QCoreApplication::processEvents();
     QVERIFY(proxyButton->isChecked());
+    QVERIFY(proxyButton->isEnabled());
 
     proxyButton->click();
     QCoreApplication::processEvents();
@@ -603,6 +667,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     window.setProxyEnabled(false);
     window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
+    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
@@ -617,6 +682,7 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     window.setProxyEnabled(true);
     window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
+    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
 
     QSignalSpy disableSpy(&window, SIGNAL(disableSystemProxyRequested()));
@@ -627,21 +693,21 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     QVERIFY(proxyButton->isChecked());
     QVERIFY(proxyButton->isEnabled());
 
-    config.servers.clear();
+    config.collection().servers.clear();
     config.currentIndexId.clear();
     window.setConfig(config);
     QCoreApplication::processEvents();
 
     QVERIFY(proxyButton->isChecked());
     QVERIFY(proxyButton->isEnabled());
-    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Disable system proxy and stop the running core."));
+    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Stop the running core and clear system proxy."));
 
     proxyButton->click();
     QCoreApplication::processEvents();
     QCOMPARE(disableSpy.count(), 1);
 }
 
-void MainWindowTests::proxyToggleButtonDisablesWhenNoCompatibleCoreInstalled()
+void MainWindowTests::proxyToggleButtonAllowsStartWhenNoCompatibleCoreInstalled()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
@@ -655,39 +721,21 @@ void MainWindowTests::proxyToggleButtonDisablesWhenNoCompatibleCoreInstalled()
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     QVERIFY(proxyButton != nullptr);
     QVERIFY(!proxyButton->isChecked());
-    QVERIFY(!proxyButton->isEnabled());
+    QVERIFY(proxyButton->isEnabled());
     QCOMPARE(
         proxyButton->toolTip(),
-        QStringLiteral("No compatible sing-box core is installed for the active server \"First\"."));
+        QStringLiteral("Start the core with the active server and enable system proxy."));
 
     proxyButton->click();
     QCoreApplication::processEvents();
-    QCOMPARE(enableSpy.count(), 0);
-}
-
-void MainWindowTests::systemProxyModeActionEmitsSingleSelectionSignal()
-{
-    MainWindow window;
-    QSignalSpy modeSpy(&window, SIGNAL(systemProxyModeSelected(int)));
-    QVERIFY(modeSpy.isValid());
-
-    auto* clearProxyAction = window.findChild<QAction*>(QStringLiteral("clearProxyAction"));
-    QVERIFY(clearProxyAction != nullptr);
-
-    clearProxyAction->trigger();
-    QCoreApplication::processEvents();
-
-    QCOMPARE(modeSpy.count(), 1);
-    QCOMPARE(
-        modeSpy.at(0).at(0).toInt(),
-        toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
+    QCOMPARE(enableSpy.count(), 1);
 }
 
 void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
     window.setConfig(config);
     QCoreApplication::processEvents();
 
@@ -715,35 +763,81 @@ void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(tunSpy.at(1).at(0).toBool(), false);
 }
 
-void MainWindowTests::restoreAndCaptureUiStatePreservesRuntimeToggles()
+void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenBothWereOff()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.mainProxyEnabled = true;
-    config.mainQrPreviewVisible = true;
+    config.tun().tunModeItem.enableTun = false;
+    window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
+    window.setCoreProcessRunning(false);
+    window.setCoreRunning(false, false);
+    window.setProxyEnabled(false);
+    QCoreApplication::processEvents();
+
+    QSignalSpy tunSpy(&window, SIGNAL(tunEnabledChanged(bool)));
+    QSignalSpy enableProxySpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QVERIFY(tunSpy.isValid());
+    QVERIFY(enableProxySpy.isValid());
+
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
+    QVERIFY(tunButton != nullptr);
+    QVERIFY(!tunButton->isChecked());
+
+    tunButton->click();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(tunSpy.count(), 1);
+    QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
+    QCOMPARE(enableProxySpy.count(), 1);
+}
+
+void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyStateWasStale()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.tun().tunModeItem.enableTun = false;
+    window.setConfig(config);
+    window.setExistingCoreTypes({CoreType::SingBox});
+    window.setCoreProcessRunning(false);
+    window.setCoreRunning(false, false);
+    window.setProxyEnabled(true);
+    QCoreApplication::processEvents();
+
+    QSignalSpy enableProxySpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QVERIFY(enableProxySpy.isValid());
+
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
+    QVERIFY(tunButton != nullptr);
+
+    tunButton->click();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(enableProxySpy.count(), 1);
+}
+
+void MainWindowTests::restoreAndCaptureUiStatePreservesQrPreviewVisibility()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    config.ui().mainQrPreviewVisible = true;
 
     window.setConfig(config);
     window.restoreUiState(config);
     window.show();
     QCoreApplication::processEvents();
 
-    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
-    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
     auto* shareAction = window.findChild<QAction*>(QStringLiteral("toggleQrPanelAction"));
     auto* qrPanel = window.findChild<QWidget*>(QStringLiteral("qrPanel"));
-    QVERIFY(proxyButton != nullptr);
-    QVERIFY(tunButton != nullptr);
     QVERIFY(shareAction != nullptr);
     QVERIFY(qrPanel != nullptr);
-    QVERIFY(!proxyButton->isChecked());
     QVERIFY(shareAction->isChecked());
     QVERIFY(qrPanel->isVisible());
 
     Config captured;
     window.captureUiState(captured);
 
-    QVERIFY(!captured.mainProxyEnabled);
-    QVERIFY(captured.mainQrPreviewVisible);
+    QVERIFY(captured.ui().mainQrPreviewVisible);
 }
 
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
@@ -773,7 +867,7 @@ void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 
 void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
 {
-    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBox\\runtime\\config.generated.json Format:json}");
+    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBird\\runtime\\config.generated.json Format:json}");
 
     LogListModel model;
     QListView view;
@@ -795,7 +889,7 @@ void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
 
 void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
 {
-    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBox\\runtime\\config.generated.json Format:json}");
+    const QString text = QStringLiteral("[16:27:54] 2026/04/09 16:27:54.067987 [Info] infra/conf/serial: Reading config: &{Name:C:\\Program Files\\SongBird\\runtime\\config.generated.json Format:json}");
 
     LogListModel model;
     QListView view;
@@ -891,7 +985,7 @@ void MainWindowTests::speedTestRefreshKeepsCurrentSelectionOnTriggeredRow()
     const QStringList requestedIds = spy.takeFirst().at(0).toStringList();
     QCOMPARE(requestedIds, QStringList{QStringLiteral("server-2")});
 
-    config.servers[1].testResult = QStringLiteral("...");
+    config.collection().servers[1].testResult = QStringLiteral("...");
     window.setConfig(config);
     QCoreApplication::processEvents();
 
@@ -938,9 +1032,9 @@ void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted(
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.servers[0].testResult = QStringLiteral("20 ms");
-    config.servers[1].testResult = QStringLiteral("30 ms");
-    config.servers[2].testResult = QStringLiteral("10 ms");
+    config.collection().servers[0].testResult = QStringLiteral("20 ms");
+    config.collection().servers[1].testResult = QStringLiteral("30 ms");
+    config.collection().servers[2].testResult = QStringLiteral("10 ms");
     window.setConfig(config);
     window.show();
     QCoreApplication::processEvents();
@@ -949,7 +1043,7 @@ void MainWindowTests::speedTestResultUpdateKeepsSelectionOnSameServerWhenSorted(
     QVERIFY(serverView != nullptr);
     QVERIFY(serverView->selectionModel() != nullptr);
 
-    serverView->sortByColumn(7, Qt::AscendingOrder);
+    serverView->sortByColumn(4, Qt::AscendingOrder);
     QCoreApplication::processEvents();
 
     int selectedRow = -1;
@@ -980,9 +1074,9 @@ void MainWindowTests::speedTestRunningSuspendsDynamicSortingUntilBatchFinishes()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.servers[0].testResult = QStringLiteral("20 ms");
-    config.servers[1].testResult = QStringLiteral("30 ms");
-    config.servers[2].testResult = QStringLiteral("10 ms");
+    config.collection().servers[0].testResult = QStringLiteral("20 ms");
+    config.collection().servers[1].testResult = QStringLiteral("30 ms");
+    config.collection().servers[2].testResult = QStringLiteral("10 ms");
     window.setConfig(config);
     window.show();
     QCoreApplication::processEvents();
@@ -990,7 +1084,7 @@ void MainWindowTests::speedTestRunningSuspendsDynamicSortingUntilBatchFinishes()
     auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
     QVERIFY(serverView != nullptr);
 
-    serverView->sortByColumn(7, Qt::AscendingOrder);
+    serverView->sortByColumn(4, Qt::AscendingOrder);
     QCoreApplication::processEvents();
 
     QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
@@ -1173,7 +1267,7 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
         serverView->visualRect(firstIndex).center(),
         QStringLiteral("copyUrlAction"),
         &singleSelectionActions));
-    QCOMPARE(QApplication::clipboard()->text(), ShareUrlBuilder::build(config.servers.at(0)));
+    QCOMPARE(QApplication::clipboard()->text(), ShareUrlBuilder::build(config.collection().servers.at(0)));
     QVERIFY(singleSelectionActions.contains(QStringLiteral("Copy Url")));
 
     QStringList multiSelectionActions;
@@ -1190,7 +1284,7 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
         &multiSelectionActions));
     QCOMPARE(
         QApplication::clipboard()->text(),
-        ShareUrlBuilder::build(config.servers.at(0)) + QChar('\n') + ShareUrlBuilder::build(config.servers.at(1)));
+        ShareUrlBuilder::build(config.collection().servers.at(0)) + QChar('\n') + ShareUrlBuilder::build(config.collection().servers.at(1)));
     QVERIFY(multiSelectionActions.contains(QStringLiteral("Copy Url")));
 }
 
@@ -1234,14 +1328,14 @@ void MainWindowTests::setConfigReappliesFallbackSubscriptionFilterWhenSelectedTa
     QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
 
     Config updatedConfig = initialConfig;
-    updatedConfig.subscriptions = {
+    updatedConfig.collection().subscriptions = {
         SubItem{
             QStringLiteral("sub-1"),
             QStringLiteral("Group 1"),
             QStringLiteral("https://example.com/sub-1"),
             true,
             QStringLiteral("ua")}};
-    updatedConfig.servers.removeLast();
+    updatedConfig.collection().servers.removeLast();
     updatedConfig.currentIndexId = QStringLiteral("server-1");
     window.setConfig(updatedConfig);
     QCoreApplication::processEvents();
@@ -1252,17 +1346,216 @@ void MainWindowTests::setConfigReappliesFallbackSubscriptionFilterWhenSelectedTa
     QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
 }
 
+void MainWindowTests::coreStartupChecklistOverlayCoversMainWindowUntilCleared()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    QVERIFY(proxyButton != nullptr);
+    auto* overlay = window.findChild<QWidget*>(QStringLiteral("loadingOverlay"));
+    QVERIFY(overlay != nullptr);
+    auto* contentWidget = window.findChild<QWidget*>(QStringLiteral("loadingContentWidget"));
+    QVERIFY(contentWidget != nullptr);
+    auto* dismissButton = window.findChild<QPushButton*>(QStringLiteral("loadingDismissButton"));
+    QVERIFY(dismissButton != nullptr);
+
+    QSignalSpy enableSpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QVERIFY(enableSpy.isValid());
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x2705, QStringLiteral("Environment cleanup")),
+        checklistItem(0x23F3, QStringLiteral("Generate runtime config"))
+    });
+    QCoreApplication::processEvents();
+
+    QVERIFY(!overlay->isHidden());
+    QVERIFY(!dismissButton->isVisible());
+    QCOMPARE(overlay->geometry(), window.rect());
+    QVERIFY(contentWidget->width() >= 360);
+    QVERIFY(contentWidget->width() <= 720);
+    QCOMPARE(contentWidget->geometry().center().x(), overlay->rect().center().x());
+    const QPoint proxyButtonGlobalCenter = proxyButton->mapToGlobal(proxyButton->rect().center());
+    QWidget* clickedWidget = QApplication::widgetAt(proxyButtonGlobalCenter);
+    if (clickedWidget != nullptr) {
+        QVERIFY(clickedWidget == overlay || overlay->isAncestorOf(clickedWidget));
+        QTest::mouseClick(
+            clickedWidget,
+            Qt::LeftButton,
+            Qt::NoModifier,
+            clickedWidget->mapFromGlobal(proxyButtonGlobalCenter));
+    } else {
+        QVERIFY(overlay->rect().contains(overlay->mapFromGlobal(proxyButtonGlobalCenter)));
+        QTest::mouseClick(
+            overlay,
+            Qt::LeftButton,
+            Qt::NoModifier,
+            overlay->mapFromGlobal(proxyButtonGlobalCenter));
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(enableSpy.count(), 0);
+
+    const QList<QLabel*> labels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(labels.size(), 2);
+    QCOMPARE(labels.at(0)->alignment() & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+    QCOMPARE(overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->alignment() & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+    QCOMPARE(labels.at(0)->text(), checklistItem(0x2705, QStringLiteral("Environment cleanup")));
+    QCOMPARE(labels.at(1)->text(), checklistItem(0x23F3, QStringLiteral("Generate runtime config")));
+    const int firstItemYBeforeFailure = labels.at(0)->mapTo(contentWidget, QPoint(0, 0)).y();
+
+    window.clearCoreStartupChecklist();
+    QCoreApplication::processEvents();
+
+    QVERIFY(overlay->isHidden());
+    QVERIFY(serverView->isEnabled());
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x2705, QStringLiteral("Read active server")),
+        checklistItem(0x274C, QStringLiteral("Start core process - executable missing")),
+        checklistItem(0x274C, QStringLiteral("Next step - Install or update sing-box, then start Proxy/TUN again."))
+    });
+    QCoreApplication::processEvents();
+
+    QVERIFY(!overlay->isHidden());
+    QVERIFY(dismissButton->isVisible());
+    QCOMPARE(
+        overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
+        QStringLiteral("Proxy startup failed"));
+    const QList<QLabel*> failedLabels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(failedLabels.size(), 3);
+    QCOMPARE(failedLabels.at(0)->mapTo(contentWidget, QPoint(0, 0)).y(), firstItemYBeforeFailure);
+
+    dismissButton->click();
+    QCoreApplication::processEvents();
+    QVERIFY(overlay->isHidden());
+}
+
+void MainWindowTests::coreStartupChecklistOverlayShowsGeoDownloadProgress()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* overlay = window.findChild<QWidget*>(QStringLiteral("loadingOverlay"));
+    QVERIFY(overlay != nullptr);
+    auto* contentWidget = window.findChild<QWidget*>(QStringLiteral("loadingContentWidget"));
+    QVERIFY(contentWidget != nullptr);
+    auto* dismissButton = window.findChild<QPushButton*>(QStringLiteral("loadingDismissButton"));
+    QVERIFY(dismissButton != nullptr);
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x2705, QStringLiteral("Environment cleanup")),
+        checklistItem(0x2705, QStringLiteral("Generate runtime config")),
+        checklistItem(0x23F3, QStringLiteral("Validate geo files"))
+    });
+    QCoreApplication::processEvents();
+
+    QVERIFY(!overlay->isHidden());
+    QVERIFY(!dismissButton->isVisible());
+    QVERIFY(contentWidget->width() >= 360);
+    QVERIFY(contentWidget->width() <= 720);
+    QCOMPARE(contentWidget->geometry().center().x(), overlay->rect().center().x());
+
+    const QList<QLabel*> labels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(labels.size(), 3);
+    QCOMPARE(
+        labels.at(2)->text(),
+        checklistItem(0x23F3, QStringLiteral("Validate geo files")));
+    QCOMPARE(
+        overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
+        QStringLiteral("Starting core..."));
+}
+
+void MainWindowTests::coreStartupChecklistOverlayShowsCoreDownloadProgress()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* overlay = window.findChild<QWidget*>(QStringLiteral("loadingOverlay"));
+    QVERIFY(overlay != nullptr);
+    auto* contentWidget = window.findChild<QWidget*>(QStringLiteral("loadingContentWidget"));
+    QVERIFY(contentWidget != nullptr);
+    auto* dismissButton = window.findChild<QPushButton*>(QStringLiteral("loadingDismissButton"));
+    QVERIFY(dismissButton != nullptr);
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x2705, QStringLiteral("Environment cleanup")),
+        checklistItem(0x23F3, QStringLiteral("Validate core application")),
+        checklistItem(0x26AA, QStringLiteral("Generate runtime config"))
+    });
+    QCoreApplication::processEvents();
+
+    QVERIFY(!overlay->isHidden());
+    QVERIFY(!dismissButton->isVisible());
+    QVERIFY(contentWidget->width() >= 360);
+    QVERIFY(contentWidget->width() <= 720);
+    QCOMPARE(contentWidget->geometry().center().x(), overlay->rect().center().x());
+
+    const QList<QLabel*> labels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(labels.size(), 3);
+    QCOMPARE(
+        labels.at(1)->text(),
+        checklistItem(0x23F3, QStringLiteral("Validate core application")));
+    QCOMPARE(
+        overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
+        QStringLiteral("Starting core..."));
+}
+
+void MainWindowTests::subscriptionUpdateOverlayCentersTextWithoutActionArea()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* overlay = window.findChild<QWidget*>(QStringLiteral("loadingOverlay"));
+    QVERIFY(overlay != nullptr);
+    auto* titleLabel = window.findChild<QLabel*>(QStringLiteral("loadingTitleLabel"));
+    QVERIFY(titleLabel != nullptr);
+    auto* itemsWidget = window.findChild<QWidget*>(QStringLiteral("loadingItemsWidget"));
+    QVERIFY(itemsWidget != nullptr);
+    auto* actionWidget = window.findChild<QWidget*>(QStringLiteral("loadingActionWidget"));
+    QVERIFY(actionWidget != nullptr);
+    auto* dismissButton = window.findChild<QPushButton*>(QStringLiteral("loadingDismissButton"));
+    QVERIFY(dismissButton != nullptr);
+
+    window.setSubscriptionUpdateRunning(true);
+    QCoreApplication::processEvents();
+
+    QVERIFY(!overlay->isHidden());
+    QCOMPARE(titleLabel->text(), QStringLiteral("Updating subscriptions..."));
+    QCOMPARE(titleLabel->alignment() & Qt::AlignHorizontal_Mask, Qt::AlignHCenter);
+    QVERIFY(!itemsWidget->isVisible());
+    QVERIFY(!actionWidget->isVisible());
+    QVERIFY(!dismissButton->isVisible());
+
+    window.setSubscriptionUpdateRunning(false);
+    QCoreApplication::processEvents();
+    QVERIFY(overlay->isHidden());
+}
+
 void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.subscriptions = {SubItem{
+    config.collection().subscriptions = {SubItem{
         QStringLiteral("sub-1"),
         QStringLiteral("Test Sub"),
         QStringLiteral("https://example.com/subscription"),
         true,
         QStringLiteral("test-agent")}};
-    config.mainSelectedSubId = QStringLiteral("sub-1");
+    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
     window.restoreUiState(config);
     window.setConfig(config);
     window.show();
@@ -1344,17 +1637,14 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
 
-    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
-    QVERIFY(coreStatusLabel != nullptr);
     QVERIFY(proxyButton != nullptr);
 
     window.setCoreProcessRunning(true);
     window.setCoreRunning(false, false);
     QCoreApplication::processEvents();
 
-    QCOMPARE(coreStatusLabel->text(), QStringLiteral("Core: Starting"));
-    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is synchronizing. Wait until the core and system proxy reach the same target state."));
+    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is synchronizing. Wait until the core and system proxy reach the target state."));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 }
@@ -1363,43 +1653,18 @@ void MainWindowTests::runtimeStatusLabelsRemainVisibleInStatusBar()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.autoRunEnabled = true;
+    config.ui().autoRunEnabled = true;
     window.setConfig(config);
     window.show();
     QCoreApplication::processEvents();
 
-    StatisticsSessionState statisticsState;
-    statisticsState.enabled = true;
-    statisticsState.running = true;
-    statisticsState.runtimeConfigReady = true;
-    statisticsState.pollingAvailable = true;
-    statisticsState.statePort = 10808;
-    statisticsState.coreType = CoreType::Xray;
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+    QVERIFY(routingStatusLabel != nullptr);
 
-    window.setSystemProxyState(static_cast<int>(SystemProxyMode::ForcedChange), true);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
-    window.setAutoRunEnabled(true);
-    window.setStatisticsSessionState(statisticsState);
-    QCoreApplication::processEvents();
-
-    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
-    auto* proxyStatusLabel = window.findChild<QLabel*>(QStringLiteral("proxyStatusLabel"));
-    auto* autoRunStatusLabel = window.findChild<QLabel*>(QStringLiteral("autoRunStatusLabel"));
-    auto* statisticsStatusLabel = window.findChild<QLabel*>(QStringLiteral("statisticsStatusLabel"));
-    QVERIFY(coreStatusLabel != nullptr);
-    QVERIFY(proxyStatusLabel != nullptr);
-    QVERIFY(autoRunStatusLabel != nullptr);
-    QVERIFY(statisticsStatusLabel != nullptr);
-
-    QVERIFY(coreStatusLabel->isVisible());
-    QVERIFY(proxyStatusLabel->isVisible());
-    QVERIFY(autoRunStatusLabel->isVisible());
-    QVERIFY(statisticsStatusLabel->isVisible());
-    QCOMPARE(coreStatusLabel->text(), QStringLiteral("Core: Running"));
-    QCOMPARE(proxyStatusLabel->text(), QStringLiteral("Proxy: Global"));
-    QCOMPARE(autoRunStatusLabel->text(), QStringLiteral("Auto Run: Enabled"));
-    QCOMPARE(statisticsStatusLabel->text(), QStringLiteral("Stats API: 127.0.0.1:10808"));
+    QVERIFY(currentServerStatusLabel->isVisible());
+    QVERIFY(routingStatusLabel->isVisible());
 }
 
 void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
@@ -1515,8 +1780,8 @@ void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()
         auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
         QVERIFY(dialog != nullptr);
         confirmationShown = true;
-        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit Song Box"));
-        QCOMPARE(dialog->text(), QStringLiteral("Quit Song Box now?"));
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit SongBird"));
+        QCOMPARE(dialog->text(), QStringLiteral("Quit SongBird now?"));
         QAbstractButton* noButton = dialog->button(QMessageBox::No);
         QVERIFY(noButton != nullptr);
         QTest::mouseClick(noButton, Qt::LeftButton);
@@ -1552,28 +1817,11 @@ void MainWindowTests::statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
-    config.autoRunEnabled = true;
+    config.ui().autoRunEnabled = true;
     window.setConfig(config);
 
     auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
-    auto* coreStatusLabel = window.findChild<QLabel*>(QStringLiteral("coreStatusLabel"));
-    auto* proxyStatusLabel = window.findChild<QLabel*>(QStringLiteral("proxyStatusLabel"));
-    auto* autoRunStatusLabel = window.findChild<QLabel*>(QStringLiteral("autoRunStatusLabel"));
-    auto* statisticsStatusLabel = window.findChild<QLabel*>(QStringLiteral("statisticsStatusLabel"));
     QVERIFY(routingStatusLabel != nullptr);
-    QVERIFY(coreStatusLabel != nullptr);
-    QVERIFY(proxyStatusLabel != nullptr);
-    QVERIFY(autoRunStatusLabel != nullptr);
-    QVERIFY(statisticsStatusLabel != nullptr);
-
-    QVERIFY(!coreStatusLabel->property("semanticState").toString().isEmpty());
-    QVERIFY(!proxyStatusLabel->property("semanticState").toString().isEmpty());
-    QVERIFY(!autoRunStatusLabel->property("semanticState").toString().isEmpty());
-    QVERIFY(!statisticsStatusLabel->property("semanticState").toString().isEmpty());
-    QVERIFY(!coreStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
-    QVERIFY(!proxyStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
-    QVERIFY(!autoRunStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
-    QVERIFY(!statisticsStatusLabel->property("semanticState").toString().contains(QStringLiteral("QLabel")));
 }
 
 void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
@@ -1582,8 +1830,8 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     Config config = createServerSelectionConfig();
     RoutingItem routing;
     routing.remarks = QStringLiteral("Bypass Mainland Route");
-    config.routingItems = {routing};
-    config.routingIndex = 0;
+    config.collection().routingItems = {routing};
+    config.collection().routingIndex = 0;
     window.setConfig(config);
     window.show();
     QCoreApplication::processEvents();
@@ -1595,6 +1843,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     auto* serverHeaderRow = window.findChild<QWidget*>(QStringLiteral("serverHeaderRow"));
     auto* rootSplitter = window.findChild<QSplitter*>(QStringLiteral("rootSplitter"));
     auto* mainToolBar = window.findChild<QToolBar*>(QStringLiteral("mainToolBar"));
+    auto* mainToolbarHost = window.findChild<QWidget*>(QStringLiteral("mainToolbarHost"));
     auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
     auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
     auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
@@ -1606,6 +1855,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(serverHeaderRow != nullptr);
     QVERIFY(rootSplitter != nullptr);
     QVERIFY(mainToolBar != nullptr);
+    QVERIFY(mainToolbarHost != nullptr);
     QVERIFY(serverFilterEdit != nullptr);
     QVERIFY(logFilterEdit != nullptr);
     QVERIFY(routingStatusLabel != nullptr);
@@ -1633,7 +1883,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QCOMPARE(rootSplitterMargins.top(), 0);
     QCOMPARE(rootSplitterMargins.right(), 0);
     QCOMPARE(rootSplitterMargins.bottom(), 0);
-    QCOMPARE(rootSplitter->mapTo(&window, QPoint(0, 0)).y(), mainToolBar->geometry().bottom() + 1);
+    QCOMPARE(rootSplitter->mapTo(&window, QPoint(0, 0)).y(), mainToolbarHost->geometry().bottom() + 1);
     QVERIFY(serverFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(logFilterEdit->font().pointSizeF() <= serverTableFontSize);
     QVERIFY(routingStatusLabel->font().pointSizeF() <= serverTableFontSize);
@@ -1663,3 +1913,4 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
 QTEST_MAIN(MainWindowTests)
 
 #include "MainWindowTests.moc"
+

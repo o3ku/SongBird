@@ -25,6 +25,7 @@ public:
     struct MenuCallbacks {
         std::function<bool()> canStartBackgroundTask;
         std::function<void()> copyCurrentSubscriptionUrl;
+        std::function<void(const QString&)> testSubscriptionServers;
         std::function<void(const QString&)> updateCurrentSubscription;
         std::function<void(const QString&)> updateCurrentSubscriptionViaProxy;
         std::function<void(const QString&)> hideSubscription;

@@ -85,17 +85,17 @@ void SubscriptionServiceTests::testAddSubscription()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("My Sub"),
         QStringLiteral("https://example.com/sub")));
 
-    auto result = service.saveSubscriptions(config, config.subscriptions);
+    auto result = service.saveSubscriptions(config, config.collection().subscriptions);
 
     QVERIFY(result.success);
     QCOMPARE(repo.saveCount, 1);
-    QCOMPARE(repo.config_.subscriptions.size(), 1);
-    QCOMPARE(repo.config_.subscriptions[0].id, QStringLiteral("sub-1"));
-    QCOMPARE(repo.config_.subscriptions[0].remarks, QStringLiteral("My Sub"));
+    QCOMPARE(repo.config_.collection().subscriptions.size(), 1);
+    QCOMPARE(repo.config_.collection().subscriptions[0].id, QStringLiteral("sub-1"));
+    QCOMPARE(repo.config_.collection().subscriptions[0].remarks, QStringLiteral("My Sub"));
 }
 
 // -- saveSubscriptions auto-assigns UUID to items with empty id --
@@ -118,17 +118,17 @@ void SubscriptionServiceTests::testSaveSubscriptionsAutoAssignsEmptyIds()
     auto result = service.saveSubscriptions(config, items);
 
     QVERIFY(result.success);
-    QCOMPARE(repo.config_.subscriptions.size(), 3);
+    QCOMPARE(repo.config_.collection().subscriptions.size(), 3);
 
     // First item: empty id should have been replaced with a UUID
-    QVERIFY(!repo.config_.subscriptions[0].id.isEmpty());
-    QVERIFY(repo.config_.subscriptions[0].id != QString());
+    QVERIFY(!repo.config_.collection().subscriptions[0].id.isEmpty());
+    QVERIFY(repo.config_.collection().subscriptions[0].id != QString());
 
     // Second item: existing id preserved
-    QCOMPARE(repo.config_.subscriptions[1].id, QStringLiteral("existing-id"));
+    QCOMPARE(repo.config_.collection().subscriptions[1].id, QStringLiteral("existing-id"));
 
     // Third item: whitespace-only id replaced with UUID
-    QVERIFY(!repo.config_.subscriptions[2].id.trimmed().isEmpty());
+    QVERIFY(!repo.config_.collection().subscriptions[2].id.trimmed().isEmpty());
 }
 
 // -- Update a subscription by id (via saveSubscriptions replaces the full list) --
@@ -139,24 +139,24 @@ void SubscriptionServiceTests::testUpdateSubscriptionById()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Original"),
         QStringLiteral("https://old.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Second"),
         QStringLiteral("https://second.com")));
 
     // Update sub-1 remarks
-    config.subscriptions[0].remarks = QStringLiteral("Updated");
-    config.subscriptions[0].url = QStringLiteral("https://new.com");
+    config.collection().subscriptions[0].remarks = QStringLiteral("Updated");
+    config.collection().subscriptions[0].url = QStringLiteral("https://new.com");
 
-    auto result = service.saveSubscriptions(config, config.subscriptions);
+    auto result = service.saveSubscriptions(config, config.collection().subscriptions);
 
     QVERIFY(result.success);
-    QCOMPARE(repo.config_.subscriptions.size(), 2);
-    QCOMPARE(repo.config_.subscriptions[0].remarks, QStringLiteral("Updated"));
-    QCOMPARE(repo.config_.subscriptions[0].url, QStringLiteral("https://new.com"));
-    QCOMPARE(repo.config_.subscriptions[1].remarks, QStringLiteral("Second"));
+    QCOMPARE(repo.config_.collection().subscriptions.size(), 2);
+    QCOMPARE(repo.config_.collection().subscriptions[0].remarks, QStringLiteral("Updated"));
+    QCOMPARE(repo.config_.collection().subscriptions[0].url, QStringLiteral("https://new.com"));
+    QCOMPARE(repo.config_.collection().subscriptions[1].remarks, QStringLiteral("Second"));
 }
 
 // -- Remove subscription cascades to linked servers --
@@ -167,30 +167,30 @@ void SubscriptionServiceTests::testRemoveSubscriptionCascadesServers()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Sub 2"),
         QStringLiteral("https://b.com")));
 
     // Servers belonging to sub-1
-    config.servers.append(makeServer(QStringLiteral("idx-a"), QStringLiteral("sub-1"),
+    config.collection().servers.append(makeServer(QStringLiteral("idx-a"), QStringLiteral("sub-1"),
                                      QStringLiteral("uuid-1")));
-    config.servers.append(makeServer(QStringLiteral("idx-b"), QStringLiteral("sub-1"),
+    config.collection().servers.append(makeServer(QStringLiteral("idx-b"), QStringLiteral("sub-1"),
                                      QStringLiteral("uuid-2")));
     // Server belonging to sub-2 -- should survive
-    config.servers.append(makeServer(QStringLiteral("idx-c"), QStringLiteral("sub-2"),
+    config.collection().servers.append(makeServer(QStringLiteral("idx-c"), QStringLiteral("sub-2"),
                                      QStringLiteral("uuid-3")));
 
     auto result = service.removeSubscription(config, QStringLiteral("sub-1"));
 
     QVERIFY(result.success);
-    QCOMPARE(config.subscriptions.size(), 1);
-    QCOMPARE(config.subscriptions[0].id, QStringLiteral("sub-2"));
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers[0].indexId, QStringLiteral("idx-c"));
-    QCOMPARE(config.servers[0].subId, QStringLiteral("sub-2"));
+    QCOMPARE(config.collection().subscriptions.size(), 1);
+    QCOMPARE(config.collection().subscriptions[0].id, QStringLiteral("sub-2"));
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers[0].indexId, QStringLiteral("idx-c"));
+    QCOMPARE(config.collection().servers[0].subId, QStringLiteral("sub-2"));
 }
 
 // -- Remove subscription resets currentIndexId when it pointed to a removed server --
@@ -201,16 +201,16 @@ void SubscriptionServiceTests::testRemoveSubscriptionClearsCurrentIndexId()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Sub 2"),
         QStringLiteral("https://b.com")));
 
-    config.servers.append(makeServer(QStringLiteral("idx-a"), QStringLiteral("sub-1"),
+    config.collection().servers.append(makeServer(QStringLiteral("idx-a"), QStringLiteral("sub-1"),
                                      QStringLiteral("uuid-1")));
-    config.servers.append(makeServer(QStringLiteral("idx-b"), QStringLiteral("sub-2"),
+    config.collection().servers.append(makeServer(QStringLiteral("idx-b"), QStringLiteral("sub-2"),
                                      QStringLiteral("uuid-2")));
 
     // Current selection points to a sub-1 server
@@ -230,14 +230,14 @@ void SubscriptionServiceTests::testRemoveSubscriptionClearsMainSelectedSubId()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.mainSelectedSubId = QStringLiteral("sub-1");
+    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
 
     service.removeSubscription(config, QStringLiteral("sub-1"));
 
-    QVERIFY(config.mainSelectedSubId.isEmpty());
+    QVERIFY(config.ui().mainSelectedSubId.isEmpty());
 }
 
 // -- Remove subscription fails for non-existent id --
@@ -279,13 +279,13 @@ void SubscriptionServiceTests::testEnableSubscription()
     SubItem sub = makeSub(QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
                           QStringLiteral("https://a.com"));
     sub.enabled = false;
-    config.subscriptions.append(sub);
+    config.collection().subscriptions.append(sub);
 
     auto result = service.setSubscriptionEnabled(
         config, QStringLiteral("sub-1"), true);
 
     QVERIFY(result.success);
-    QVERIFY(config.subscriptions[0].enabled);
+    QVERIFY(config.collection().subscriptions[0].enabled);
     QVERIFY(result.message.contains(QStringLiteral("enabled")));
 }
 
@@ -297,17 +297,17 @@ void SubscriptionServiceTests::testDisableSubscriptionClearsMainSelectedSubId()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.mainSelectedSubId = QStringLiteral("sub-1");
+    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
 
     auto result = service.setSubscriptionEnabled(
         config, QStringLiteral("sub-1"), false);
 
     QVERIFY(result.success);
-    QVERIFY(!config.subscriptions[0].enabled);
-    QVERIFY(config.mainSelectedSubId.isEmpty());
+    QVERIFY(!config.collection().subscriptions[0].enabled);
+    QVERIFY(config.ui().mainSelectedSubId.isEmpty());
     QVERIFY(result.message.contains(QStringLiteral("hidden")));
 }
 
@@ -348,7 +348,7 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsDuplicateServe
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
 
@@ -364,7 +364,7 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsDuplicateServe
     QVERIFY(result.success);
     // Deduplication is temporarily disabled during subscription updates.
     int sub1Count = 0;
-    for (const auto& s : config.servers) {
+    for (const auto& s : config.collection().servers) {
         if (s.subId == QStringLiteral("sub-1"))
             ++sub1Count;
     }
@@ -372,7 +372,7 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsDuplicateServe
 
     // Each server should have been assigned a unique indexId
     QSet<QString> indexIds;
-    for (const auto& s : config.servers) {
+    for (const auto& s : config.collection().servers) {
         if (s.subId == QStringLiteral("sub-1")) {
             QVERIFY(!s.indexId.isEmpty());
             QVERIFY(!indexIds.contains(s.indexId));
@@ -390,18 +390,18 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersClearsOldServers()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Sub 2"),
         QStringLiteral("https://b.com")));
 
     // Pre-existing servers for sub-1
-    config.servers.append(makeServer(QStringLiteral("old-1"), QStringLiteral("sub-1"),
+    config.collection().servers.append(makeServer(QStringLiteral("old-1"), QStringLiteral("sub-1"),
                                      QStringLiteral("uuid-old")));
     // Server for sub-2 should be untouched
-    config.servers.append(makeServer(QStringLiteral("keep-1"), QStringLiteral("sub-2"),
+    config.collection().servers.append(makeServer(QStringLiteral("keep-1"), QStringLiteral("sub-2"),
                                      QStringLiteral("uuid-other")));
 
     QList<VmessItem> replacement;
@@ -410,11 +410,11 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersClearsOldServers()
     service.replaceSubscriptionServers(
         config, QStringLiteral("sub-1"), replacement);
 
-    QCOMPARE(config.servers.size(), 2);
+    QCOMPARE(config.collection().servers.size(), 2);
     // One belongs to sub-2
     bool foundSub2 = false;
     bool foundNewSub1 = false;
-    for (const auto& s : config.servers) {
+    for (const auto& s : config.collection().servers) {
         if (s.subId == QStringLiteral("sub-2")) {
             foundSub2 = true;
             QCOMPARE(s.indexId, QStringLiteral("keep-1"));
@@ -435,10 +435,10 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersReusesIndexIdForMat
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.servers.append(makeVmessServer(
+    config.collection().servers.append(makeVmessServer(
         QStringLiteral("old-1"), QStringLiteral("sub-1"),
         QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
 
@@ -451,8 +451,8 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersReusesIndexIdForMat
         config, QStringLiteral("sub-1"), replacement);
 
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers[0].indexId, QStringLiteral("old-1"));
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers[0].indexId, QStringLiteral("old-1"));
 }
 
 void SubscriptionServiceTests::testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings()
@@ -461,7 +461,7 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersDoesNotDeduplicateD
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
 
@@ -487,9 +487,9 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersDoesNotDeduplicateD
         config, QStringLiteral("sub-1"), replacement);
 
     QVERIFY(result.success);
-    QCOMPARE(config.servers.size(), 2);
-    QCOMPARE(config.servers[0].network, QStringLiteral("ws"));
-    QCOMPARE(config.servers[1].network, QStringLiteral("grpc"));
+    QCOMPARE(config.collection().servers.size(), 2);
+    QCOMPARE(config.collection().servers[0].network, QStringLiteral("ws"));
+    QCOMPARE(config.collection().servers[1].network, QStringLiteral("grpc"));
 }
 
 void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists()
@@ -498,10 +498,10 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersKeepsCurrentIndexId
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.servers.append(makeVmessServer(
+    config.collection().servers.append(makeVmessServer(
         QStringLiteral("old-1"), QStringLiteral("sub-1"),
         QStringLiteral("example.com"), 443, QStringLiteral("uuid-1")));
     config.currentIndexId = QStringLiteral("old-1");
@@ -524,10 +524,10 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentInd
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.servers.append(makeVmessServer(
+    config.collection().servers.append(makeVmessServer(
         QStringLiteral("old-1"), QStringLiteral("sub-1"),
         QStringLiteral("old.example.com"), 443, QStringLiteral("uuid-1")));
     config.currentIndexId = QStringLiteral("old-1");
@@ -544,9 +544,9 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentInd
         config, QStringLiteral("sub-1"), replacement);
 
     QVERIFY(result.success);
-    QCOMPARE(config.currentIndexId, config.servers[0].indexId);
-    QCOMPARE(config.servers[0].subId, QStringLiteral("sub-1"));
-    QCOMPARE(config.servers[0].address, QStringLiteral("new-a.example.com"));
+    QCOMPARE(config.currentIndexId, config.collection().servers[0].indexId);
+    QCOMPARE(config.collection().servers[0].subId, QStringLiteral("sub-1"));
+    QCOMPARE(config.collection().servers[0].address, QStringLiteral("new-a.example.com"));
 }
 
 void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstGlobalServerWhenSubscriptionBecomesEmpty()
@@ -555,16 +555,16 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentInd
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
         QStringLiteral("https://a.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Sub 2"),
         QStringLiteral("https://b.com")));
-    config.servers.append(makeVmessServer(
+    config.collection().servers.append(makeVmessServer(
         QStringLiteral("old-1"), QStringLiteral("sub-1"),
         QStringLiteral("old.example.com"), 443, QStringLiteral("uuid-1")));
-    config.servers.append(makeVmessServer(
+    config.collection().servers.append(makeVmessServer(
         QStringLiteral("keep-1"), QStringLiteral("sub-2"),
         QStringLiteral("keep.example.com"), 443, QStringLiteral("uuid-2")));
     config.currentIndexId = QStringLiteral("old-1");
@@ -574,8 +574,8 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersFallsBackCurrentInd
 
     QVERIFY(result.success);
     QCOMPARE(config.currentIndexId, QStringLiteral("keep-1"));
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers[0].subId, QStringLiteral("sub-2"));
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers[0].subId, QStringLiteral("sub-2"));
 }
 
 // -- Replace subscription servers fails for empty subscription id --
@@ -601,10 +601,10 @@ void SubscriptionServiceTests::testListSubscriptions()
     SubscriptionService service(repo);
 
     Config config;
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-1"), QStringLiteral("First"),
         QStringLiteral("https://a.com")));
-    config.subscriptions.append(makeSub(
+    config.collection().subscriptions.append(makeSub(
         QStringLiteral("sub-2"), QStringLiteral("Second"),
         QStringLiteral("https://b.com")));
 

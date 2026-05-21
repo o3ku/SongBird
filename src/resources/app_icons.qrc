@@ -1,7 +1,12 @@
 <RCC>
     <qresource prefix="/app">
         <file alias="logo.ico">logo.ico</file>
-        <file alias="chevron-down.svg">chevron-down.svg</file>
-        <file alias="chevron-up.svg">chevron-up.svg</file>
+        <file alias="logo.svg">logo.svg</file>
+        <file alias="logo-fire.svg">logo-fire.svg</file>
+
+        <file alias="down.svg">down.svg</file>
+        <file alias="up.svg">up.svg</file>
+        <file alias="down-dark.svg">down-dark.svg</file>
+        <file alias="up-dark.svg">up-dark.svg</file>
     </qresource>
 </RCC>

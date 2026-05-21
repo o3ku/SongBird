@@ -31,8 +31,6 @@ signals:
     void toggleMainWindowRequested();
     void enableProxyRequested();
     void disableProxyRequested();
-    void keepProxyUnchangedRequested();
-    void pacProxyRequested();
 
 private:
     QString buildRegistrationMessage(const QList<QString>& successMessages, const QList<QString>& failureMessages) const;

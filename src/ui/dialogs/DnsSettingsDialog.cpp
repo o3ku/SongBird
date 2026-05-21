@@ -51,20 +51,20 @@ void DnsSettingsDialog::setConfig(const Config& config)
 {
     config_ = config;
 
-    remoteDnsEdit_->setText(config_.remoteDns);
-    directDnsEdit_->setText(config_.directDns);
-    bootstrapDnsEdit_->setText(config_.bootstrapDns);
-    selectCurrentText(domainStrategyProxyCombo_, config_.domainStrategyForProxy);
-    selectCurrentText(domainStrategyFreedomCombo_, config_.domainStrategyForFreedom);
-    fakeIpCheck_->setChecked(config_.fakeIp);
-    globalFakeIpCheck_->setChecked(config_.globalFakeIp);
-    serveStaleCheck_->setChecked(config_.serveStale);
-    parallelQueryCheck_->setChecked(config_.parallelQuery);
-    useSystemHostsCheck_->setChecked(config_.useSystemHosts);
-    addCommonHostsCheck_->setChecked(config_.addCommonHosts);
-    blockBindingQueryCheck_->setChecked(config_.blockBindingQuery);
-    directExpectedIpsEdit_->setText(config_.directExpectedIps);
-    hostsEdit_->setPlainText(config_.dnsHosts);
+    remoteDnsEdit_->setText(config_.dns().remoteDns);
+    directDnsEdit_->setText(config_.dns().directDns);
+    bootstrapDnsEdit_->setText(config_.dns().bootstrapDns);
+    selectCurrentText(domainStrategyProxyCombo_, config_.dns().domainStrategyForProxy);
+    selectCurrentText(domainStrategyFreedomCombo_, config_.dns().domainStrategyForFreedom);
+    fakeIpCheck_->setChecked(config_.dns().fakeIp);
+    globalFakeIpCheck_->setChecked(config_.dns().globalFakeIp);
+    serveStaleCheck_->setChecked(config_.dns().serveStale);
+    parallelQueryCheck_->setChecked(config_.dns().parallelQuery);
+    useSystemHostsCheck_->setChecked(config_.dns().useSystemHosts);
+    addCommonHostsCheck_->setChecked(config_.dns().addCommonHosts);
+    blockBindingQueryCheck_->setChecked(config_.dns().blockBindingQuery);
+    directExpectedIpsEdit_->setText(config_.dns().directExpectedIps);
+    hostsEdit_->setPlainText(config_.dns().dnsHosts);
 
     updateFieldState();
 }
@@ -72,20 +72,20 @@ void DnsSettingsDialog::setConfig(const Config& config)
 Config DnsSettingsDialog::config() const
 {
     Config result = config_;
-    result.remoteDns = remoteDnsEdit_->text().trimmed();
-    result.directDns = directDnsEdit_->text().trimmed();
-    result.bootstrapDns = bootstrapDnsEdit_->text().trimmed();
-    result.domainStrategyForProxy = domainStrategyProxyCombo_->currentText().trimmed();
-    result.domainStrategyForFreedom = domainStrategyFreedomCombo_->currentText().trimmed();
-    result.fakeIp = fakeIpCheck_->isChecked();
-    result.globalFakeIp = globalFakeIpCheck_->isChecked();
-    result.serveStale = serveStaleCheck_->isChecked();
-    result.parallelQuery = parallelQueryCheck_->isChecked();
-    result.useSystemHosts = useSystemHostsCheck_->isChecked();
-    result.addCommonHosts = addCommonHostsCheck_->isChecked();
-    result.blockBindingQuery = blockBindingQueryCheck_->isChecked();
-    result.directExpectedIps = directExpectedIpsEdit_->text().trimmed();
-    result.dnsHosts = hostsEdit_->toPlainText();
+    result.dns().remoteDns = remoteDnsEdit_->text().trimmed();
+    result.dns().directDns = directDnsEdit_->text().trimmed();
+    result.dns().bootstrapDns = bootstrapDnsEdit_->text().trimmed();
+    result.dns().domainStrategyForProxy = domainStrategyProxyCombo_->currentText().trimmed();
+    result.dns().domainStrategyForFreedom = domainStrategyFreedomCombo_->currentText().trimmed();
+    result.dns().fakeIp = fakeIpCheck_->isChecked();
+    result.dns().globalFakeIp = globalFakeIpCheck_->isChecked();
+    result.dns().serveStale = serveStaleCheck_->isChecked();
+    result.dns().parallelQuery = parallelQueryCheck_->isChecked();
+    result.dns().useSystemHosts = useSystemHostsCheck_->isChecked();
+    result.dns().addCommonHosts = addCommonHostsCheck_->isChecked();
+    result.dns().blockBindingQuery = blockBindingQueryCheck_->isChecked();
+    result.dns().directExpectedIps = directExpectedIpsEdit_->text().trimmed();
+    result.dns().dnsHosts = hostsEdit_->toPlainText();
     return result;
 }
 

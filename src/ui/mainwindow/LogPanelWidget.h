@@ -8,6 +8,7 @@ class QLineEdit;
 class QListView;
 class QMenu;
 class QToolButton;
+class QWidget;
 class LogFilterProxyModel;
 class LogItemDelegate;
 class LogListModel;
@@ -24,6 +25,8 @@ protected:
 
 private:
     void applyLogFilter();
+    void setCollapsed(bool collapsed);
+    void toggleCollapsed();
     bool shouldStickLogViewToBottom(bool filterActive) const;
     void updateLogContextActions();
     void showLogContextMenu(const QPoint& position);
@@ -34,6 +37,7 @@ private:
     LogListModel* logModel_ = nullptr;
     LogFilterProxyModel* logFilterModel_ = nullptr;
     LogItemDelegate* logItemDelegate_ = nullptr;
+    QWidget* logHeaderRow_ = nullptr;
     QListView* logView_ = nullptr;
     QLineEdit* logFilterEdit_ = nullptr;
     QToolButton* logStickToBottomButton_ = nullptr;
@@ -45,4 +49,5 @@ private:
     QTimer* logScrollTimer_ = nullptr;
     bool logStickToBottomEnabled_ = true;
     bool logWasAtBottom_ = false;
+    bool collapsed_ = false;
 };

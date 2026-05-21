@@ -118,7 +118,6 @@ struct VmessItem {
     QString cert;
     QString certSha;
     std::optional<bool> muxEnabled;
-    int sort = 0;
     QString extra;
     QString userAgent;
     QString finalmask;

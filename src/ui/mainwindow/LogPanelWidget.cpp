@@ -68,21 +68,27 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     logPanelLayout->setContentsMargins(0, 0, 0, 0);
     logPanelLayout->setSpacing(0);
 
-    auto* logHeaderRow = new QWidget(this);
-    logHeaderRow->setObjectName(QStringLiteral("logHeaderRow"));
-    logHeaderRow->setAttribute(Qt::WA_StyledBackground, true);
-    auto* logHeaderLayout = new QHBoxLayout(logHeaderRow);
-    logHeaderLayout->setContentsMargins(10, 4, 2, 4);
+    logHeaderRow_ = new QWidget(this);
+    logHeaderRow_->setObjectName(QStringLiteral("logHeaderRow"));
+    logHeaderRow_->setAttribute(Qt::WA_StyledBackground, true);
+    logHeaderRow_->setCursor(Qt::PointingHandCursor);
+    logHeaderRow_->setToolTip(tr("Collapse information"));
+    logHeaderRow_->installEventFilter(this);
+    auto* logHeaderLayout = new QHBoxLayout(logHeaderRow_);
+    logHeaderLayout->setContentsMargins(10, 4, 4, 4);
     logHeaderLayout->setSpacing(6);
 
-    auto* logTitleLabel = new QLabel(tr("Information"), logHeaderRow);
+    auto* logTitleLabel = new QLabel(tr("Information"), logHeaderRow_);
     logTitleLabel->setObjectName(QStringLiteral("logTitleLabel"));
+    logTitleLabel->setCursor(Qt::PointingHandCursor);
+    logTitleLabel->setProperty("logHeaderCollapseTrigger", true);
+    logTitleLabel->installEventFilter(this);
     AppTheme::applyCompactFont(logTitleLabel);
     logTitleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     logHeaderLayout->addWidget(logTitleLabel);
     logHeaderLayout->addStretch(1);
 
-    logStickToBottomButton_ = new QToolButton(logHeaderRow);
+    logStickToBottomButton_ = new QToolButton(logHeaderRow_);
     logStickToBottomButton_->setObjectName(QStringLiteral("logStickToBottomButton"));
     AppTheme::applyCompactFont(logStickToBottomButton_);
     logStickToBottomButton_->setCheckable(true);
@@ -92,7 +98,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     logStickToBottomButton_->setChecked(true);
     logHeaderLayout->addWidget(logStickToBottomButton_);
 
-    logFilterEdit_ = new QLineEdit(logHeaderRow);
+    logFilterEdit_ = new QLineEdit(logHeaderRow_);
     logFilterEdit_->setObjectName(QStringLiteral("logFilterEdit"));
     AppTheme::applyCompactFont(logFilterEdit_);
     logFilterEdit_->setClearButtonEnabled(true);
@@ -102,7 +108,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     logStickToBottomButton_->setFixedSize(logFilterHeight, logFilterHeight);
     logHeaderLayout->addWidget(logFilterEdit_);
 
-    logPanelLayout->addWidget(logHeaderRow);
+    logPanelLayout->addWidget(logHeaderRow_);
 
     logModel_ = new LogListModel(this);
     logFilterModel_ = new LogFilterProxyModel(this);
@@ -222,6 +228,15 @@ void LogPanelWidget::appendLog(const QString& message)
 
 bool LogPanelWidget::eventFilter(QObject* watched, QEvent* event)
 {
+    if ((watched == logHeaderRow_ || watched->property("logHeaderCollapseTrigger").toBool()) && event != nullptr
+        && event->type() == QEvent::MouseButtonRelease) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton) {
+            toggleCollapsed();
+            return true;
+        }
+    }
+
     if (logView_ != nullptr && watched == logView_ && event != nullptr
         && event->type() == QEvent::ShortcutOverride) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
@@ -302,6 +317,34 @@ void LogPanelWidget::applyLogFilter()
     }
 
     updateLogContextActions();
+}
+
+void LogPanelWidget::setCollapsed(bool collapsed)
+{
+    if (collapsed_ == collapsed) {
+        return;
+    }
+
+    collapsed_ = collapsed;
+    if (logView_ != nullptr) {
+        logView_->setVisible(!collapsed_);
+        if (!collapsed_ && logStickToBottomEnabled_) {
+            logView_->scrollToBottom();
+        }
+    }
+
+    if (logHeaderRow_ != nullptr) {
+        logHeaderRow_->setToolTip(collapsed_ ? tr("Expand information") : tr("Collapse information"));
+        setMaximumHeight(collapsed_ ? logHeaderRow_->sizeHint().height() : QWIDGETSIZE_MAX);
+        setMinimumHeight(collapsed_ ? logHeaderRow_->sizeHint().height() : 0);
+    }
+
+    updateGeometry();
+}
+
+void LogPanelWidget::toggleCollapsed()
+{
+    setCollapsed(!collapsed_);
 }
 
 bool LogPanelWidget::shouldStickLogViewToBottom(bool filterActive) const

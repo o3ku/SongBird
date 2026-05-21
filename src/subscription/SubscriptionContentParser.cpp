@@ -1,6 +1,8 @@
 #include "subscription/SubscriptionContentParser.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -613,6 +615,9 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
     report.notes.append(QStringLiteral("Subscription parse: input length=%1").arg(current.size()));
 
     for (int iteration = 0; iteration < 8 && !current.isEmpty(); ++iteration) {
+        if (QFile dumpFile(QCoreApplication::applicationDirPath() + QStringLiteral("/subscription_debug_pass%1.txt").arg(iteration)); dumpFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            dumpFile.write(current.toUtf8());
+        }
         const QList<VmessItem> shareItems = ShareUrlParser::parseMany(current);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 share-url count=%2").arg(iteration).arg(shareItems.size()));
         if (!shareItems.isEmpty()) {

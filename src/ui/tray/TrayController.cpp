@@ -6,29 +6,87 @@
 #include <QApplication>
 #include <QActionGroup>
 #include <QCoreApplication>
-#include <QColor>
-#include <QFileInfo>
 #include <QIcon>
 #include <QMenu>
-#include <QPainter>
-#include <QPixmap>
 #include <QStyle>
 #include <QSystemTrayIcon>
+#include <QtGlobal>
 
+#include <algorithm>
+
+#include "services/SpeedTestServiceInternal.h"
 #include "ui/mainwindow/MainWindow.h"
 
 namespace {
 
-constexpr int TrayIconExtent = 64;
+constexpr int TrayServerNameTextMaxWidth = 300;
+constexpr int TrayServerMenuMaxCount = 20;
+
+struct TrayServerSortKey
+{
+    int resultRank = 0;
+    double latencyMs = 0;
+};
 
 QString trayText(const char* sourceText)
 {
     return QCoreApplication::translate("TrayController", sourceText);
 }
 
+QString elidedMenuText(QMenu* menu, const QString& text)
+{
+    if (menu == nullptr) {
+        return text;
+    }
+
+    return menu->fontMetrics().elidedText(
+        text,
+        Qt::ElideRight,
+        TrayServerNameTextMaxWidth);
+}
+
+QString formatTrayTestResult(const QString& value)
+{
+    const QString normalized = value.trimmed();
+    if (normalized.isEmpty()) {
+        return {};
+    }
+
+    double latencyMs = -1;
+    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, latencyMs)) {
+        return QStringLiteral("%1 ms").arg(qRound(latencyMs));
+    }
+
+    return QStringLiteral("unavailable");
+}
+
+TrayServerSortKey makeTrayServerSortKey(const TrayServerEntry& item)
+{
+    const QString normalized = item.testResult.trimmed();
+    if (normalized.isEmpty()) {
+        return TrayServerSortKey{1, 0};
+    }
+
+    double latencyMs = -1;
+    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, latencyMs)) {
+        return TrayServerSortKey{0, latencyMs};
+    }
+
+    return TrayServerSortKey{2, 0};
+}
+
+QString formatServerMenuText(QMenu* menu, const TrayServerEntry& item)
+{
+    const QString name = elidedMenuText(menu, item.displayName);
+    const QString result = formatTrayTestResult(item.testResult);
+    return result.isEmpty()
+        ? name
+        : QStringLiteral("%1 | %2").arg(name, result);
+}
+
 QIcon loadDefaultTrayIcon()
 {
-    QIcon icon(QStringLiteral(":/app/logo.ico"));
+    QIcon icon(QStringLiteral(":/app/logo.svg"));
     if (icon.isNull()) {
         icon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
     }
@@ -36,40 +94,9 @@ QIcon loadDefaultTrayIcon()
     return icon;
 }
 
-QIcon resolveCustomRoutingIcon(const QList<TrayRoutingEntry>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
+QIcon loadFireTrayIcon()
 {
-    if (!advancedRoutingEnabled || currentRoutingIndex < 0 || currentRoutingIndex >= routings.size()) {
-        return {};
-    }
-
-    const QString customIconPath = routings.at(currentRoutingIndex).customIconPath.trimmed();
-    if (customIconPath.isEmpty() || !QFileInfo::exists(customIconPath)) {
-        return {};
-    }
-
-    const QIcon icon(customIconPath);
-    return icon.isNull() ? QIcon() : icon;
-}
-
-QPixmap resolveTrayBasePixmap(const QList<TrayRoutingEntry>& routings, int currentRoutingIndex, bool advancedRoutingEnabled)
-{
-    QIcon baseIcon = resolveCustomRoutingIcon(routings, currentRoutingIndex, advancedRoutingEnabled);
-    if (baseIcon.isNull()) {
-        baseIcon = loadDefaultTrayIcon();
-    }
-
-    const qreal dpr = qMax(qreal(1.0), qApp ? qApp->devicePixelRatio() : qreal(1.0));
-    const QSize logicalSize(TrayIconExtent, TrayIconExtent);
-    const QSize deviceSize = logicalSize * dpr;
-
-    QPixmap pixmap = baseIcon.pixmap(deviceSize);
-    if (pixmap.isNull()) {
-        pixmap = QPixmap(deviceSize);
-        pixmap.fill(Qt::transparent);
-    }
-    pixmap.setDevicePixelRatio(dpr);
-
-    return pixmap;
+    return QIcon(QStringLiteral(":/app/logo-fire.svg"));
 }
 
 void applyWindowIcon(const QIcon& icon, MainWindow* mainWindow)
@@ -82,25 +109,6 @@ void applyWindowIcon(const QIcon& icon, MainWindow* mainWindow)
     if (mainWindow != nullptr) {
         mainWindow->setWindowIcon(icon);
     }
-}
-
-void drawProxyBadge(QPainter& painter, const QRectF& rect, const QColor& fillColor)
-{
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(fillColor);
-    painter.drawEllipse(rect);
-}
-
-QRectF resolveProxyBadgeRect(const QPixmap& pixmap)
-{
-    const qreal dpr = qMax(qreal(1.0), pixmap.devicePixelRatio());
-    const QSizeF logicalSize(pixmap.width() / dpr, pixmap.height() / dpr);
-    const qreal badgeDiameter = qMin(logicalSize.width(), logicalSize.height()) * 0.5;
-    return QRectF(
-        logicalSize.width() - badgeDiameter,
-        logicalSize.height() - badgeDiameter,
-        badgeDiameter,
-        badgeDiameter);
 }
 
 } // namespace
@@ -132,7 +140,7 @@ bool TrayController::initialize()
     trayIcon_ = new QSystemTrayIcon(this);
     trayIcon_->setObjectName(QStringLiteral("trayIcon"));
     trayIcon_->setIcon(loadDefaultTrayIcon());
-    trayIcon_->setToolTip(QStringLiteral("Song Box"));
+    trayIcon_->setToolTip(QStringLiteral("SongBird"));
 
     trayMenu_ = new QMenu();
     trayMenu_->setObjectName(QStringLiteral("trayMenu"));
@@ -145,18 +153,11 @@ bool TrayController::initialize()
     routingsMenu_ = trayMenu_->addMenu(trayText("Switch Routing"));
     routingsMenu_->setObjectName(QStringLiteral("trayRoutingsMenu"));
     trayMenu_->addSeparator();
-    startCoreAction_ = trayMenu_->addAction(trayText("Start Core"));
-    startCoreAction_->setObjectName(QStringLiteral("trayStartCoreAction"));
-    stopCoreAction_ = trayMenu_->addAction(trayText("Stop Core"));
-    stopCoreAction_->setObjectName(QStringLiteral("trayStopCoreAction"));
-    trayMenu_->addSeparator();
     quitAction_ = trayMenu_->addAction(trayText("Quit"));
     quitAction_->setObjectName(QStringLiteral("trayQuitAction"));
 
     trayIcon_->setContextMenu(trayMenu_);
 
-    connect(startCoreAction_, &QAction::triggered, this, &TrayController::startCoreRequested);
-    connect(stopCoreAction_, &QAction::triggered, this, &TrayController::stopCoreRequested);
     connect(quitAction_, &QAction::triggered, this, &TrayController::quitRequested);
     connect(trayMenu_, &QMenu::aboutToShow, this, &TrayController::updateMenuText);
     connect(trayIcon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
@@ -262,28 +263,6 @@ void TrayController::setRoutingSummary(const QString& value, bool advancedEnable
     updateMenuText();
 }
 
-void TrayController::setStatisticsSummary(const QString& value)
-{
-    const QString trimmed = value.trimmed();
-    if (statisticsSummary_ == trimmed) {
-        return;
-    }
-
-    statisticsSummary_ = trimmed;
-    updateToolTip();
-}
-
-void TrayController::setTrafficSummary(const QString& value)
-{
-    const QString trimmed = value.trimmed();
-    if (trafficSummary_ == trimmed) {
-        return;
-    }
-
-    trafficSummary_ = trimmed;
-    updateToolTip();
-}
-
 void TrayController::showMessage(const QString& title, const QString& message, bool error, int timeoutMs)
 {
     if (trayIcon_ == nullptr || message.trimmed().isEmpty()) {
@@ -297,15 +276,14 @@ void TrayController::showMessage(const QString& title, const QString& message, b
         timeoutMs);
 }
 
-void TrayController::setServers(const QList<VmessItem>& servers, const QString& currentIndexId, int limit)
+void TrayController::setServers(const QList<VmessItem>& servers, const QString& currentIndexId)
 {
     servers_.clear();
     servers_.reserve(servers.size());
     for (const VmessItem& item : servers) {
-        servers_.append(TrayServerEntry{item.indexId, describeServer(item)});
+        servers_.append(TrayServerEntry{item.indexId, describeServer(item), item.testResult});
     }
     currentServerId_ = currentIndexId.trimmed();
-    serverMenuLimit_ = limit;
     rebuildServerMenu();
 }
 
@@ -378,21 +356,12 @@ void TrayController::updateMenuText()
             currentServerText));
     }
 
-    if (startCoreAction_ != nullptr) {
-        startCoreAction_->setEnabled(!coreRunning_ && !coreTransitionPending_);
-    }
-
-    if (stopCoreAction_ != nullptr) {
-        stopCoreAction_->setEnabled(coreProcessRunning_ && !coreTransitionPending_);
-    }
-
     if (serversMenu_ != nullptr) {
         serversMenu_->setEnabled(!servers_.isEmpty());
     }
 
     if (routingsMenu_ != nullptr) {
-        routingsMenu_->menuAction()->setVisible(advancedRoutingEnabled_);
-        routingsMenu_->setEnabled(advancedRoutingEnabled_ && !routings_.isEmpty());
+        routingsMenu_->setEnabled(!advancedRoutingEnabled_ || !routings_.isEmpty());
     }
 
     updateToolTip();
@@ -405,13 +374,9 @@ void TrayController::updateToolTip()
         return;
     }
 
-    QString proxyText = systemProxyModeDisplayName(systemProxyMode_);
-    const bool expectedApplied = expectedSystemProxyEnabled(systemProxyMode_);
-    if (systemProxyMode_ != SystemProxyMode::Unchanged && systemProxyApplied_ != expectedApplied) {
-        proxyText += trayText(" (not applied)");
-    }
+    const QString proxyText = coreRunning_ && systemProxyApplied_ ? trayText("On") : trayText("Off");
 
-    QString tooltip = QStringLiteral("Song Box | %1 | %2 | %3 | %4")
+    QString tooltip = QStringLiteral("SongBird | %1 | %2 | %3 | %4")
                           .arg(currentServerName_.isEmpty() ? trayText("No default server") : currentServerName_)
                           .arg(trayText("Core %1").arg(
                               coreRunning_ ? trayText("Running")
@@ -421,12 +386,6 @@ void TrayController::updateToolTip()
                           .arg(trayText("Auto Run %1").arg(autoRunEnabled_ ? trayText("Enabled") : trayText("Disabled")));
     if (!routingSummary_.isEmpty()) {
         tooltip += QStringLiteral(" | ") + trayText("Routing %1").arg(routingSummary_);
-    }
-    if (!statisticsSummary_.isEmpty()) {
-        tooltip += QStringLiteral(" | ") + statisticsSummary_;
-    }
-    if (!trafficSummary_.isEmpty()) {
-        tooltip += QStringLiteral(" | ") + trafficSummary_;
     }
     if (backgroundTaskRunning_ && !backgroundTaskDescription_.isEmpty()) {
         tooltip += QStringLiteral(" | ") + trayText("Task %1").arg(backgroundTaskDescription_);
@@ -440,24 +399,10 @@ void TrayController::updateTrayIcon()
         return;
     }
 
-    QPixmap pixmap = resolveTrayBasePixmap(routings_, currentRoutingIndex_, advancedRoutingEnabled_);
-    const QRectF badgeRect = resolveProxyBadgeRect(pixmap);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
+    const QIcon icon = coreRunning_ && systemProxyApplied_
+        ? loadFireTrayIcon()
+        : loadDefaultTrayIcon();
 
-    switch (systemProxyMode_) {
-    case SystemProxyMode::ForcedChange:
-        drawProxyBadge(painter, badgeRect, QColor(QStringLiteral("#00C853")));
-        break;
-    case SystemProxyMode::Unchanged:
-        drawProxyBadge(painter, badgeRect, QColor(QStringLiteral("#FACC15")));
-        break;
-    case SystemProxyMode::ForcedClear:
-    default:
-        break;
-    }
-
-    const QIcon icon(pixmap);
     trayIcon_->setIcon(icon);
     applyWindowIcon(icon, mainWindow_);
 }
@@ -478,27 +423,57 @@ void TrayController::rebuildServerMenu()
     auto* group = new QActionGroup(serversMenu_);
     group->setExclusive(true);
 
-    const int effectiveLimit = serverMenuLimit_ <= 0
-        ? servers_.size()
-        : qMin(serverMenuLimit_, servers_.size());
-    for (int index = 0; index < effectiveLimit; ++index) {
-        const TrayServerEntry& item = servers_.at(index);
-        QAction* action = serversMenu_->addAction(item.displayName);
+    QList<int> serverIndexes;
+    serverIndexes.reserve(servers_.size());
+    int currentServerIndex = -1;
+    for (int index = 0; index < servers_.size(); ++index) {
+        if (servers_.at(index).indexId == currentServerId_) {
+            currentServerIndex = index;
+            continue;
+        }
+        serverIndexes.append(index);
+    }
+
+    std::stable_sort(serverIndexes.begin(), serverIndexes.end(), [this](int left, int right) {
+        const TrayServerSortKey leftKey = makeTrayServerSortKey(servers_.at(left));
+        const TrayServerSortKey rightKey = makeTrayServerSortKey(servers_.at(right));
+        if (leftKey.resultRank != rightKey.resultRank) {
+            return leftKey.resultRank < rightKey.resultRank;
+        }
+        if (leftKey.latencyMs != rightKey.latencyMs) {
+            return leftKey.latencyMs < rightKey.latencyMs;
+        }
+        return left < right;
+    });
+
+    QList<int> visibleIndexes;
+    visibleIndexes.reserve(qMin(TrayServerMenuMaxCount, servers_.size()));
+    if (currentServerIndex >= 0) {
+        visibleIndexes.append(currentServerIndex);
+    }
+    for (int index : serverIndexes) {
+        if (visibleIndexes.size() >= TrayServerMenuMaxCount) {
+            break;
+        }
+        visibleIndexes.append(index);
+    }
+
+    for (int menuIndex = 0; menuIndex < visibleIndexes.size(); ++menuIndex) {
+        const int serverIndex = visibleIndexes.at(menuIndex);
+        const TrayServerEntry& item = servers_.at(serverIndex);
+        QAction* action = serversMenu_->addAction(formatServerMenuText(serversMenu_, item));
+        const QString result = formatTrayTestResult(item.testResult);
+        action->setToolTip(result.isEmpty()
+            ? item.displayName
+            : QStringLiteral("%1 | %2").arg(item.displayName, result));
         action->setCheckable(true);
         action->setChecked(item.indexId == currentServerId_);
         action->setData(item.indexId);
-        action->setObjectName(QStringLiteral("trayServerAction_%1").arg(index));
+        action->setObjectName(QStringLiteral("trayServerAction_%1").arg(menuIndex));
         group->addAction(action);
         connect(action, &QAction::triggered, this, [this, action]() {
             emit defaultServerRequested(action->data().toString());
         });
-    }
-
-    if (effectiveLimit < servers_.size()) {
-        serversMenu_->addSeparator();
-        QAction* remainingAction = serversMenu_->addAction(
-            trayText("%1 more server(s) hidden").arg(servers_.size() - effectiveLimit));
-        remainingAction->setEnabled(false);
     }
 }
 
@@ -509,8 +484,9 @@ void TrayController::rebuildRoutingMenu()
     }
 
     routingsMenu_->clear();
-    routingsMenu_->menuAction()->setVisible(advancedRoutingEnabled_);
     if (!advancedRoutingEnabled_) {
+        QAction* placeholder = routingsMenu_->addAction(trayText("Advanced routing is disabled"));
+        placeholder->setEnabled(false);
         return;
     }
 

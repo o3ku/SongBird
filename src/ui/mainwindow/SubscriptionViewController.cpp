@@ -188,6 +188,14 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
             }
         });
 
+        auto* testServersAction = menu.addAction(QObject::tr("Test servers"));
+        testServersAction->setEnabled(callbacks_.canStartBackgroundTask && callbacks_.canStartBackgroundTask());
+        QObject::connect(testServersAction, &QAction::triggered, &menu, [this, subscriptionId]() {
+            if (callbacks_.testSubscriptionServers) {
+                callbacks_.testSubscriptionServers(subscriptionId);
+            }
+        });
+
         menu.addSeparator();
 
         auto* updateAction = menu.addAction(QObject::tr("Update Subscription"));

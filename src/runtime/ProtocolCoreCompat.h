@@ -117,7 +117,7 @@ inline CoreType resolveExistingCoreTypeForProtocol(ConfigType configType, const 
 
 inline CoreType configuredCoreTypeForProtocol(const Config& config, ConfigType configType)
 {
-    for (const CoreTypeItem& item : config.coreTypeItems) {
+    for (const CoreTypeItem& item : config.policy().coreTypeItems) {
         if (item.configType != static_cast<int>(configType)) {
             continue;
         }

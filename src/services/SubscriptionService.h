@@ -19,8 +19,9 @@ public:
     OperationResult removeSubscription(Config& config, const QString& subscriptionId);
     OperationResult replaceSubscriptionServers(Config& config, const QString& subscriptionId, QList<VmessItem> items);
 
-private:
     static void normalizeSubscriptionIds(QList<SubItem>& items);
+
+private:
     static QString serverReuseKey(const VmessItem& item);
     static QString normalizedValue(const QString& value);
 

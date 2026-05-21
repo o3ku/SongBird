@@ -10,7 +10,7 @@ inline bool requiresTunCompatSingBoxCore(
     const VmessItem& server,
     const QList<CoreType>& existingCoreTypes)
 {
-    if (!config.tunModeItem.enableTun || server.configType == ConfigType::Custom) {
+    if (!config.tun().tunModeItem.enableTun || server.configType == ConfigType::Custom) {
         return false;
     }
 

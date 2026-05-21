@@ -11,6 +11,8 @@
 #include <QTimer>
 #include <QUrl>
 
+#include "common/UserAgent.h"
+
 namespace {
 
 constexpr int kAvailabilityTimeoutMs = 30000;
@@ -49,7 +51,9 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
         + url.toString(QUrl::FullyEncoded).toUtf8()
         + QByteArray(" HTTP/1.1\r\nHost: ")
         + hostHeader
-        + QByteArray("\r\nUser-Agent: SongBox-testme\r\nConnection: close\r\n\r\n");
+        + QByteArray("\r\nUser-Agent: ")
+        + fallbackUserAgent().toUtf8()
+        + QByteArray("\r\nConnection: close\r\n\r\n");
 
     QElapsedTimer timer;
     timer.start();
@@ -127,7 +131,7 @@ OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityChec
 
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox-testme"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, fallbackUserAgent());
 
     QElapsedTimer timer;
     timer.start();

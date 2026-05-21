@@ -1,6 +1,7 @@
 #include "ui/mainwindow/LogItemDelegate.h"
 
 #include "ui/models/LogListModel.h"
+#include "ui/theme/AppTheme.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -37,7 +38,7 @@ void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& optio
     if (selected || hovered) {
         painter->fillRect(
             option.rect,
-            selected ? QColor(QStringLiteral("#e0ebe5")) : QColor(QStringLiteral("#f2f6f3")));
+            selected ? QColor(AppTheme::selectionBackgroundColor()) : QColor(AppTheme::hoverBackgroundColor()));
     }
 
     const QString text = index.data(Qt::DisplayRole).toString();

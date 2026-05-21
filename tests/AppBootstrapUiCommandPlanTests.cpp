@@ -8,7 +8,7 @@ class AppBootstrapUiCommandPlanTests : public QObject {
 private slots:
     void defaultServerSelectionRestartsRunningCoreWhenServerChanges();
     void defaultServerSelectionClearsPendingRestartWhenServerUnchanged();
-    void defaultServerSelectionStartsCoreWhenStopped();
+    void defaultServerSelectionEnablesProxyWhenStopped();
     void routingSelectionRestartsOnlyWhenRunningAndChanged();
 };
 
@@ -24,7 +24,7 @@ void AppBootstrapUiCommandPlanTests::defaultServerSelectionRestartsRunningCoreWh
     QVERIFY(plan.shouldMarkCurrentActivationPending);
     QVERIFY(plan.shouldRestartRunningCore);
     QVERIFY(!plan.shouldClearCurrentActivationPending);
-    QVERIFY(!plan.shouldStartCore);
+    QVERIFY(!plan.shouldEnableProxy);
 }
 
 void AppBootstrapUiCommandPlanTests::defaultServerSelectionClearsPendingRestartWhenServerUnchanged()
@@ -39,10 +39,10 @@ void AppBootstrapUiCommandPlanTests::defaultServerSelectionClearsPendingRestartW
     QVERIFY(plan.shouldMarkCurrentActivationPending);
     QVERIFY(!plan.shouldRestartRunningCore);
     QVERIFY(plan.shouldClearCurrentActivationPending);
-    QVERIFY(!plan.shouldStartCore);
+    QVERIFY(!plan.shouldEnableProxy);
 }
 
-void AppBootstrapUiCommandPlanTests::defaultServerSelectionStartsCoreWhenStopped()
+void AppBootstrapUiCommandPlanTests::defaultServerSelectionEnablesProxyWhenStopped()
 {
     const DefaultServerSelectionPlan plan = evaluateDefaultServerSelectionPlan(
         true,
@@ -54,7 +54,7 @@ void AppBootstrapUiCommandPlanTests::defaultServerSelectionStartsCoreWhenStopped
     QVERIFY(plan.shouldMarkCurrentActivationPending);
     QVERIFY(!plan.shouldRestartRunningCore);
     QVERIFY(!plan.shouldClearCurrentActivationPending);
-    QVERIFY(plan.shouldStartCore);
+    QVERIFY(plan.shouldEnableProxy);
 }
 
 void AppBootstrapUiCommandPlanTests::routingSelectionRestartsOnlyWhenRunningAndChanged()

@@ -8,9 +8,8 @@ class SystemProxyModeTests : public QObject {
 private slots:
     void shouldAdoptManagedSystemProxyOnStartupOnlyForPersistedManagedProxy();
     void shouldClearManagedSystemProxyOnlyWhenOwned();
-    void resolveSystemProxyModeOnExitKeepsUnchangedMode();
-    void resolveSystemProxyModeOnExitClearsManagedModes();
-    void resolveSystemProxyModeOnExitClearsOnWindowsShutdown();
+    void resolveSystemProxyModeOnExitAlwaysClears();
+    void normalizeSystemProxyModeMapsOldValuesToForcedClear();
 };
 
 void SystemProxyModeTests::shouldAdoptManagedSystemProxyOnStartupOnlyForPersistedManagedProxy()
@@ -24,7 +23,7 @@ void SystemProxyModeTests::shouldAdoptManagedSystemProxyOnStartupOnlyForPersiste
         false,
         true));
     QVERIFY(!shouldAdoptManagedSystemProxyOnStartup(
-        SystemProxyMode::Unchanged,
+        SystemProxyMode::ForcedClear,
         true,
         true));
 }
@@ -36,14 +35,7 @@ void SystemProxyModeTests::shouldClearManagedSystemProxyOnlyWhenOwned()
     QVERIFY(!shouldClearManagedSystemProxy(true, false));
 }
 
-void SystemProxyModeTests::resolveSystemProxyModeOnExitKeepsUnchangedMode()
-{
-    QCOMPARE(
-        resolveSystemProxyModeOnExit(SystemProxyMode::Unchanged, false),
-        SystemProxyMode::Unchanged);
-}
-
-void SystemProxyModeTests::resolveSystemProxyModeOnExitClearsManagedModes()
+void SystemProxyModeTests::resolveSystemProxyModeOnExitAlwaysClears()
 {
     QCOMPARE(
         resolveSystemProxyModeOnExit(SystemProxyMode::ForcedClear, false),
@@ -52,18 +44,20 @@ void SystemProxyModeTests::resolveSystemProxyModeOnExitClearsManagedModes()
         resolveSystemProxyModeOnExit(SystemProxyMode::ForcedChange, false),
         SystemProxyMode::ForcedClear);
     QCOMPARE(
-        resolveSystemProxyModeOnExit(SystemProxyMode::Pac, false),
+        resolveSystemProxyModeOnExit(SystemProxyMode::ForcedClear, true),
+        SystemProxyMode::ForcedClear);
+    QCOMPARE(
+        resolveSystemProxyModeOnExit(SystemProxyMode::ForcedChange, true),
         SystemProxyMode::ForcedClear);
 }
 
-void SystemProxyModeTests::resolveSystemProxyModeOnExitClearsOnWindowsShutdown()
+void SystemProxyModeTests::normalizeSystemProxyModeMapsOldValuesToForcedClear()
 {
-    QCOMPARE(
-        resolveSystemProxyModeOnExit(SystemProxyMode::Unchanged, true),
-        SystemProxyMode::ForcedClear);
-    QCOMPARE(
-        resolveSystemProxyModeOnExit(SystemProxyMode::Pac, true),
-        SystemProxyMode::ForcedClear);
+    QCOMPARE(normalizeSystemProxyMode(0), SystemProxyMode::ForcedClear);
+    QCOMPARE(normalizeSystemProxyMode(1), SystemProxyMode::ForcedChange);
+    QCOMPARE(normalizeSystemProxyMode(2), SystemProxyMode::ForcedClear);
+    QCOMPARE(normalizeSystemProxyMode(3), SystemProxyMode::ForcedClear);
+    QCOMPARE(normalizeSystemProxyMode(99), SystemProxyMode::ForcedClear);
 }
 
 QTEST_MAIN(SystemProxyModeTests)

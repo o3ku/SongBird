@@ -32,8 +32,6 @@ private:
     QCheckBox* defaultAllowInsecureCheck_ = nullptr;
     QComboBox* defaultFingerprintCombo_ = nullptr;
     QComboBox* defaultUserAgentCombo_ = nullptr;
-    QCheckBox* enableStatisticsCheck_ = nullptr;
-    QSpinBox* statisticsFreshRateSpin_ = nullptr;
-    QSpinBox* trayMenuServersLimitSpin_ = nullptr;
     QComboBox* languageCombo_ = nullptr;
+    QComboBox* themeCombo_ = nullptr;
 };

@@ -6,7 +6,7 @@ struct DefaultServerSelectionPlan {
     bool shouldClearCurrentServerWarning = false;
     bool shouldMarkCurrentActivationPending = false;
     bool shouldClearCurrentActivationPending = false;
-    bool shouldStartCore = false;
+    bool shouldEnableProxy = false;
     bool shouldRestartRunningCore = false;
 };
 
@@ -28,7 +28,7 @@ inline DefaultServerSelectionPlan evaluateDefaultServerSelectionPlan(
         plan.shouldRestartRunningCore = previousIndexId != currentIndexId;
         plan.shouldClearCurrentActivationPending = !plan.shouldRestartRunningCore;
     } else {
-        plan.shouldStartCore = true;
+        plan.shouldEnableProxy = true;
     }
 
     return plan;

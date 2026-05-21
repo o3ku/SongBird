@@ -5,9 +5,7 @@
 enum class GlobalHotkeyAction : int {
     ShowForm = 0,
     SystemProxyClear = 1,
-    SystemProxySet = 2,
-    SystemProxyUnchanged = 3,
-    SystemProxyPac = 4
+    SystemProxySet = 2
 };
 
 struct GlobalHotkeyItem {

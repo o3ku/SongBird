@@ -19,12 +19,15 @@ public:
     QList<SubItem> subscriptions() const;
     QList<int> selectedRows() const;
 
+    static QString resolveUserAgent(const QString& storedValue);
+
 signals:
     void updateRequested();
 
 private:
     void reloadTable();
     void appendRow(const SubItem& item);
+    QString userAgentAtRow(int row) const;
     void updateActionState();
 
     QList<SubItem> items_;

@@ -29,13 +29,13 @@ SubscriptionService::SubscriptionService(IConfigRepository& repository)
 
 QList<SubItem> SubscriptionService::list(const Config& config) const
 {
-    return config.subscriptions;
+    return config.collection().subscriptions;
 }
 
 OperationResult SubscriptionService::saveSubscriptions(Config& config, QList<SubItem> items)
 {
     normalizeSubscriptionIds(items);
-    config.subscriptions = std::move(items);
+    config.collection().subscriptions = std::move(items);
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save subscriptions."));
@@ -52,18 +52,18 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
     }
 
     auto it = std::find_if(
-        config.subscriptions.begin(),
-        config.subscriptions.end(),
+        config.collection().subscriptions.begin(),
+        config.collection().subscriptions.end(),
         [&normalizedId](const SubItem& item) {
             return item.id.trimmed() == normalizedId;
         });
-    if (it == config.subscriptions.end()) {
+    if (it == config.collection().subscriptions.end()) {
         return OperationResult::fail(QStringLiteral("The selected subscription does not exist."));
     }
 
     it->enabled = enabled;
-    if (!enabled && config.mainSelectedSubId.trimmed() == normalizedId) {
-        config.mainSelectedSubId.clear();
+    if (!enabled && config.ui().mainSelectedSubId.trimmed() == normalizedId) {
+        config.ui().mainSelectedSubId.clear();
     }
 
     if (!repository_.save(config)) {
@@ -83,8 +83,8 @@ OperationResult SubscriptionService::removeSubscription(Config& config, const QS
     }
 
     const bool subscriptionExists = std::any_of(
-        config.subscriptions.cbegin(),
-        config.subscriptions.cend(),
+        config.collection().subscriptions.cbegin(),
+        config.collection().subscriptions.cend(),
         [&normalizedId](const SubItem& item) {
             return item.id.trimmed() == normalizedId;
         });
@@ -93,35 +93,35 @@ OperationResult SubscriptionService::removeSubscription(Config& config, const QS
     }
 
     QSet<QString> removedServerIds;
-    for (const VmessItem& item : config.servers) {
+    for (const VmessItem& item : config.collection().servers) {
         if (item.subId.trimmed() == normalizedId) {
             removedServerIds.insert(item.indexId);
         }
     }
 
     auto newSubEnd = std::remove_if(
-        config.subscriptions.begin(),
-        config.subscriptions.end(),
+        config.collection().subscriptions.begin(),
+        config.collection().subscriptions.end(),
         [&normalizedId](const SubItem& item) {
             return item.id.trimmed() == normalizedId;
         });
-    config.subscriptions.erase(newSubEnd, config.subscriptions.end());
+    config.collection().subscriptions.erase(newSubEnd, config.collection().subscriptions.end());
 
     auto newServerEnd = std::remove_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&normalizedId](const VmessItem& item) {
             return item.subId.trimmed() == normalizedId;
         });
-    config.servers.erase(newServerEnd, config.servers.end());
+    config.collection().servers.erase(newServerEnd, config.collection().servers.end());
 
     if (removedServerIds.contains(config.currentIndexId)) {
-        config.currentIndexId = config.servers.isEmpty()
+        config.currentIndexId = config.collection().servers.isEmpty()
             ? QString()
-            : config.servers.constFirst().indexId;
+            : config.collection().servers.constFirst().indexId;
     }
-    if (config.mainSelectedSubId.trimmed() == normalizedId) {
-        config.mainSelectedSubId.clear();
+    if (config.ui().mainSelectedSubId.trimmed() == normalizedId) {
+        config.ui().mainSelectedSubId.clear();
     }
 
     if (!repository_.save(config)) {
@@ -144,8 +144,8 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     const QString previousCurrentIndexId = config.currentIndexId;
     QList<VmessItem> oldSubscriptionServers;
     auto newEnd = std::remove_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&normalizedId, &oldSubscriptionServers](const VmessItem& item) {
             if (item.subId.trimmed() == normalizedId) {
                 oldSubscriptionServers.append(item);
@@ -154,7 +154,7 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
 
             return false;
         });
-    config.servers.erase(newEnd, config.servers.end());
+    config.collection().servers.erase(newEnd, config.collection().servers.end());
 
     QHash<QString, QList<VmessItem>> reusableServersByKey;
     for (const VmessItem& oldItem : oldSubscriptionServers) {
@@ -166,17 +166,20 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         const QString reuseKey = serverReuseKey(item);
         QList<VmessItem>& reusableServers = reusableServersByKey[reuseKey];
         if (!reusableServers.isEmpty()) {
-            item.indexId = reusableServers.takeFirst().indexId;
+            const VmessItem reusableServer = reusableServers.takeFirst();
+            item.indexId = reusableServer.indexId;
+            item.testResult = reusableServer.testResult;
         } else {
             item.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            item.testResult.clear();
         }
 
         item.subId = normalizedId;
-        config.servers.append(item);
+        config.collection().servers.append(item);
         newSubscriptionIndexIds.append(item.indexId);
     }
 
-    if (!hasServerWithIndexId(config.servers, previousCurrentIndexId)) {
+    if (!hasServerWithIndexId(config.collection().servers, previousCurrentIndexId)) {
         const bool currentBelongedToUpdatedSubscription = std::any_of(
             oldSubscriptionServers.cbegin(),
             oldSubscriptionServers.cend(),
@@ -186,8 +189,8 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         if (currentBelongedToUpdatedSubscription) {
             if (!newSubscriptionIndexIds.isEmpty()) {
                 config.currentIndexId = newSubscriptionIndexIds.constFirst();
-            } else if (!config.servers.isEmpty()) {
-                config.currentIndexId = config.servers.constFirst().indexId;
+            } else if (!config.collection().servers.isEmpty()) {
+                config.currentIndexId = config.collection().servers.constFirst().indexId;
             } else {
                 config.currentIndexId.clear();
             }

@@ -23,10 +23,6 @@ QString actionName(GlobalHotkeyAction action)
         return QCoreApplication::translate("GlobalHotkeyDialog", "Clear System Proxy");
     case GlobalHotkeyAction::SystemProxySet:
         return QCoreApplication::translate("GlobalHotkeyDialog", "Set System Proxy");
-    case GlobalHotkeyAction::SystemProxyUnchanged:
-        return QCoreApplication::translate("GlobalHotkeyDialog", "Keep System Proxy Unchanged");
-    case GlobalHotkeyAction::SystemProxyPac:
-        return QCoreApplication::translate("GlobalHotkeyDialog", "System Proxy PAC");
     default:
         return QString();
     }

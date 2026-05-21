@@ -14,15 +14,9 @@ bool WindowsSystemProxyService::update(
     int httpPort,
     int socksPort,
     const QString& proxyExceptions,
-    const QString& advancedProtocol,
-    const QString& pacUrl) const
+    const QString& advancedProtocol) const
 {
-    if (mode == SystemProxyMode::Unchanged) {
-        return true;
-    }
-
     if (mode == SystemProxyMode::ForcedClear) {
-        // Clear both manual proxy and PAC
         setProxy(QString(), QString(), false);
         QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
         settings.remove(QStringLiteral("AutoConfigURL"));
@@ -30,17 +24,6 @@ bool WindowsSystemProxyService::update(
         InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
         InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
         return true;
-    }
-
-    if (mode == SystemProxyMode::Pac) {
-        QString effectivePacUrl = pacUrl.trimmed();
-        if (effectivePacUrl.isEmpty()) {
-            // Use built-in PAC server
-            effectivePacUrl = QStringLiteral("http://127.0.0.1:10870/pac");
-        }
-        // Disable manual proxy, enable PAC
-        setProxy(QString(), QString(), false);
-        return setPacProxy(effectivePacUrl);
     }
 
     if (httpPort <= 0) {
@@ -57,7 +40,6 @@ bool WindowsSystemProxyService::update(
         proxyServer.replace(QStringLiteral("{socks_port}"), QString::number(socksPort));
     }
 
-    // Clear PAC when switching to manual proxy
     QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
     settings.remove(QStringLiteral("AutoConfigURL"));
     settings.sync();
@@ -98,20 +80,6 @@ bool WindowsSystemProxyService::setProxy(const QString& proxyServer, const QStri
         settings.remove(QStringLiteral("ProxyOverride"));
     }
 
-    settings.sync();
-    if (settings.status() != QSettings::NoError) {
-        return false;
-    }
-
-    InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
-    InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
-    return true;
-}
-
-bool WindowsSystemProxyService::setPacProxy(const QString& pacUrl) const
-{
-    QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
-    settings.setValue(QStringLiteral("AutoConfigURL"), pacUrl);
     settings.sync();
     if (settings.status() != QSettings::NoError) {
         return false;

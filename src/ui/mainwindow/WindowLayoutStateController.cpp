@@ -9,8 +9,6 @@
 #include <QTableView>
 #include <QTimer>
 
-#include <numeric>
-
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/ServerWorkspaceWidget.h"
 #include "ui/mainwindow/SharePanelWidget.h"
@@ -21,6 +19,8 @@ constexpr int DefaultServerLogSplitPercent = 60;
 constexpr int DefaultServerQrSplitPercent = 78;
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
+constexpr int ManualServerColumnWidthsMarker = 1;
+constexpr int ServerResultColumn = 4;
 
 QStringList defaultServerColumnKeys()
 {
@@ -29,16 +29,23 @@ QStringList defaultServerColumnKeys()
         QStringLiteral("Type"),
         QStringLiteral("Remarks"),
         QStringLiteral("Address"),
-        QStringLiteral("Security"),
-        QStringLiteral("Network"),
-        QStringLiteral("StreamSecurity"),
         QStringLiteral("TestResult")
     };
+}
+
+QString manualServerColumnWidthsKey()
+{
+    return QStringLiteral("__manualServerColumnWidths");
 }
 
 bool hasLegacyServerColumnWidths(const QMap<QString, int>& widths)
 {
     return widths.contains(QStringLiteral("Port"));
+}
+
+bool hasManualServerColumnWidths(const QMap<QString, int>& widths)
+{
+    return widths.value(manualServerColumnWidthsKey()) == ManualServerColumnWidthsMarker;
 }
 
 } // namespace
@@ -57,33 +64,27 @@ WindowLayoutStateController::WindowLayoutStateController(
     if (sharePanel_ != nullptr) {
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
+
+    if (serverView_ != nullptr && serverView_->horizontalHeader() != nullptr) {
+        connect(serverView_->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int logicalIndex, int, int) {
+            if (!applyingServerColumnWidths_ && logicalIndex != ServerResultColumn) {
+                serverColumnsManuallyAdjusted_ = true;
+            }
+        });
+    }
 }
 
 QList<int> WindowLayoutStateController::defaultServerColumnWidths(int availableWidth)
 {
+    Q_UNUSED(availableWidth);
     QList<int> widths{
         44,
-        100,
-        160,
-        240,
-        80,
-        80,
-        64,
+        90,
+        220,
+        320,
         84
     };
 
-    const int minimumTotalWidth = std::accumulate(widths.cbegin(), widths.cend(), 0);
-    if (availableWidth <= 0) {
-        availableWidth = DefaultMainWindowWidth;
-    }
-    if (availableWidth <= minimumTotalWidth) {
-        return widths;
-    }
-
-    const int extraWidth = availableWidth - minimumTotalWidth;
-    const int aliasExtraWidth = qRound((extraWidth * 3.0) / 7.0);
-    widths[2] += aliasExtraWidth;
-    widths[3] += extraWidth - aliasExtraWidth;
     return widths;
 }
 
@@ -99,20 +100,22 @@ void WindowLayoutStateController::restoreFromConfig(const Config& config)
     }
 
     const QSize restoredSize(
-        qMax(window_->minimumWidth(), config.mainSizeWidth > 0 ? config.mainSizeWidth : window_->width()),
-        qMax(window_->minimumHeight(), config.mainSizeHeight > 0 ? config.mainSizeHeight : window_->height()));
+        qMax(window_->minimumWidth(), config.ui().mainSizeWidth > 0 ? config.ui().mainSizeWidth : window_->width()),
+        qMax(window_->minimumHeight(), config.ui().mainSizeHeight > 0 ? config.ui().mainSizeHeight : window_->height()));
     if (restoredSize.width() > 0 && restoredSize.height() > 0) {
         window_->resize(restoredSize);
     }
 
-    if (config.mainLocationX != 0 || config.mainLocationY != 0) {
-        window_->move(clampWindowPosition(QPoint(config.mainLocationX, config.mainLocationY), window_->size()));
+    if (config.ui().mainLocationX != 0 || config.ui().mainLocationY != 0) {
+        window_->move(clampWindowPosition(QPoint(config.ui().mainLocationX, config.ui().mainLocationY), window_->size()));
     }
 
-    pendingColumnWidths_ = config.mainColumnWidths;
-    serverLogSplitPercent_ = clampSplitPercent(config.mainServerLogSplitPercent, DefaultServerLogSplitPercent);
-    serverQrSplitPercent_ = clampSplitPercent(config.mainServerQrSplitPercent, DefaultServerQrSplitPercent);
-    qrPreviewVisible_ = config.mainQrPreviewVisible;
+    pendingColumnWidths_ = hasManualServerColumnWidths(config.ui().mainColumnWidths)
+        ? config.ui().mainColumnWidths
+        : QMap<QString, int>();
+    serverLogSplitPercent_ = clampSplitPercent(config.ui().mainServerLogSplitPercent, DefaultServerLogSplitPercent);
+    serverQrSplitPercent_ = clampSplitPercent(config.ui().mainServerQrSplitPercent, DefaultServerQrSplitPercent);
+    qrPreviewVisible_ = config.ui().mainQrPreviewVisible;
     if (sharePanel_ != nullptr) {
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
@@ -132,15 +135,19 @@ void WindowLayoutStateController::captureToConfig(Config& config) const
         bounds = normalBounds;
     }
 
-    config.mainLocationX = bounds.x();
-    config.mainLocationY = bounds.y();
-    config.mainSizeWidth = bounds.width();
-    config.mainSizeHeight = bounds.height();
-    config.mainColumnWidths = captureServerColumnWidths();
-    config.mainServerLogSplitPercent = captureSplitPercent(
+    config.ui().mainLocationX = bounds.x();
+    config.ui().mainLocationY = bounds.y();
+    config.ui().mainSizeWidth = bounds.width();
+    config.ui().mainSizeHeight = bounds.height();
+    if (serverColumnsManuallyAdjusted_) {
+        config.ui().mainColumnWidths = captureServerColumnWidths();
+    } else if (!hasManualServerColumnWidths(config.ui().mainColumnWidths)) {
+        config.ui().mainColumnWidths.clear();
+    }
+    config.ui().mainServerLogSplitPercent = captureSplitPercent(
         serverWorkspace_ == nullptr ? nullptr : serverWorkspace_->rootSplitter(),
         serverLogSplitPercent_);
-    config.mainServerQrSplitPercent = captureSplitPercent(
+    config.ui().mainServerQrSplitPercent = captureSplitPercent(
         serverWorkspace_ == nullptr ? nullptr : serverWorkspace_->topSplitter(),
         serverQrSplitPercent_);
 }
@@ -166,9 +173,6 @@ void WindowLayoutStateController::handleShowEvent()
     }
 
     initialServerColumnLayoutPending_ = false;
-    QTimer::singleShot(0, this, [this]() {
-        restoreServerColumnWidths({});
-    });
 }
 
 void WindowLayoutStateController::handleQrPreviewToggled(bool checked)
@@ -264,24 +268,22 @@ void WindowLayoutStateController::restoreServerColumnWidths(const QMap<QString, 
         return;
     }
 
-    const QMap<QString, int> effectiveWidths = hasLegacyServerColumnWidths(widths)
-        ? QMap<QString, int>()
-        : widths;
-    const int availableWidth = serverView_->viewport() == nullptr
-        ? serverView_->width()
-        : serverView_->viewport()->width();
-    const QList<int> defaultWidths = defaultServerColumnWidths(availableWidth);
+    if (hasLegacyServerColumnWidths(widths) || !hasManualServerColumnWidths(widths)) {
+        return;
+    }
+
+    QMap<QString, int> effectiveWidths = widths;
+    effectiveWidths.remove(manualServerColumnWidthsKey());
     const QStringList keys = serverColumnKeys();
     QHeaderView* header = serverView_->horizontalHeader();
+    applyingServerColumnWidths_ = true;
     for (int index = 0; index < keys.size() && index < header->count(); ++index) {
-        if (index < defaultWidths.size() && defaultWidths.at(index) > 0) {
-            header->resizeSection(index, defaultWidths.at(index));
-        }
         const auto it = effectiveWidths.constFind(keys.at(index));
         if (it != effectiveWidths.constEnd() && it.value() > 0) {
             header->resizeSection(index, it.value());
         }
     }
+    applyingServerColumnWidths_ = false;
 }
 
 QMap<QString, int> WindowLayoutStateController::captureServerColumnWidths() const
@@ -294,8 +296,12 @@ QMap<QString, int> WindowLayoutStateController::captureServerColumnWidths() cons
     const QStringList keys = serverColumnKeys();
     const QHeaderView* header = serverView_->horizontalHeader();
     for (int index = 0; index < keys.size() && index < header->count(); ++index) {
+        if (index == ServerResultColumn) {
+            continue;
+        }
         widths.insert(keys.at(index), header->sectionSize(index));
     }
+    widths.insert(manualServerColumnWidthsKey(), ManualServerColumnWidthsMarker);
 
     return widths;
 }

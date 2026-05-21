@@ -4,6 +4,7 @@
 
 #include <QStringList>
 
+struct Config;
 class QLineEdit;
 class ServerFilterProxyModel;
 class ServerTableModel;
@@ -33,8 +34,11 @@ public:
     void handleFilterTextChanged(const QString& text);
     void handleSubscriptionFilterChanged();
     void updateReorderAvailability();
+    void restoreSortState(const Config& config);
+    void captureSortState(Config& config) const;
 
 private:
+    void applySorting(int logicalIndex, Qt::SortOrder order);
     void toggleSorting(int logicalIndex);
     QStringList buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const;
 

@@ -3,6 +3,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QTextEdit>
 
@@ -36,39 +37,39 @@ DnsSettingsPageWidget::DnsSettingsPageWidget(QWidget* parent)
 
 void DnsSettingsPageWidget::setConfig(const Config& config)
 {
-    remoteDnsEdit_->setText(config.remoteDns);
-    directDnsEdit_->setText(config.directDns);
-    bootstrapDnsEdit_->setText(config.bootstrapDns);
-    domainStrategyForFreedomCombo_->setCurrentText(config.domainStrategyForFreedom);
-    domainStrategyForProxyCombo_->setCurrentText(config.domainStrategyForProxy);
-    useSystemHostsCheck_->setChecked(config.useSystemHosts);
-    addCommonHostsCheck_->setChecked(config.addCommonHosts);
-    blockBindingQueryCheck_->setChecked(config.blockBindingQuery);
-    fakeIpCheck_->setChecked(config.fakeIp);
-    globalFakeIpCheck_->setChecked(config.globalFakeIp);
-    serveStaleCheck_->setChecked(config.serveStale);
-    parallelQueryCheck_->setChecked(config.parallelQuery);
-    directExpectedIpsEdit_->setText(config.directExpectedIps);
-    dnsHostsEdit_->setPlainText(config.dnsHosts);
+    remoteDnsEdit_->setText(config.dns().remoteDns);
+    directDnsEdit_->setText(config.dns().directDns);
+    bootstrapDnsEdit_->setText(config.dns().bootstrapDns);
+    domainStrategyForFreedomCombo_->setCurrentText(config.dns().domainStrategyForFreedom);
+    domainStrategyForProxyCombo_->setCurrentText(config.dns().domainStrategyForProxy);
+    useSystemHostsCheck_->setChecked(config.dns().useSystemHosts);
+    addCommonHostsCheck_->setChecked(config.dns().addCommonHosts);
+    blockBindingQueryCheck_->setChecked(config.dns().blockBindingQuery);
+    fakeIpCheck_->setChecked(config.dns().fakeIp);
+    globalFakeIpCheck_->setChecked(config.dns().globalFakeIp);
+    serveStaleCheck_->setChecked(config.dns().serveStale);
+    parallelQueryCheck_->setChecked(config.dns().parallelQuery);
+    directExpectedIpsEdit_->setText(config.dns().directExpectedIps);
+    dnsHostsEdit_->setPlainText(config.dns().dnsHosts);
     updateFieldState();
 }
 
 void DnsSettingsPageWidget::applyToConfig(Config& config) const
 {
-    config.remoteDns = remoteDnsEdit_->text().trimmed();
-    config.directDns = directDnsEdit_->text().trimmed();
-    config.bootstrapDns = bootstrapDnsEdit_->text().trimmed();
-    config.domainStrategyForFreedom = domainStrategyForFreedomCombo_->currentText().trimmed();
-    config.domainStrategyForProxy = domainStrategyForProxyCombo_->currentText().trimmed();
-    config.useSystemHosts = useSystemHostsCheck_->isChecked();
-    config.addCommonHosts = addCommonHostsCheck_->isChecked();
-    config.blockBindingQuery = blockBindingQueryCheck_->isChecked();
-    config.fakeIp = fakeIpCheck_->isChecked();
-    config.globalFakeIp = globalFakeIpCheck_->isChecked();
-    config.serveStale = serveStaleCheck_->isChecked();
-    config.parallelQuery = parallelQueryCheck_->isChecked();
-    config.directExpectedIps = directExpectedIpsEdit_->text().trimmed();
-    config.dnsHosts = dnsHostsEdit_->toPlainText().trimmed();
+    config.dns().remoteDns = remoteDnsEdit_->text().trimmed();
+    config.dns().directDns = directDnsEdit_->text().trimmed();
+    config.dns().bootstrapDns = bootstrapDnsEdit_->text().trimmed();
+    config.dns().domainStrategyForFreedom = domainStrategyForFreedomCombo_->currentText().trimmed();
+    config.dns().domainStrategyForProxy = domainStrategyForProxyCombo_->currentText().trimmed();
+    config.dns().useSystemHosts = useSystemHostsCheck_->isChecked();
+    config.dns().addCommonHosts = addCommonHostsCheck_->isChecked();
+    config.dns().blockBindingQuery = blockBindingQueryCheck_->isChecked();
+    config.dns().fakeIp = fakeIpCheck_->isChecked();
+    config.dns().globalFakeIp = globalFakeIpCheck_->isChecked();
+    config.dns().serveStale = serveStaleCheck_->isChecked();
+    config.dns().parallelQuery = parallelQueryCheck_->isChecked();
+    config.dns().directExpectedIps = directExpectedIpsEdit_->text().trimmed();
+    config.dns().dnsHosts = dnsHostsEdit_->toPlainText().trimmed();
 }
 
 void DnsSettingsPageWidget::setupUi()
@@ -146,8 +147,13 @@ void DnsSettingsPageWidget::setupUi()
     dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, useSystemHostsCheck_);
     dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, addCommonHostsCheck_);
     dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, blockBindingQueryCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, fakeIpCheck_);
-    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, globalFakeIpCheck_);
+    auto* fakeIpRow = new QWidget(this);
+    auto* fakeIpRowLayout = new QHBoxLayout(fakeIpRow);
+    fakeIpRowLayout->setContentsMargins(0, 0, 0, 0);
+    fakeIpRowLayout->addWidget(fakeIpCheck_);
+    fakeIpRowLayout->addWidget(globalFakeIpCheck_);
+    fakeIpRowLayout->addStretch();
+    dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, fakeIpRow);
     dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, serveStaleCheck_);
     dnsLayout->setWidget(dnsLayout->rowCount(), QFormLayout::SpanningRole, parallelQueryCheck_);
     dnsLayout->addRow(tr("Direct Expected IPs"), directExpectedIpsEdit_);

@@ -4,8 +4,25 @@
 
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QPalette>
+#include <QSvgWidget>
 #include <QVBoxLayout>
+
+namespace {
+
+QString readableLinkColor(const QWidget* widget)
+{
+    const QColor windowColor = widget == nullptr
+        ? QColor(Qt::white)
+        : widget->palette().color(QPalette::Window);
+    return windowColor.lightness() < 128
+        ? QStringLiteral("#7ed8ff")
+        : QStringLiteral("#0969da");
+}
+
+} // namespace
 
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
@@ -19,8 +36,9 @@ void AboutDialog::setRepoUrl(const QString& repoUrl)
         if (repoUrl.trimmed().isEmpty()) {
             repoUrlValueLabel_->setText(tr("Unavailable"));
         } else {
+            const QString linkColor = readableLinkColor(repoUrlValueLabel_);
             repoUrlValueLabel_->setText(
-                QStringLiteral("<a href=\"%1\">%1</a>").arg(repoUrl.trimmed()));
+                QStringLiteral("<a style=\"color:%1;\" href=\"%2\">%2</a>").arg(linkColor, repoUrl.trimmed()));
         }
     }
 }
@@ -48,14 +66,25 @@ void AboutDialog::setConfigPath(const QString& configPath)
 
 void AboutDialog::setupUi()
 {
-    setWindowTitle(tr("About Song Box"));
+    setWindowTitle(tr("About SongBird"));
     resize(480, 220);
 
-    auto* titleLabel = new QLabel(tr("Song Box"), this);
+    logoLabel_ = new QSvgWidget(QStringLiteral(":/app/logo.svg"), this);
+    logoLabel_->setObjectName(QStringLiteral("aboutLogo"));
+    logoLabel_->setFixedSize(24, 24);
+
+    auto* titleLabel = new QLabel(tr("SongBird"), this);
     titleLabel->setObjectName(QStringLiteral("aboutTitleLabel"));
 
+    auto* titleRow = new QHBoxLayout();
+    titleRow->setContentsMargins(0, 0, 0, 0);
+    titleRow->setSpacing(8);
+    titleRow->addWidget(logoLabel_);
+    titleRow->addWidget(titleLabel);
+    titleRow->addStretch(1);
+
     auto* summaryLabel = new QLabel(
-        tr("Song Box is a Qt/C++ rewrite and improvement of v2rayN."),
+        tr("SongBird is a Qt/C++ rewrite and improvement of v2rayN."),
         this);
     summaryLabel->setObjectName(QStringLiteral("aboutSummaryLabel"));
     summaryLabel->setWordWrap(true);
@@ -88,7 +117,7 @@ void AboutDialog::setupUi()
     DialogUtils::localizeStandardDialogButtonBox(buttonBox_);
 
     auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->addWidget(titleLabel);
+    rootLayout->addLayout(titleRow);
     rootLayout->addWidget(summaryLabel);
     rootLayout->addLayout(formLayout);
     rootLayout->addStretch(1);

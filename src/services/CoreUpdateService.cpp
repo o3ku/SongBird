@@ -19,9 +19,11 @@
 #include <QThread>
 #include <QTimer>
 
+#include <memory>
 #include <utility>
 
 #include "common/GitHubMirrorHelper.h"
+#include "common/UserAgent.h"
 #include "runtime/ProtocolCoreCompat.h"
 
 #if defined(Q_OS_WIN)
@@ -351,7 +353,8 @@ OperationResult downloadBytesWithNetwork(
     QByteArray* content,
     const QString& userAgent,
     int timeoutMs,
-    const CoreUpdateService::CancelCheckHandler& cancelCheck)
+    const CoreUpdateService::CancelCheckHandler& cancelCheck,
+    const CoreUpdateService::ProgressHandler& progressHandler = {})
 {
     if (content == nullptr) {
         return OperationResult::fail(
@@ -377,6 +380,41 @@ OperationResult downloadBytesWithNetwork(
     cancellationTimer.setInterval(kCancellationPollIntervalMs);
 
     QNetworkReply* reply = manager.get(request);
+    auto lastReportedPercent = std::make_shared<int>(-1);
+    auto lastReportedBytes = std::make_shared<qint64>(0);
+    QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [progressHandler, lastReportedPercent, lastReportedBytes](qint64 bytesReceived, qint64 bytesTotal) {
+        if (!progressHandler || bytesReceived < 0) {
+            return;
+        }
+
+        if (bytesTotal > 0) {
+            const int percent = static_cast<int>((bytesReceived * 100) / bytesTotal);
+            if (percent < 100
+                && *lastReportedPercent >= 0
+                && percent - *lastReportedPercent < 5) {
+                return;
+            }
+
+            *lastReportedPercent = percent;
+            reportProgress(
+                progressHandler,
+                QCoreApplication::translate("CoreUpdateService", "Downloading... %1%")
+                    .arg(percent));
+            return;
+        }
+
+        constexpr qint64 kUnknownTotalProgressStepBytes = 512 * 1024;
+        if (bytesReceived < kUnknownTotalProgressStepBytes
+            || bytesReceived - *lastReportedBytes < kUnknownTotalProgressStepBytes) {
+            return;
+        }
+
+        *lastReportedBytes = bytesReceived;
+        reportProgress(
+            progressHandler,
+            QCoreApplication::translate("CoreUpdateService", "Downloading... %1 bytes")
+                .arg(bytesReceived));
+    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         timedOut = true;
@@ -859,7 +897,7 @@ OperationResult CoreUpdateService::update(
                 : downloadBytesWithNetwork(
                     candidateUrl,
                     &payload,
-                    QStringLiteral("SongBox-core-update"),
+                    fallbackUserAgent(),
                     kCoreMetadataTimeoutMs,
                     cancelCheck);
             if (isCancelledResult(downloadResult)) {
@@ -1015,9 +1053,10 @@ OperationResult CoreUpdateService::update(
             : downloadBytesWithNetwork(
                 candidateUrl,
                 &packageBytes,
-                QStringLiteral("SongBox-core-update"),
+                fallbackUserAgent(),
                 kCoreDownloadTimeoutMs,
-                cancelCheck);
+                cancelCheck,
+                progressHandler);
         if (isCancelledResult(downloadResult)) {
             return downloadResult;
         }

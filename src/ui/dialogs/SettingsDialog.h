@@ -18,11 +18,9 @@ class QWidget;
 #include "ui/dialogs/CoreSettingsPageWidget.h"
 #include "ui/dialogs/DnsSettingsPageWidget.h"
 #include "ui/dialogs/GeneralSettingsPageWidget.h"
-#include "ui/dialogs/ProxySettingsPageWidget.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "ui/dialogs/TunSettingsPageWidget.h"
-#include "ui/dialogs/UpdateSettingsPageWidget.h"
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -53,9 +51,7 @@ private:
 
     Config config_;
     GeneralSettingsPageWidget* generalSettingsPage_ = nullptr;
-    ProxySettingsPageWidget* proxySettingsPage_ = nullptr;
     TunSettingsPageWidget* tunSettingsPage_ = nullptr;
-    UpdateSettingsPageWidget* updateSettingsPage_ = nullptr;
     QPushButton* restoreBackupButton_ = nullptr;
     QDialogButtonBox* buttonBox_ = nullptr;
     bool restoreBackupRequested_ = false;

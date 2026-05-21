@@ -1,7 +1,5 @@
 #include "services/SubscriptionUpdateService.h"
 
-#include <algorithm>
-
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -13,6 +11,7 @@
 #include <QUuid>
 
 #include "subscription/ShareUrlParser.h"
+#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "subscription/SubscriptionContentParser.h"
 
 namespace {
@@ -38,7 +37,7 @@ SubscriptionUpdateService::SubscriptionUpdateService(
 OperationResult SubscriptionUpdateService::updateAll(Config& config, bool useProxy)
 {
     QList<SubItem> items;
-    for (const SubItem& item : config.subscriptions) {
+    for (const SubItem& item : config.collection().subscriptions) {
         if (!item.enabled || item.url.trimmed().isEmpty()) {
             continue;
         }
@@ -67,7 +66,7 @@ OperationResult SubscriptionUpdateService::updateByIds(Config& config, const QSt
     }
 
     QList<SubItem> items;
-    for (const SubItem& item : config.subscriptions) {
+    for (const SubItem& item : config.collection().subscriptions) {
         if (normalizedIds.contains(item.id)) {
             items.append(item);
         }
@@ -91,20 +90,13 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
         return OperationResult::fail(QStringLiteral("No supported share URL or subscription payload was detected."));
     }
 
-    int maxSort = 0;
-    for (const VmessItem& item : config.servers) {
-        maxSort = std::max(maxSort, item.sort);
-    }
-
     for (VmessItem& item : servers) {
         item.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        item.sort = maxSort + 10;
-        maxSort = item.sort;
-        config.servers.append(item);
+        config.collection().servers.append(item);
     }
 
-    if (config.currentIndexId.isEmpty() && !config.servers.isEmpty()) {
-        config.currentIndexId = config.servers.constFirst().indexId;
+    if (config.currentIndexId.isEmpty() && !config.collection().servers.isEmpty()) {
+        config.currentIndexId = config.collection().servers.constFirst().indexId;
     }
 
     if (!repository_.save(config)) {
@@ -197,7 +189,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
 
     if (importedCount != nullptr) {
         *importedCount = 0;
-        for (const VmessItem& server : config.servers) {
+        for (const VmessItem& server : config.collection().servers) {
             if (server.subId == item.id) {
                 (*importedCount)++;
             }
@@ -225,8 +217,8 @@ OperationResult SubscriptionUpdateService::downloadText(
 
     QNetworkRequest request{parsedUrl};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    const QString defaultUA = QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)");
-    request.setRawHeader("User-Agent", (userAgent.trimmed().isEmpty() ? defaultUA : userAgent).toUtf8());
+    const QString resolvedUA = SubscriptionSettingsPageWidget::resolveUserAgent(userAgent);
+    request.setRawHeader("User-Agent", resolvedUA.toUtf8());
 
     const QNetworkProxy previousProxy = networkAccessManager_.proxy();
     if (proxyPort > 0) {

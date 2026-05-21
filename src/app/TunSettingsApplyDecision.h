@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 
 struct TunSettingsApplyDecision {
@@ -35,11 +36,11 @@ inline TunSettingsApplyDecision evaluateTunSettingsApply(
     bool isCoreRunning)
 {
     TunSettingsApplyDecision decision;
-    decision.tunSettingsChanged = !areTunModeItemsEqual(previous.tunModeItem, updated.tunModeItem);
+    decision.tunSettingsChanged = !areTunModeItemsEqual(previous.tun().tunModeItem, updated.tun().tunModeItem);
     decision.tunRuntimeChanged = decision.tunSettingsChanged
-        && (previous.tunModeItem.enableTun || updated.tunModeItem.enableTun);
+        && (previous.tun().tunModeItem.enableTun || updated.tun().tunModeItem.enableTun);
     decision.requiresAdminForConfiguredTun =
-        isWindows && updated.tunModeItem.enableTun && !isProcessElevated;
+        isWindows && updated.tun().tunModeItem.enableTun && !isProcessElevated;
     decision.shouldRestartRunningCore =
         decision.tunRuntimeChanged && isCoreRunning && !decision.requiresAdminForConfiguredTun;
     return decision;
@@ -47,7 +48,21 @@ inline TunSettingsApplyDecision evaluateTunSettingsApply(
 
 inline bool isTunRuntimeBlocked(const Config& config, bool isWindows, bool isProcessElevated)
 {
-    return isWindows && config.tunModeItem.enableTun && !isProcessElevated;
+    return isWindows && config.tun().tunModeItem.enableTun && !isProcessElevated;
+}
+
+inline Config prepareTunToggleConfigForSave(
+    Config config,
+    bool enabled,
+    bool isWindows,
+    bool isProcessElevated)
+{
+    config.tun().tunModeItem.enableTun = enabled;
+    if (enabled && isWindows && !isProcessElevated) {
+        config.ui().mainProxyEnabled = true;
+        config.sysProxyType = toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange);
+    }
+    return config;
 }
 
 inline TunSettingsSaveBehavior evaluateTunSettingsSaveBehavior(
@@ -77,12 +92,10 @@ inline bool shouldHotApplyRuntimeSettings(
     return !tunDecision.requiresAdminForConfiguredTun
         && (previous.localPort != updated.localPort
             || previous.allowLanConnection != updated.allowLanConnection
-            || previous.enableStatistics != updated.enableStatistics
-            || previous.statisticsFreshRate != updated.statisticsFreshRate
-            || previous.coreTypeItems != updated.coreTypeItems
-            || previous.enableRoutingAdvanced != updated.enableRoutingAdvanced
-            || previous.routingIndex != updated.routingIndex
-            || previous.routingItems != updated.routingItems
-            || previous.routingCustomRules != updated.routingCustomRules
+            || previous.policy().coreTypeItems != updated.policy().coreTypeItems
+            || previous.collection().enableRoutingAdvanced != updated.collection().enableRoutingAdvanced
+            || previous.collection().routingIndex != updated.collection().routingIndex
+            || previous.collection().routingItems != updated.collection().routingItems
+            || previous.collection().routingCustomRules != updated.collection().routingCustomRules
             || tunDecision.tunRuntimeChanged);
 }

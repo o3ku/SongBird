@@ -33,13 +33,6 @@ inline QStringList startupAdminRelaunchArguments(const QStringList& applicationA
         : QStringList();
 }
 
-inline QStringList startupAdminRelaunchArgumentsForRunningInstance(const QStringList& applicationArguments)
-{
-    return applicationArguments.size() > 1
-        ? applicationArguments.mid(1)
-        : QStringList();
-}
-
 inline QStringList startupRelaunchArgumentsForRunningInstance(
     const QStringList& applicationArguments,
     bool adminRelaunch,

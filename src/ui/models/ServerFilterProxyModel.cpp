@@ -13,9 +13,6 @@ enum ServerColumn {
     TypeColumn,
     RemarksColumn,
     AddressColumn,
-    SecurityColumn,
-    NetworkColumn,
-    StreamSecurityColumn,
     TestResultColumn
 };
 
@@ -176,7 +173,7 @@ QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
         if (tableModel != nullptr && item != nullptr
             && !tableModel->currentIndexId().isEmpty()
             && item->indexId == tableModel->currentIndexId()) {
-            return QStringLiteral(">");
+            return {};
         }
 
         return QVariant(QString::number(index.row() + 1));
@@ -226,15 +223,6 @@ bool ServerFilterProxyModel::lessThan(const QModelIndex& sourceLeft, const QMode
             comparison = compareValues(leftItem->port, rightItem->port);
         }
         break;
-    case SecurityColumn:
-        comparison = compareText(leftItem->security, rightItem->security);
-        break;
-    case NetworkColumn:
-        comparison = compareText(leftItem->network, rightItem->network);
-        break;
-    case StreamSecurityColumn:
-        comparison = compareText(leftItem->streamSecurity, rightItem->streamSecurity);
-        break;
     case TestResultColumn:
         comparison = compareTestResults(leftItem->testResult, rightItem->testResult);
         break;
@@ -244,7 +232,7 @@ bool ServerFilterProxyModel::lessThan(const QModelIndex& sourceLeft, const QMode
     }
 
     if (comparison == 0) {
-        comparison = compareValues(leftItem->sort, rightItem->sort);
+        comparison = compareValues(sourceLeft.row(), sourceRight.row());
     }
     if (comparison == 0) {
         comparison = compareText(leftItem->indexId, rightItem->indexId);

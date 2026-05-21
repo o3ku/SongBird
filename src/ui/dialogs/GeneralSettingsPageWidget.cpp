@@ -46,43 +46,42 @@ GeneralSettingsPageWidget::GeneralSettingsPageWidget(QWidget* parent)
 
 void GeneralSettingsPageWidget::setConfig(const Config& config)
 {
-    showMainOnStartupCheck_->setChecked(config.showMainOnStartup);
-    autoRunCheck_->setChecked(config.autoRunEnabled);
+    showMainOnStartupCheck_->setChecked(config.ui().showMainOnStartup);
+    autoRunCheck_->setChecked(config.ui().autoRunEnabled);
     allowLanConnectionCheck_->setChecked(config.allowLanConnection);
     sniffingEnabledCheck_->setChecked(config.sniffingEnabled);
     routeOnlyCheck_->setChecked(config.routeOnly);
     localPortSpin_->setValue(config.localPort > 0 ? config.localPort : 10808);
-    enableFragmentCheck_->setChecked(config.enableFragment);
-    defaultAllowInsecureCheck_->setChecked(config.defaultAllowInsecure);
-    defaultFingerprintCombo_->setCurrentText(config.defaultFingerprint);
-    defaultUserAgentCombo_->setCurrentText(config.defaultUserAgent);
-    enableStatisticsCheck_->setChecked(config.enableStatistics);
-    statisticsFreshRateSpin_->setValue(qMax(1, config.statisticsFreshRate));
-    trayMenuServersLimitSpin_->setValue(qMax(0, config.trayMenuServersLimit));
+    enableFragmentCheck_->setChecked(config.dns().enableFragment);
+    defaultAllowInsecureCheck_->setChecked(config.dns().defaultAllowInsecure);
+    defaultFingerprintCombo_->setCurrentText(config.dns().defaultFingerprint);
+    defaultUserAgentCombo_->setCurrentText(config.dns().defaultUserAgent);
 
-    const QString normalizedLanguage = config.languageCode.trimmed();
+    const QString normalizedLanguage = config.ui().languageCode.trimmed();
     const int languageIndex = languageCombo_->findData(normalizedLanguage);
     languageCombo_->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
+
+    const QString themeName = AppTheme::normalizeThemeName(config.ui().themeName);
+    const int themeIndex = themeCombo_->findData(themeName);
+    themeCombo_->setCurrentIndex(themeIndex >= 0 ? themeIndex : 0);
 
     updateFieldState();
 }
 
 void GeneralSettingsPageWidget::applyToConfig(Config& config) const
 {
-    config.showMainOnStartup = showMainOnStartupCheck_->isChecked();
-    config.autoRunEnabled = autoRunCheck_->isChecked();
+    config.ui().showMainOnStartup = showMainOnStartupCheck_->isChecked();
+    config.ui().autoRunEnabled = autoRunCheck_->isChecked();
     config.allowLanConnection = allowLanConnectionCheck_->isChecked();
     config.sniffingEnabled = sniffingEnabledCheck_->isChecked();
     config.routeOnly = routeOnlyCheck_->isChecked();
     config.localPort = localPortSpin_->value();
-    config.enableFragment = enableFragmentCheck_->isChecked();
-    config.defaultAllowInsecure = defaultAllowInsecureCheck_->isChecked();
-    config.defaultFingerprint = defaultFingerprintCombo_->currentText().trimmed();
-    config.defaultUserAgent = defaultUserAgentCombo_->currentText().trimmed();
-    config.enableStatistics = enableStatisticsCheck_->isChecked();
-    config.statisticsFreshRate = statisticsFreshRateSpin_->value();
-    config.trayMenuServersLimit = trayMenuServersLimitSpin_->value();
-    config.languageCode = languageCombo_->currentData().toString().trimmed();
+    config.dns().enableFragment = enableFragmentCheck_->isChecked();
+    config.dns().defaultAllowInsecure = defaultAllowInsecureCheck_->isChecked();
+    config.dns().defaultFingerprint = defaultFingerprintCombo_->currentText().trimmed();
+    config.dns().defaultUserAgent = defaultUserAgentCombo_->currentText().trimmed();
+    config.ui().languageCode = languageCombo_->currentData().toString().trimmed();
+    config.ui().themeName = AppTheme::normalizeThemeName(themeCombo_->currentData().toString());
 }
 
 void GeneralSettingsPageWidget::setupUi()
@@ -117,23 +116,16 @@ void GeneralSettingsPageWidget::setupUi()
     defaultUserAgentCombo_->setEditable(true);
     defaultUserAgentCombo_->addItems(defaultUserAgentOptions());
 
-    enableStatisticsCheck_ = new QCheckBox(tr("Enable traffic statistics"), this);
-    enableStatisticsCheck_->setObjectName(QStringLiteral("settingsEnableStatisticsCheck"));
-    statisticsFreshRateSpin_ = new QSpinBox(this);
-    statisticsFreshRateSpin_->setObjectName(QStringLiteral("settingsStatisticsFreshRateSpin"));
-    statisticsFreshRateSpin_->setRange(1, 100);
-    statisticsFreshRateSpin_->setSuffix(tr(" s"));
-
-    trayMenuServersLimitSpin_ = new QSpinBox(this);
-    trayMenuServersLimitSpin_->setObjectName(QStringLiteral("settingsTrayMenuServersLimitSpin"));
-    trayMenuServersLimitSpin_->setRange(0, 999);
-    trayMenuServersLimitSpin_->setSpecialValueText(tr("Auto"));
-
     languageCombo_ = new QComboBox(this);
     languageCombo_->setObjectName(QStringLiteral("settingsLanguageCombo"));
     languageCombo_->addItem(tr("System Default"), QString());
     languageCombo_->addItem(tr("English"), QStringLiteral("en"));
     languageCombo_->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
+
+    themeCombo_ = new QComboBox(this);
+    themeCombo_->setObjectName(QStringLiteral("settingsThemeCombo"));
+    themeCombo_->addItem(AppTheme::lightThemeName(), AppTheme::lightThemeName());
+    themeCombo_->addItem(AppTheme::darkThemeName(), AppTheme::darkThemeName());
 
     AppTheme::applyCompactFont({
         showMainOnStartupCheck_,
@@ -146,29 +138,22 @@ void GeneralSettingsPageWidget::setupUi()
         defaultAllowInsecureCheck_,
         defaultFingerprintCombo_,
         defaultUserAgentCombo_,
-        enableStatisticsCheck_,
-        statisticsFreshRateSpin_,
-        trayMenuServersLimitSpin_,
-        languageCombo_});
+        languageCombo_,
+        themeCombo_});
 
+    generalLayout->addRow(tr("Local Port"), localPortSpin_);
+    generalLayout->addRow(tr("Language"), languageCombo_);
+    generalLayout->addRow(tr("Theme"), themeCombo_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, showMainOnStartupCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, autoRunCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, allowLanConnectionCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, sniffingEnabledCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, routeOnlyCheck_);
-    generalLayout->addRow(tr("Local Port"), localPortSpin_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableFragmentCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, defaultAllowInsecureCheck_);
     generalLayout->addRow(tr("Default Fingerprint"), defaultFingerprintCombo_);
     generalLayout->addRow(tr("Default User-Agent"), defaultUserAgentCombo_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableStatisticsCheck_);
-    generalLayout->addRow(tr("Statistics Refresh Rate"), statisticsFreshRateSpin_);
-    generalLayout->addRow(tr("Tray Menu Server Limit"), trayMenuServersLimitSpin_);
-    generalLayout->addRow(tr("Language"), languageCombo_);
 
-    connect(enableStatisticsCheck_, &QCheckBox::toggled, this, [this](bool) {
-        updateFieldState();
-    });
     connect(sniffingEnabledCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();
     });
@@ -176,11 +161,6 @@ void GeneralSettingsPageWidget::setupUi()
 
 void GeneralSettingsPageWidget::updateFieldState()
 {
-    const bool statisticsEnabled = enableStatisticsCheck_ != nullptr && enableStatisticsCheck_->isChecked();
-    if (statisticsFreshRateSpin_ != nullptr) {
-        statisticsFreshRateSpin_->setEnabled(statisticsEnabled);
-    }
-
     const bool sniffingEnabled = sniffingEnabledCheck_ != nullptr && sniffingEnabledCheck_->isChecked();
     if (routeOnlyCheck_ != nullptr) {
         routeOnlyCheck_->setEnabled(sniffingEnabled);

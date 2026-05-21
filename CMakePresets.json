@@ -18,7 +18,7 @@
         "CMAKE_TOOLCHAIN_FILE": "D:/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
         "CMAKE_PREFIX_PATH": "$env{QT5_PREFIX_PATH}",
-        "QT_V2RAYN_FORCE_MAJOR_VERSION": "5"
+        "SONGBIRD_FORCE_MAJOR_VERSION": "5"
       },
       "condition": {
         "type": "equals",
@@ -54,3 +54,4 @@
     }
   ]
 }
+

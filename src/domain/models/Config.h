@@ -14,41 +14,12 @@
 #include "domain/models/TunModeItem.h"
 #include "domain/models/VmessItem.h"
 
-struct Config {
-    bool logEnabled = false;
-    QString logLevel;
-    QString currentIndexId;
-    int localPort = 10808;
-    QString localProtocol = QStringLiteral("socks");
-    bool udpEnabled = true;
-    bool sniffingEnabled = true;
-    bool routeOnly = false;
-    bool allowLanConnection = false;
-    QString inboundUser;
-    QString inboundPassword;
-    bool muxEnabled = false;
-    QString mux4SboxProtocol = QStringLiteral("h2mux");
-    int mux4SboxMaxConnections = 8;
-    std::optional<bool> mux4SboxPadding;
-    int sysProxyType = 0;
-    bool enableStatistics = false;
-    int statisticsFreshRate = 1;
-    bool showMainOnStartup = true;
-    bool autoRunEnabled = false;
-    QString languageCode;
-    int mainLocationX = 0;
-    int mainLocationY = 0;
-    int mainSizeWidth = 0;
-    int mainSizeHeight = 0;
-    QMap<QString, int> mainColumnWidths;
-    QString mainSelectedSubId;
-    QString settingsRoutingRuleTabKey;
-    int mainServerLogSplitPercent = 60;
-    int mainServerQrSplitPercent = 78;
-    bool mainQrPreviewVisible = false;
-    bool mainProxyEnabled = false;
+struct DefaultsConfigState {
     QString speedPingTestUrl;
     QString defIeProxyExceptions;
+};
+
+struct DnsConfigState {
     bool enableFragment = false;
     bool enableCacheFile4Sbox = true;
     QString defaultFingerprint;
@@ -71,22 +42,107 @@ struct Config {
     QString domainStrategy;
     QString domainStrategy4Singbox;
     QString domainMatcher;
-    int routingIndex = 0;
-    bool enableRoutingAdvanced = false;
-    bool ignoreGeoUpdateCore = false;
-    QString systemProxyExceptions;
-    QString systemProxyAdvancedProtocol;
-    QString pacUrl;
-    bool checkPreReleaseUpdate = false;
-    int trayMenuServersLimit = 0;
+};
 
+struct UiConfigState {
+    UiConfigState& ui() { return *this; }
+    const UiConfigState& ui() const { return *this; }
+
+    bool showMainOnStartup = true;
+    bool autoRunEnabled = false;
+    QString languageCode;
+    QString themeName = QStringLiteral("Light");
+    int mainLocationX = 0;
+    int mainLocationY = 0;
+    int mainSizeWidth = 0;
+    int mainSizeHeight = 0;
+    QMap<QString, int> mainColumnWidths;
+    int mainServerSortColumn = -1;
+    int mainServerSortOrder = 0;
+    QString mainSelectedSubId;
+    QString settingsRoutingRuleTabKey;
+    int mainServerLogSplitPercent = 60;
+    int mainServerQrSplitPercent = 78;
+    bool mainQrPreviewVisible = false;
+    bool mainProxyEnabled = false;
+};
+
+struct RootConfigState {
+    DefaultsConfigState defaultsState;
+    DnsConfigState dnsState;
+
+    DefaultsConfigState& defaults() { return defaultsState; }
+    const DefaultsConfigState& defaults() const { return defaultsState; }
+
+    DnsConfigState& dns() { return dnsState; }
+    const DnsConfigState& dns() const { return dnsState; }
+
+    bool logEnabled = false;
+    QString logLevel;
+    QString currentIndexId;
+    int localPort = 10808;
+    int localHttpPort = 0;
+    int localLocationProbePort = 0;
+    QString localProtocol = QStringLiteral("socks");
+    bool udpEnabled = true;
+    bool sniffingEnabled = true;
+    bool routeOnly = false;
+    bool allowLanConnection = false;
+    QString inboundUser;
+    QString inboundPassword;
+    bool muxEnabled = false;
+    QString mux4SboxProtocol = QStringLiteral("h2mux");
+    int mux4SboxMaxConnections = 8;
+    std::optional<bool> mux4SboxPadding;
+    int sysProxyType = 0;
+    bool ignoreGeoUpdateCore = false;
+    QString systemProxyAdvancedProtocol;
+    bool checkPreReleaseUpdate = false;
+};
+
+struct CollectionConfigState {
     QList<VmessItem> servers;
     QList<SubItem> subscriptions;
     QList<GlobalHotkeyItem> globalHotkeys;
+    int routingIndex = 0;
+    bool enableRoutingAdvanced = false;
     QList<RoutingItem> routingItems;
     QList<RoutingRule> routingCustomRules;
-    QList<CoreTypeItem> coreTypeItems;
+};
+
+struct TunConfigState {
     TunModeItem tunModeItem;
+};
+
+struct PolicyConfigState {
+    QList<CoreTypeItem> coreTypeItems;
     QList<PolicyGroupItem> policyGroups;
 };
 
+struct Config : RootConfigState {
+    UiConfigState uiState;
+    CollectionConfigState collectionState;
+    TunConfigState tunState;
+    PolicyConfigState policyState;
+
+    RootConfigState& root() { return *this; }
+    const RootConfigState& root() const { return *this; }
+
+    DefaultsConfigState& defaults() { return root().defaults(); }
+    const DefaultsConfigState& defaults() const { return root().defaults(); }
+
+    DnsConfigState& dns() { return root().dns(); }
+    const DnsConfigState& dns() const { return root().dns(); }
+
+    UiConfigState& ui() { return uiState; }
+    const UiConfigState& ui() const { return uiState; }
+
+    CollectionConfigState& collection() { return collectionState; }
+    const CollectionConfigState& collection() const { return collectionState; }
+
+    TunConfigState& tun() { return tunState; }
+    const TunConfigState& tun() const { return tunState; }
+
+    PolicyConfigState& policy() { return policyState; }
+    const PolicyConfigState& policy() const { return policyState; }
+};

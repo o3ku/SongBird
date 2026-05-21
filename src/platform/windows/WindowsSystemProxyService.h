@@ -11,8 +11,7 @@ public:
         int httpPort,
         int socksPort,
         const QString& proxyExceptions,
-        const QString& advancedProtocol,
-        const QString& pacUrl = {}) const;
+        const QString& advancedProtocol) const;
     bool enable(int httpPort, int socksPort, const QString& proxyExceptions, const QString& advancedProtocol) const;
     bool disable() const;
     bool isEnabled() const;
@@ -20,5 +19,4 @@ public:
 
 private:
     bool setProxy(const QString& proxyServer, const QString& proxyExceptions, bool enabled) const;
-    bool setPacProxy(const QString& pacUrl) const;
 };

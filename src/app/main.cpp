@@ -15,38 +15,18 @@
 #include <QTranslator>
 
 #include "app/AppBootstrap.h"
+#include "app/ConfigPathResolver.h"
 #include "app/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "ui/theme/AppTheme.h"
 
-#ifndef QT_V2RAYN_APP_VERSION
-#define QT_V2RAYN_APP_VERSION "1.2.0"
+#ifndef SONGBIRD_APP_VERSION
+#define SONGBIRD_APP_VERSION "1.2.0"
 #endif
 
 namespace {
-
-QString resolveRequestedConfigPath(const QStringList& arguments)
-{
-    for (int index = 1; index < arguments.size(); ++index) {
-        const QString argument = arguments.at(index);
-        if (argument == QStringLiteral("--config") && index + 1 < arguments.size()) {
-            return arguments.at(index + 1);
-        }
-
-        if (argument.startsWith(QStringLiteral("--config="))) {
-            return argument.mid(QStringLiteral("--config=").size());
-        }
-    }
-
-    const QString currentDirectoryPath = QDir::current().filePath(QStringLiteral("guiNConfig.json"));
-    if (QFileInfo::exists(currentDirectoryPath)) {
-        return currentDirectoryPath;
-    }
-
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("guiNConfig.json"));
-}
 
 QString normalizeLanguageCode(QString languageCode)
 {
@@ -89,9 +69,25 @@ QString loadConfiguredLanguageCode(const QString& configPath)
     }
 
     const QJsonObject root = document.object();
-    const QJsonObject uiItem = root.value(QStringLiteral("uiItem")).toObject();
     return normalizeLanguageCode(
-        uiItem.value(QStringLiteral("languageCode")).toString(root.value(QStringLiteral("languageCode")).toString()));
+        root.value(QStringLiteral("ui")).toObject().value(QStringLiteral("languageCode")).toString());
+}
+
+QString loadConfiguredThemeName(const QString& configPath)
+{
+    QFile file(configPath);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return AppTheme::lightThemeName();
+    }
+
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    if (!document.isObject()) {
+        return AppTheme::lightThemeName();
+    }
+
+    const QJsonObject root = document.object();
+    return AppTheme::normalizeThemeName(
+        root.value(QStringLiteral("ui")).toObject().value(QStringLiteral("themeName")).toString());
 }
 
 bool loadConfiguredTunEnabled(const QString& configPath)
@@ -114,7 +110,7 @@ void installConfiguredTranslator(QApplication& app, QTranslator& translator, con
         ? QLocale(QLocale::Chinese, QLocale::China)
         : QLocale();
 
-    const QString qmPrefix = QStringLiteral("SongBox");
+    const QString qmPrefix = QStringLiteral("SongBird");
     const QString qmSeparator = QStringLiteral("_");
 
     // Try embedded resource first, then filesystem
@@ -178,14 +174,14 @@ QString startupAdminPromptMessage()
 {
     return QCoreApplication::translate(
         "main",
-        "Song Box is not running with administrator privileges.\nRestart as administrator now?");
+        "SongBird is not running with administrator privileges.\nRestart as administrator now?");
 }
 
 QString startupAdminRestartFailureMessage()
 {
     return QCoreApplication::translate(
         "main",
-        "Failed to restart Song Box with administrator privileges.");
+        "Failed to restart SongBird with administrator privileges.");
 }
 
 } // namespace
@@ -203,10 +199,11 @@ int main(int argc, char* argv[])
 #endif
 
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("SongBox"));
-    app.setOrganizationName(QStringLiteral("SongBox"));
-    app.setApplicationVersion(QStringLiteral(QT_V2RAYN_APP_VERSION));
-    AppTheme::applyApplicationTheme(app);
+    app.setApplicationName(QStringLiteral("SongBird"));
+    app.setOrganizationName(QStringLiteral("SongBird"));
+    app.setApplicationVersion(QStringLiteral(SONGBIRD_APP_VERSION));
+    const QString requestedConfigPath = resolveRequestedConfigPath(QCoreApplication::arguments());
+    AppTheme::applyApplicationTheme(app, loadConfiguredThemeName(requestedConfigPath));
     const QIcon appIcon(QStringLiteral(":/app/logo.ico"));
     if (!appIcon.isNull()) {
         app.setWindowIcon(appIcon);
@@ -215,7 +212,6 @@ int main(int argc, char* argv[])
     QTranslator qtBaseTranslator;
     QTranslator qtTranslator;
     QTranslator translator;
-    const QString requestedConfigPath = resolveRequestedConfigPath(QCoreApplication::arguments());
     const QString languageCode = loadConfiguredLanguageCode(requestedConfigPath);
     installQtTranslator(app, qtBaseTranslator, languageCode, QStringLiteral("qtbase"));
     installQtTranslator(app, qtTranslator, languageCode, QStringLiteral("qt"));
@@ -223,13 +219,13 @@ int main(int argc, char* argv[])
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QCoreApplication::translate("main", "Song Box is a Qt/C++ rewrite and improvement of v2rayN."));
+        QCoreApplication::translate("main", "SongBird is a Qt/C++ rewrite and improvement of v2rayN."));
     parser.addHelpOption();
     parser.addVersionOption();
 
     const QCommandLineOption configOption(
         QStringList{QStringLiteral("config")},
-        QCoreApplication::translate("main", "Use a specific guiNConfig.json file."),
+        QCoreApplication::translate("main", "Use a specific songbird.json file."),
         QStringLiteral("path"));
     const QCommandLineOption autoStartOption(
         QStringList{QStringLiteral("auto-start")},
@@ -282,7 +278,7 @@ int main(int argc, char* argv[])
     }
 
     if (parser.isSet(nonInteractiveOption)) {
-        qputenv("QT_V2RAYN_NONINTERACTIVE", QByteArrayLiteral("1"));
+        qputenv("SONGBIRD_NONINTERACTIVE", QByteArrayLiteral("1"));
     }
 
     const qint64 restartWaitPid = parser.isSet(restartWaitPidOption)
@@ -294,7 +290,7 @@ int main(int argc, char* argv[])
 
     const bool interactivePromptsEnabled = startupAdminInteractivePromptsEnabled(
         parser.isSet(nonInteractiveOption),
-        qEnvironmentVariableIsSet("QT_V2RAYN_NONINTERACTIVE"));
+        qEnvironmentVariableIsSet("SONGBIRD_NONINTERACTIVE"));
     const bool configuredTunEnabled = loadConfiguredTunEnabled(requestedConfigPath);
     const StartupAdminElevationDecision startupAdminElevation = evaluateStartupAdminElevation(
         isWindowsPlatform(),
@@ -323,13 +319,13 @@ int main(int argc, char* argv[])
             [](int) {})) {
         DialogUtils::showInformation(
             nullptr,
-            QStringLiteral("Song Box"),
-            QCoreApplication::translate("main", "Another Song Box instance is already running."));
+            QStringLiteral("SongBird"),
+            QCoreApplication::translate("main", "Another SongBird instance is already running."));
         return 0;
     }
 
     AppBootstrap bootstrap(
-        parser.value(configOption),
+        requestedConfigPath,
         parser.isSet(autoStartOption),
         parser.isSet(startHiddenOption),
         !parser.isSet(disableGlobalHotkeysOption),
@@ -344,3 +340,5 @@ int main(int argc, char* argv[])
 
     return app.exec();
 }
+
+

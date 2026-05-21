@@ -8,16 +8,18 @@
 
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
-#include "domain/models/ServerStatistics.h"
-#include "domain/models/StatisticsSessionState.h"
-
 class QAction;
 class QComboBox;
 class QEvent;
+class QLabel;
 class QLineEdit;
 class QMenu;
 class QPoint;
+class QPushButton;
+class QResizeEvent;
 class QToolBar;
+class QToolButton;
+class QVBoxLayout;
 
 class QShowEvent;
 class QSplitter;
@@ -53,7 +55,7 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    void setConfig(const Config& config, const QList<ServerStatItem>& statistics = {});
+    void setConfig(const Config& config);
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void appendLog(const QString& message);
     void showTransientStatus(
@@ -73,9 +75,10 @@ public:
     void setCurrentServerLocation(const QString& location);
     void setCurrentServerWarning(const QString& warning);
     void setRoutingSummary(const QString& routingText, const QString& listenText);
-    void setStatisticsSessionState(const StatisticsSessionState& state);
     void setSpeedTestRunning(bool running);
     void setSubscriptionUpdateRunning(bool running);
+    void setCoreStartupChecklist(const QStringList& items);
+    void clearCoreStartupChecklist();
     void setBackgroundTaskRunning(bool running);
     void setBackgroundTaskDescription(const QString& description);
     void restoreUiState(const Config& config);
@@ -109,8 +112,8 @@ signals:
     void moveServersRequested(const QStringList& indexIds, int operation);
     void reorderServersRequested(const QStringList& orderedIndexIds);
     void setDefaultServerRequested(const QString& indexId);
+    void setDefaultServerWithTunRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);
-    void systemProxyModeSelected(int mode);
     void routingModeSelected(int mode);
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
@@ -131,7 +134,6 @@ signals:
     void openXrayReleasePageRequested();
     void openSingBoxReleasePageRequested();
     void openGeoReleasePageRequested();
-    void clearStatisticsRequested();
     void hiddenToTray();
 
 private slots:
@@ -148,9 +150,11 @@ private:
     };
 
     void closeEvent(QCloseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void setupUi();
+    void setupLoadingOverlay();
     void setupToolbar();
     void createToolbarActions();
     void createServerToolbarActions();
@@ -176,7 +180,6 @@ private:
     void setupUpdateActionConnections();
     void setupSettingsActionConnections();
     void setupHelpActionConnections();
-    void setupSystemProxyConnections();
     void setupToggleConnections();
     void setupViewConnections();
     void setupSubscriptionViewConnections();
@@ -186,12 +189,16 @@ private:
     void setupUpdateShortcutConnections();
     void setupExitShortcutConnection();
     void setupSubscriptionTabShortcutConnections();
+    void scheduleInitialCurrentServerReveal();
     void updateQrPreview();
     void updateQrPanelActionText();
     void updateSelectionForVisibleRows();
+    void showCurrentServerInTable();
     bool canStartBackgroundTask() const;
+    bool ensureCanStartBackgroundTask();
     bool isUngroupedSubscriptionTabSelected() const;
     QString currentSubscriptionIdForUpdate() const;
+    void testSubscriptionServers(const QString& subscriptionId);
     void triggerCurrentSubscriptionUpdate();
     void copyCurrentSubscriptionUrlToClipboard();
     void clearTransientStatus();
@@ -204,12 +211,17 @@ private:
     void syncConfigControllers(const Config& config);
     void updateRuntimeUiState();
     void updateStatusPresentation(bool includeWindowTitle = false);
-    void showSystemProxyMenu(const QPoint& globalPosition);
     bool confirmExit();
     const ServerTableRow* activeServer() const;
+    void showSelectServerHint();
+    void clearSelectServerHint();
+    void refreshToolbarIcons();
     void refreshServerSelectionUi();
     void syncStatusBarController();
     void syncProxyToolbarController();
+    void setLoadingOverlayVisible(bool visible, const QString& title, const QStringList& items);
+    void clearLoadingOverlayItems();
+    void updateLoadingOverlayGeometry();
 
     ServerTableModel* serverModel_ = nullptr;
     ServerFilterProxyModel* serverFilterModel_ = nullptr;
@@ -254,12 +266,9 @@ private:
     QAction* moveServerBottomAction_ = nullptr;
     QAction* testAction_ = nullptr;
     QAction* setDefaultServerAction_ = nullptr;
+    QAction* setDefaultServerWithTunAction_ = nullptr;
     QAction* updateCurrentSubscriptionAction_ = nullptr;
     QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
-    QAction* clearProxyAction_ = nullptr;
-    QAction* globalProxyAction_ = nullptr;
-    QAction* unchangedProxyAction_ = nullptr;
-    QAction* pacProxyAction_ = nullptr;
     QAction* toggleAutoRunAction_ = nullptr;
     QAction* reloadConfigAction_ = nullptr;
     QAction* restoreBackupAction_ = nullptr;
@@ -278,12 +287,19 @@ private:
     QAction* openGeoReleasePageAction_ = nullptr;
     QAction* proxyToggleAction_ = nullptr;
     QAction* tunToggleAction_ = nullptr;
-    QAction* clearStatisticsAction_ = nullptr;
     QAction* toggleQrPanelAction_ = nullptr;
-    QMenu* systemProxyMenu_ = nullptr;
-    QComboBox* systemProxyModeCombo_ = nullptr;
+    QLabel* selectServerHintLabel_ = nullptr;
     QComboBox* routingModeCombo_ = nullptr;
     QLineEdit* serverFilterEdit_ = nullptr;
+    QWidget* mainContentWidget_ = nullptr;
+    QVBoxLayout* mainContentLayout_ = nullptr;
+    QWidget* loadingOverlay_ = nullptr;
+    QWidget* loadingContentWidget_ = nullptr;
+    QLabel* loadingTitleLabel_ = nullptr;
+    QWidget* loadingItemsWidget_ = nullptr;
+    QWidget* loadingActionWidget_ = nullptr;
+    QVBoxLayout* loadingItemsLayout_ = nullptr;
+    QPushButton* loadingDismissButton_ = nullptr;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;
@@ -296,7 +312,11 @@ private:
     bool speedTestRunning_ = false;
     QString currentServerWarning_;
     bool backgroundTaskRunning_ = false;
+    bool coreStartupChecklistVisible_ = false;
+    bool coreStartupChecklistFailed_ = false;
     QString backgroundTaskDescription_;
+    QHash<QAction*, QString> toolbarIconFiles_;
+    QHash<QToolButton*, QString> toolbarStandaloneIconFiles_;
     ConfigSnapshot configSnapshot_;
     QHash<QString, QString> shareUrlByIndexId_;
     QList<CoreType> existingCoreTypes_;
@@ -305,7 +325,7 @@ private:
     QString currentCoreName_;
     QString routingSummary_;
     QString listenSummary_;
-    StatisticsSessionState statisticsState_;
     bool tunEnabled_ = false;
-    SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
+    bool initialCurrentServerRevealScheduled_ = false;
+    bool initialCurrentServerRevealDone_ = false;
 };

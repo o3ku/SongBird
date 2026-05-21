@@ -4,9 +4,7 @@
 
 enum class SystemProxyMode : int {
     ForcedClear = 0,
-    ForcedChange = 1,
-    Unchanged = 2,
-    Pac = 3
+    ForcedChange = 1
 };
 
 inline SystemProxyMode normalizeSystemProxyMode(int value)
@@ -14,11 +12,9 @@ inline SystemProxyMode normalizeSystemProxyMode(int value)
     switch (value) {
     case 1:
         return SystemProxyMode::ForcedChange;
-    case 2:
-        return SystemProxyMode::Unchanged;
-    case 3:
-        return SystemProxyMode::Pac;
     case 0:
+    case 2:
+    case 3:
     default:
         return SystemProxyMode::ForcedClear;
     }
@@ -33,20 +29,16 @@ inline QString systemProxyModeDisplayName(SystemProxyMode mode)
 {
     switch (mode) {
     case SystemProxyMode::ForcedChange:
-        return QStringLiteral("Global");
-    case SystemProxyMode::Unchanged:
-        return QStringLiteral("Unchanged");
-    case SystemProxyMode::Pac:
-        return QStringLiteral("PAC");
+        return QStringLiteral("On");
     case SystemProxyMode::ForcedClear:
     default:
-        return QStringLiteral("Clear");
+        return QStringLiteral("Off");
     }
 }
 
 inline bool expectedSystemProxyEnabled(SystemProxyMode mode)
 {
-    return mode == SystemProxyMode::ForcedChange || mode == SystemProxyMode::Pac;
+    return mode == SystemProxyMode::ForcedChange;
 }
 
 inline bool shouldAdoptManagedSystemProxyOnStartup(
@@ -54,7 +46,7 @@ inline bool shouldAdoptManagedSystemProxyOnStartup(
     bool persistedProxyEnabled,
     bool systemProxyEnabled)
 {
-    return expectedSystemProxyEnabled(configuredMode)
+    return configuredMode == SystemProxyMode::ForcedChange
         && persistedProxyEnabled
         && systemProxyEnabled;
 }
@@ -64,19 +56,7 @@ inline bool shouldClearManagedSystemProxy(bool managedSystemProxyActive, bool sy
     return managedSystemProxyActive && systemProxyEnabled;
 }
 
-inline SystemProxyMode resolveSystemProxyModeOnExit(SystemProxyMode currentMode, bool windowsShutdown)
+inline SystemProxyMode resolveSystemProxyModeOnExit(SystemProxyMode /*currentMode*/, bool /*windowsShutdown*/)
 {
-    if (windowsShutdown) {
-        return SystemProxyMode::ForcedClear;
-    }
-
-    switch (currentMode) {
-    case SystemProxyMode::Unchanged:
-        return SystemProxyMode::Unchanged;
-    case SystemProxyMode::ForcedClear:
-    case SystemProxyMode::ForcedChange:
-    case SystemProxyMode::Pac:
-    default:
-        return SystemProxyMode::ForcedClear;
-    }
+    return SystemProxyMode::ForcedClear;
 }

@@ -36,11 +36,11 @@ CoreSettingsPageWidget::CoreSettingsPageWidget(QWidget* parent)
 void CoreSettingsPageWidget::setConfig(const Config& config)
 {
     config_ = config;
-    enableCacheFile4SboxCheck_->setChecked(config.enableCacheFile4Sbox);
+    enableCacheFile4SboxCheck_->setChecked(config.dns().enableCacheFile4Sbox);
     const int muxProtocolIndex = mux4SboxProtocolCombo_->findText(config.mux4SboxProtocol);
     mux4SboxProtocolCombo_->setCurrentIndex(muxProtocolIndex >= 0 ? muxProtocolIndex : 0);
-    tunEnableLegacyProtectCheck_->setChecked(config.tunModeItem.enableLegacyProtect);
-    coreTypeItems_ = config.coreTypeItems;
+    tunEnableLegacyProtectCheck_->setChecked(config.tun().tunModeItem.enableLegacyProtect);
+    coreTypeItems_ = config.policy().coreTypeItems;
     reloadCoreTypeTable();
 }
 

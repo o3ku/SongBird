@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class QLabel;
+class QSvgWidget;
 class QDialogButtonBox;
 
 class AboutDialog final : public QDialog {
@@ -19,6 +20,7 @@ public:
 private:
     void setupUi();
 
+    QSvgWidget* logoLabel_ = nullptr;
     QLabel* repoUrlValueLabel_ = nullptr;
     QLabel* versionValueLabel_ = nullptr;
     QLabel* releaseDateValueLabel_ = nullptr;

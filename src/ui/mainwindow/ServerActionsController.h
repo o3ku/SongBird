@@ -33,6 +33,7 @@ public:
         QAction* moveServerBottomAction = nullptr;
         QAction* testAction = nullptr;
         QAction* setDefaultServerAction = nullptr;
+        QAction* setDefaultServerWithTunAction = nullptr;
     };
 
     struct ActionState {
@@ -57,6 +58,7 @@ public:
         std::function<QString()> selectedServerId,
         std::function<QStringList()> selectedServerIds,
         std::function<bool()> isUngroupedSubscriptionTabSelected,
+        std::function<bool()> canStartBackgroundTask,
         std::function<void()> updateActionState,
         std::function<void(const QString&)> appendLog,
         std::function<void(const QString&, int, int)> showTransientStatus,
@@ -74,6 +76,7 @@ private:
     std::function<QString()> selectedServerId_;
     std::function<QStringList()> selectedServerIds_;
     std::function<bool()> isUngroupedSubscriptionTabSelected_;
+    std::function<bool()> canStartBackgroundTask_;
     std::function<void()> updateActionState_;
     std::function<void(const QString&)> appendLog_;
     std::function<void(const QString&, int, int)> showTransientStatus_;

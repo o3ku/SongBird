@@ -27,33 +27,28 @@ public:
     OperationResult writeClientConfig(
         const Config& config,
         const VmessItem& server,
-        const QString& filePath,
-        int statisticsPort = 0) const;
+        const QString& filePath) const;
     OperationResult writeClientConfigs(
         const Config& config,
         const VmessItem& server,
         const QString& filePath,
-        int statisticsPort,
         QStringList* auxiliaryPaths) const;
 
     GeneratedConfigSet generateClientConfigs(
         const Config& config,
-        const VmessItem& server,
-        int statisticsPort = 0) const;
+        const VmessItem& server) const;
 
 private:
     OperationResult writeCustomConfig(const VmessItem& server, const QString& filePath) const;
     OperationResult validateServer(const VmessItem& server) const;
     OperationResult writeGeneratedConfig(const GeneratedConfig& generatedConfig, const QString& filePath) const;
-    QJsonObject buildRoot(const Config& config, const VmessItem& server, int statisticsPort) const;
-    QJsonObject buildLegacyRoot(const Config& config, const VmessItem& server, int statisticsPort) const;
-    QJsonObject buildSingBoxRoot(const Config& config, const VmessItem& server, int statisticsPort) const;
+    QJsonObject buildRoot(const Config& config, const VmessItem& server) const;
+    QJsonObject buildLegacyRoot(const Config& config, const VmessItem& server) const;
+    QJsonObject buildSingBoxRoot(const Config& config, const VmessItem& server) const;
     QJsonObject buildTunCompatSingBoxRoot(const Config& config) const;
     QJsonObject buildLegacyDns(const Config& config) const;
     QJsonObject buildLegacyRouting(const Config& config) const;
-    QJsonObject buildLegacyApi() const;
-    QJsonObject buildLegacyPolicy() const;
-    QJsonObject buildSingBoxExperimental(const Config& config, int statisticsPort) const;
+    QJsonObject buildSingBoxExperimental(const Config& config) const;
     QJsonObject buildTunCompatSingBoxDns() const;
     QJsonObject buildTunCompatSingBoxRoute(const Config& config) const;
     QJsonArray buildTunCompatSingBoxOutbounds(const Config& config) const;
@@ -61,8 +56,6 @@ private:
     void appendTunCompatProcessRules(QJsonArray& rules) const;
     void appendTunIcmpRouteRule(QJsonArray& rules, const TunModeItem& tun) const;
     void appendSingBoxSniffRules(QJsonArray& rules, const Config& config) const;
-    void appendLegacyStatisticsInbound(QJsonArray& inbounds, int statisticsPort) const;
-    void appendLegacyStatisticsRouteRule(QJsonObject& routing) const;
     QJsonObject buildSingBoxDns(const Config& config) const;
     QJsonObject buildSingBoxRoute(const Config& config) const;
     QJsonObject buildLog(const Config& config) const;
@@ -118,10 +111,6 @@ private:
     static void populateSingBoxNetworkFields(QJsonObject& rule, const QString& network);
     static void populateSingBoxDomainFields(QJsonObject& rule, const QStringList& domains);
     static void populateSingBoxIpFields(QJsonObject& rule, const QStringList& ips);
-    static bool containsLegacyApiInbound(const QJsonArray& inbounds);
-    static bool containsLegacyApiRoute(const QJsonArray& rules);
-    static QJsonArray buildSingBoxStatisticsInboundTags(const Config& config);
-    static QJsonArray buildSingBoxStatisticsOutboundTags();
     static QStringList normalizeRuleValues(
         const QStringList& values,
         bool replaceCommaPlaceholder = false,

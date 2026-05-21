@@ -31,6 +31,7 @@ ServerActionsController::ServerActionsController(
     std::function<QString()> selectedServerId,
     std::function<QStringList()> selectedServerIds,
     std::function<bool()> isUngroupedSubscriptionTabSelected,
+    std::function<bool()> canStartBackgroundTask,
     std::function<void()> updateActionState,
     std::function<void(const QString&)> appendLog,
     std::function<void(const QString&, int, int)> showTransientStatus,
@@ -40,6 +41,7 @@ ServerActionsController::ServerActionsController(
     , selectedServerId_(std::move(selectedServerId))
     , selectedServerIds_(std::move(selectedServerIds))
     , isUngroupedSubscriptionTabSelected_(std::move(isUngroupedSubscriptionTabSelected))
+    , canStartBackgroundTask_(std::move(canStartBackgroundTask))
     , updateActionState_(std::move(updateActionState))
     , appendLog_(std::move(appendLog))
     , showTransientStatus_(std::move(showTransientStatus))
@@ -142,6 +144,9 @@ void ServerActionsController::setup()
             static_cast<int>(ServerMoveOperation::Bottom));
     });
     QObject::connect(context_.testAction, &QAction::triggered, context_.window, [this]() {
+        if (canStartBackgroundTask_ && !canStartBackgroundTask_()) {
+            return;
+        }
         emit context_.window->testServersRequested(selectedServerIds_());
     });
     QObject::connect(context_.setDefaultServerAction, &QAction::triggered, context_.window, [this]() {
@@ -150,11 +155,23 @@ void ServerActionsController::setup()
             emit context_.window->setDefaultServerRequested(indexId);
         }
     });
+    QObject::connect(context_.setDefaultServerWithTunAction, &QAction::triggered, context_.window, [this]() {
+        const QString indexId = selectedServerId_();
+        if (!indexId.isEmpty()) {
+            emit context_.window->setDefaultServerWithTunRequested(indexId);
+        }
+    });
 
     if (context_.serverView != nullptr) {
         context_.serverView->setContextMenuPolicy(Qt::CustomContextMenu);
         QObject::connect(context_.serverView, &QWidget::customContextMenuRequested, context_.window, [this](const QPoint& position) {
             showContextMenu(position);
+        });
+        QObject::connect(context_.serverView, &QTableView::doubleClicked, context_.window, [this](const QModelIndex&) {
+            const QString indexId = selectedServerId_();
+            if (!indexId.isEmpty()) {
+                emit context_.window->setDefaultServerRequested(indexId);
+            }
         });
 
         context_.copyShareLinkAction->setShortcut(QKeySequence::Copy);
@@ -171,6 +188,13 @@ void ServerActionsController::setup()
             QKeySequence(Qt::Key_Enter)});
         context_.setDefaultServerAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
         context_.serverView->addAction(context_.setDefaultServerAction);
+
+        context_.setDefaultServerWithTunAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
+        context_.setDefaultServerWithTunAction->setShortcuts({
+            QKeySequence(Qt::CTRL | Qt::Key_Return),
+            QKeySequence(Qt::CTRL | Qt::Key_Enter)});
+        context_.setDefaultServerWithTunAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        context_.serverView->addAction(context_.setDefaultServerWithTunAction);
 
         context_.removeServerAction->setShortcut(QKeySequence::Delete);
         context_.removeServerAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -291,6 +315,9 @@ void ServerActionsController::syncActionState(const ActionState& state)
     if (context_.setDefaultServerAction != nullptr) {
         context_.setDefaultServerAction->setEnabled(state.hasSelection);
     }
+    if (context_.setDefaultServerWithTunAction != nullptr) {
+        context_.setDefaultServerWithTunAction->setEnabled(state.hasSingleSelection);
+    }
 
     if (context_.testAction != nullptr) {
         context_.testAction->setEnabled(state.canSpeedTest);
@@ -333,6 +360,7 @@ void ServerActionsController::showContextMenu(const QPoint& position)
 
     if (singleSelection) {
         menu->addAction(context_.setDefaultServerAction);
+        menu->addAction(context_.setDefaultServerWithTunAction);
         menu->addAction(context_.copyUrlAction);
 
         if (ungroupedTabSelected) {

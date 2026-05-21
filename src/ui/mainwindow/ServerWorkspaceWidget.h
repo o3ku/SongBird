@@ -27,14 +27,8 @@ public:
     QSplitter* topSplitter() const;
     QSplitter* rootSplitter() const;
 
-    void setSubscriptionUpdateRunning(bool running);
-
-protected:
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
 private:
     ServerTableView* serverView_ = nullptr;
-    QWidget* loadingOverlay_ = nullptr;
     QSplitter* topSplitter_ = nullptr;
     QSplitter* rootSplitter_ = nullptr;
     QTabBar* subscriptionTabBar_ = nullptr;

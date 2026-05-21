@@ -195,10 +195,12 @@ void QtCoreProcessHost::bindOutputSignals()
                 forcedKillTimer_->stop();
             }
             flushBufferedOutput(true);
-            if (exitedCallback_) {
-                exitedCallback_(exitCode, status, stopRequested_);
+            const ExitedCallback exitedCallback = std::move(exitedCallback_);
+            const bool stopRequested = stopRequested_;
+            resetProcessState(ProcessCleanupMode::DeleteLater);
+            if (exitedCallback) {
+                exitedCallback(exitCode, status, stopRequested);
             }
-            resetProcessState();
         });
 }
 
@@ -272,7 +274,7 @@ void QtCoreProcessHost::flushBufferedOutput(bool flushPartialLines)
     flushBuffer(standardErrorBuffer_);
 }
 
-void QtCoreProcessHost::resetProcessState()
+void QtCoreProcessHost::resetProcessState(ProcessCleanupMode cleanupMode)
 {
     if (forcedKillTimer_ != nullptr) {
         forcedKillTimer_->stop();
@@ -280,7 +282,11 @@ void QtCoreProcessHost::resetProcessState()
         forcedKillTimer_ = nullptr;
     }
 
-    process_.reset();
+    if (cleanupMode == ProcessCleanupMode::DeleteLater && process_) {
+        process_.release()->deleteLater();
+    } else {
+        process_.reset();
+    }
     startedCallback_ = {};
     startFailedCallback_ = {};
     exitedCallback_ = {};

@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/UserAgent.h"
 #include "runtime/ClientConfigWriter.h"
 #include "services/SpeedTestServiceInternal.h"
 
@@ -38,11 +39,10 @@ namespace {
 
 constexpr int kRuntimeStartupTimeoutMs = 5000;
 constexpr int kRuntimeRequestTimeoutMs = 3000;
-constexpr int kUrlTestMaxConcurrency = 32;
 // Per-item fallback spawns a full core per server; running too many in
 // parallel just contends on disk/CPU and pushes every spawn past its
 // startup timeout. Keep this conservative.
-constexpr int kFallbackMaxConcurrency = 4;
+constexpr int kFallbackMaxConcurrency = 8;
 constexpr int kBatchProbeTimeoutMs = 3000;
 constexpr int kBatchStartupTimeoutMs = 6000;
 constexpr int kProbeRetryThresholdMs = 800;
@@ -64,9 +64,9 @@ QString describeServer(const VmessItem& server)
 
 QString defaultUrlTestUrl(const Config& config)
 {
-    return config.speedPingTestUrl.trimmed().isEmpty()
+    return config.defaults().speedPingTestUrl.trimmed().isEmpty()
         ? kDefaultUrlTestUrl
-        : config.speedPingTestUrl.trimmed();
+        : config.defaults().speedPingTestUrl.trimmed();
 }
 
 QString normalizeErrorText(const QString& value)
@@ -113,23 +113,14 @@ QString readTextFileIfExists(const QString& path)
     return QString::fromUtf8(file.readAll()).trimmed();
 }
 
-QString formatRuntimeCommand(const QString& program, const QStringList& arguments)
+struct ProxyPortReservation
 {
-    QStringList parts;
-    parts.reserve(arguments.size() + 1);
-    parts.append(QDir::toNativeSeparators(program));
-    for (const QString& argument : arguments) {
-        QString escaped = argument;
-        escaped.replace('"', QStringLiteral("\\\""));
-        if (escaped.contains(' ')) {
-            escaped = QStringLiteral("\"%1\"").arg(escaped);
-        }
-        parts.append(escaped);
-    }
-    return parts.join(' ');
-}
+    int socksPort = 0;
+    int httpPort = 0;
+    int locationProbePort = 0;
+};
 
-int takeAvailablePortBase()
+ProxyPortReservation takeAvailableProxyPorts()
 {
     for (int attempt = 0; attempt < 64; ++attempt) {
         QTcpServer socksProbe;
@@ -138,23 +129,39 @@ int takeAvailablePortBase()
         }
 
         const int candidate = socksProbe.serverPort();
-        if (candidate <= 0 || candidate >= 65535) {
+        if (candidate <= 0) {
             continue;
         }
 
         QTcpServer httpProbe;
-        if (!httpProbe.listen(QHostAddress::LocalHost, candidate + 1)) {
+        if (!httpProbe.listen(QHostAddress::LocalHost, 0)) {
+            continue;
+        }
+        const int httpPort = httpProbe.serverPort();
+        if (httpPort <= 0 || httpPort == candidate) {
+            continue;
+        }
+
+        QTcpServer locationProbe;
+        if (!locationProbe.listen(QHostAddress::LocalHost, 0)) {
+            continue;
+        }
+        const int locationProbePort = locationProbe.serverPort();
+        if (locationProbePort <= 0
+            || locationProbePort == candidate
+            || locationProbePort == httpPort) {
             continue;
         }
 
         socksProbe.close();
         httpProbe.close();
-        if (SpeedTestServiceInternal::reserveProxyPorts(candidate, candidate + 1)) {
-            return candidate;
+        locationProbe.close();
+        if (SpeedTestServiceInternal::reserveProxyPorts(candidate, httpPort, locationProbePort)) {
+            return ProxyPortReservation{candidate, httpPort, locationProbePort};
         }
     }
 
-    return 0;
+    return {};
 }
 
 QStringList buildCoreArguments(const CoreInfo& coreInfo, const QString& configFilePath)
@@ -240,7 +247,7 @@ SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
     manager.setProxy(QNetworkProxy(proxyType, kLoopbackAddress, proxyPort));
 
     QNetworkRequest request{QUrl(url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox-urltest"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, fallbackUserAgent());
 
     QElapsedTimer timer;
     timer.start();
@@ -315,21 +322,21 @@ QString runUrlTest(
     if (cancelled.load()) {
         return QStringLiteral("Cancelled");
     }
-    const int socksPort = takeAvailablePortBase();
-    if (socksPort <= 0) {
+    const ProxyPortReservation ports = takeAvailableProxyPorts();
+    if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
         return QStringLiteral("Port busy");
     }
-    const int httpPort = socksPort + 1;
     struct ScopedProxyPortRelease
     {
         int socksPort = 0;
         int httpPort = 0;
+        int locationProbePort = 0;
 
         ~ScopedProxyPortRelease()
         {
-            SpeedTestServiceInternal::releaseProxyPorts(socksPort, httpPort);
+            SpeedTestServiceInternal::releaseProxyPorts(socksPort, httpPort, locationProbePort);
         }
-    } reservedPorts{socksPort, httpPort};
+    } reservedPorts{ports.socksPort, ports.httpPort, ports.locationProbePort};
 
     QTemporaryDir temporaryDirectory;
     if (!temporaryDirectory.isValid()) {
@@ -337,32 +344,19 @@ QString runUrlTest(
     }
 
     Config runtimeConfig = probeConfigTemplate;
-    runtimeConfig.localPort = socksPort;
+    runtimeConfig.localPort = ports.socksPort;
+    runtimeConfig.localHttpPort = ports.httpPort;
+    runtimeConfig.localLocationProbePort = ports.locationProbePort;
 
     const QString configPath = temporaryDirectory.filePath(QStringLiteral("runtime.json"));
     ClientConfigWriter clientConfigWriter(customConfigDirectory);
-    const OperationResult writeResult = clientConfigWriter.writeClientConfig(runtimeConfig, item.runtimeServer, configPath, 0);
+    const OperationResult writeResult = clientConfigWriter.writeClientConfig(runtimeConfig, item.runtimeServer, configPath);
     if (!writeResult.success) {
         return normalizeErrorText(writeResult.message);
     }
 
-    const QString runtimeConfigPreview = readTextFileIfExists(configPath);
-    if (!runtimeConfigPreview.isEmpty()) {
-        log(QStringLiteral("URL Test config preview | %1 | %2")
-                .arg(serverName, summarizeProcessOutput(runtimeConfigPreview)));
-    }
-
     const QStringList runtimeArguments = buildCoreArguments(item.coreInfo, configPath);
-    log(QStringLiteral("URL Test runtime | %1 | core=%2 | workdir=%3")
-            .arg(serverName,
-                 QDir::toNativeSeparators(item.coreInfo.program),
-                 QDir::toNativeSeparators(item.coreInfo.workingDirectory)));
-    log(QStringLiteral("URL Test command | %1")
-            .arg(formatRuntimeCommand(item.coreInfo.program, runtimeArguments)));
-    log(QStringLiteral("URL Test ports | %1 | socks=%2 | http=%3 | tun=off")
-            .arg(serverName)
-            .arg(socksPort)
-            .arg(httpPort));
+    const QString runtimeConfigPreview = readTextFileIfExists(configPath);
 
     QProcess coreProcess;
     coreProcess.setProcessChannelMode(QProcess::MergedChannels);
@@ -378,10 +372,6 @@ QString runUrlTest(
         return errorText;
     }
 
-    log(QStringLiteral("URL Test waiting for local proxy | %1 | timeout=%2ms")
-            .arg(serverName)
-            .arg(kRuntimeStartupTimeoutMs));
-
     const auto stopRuntime = [&coreProcess]() {
         coreProcess.terminate();
         if (!coreProcess.waitForFinished(3000)) {
@@ -391,7 +381,7 @@ QString runUrlTest(
     };
 
     const std::optional<SpeedTestServiceInternal::ReadyProxy> readyProxy =
-        waitForProxy(socksPort, httpPort, kRuntimeStartupTimeoutMs, cancelled, [&coreProcess]() {
+        waitForProxy(ports.socksPort, ports.httpPort, kRuntimeStartupTimeoutMs, cancelled, [&coreProcess]() {
             return coreProcess.state() == QProcess::NotRunning;
         });
     if (!readyProxy.has_value()) {
@@ -429,17 +419,10 @@ QString runUrlTest(
             ? QStringLiteral("Proxy startup timeout (no core output)")
             : QStringLiteral("Proxy startup timeout: %1").arg(normalizeErrorText(output));
     }
-    const QString url = urlTestUrl;
-    log(QStringLiteral("URL Test proxy ready | %1 | type=%2 | port=%3 | url=%4")
-            .arg(serverName)
-            .arg(readyProxy->name)
-            .arg(readyProxy->port)
-            .arg(url));
-
     SpeedTestServiceInternal::UrlProbeResult probeResult = probeProxiedUrl(
         readyProxy->type,
         readyProxy->port,
-        url,
+        urlTestUrl,
         kRuntimeRequestTimeoutMs);
 
     // A connect-reset that happens within the first ~hundreds of ms usually
@@ -450,13 +433,10 @@ QString runUrlTest(
         && probeResult.latencyMs >= 0
         && probeResult.latencyMs < kProbeRetryThresholdMs
         && !cancelled.load()) {
-        log(QStringLiteral("URL Test retry | %1 | first attempt failed in %2 ms")
-                .arg(serverName)
-                .arg(probeResult.latencyMs));
         probeResult = probeProxiedUrl(
             readyProxy->type,
             readyProxy->port,
-            url,
+            urlTestUrl,
             kRuntimeRequestTimeoutMs);
     }
 
@@ -671,8 +651,7 @@ bool runBatchedGroup(
 
         const ClientConfigWriter::GeneratedConfigSet generated = clientConfigWriter.generateClientConfigs(
             probeConfigTemplate,
-            item.runtimeServer,
-            0);
+            item.runtimeServer);
 
         // Auxiliary configs (TUN-compat sing-box sidecars) can't be merged
         // into a single batch -- fall back to per-item path.
@@ -716,25 +695,26 @@ bool runBatchedGroup(
     struct PortReservation {
         int socksPort = 0;
         int httpPort = 0;
+        int locationProbePort = 0;
     };
     QList<PortReservation> reservations;
     auto releaseAllPorts = [&reservations]() {
         for (const PortReservation& r : reservations) {
-            SpeedTestServiceInternal::releaseProxyPorts(r.socksPort, r.httpPort);
+            SpeedTestServiceInternal::releaseProxyPorts(r.socksPort, r.httpPort, r.locationProbePort);
         }
         reservations.clear();
     };
 
     for (BatchProbeEntry& entry : entries) {
-        const int port = takeAvailablePortBase();
-        if (port <= 0) {
+        const ProxyPortReservation ports = takeAvailableProxyPorts();
+        if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
             log(QStringLiteral("URL Test batch | port allocation failed at entry %1")
                     .arg(reservations.size()));
             releaseAllPorts();
             return false;
         }
-        entry.socksPort = port;
-        reservations.append({port, port + 1});
+        entry.socksPort = ports.socksPort;
+        reservations.append({ports.socksPort, ports.httpPort, ports.locationProbePort});
     }
 
     QTemporaryDir temporaryDirectory;
@@ -766,14 +746,6 @@ bool runBatchedGroup(
     }
 
     const QStringList runtimeArguments = buildCoreArguments(coreInfo, configPath);
-    const QString flavorName = (*flavor == BatchFlavor::SingBox)
-        ? QStringLiteral("sing-box")
-        : QStringLiteral("xray");
-    log(QStringLiteral("URL Test batch start | count=%1 | flavor=%2 | core=%3")
-            .arg(entries.size())
-            .arg(flavorName, QDir::toNativeSeparators(coreInfo.program)));
-    log(QStringLiteral("URL Test batch command | %1")
-            .arg(formatRuntimeCommand(coreInfo.program, runtimeArguments)));
 
     QProcess coreProcess;
     coreProcess.setProcessChannelMode(QProcess::MergedChannels);
@@ -823,22 +795,21 @@ bool runBatchedGroup(
         return false;
     }
 
-    log(QStringLiteral("URL Test batch ready | probing %1 inbounds").arg(entries.size()));
-
     // Probe all inbounds concurrently. Each probe is just an HTTP request to
     // a loopback SOCKS port -- no per-server core startup cost, so we can
     // safely fire them all at once even for large batches.
     std::vector<std::future<QString>> futures;
     futures.reserve(entries.size());
     for (const BatchProbeEntry& entry : entries) {
-        futures.push_back(std::async(std::launch::async, [&entry, &cancelled]() -> QString {
+        const BatchProbeEntry probeEntry = entry;
+        futures.push_back(std::async(std::launch::async, [probeEntry, &cancelled]() -> QString {
             if (cancelled.load()) {
                 return QStringLiteral("Cancelled");
             }
             SpeedTestServiceInternal::UrlProbeResult probeResult = probeProxiedUrl(
                 QNetworkProxy::Socks5Proxy,
-                entry.socksPort,
-                entry.url,
+                probeEntry.socksPort,
+                probeEntry.url,
                 kBatchProbeTimeoutMs);
 
             if (probeResult.status == SpeedTestServiceInternal::UrlProbeStatus::Failed
@@ -847,8 +818,8 @@ bool runBatchedGroup(
                 && !cancelled.load()) {
                 probeResult = probeProxiedUrl(
                     QNetworkProxy::Socks5Proxy,
-                    entry.socksPort,
-                    entry.url,
+                    probeEntry.socksPort,
+                    probeEntry.url,
                     kBatchProbeTimeoutMs);
             }
             return SpeedTestServiceInternal::formatUrlProbeResult(probeResult);

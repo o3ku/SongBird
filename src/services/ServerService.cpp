@@ -18,7 +18,7 @@ ServerService::ServerService(IConfigRepository& repository, QString customConfig
 
 QList<VmessItem> ServerService::list(const Config& config) const
 {
-    return config.servers;
+    return config.collection().servers;
 }
 
 OperationResult ServerService::addServer(Config& config, const VmessItem& item)
@@ -41,8 +41,7 @@ OperationResult ServerService::addServer(Config& config, const VmessItem& item)
                 ? QStringLiteral("import custom@%1").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")))
                 : QStringLiteral("%1:%2").arg(server.address).arg(server.port))
         : server.remarks.trimmed();
-    server.sort = nextSortValue(config);
-    config.servers.append(server);
+    config.collection().servers.append(server);
 
     if (config.currentIndexId.trimmed().isEmpty()) {
         config.currentIndexId = server.indexId;
@@ -67,18 +66,17 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
     }
 
     auto it = std::find_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&indexId](const VmessItem& existing) {
             return existing.indexId == indexId;
         });
-    if (it == config.servers.end()) {
+    if (it == config.collection().servers.end()) {
         return OperationResult::fail(QStringLiteral("The selected server does not exist."));
     }
 
     VmessItem updated = item;
     updated.indexId = it->indexId;
-    updated.sort = it->sort;
     updated.subId = it->subId;
     updated.testResult = it->testResult;
     updated.preSocksPort = updated.configType == ConfigType::Custom
@@ -112,12 +110,12 @@ OperationResult ServerService::duplicateServer(Config& config, const QString& in
     }
 
     auto it = std::find_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&indexId](const VmessItem& existing) {
             return existing.indexId == indexId;
         });
-    if (it == config.servers.end()) {
+    if (it == config.collection().servers.end()) {
         return OperationResult::fail(QStringLiteral("The selected server does not exist."));
     }
 
@@ -139,9 +137,8 @@ OperationResult ServerService::duplicateServer(Config& config, const QString& in
         }
     }
 
-    const int insertIndex = static_cast<int>(std::distance(config.servers.begin(), it)) + 1;
-    config.servers.insert(insertIndex, duplicated);
-    normalizeSortValues(config.servers);
+    const int insertIndex = static_cast<int>(std::distance(config.collection().servers.begin(), it)) + 1;
+    config.collection().servers.insert(insertIndex, duplicated);
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save configuration after duplicating the server."));
@@ -162,24 +159,24 @@ OperationResult ServerService::removeServers(Config& config, const QList<QString
         removedIds.insert(indexId);
     }
 
-    for (const VmessItem& item : config.servers) {
+    for (const VmessItem& item : config.collection().servers) {
         if (removedIds.contains(item.indexId) && item.configType == ConfigType::Custom && !item.address.trimmed().isEmpty()) {
             removedCustomAddresses.append(item.address);
         }
     }
 
     auto newEnd = std::remove_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&removedIds](const VmessItem& item) {
             return removedIds.contains(item.indexId);
         });
-    config.servers.erase(newEnd, config.servers.end());
+    config.collection().servers.erase(newEnd, config.collection().servers.end());
 
     if (removedIds.contains(config.currentIndexId)) {
-        config.currentIndexId = config.servers.isEmpty()
+        config.currentIndexId = config.collection().servers.isEmpty()
             ? QString()
-            : config.servers.constFirst().indexId;
+            : config.collection().servers.constFirst().indexId;
     }
 
     if (!repository_.save(config)) {
@@ -199,7 +196,7 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
         return OperationResult::ok(QStringLiteral("No server was selected."));
     }
 
-    if (config.servers.size() <= 1) {
+    if (config.collection().servers.size() <= 1) {
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
@@ -217,19 +214,19 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
     bool moved = false;
     switch (operation) {
     case ServerMoveOperation::Up:
-        for (int index = 1; index < config.servers.size(); ++index) {
-            if (selectedIds.contains(config.servers.at(index).indexId)
-                && !selectedIds.contains(config.servers.at(index - 1).indexId)) {
-                config.servers.swapItemsAt(index - 1, index);
+        for (int index = 1; index < config.collection().servers.size(); ++index) {
+            if (selectedIds.contains(config.collection().servers.at(index).indexId)
+                && !selectedIds.contains(config.collection().servers.at(index - 1).indexId)) {
+                config.collection().servers.swapItemsAt(index - 1, index);
                 moved = true;
             }
         }
         break;
     case ServerMoveOperation::Down:
-        for (int index = config.servers.size() - 2; index >= 0; --index) {
-            if (selectedIds.contains(config.servers.at(index).indexId)
-                && !selectedIds.contains(config.servers.at(index + 1).indexId)) {
-                config.servers.swapItemsAt(index, index + 1);
+        for (int index = config.collection().servers.size() - 2; index >= 0; --index) {
+            if (selectedIds.contains(config.collection().servers.at(index).indexId)
+                && !selectedIds.contains(config.collection().servers.at(index + 1).indexId)) {
+                config.collection().servers.swapItemsAt(index, index + 1);
                 moved = true;
             }
         }
@@ -238,9 +235,9 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
     case ServerMoveOperation::Bottom: {
         QList<VmessItem> selectedItems;
         QList<VmessItem> remainingItems;
-        selectedItems.reserve(config.servers.size());
-        remainingItems.reserve(config.servers.size());
-        for (const VmessItem& item : config.servers) {
+        selectedItems.reserve(config.collection().servers.size());
+        remainingItems.reserve(config.collection().servers.size());
+        for (const VmessItem& item : config.collection().servers) {
             if (selectedIds.contains(item.indexId)) {
                 selectedItems.append(item);
             } else {
@@ -248,8 +245,8 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
             }
         }
 
-        if (!selectedItems.isEmpty() && selectedItems.size() != config.servers.size()) {
-            config.servers = operation == ServerMoveOperation::Top
+        if (!selectedItems.isEmpty() && selectedItems.size() != config.collection().servers.size()) {
+            config.collection().servers = operation == ServerMoveOperation::Top
                 ? selectedItems + remainingItems
                 : remainingItems + selectedItems;
             moved = true;
@@ -262,7 +259,6 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
-    normalizeSortValues(config.servers);
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save configuration after reordering server(s)."));
     }
@@ -288,43 +284,42 @@ OperationResult ServerService::reorderServers(Config& config, const QList<QStrin
     }
 
     QList<VmessItem> reordered;
-    reordered.reserve(config.servers.size());
+    reordered.reserve(config.collection().servers.size());
 
     for (const QString& indexId : normalizedIds) {
         const auto it = std::find_if(
-            config.servers.cbegin(),
-            config.servers.cend(),
+            config.collection().servers.cbegin(),
+            config.collection().servers.cend(),
             [&indexId](const VmessItem& item) {
                 return item.indexId == indexId;
             });
-        if (it != config.servers.cend()) {
+        if (it != config.collection().servers.cend()) {
             reordered.append(*it);
         }
     }
 
-    for (const VmessItem& item : config.servers) {
+    for (const VmessItem& item : config.collection().servers) {
         if (!normalizedIds.contains(item.indexId)) {
             reordered.append(item);
         }
     }
 
-    if (reordered.size() != config.servers.size()) {
+    if (reordered.size() != config.collection().servers.size()) {
         return OperationResult::fail(QStringLiteral("Failed to rebuild the requested server order."));
     }
 
     if (std::equal(
             reordered.cbegin(),
             reordered.cend(),
-            config.servers.cbegin(),
-            config.servers.cend(),
+            config.collection().servers.cbegin(),
+            config.collection().servers.cend(),
             [](const VmessItem& left, const VmessItem& right) {
                 return left.indexId == right.indexId;
             })) {
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
-    config.servers = reordered;
-    normalizeSortValues(config.servers);
+    config.collection().servers = reordered;
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save configuration after drag reordering server(s)."));
@@ -340,12 +335,12 @@ OperationResult ServerService::setDefaultServer(Config& config, const QString& i
     }
 
     const auto it = std::find_if(
-        config.servers.cbegin(),
-        config.servers.cend(),
+        config.collection().servers.cbegin(),
+        config.collection().servers.cend(),
         [&indexId](const VmessItem& item) {
             return item.indexId == indexId;
         });
-    if (it == config.servers.cend()) {
+    if (it == config.collection().servers.cend()) {
         return OperationResult::fail(QStringLiteral("The selected server does not exist."));
     }
 
@@ -365,12 +360,12 @@ OperationResult ServerService::setTestResult(Config& config, const QString& inde
     }
 
     auto it = std::find_if(
-        config.servers.begin(),
-        config.servers.end(),
+        config.collection().servers.begin(),
+        config.collection().servers.end(),
         [&trimmedId](const VmessItem& item) {
             return item.indexId == trimmedId;
         });
-    if (it == config.servers.end()) {
+    if (it == config.collection().servers.end()) {
         return OperationResult::fail(QStringLiteral("The selected server does not exist."));
     }
 
@@ -436,23 +431,6 @@ OperationResult ServerService::validateServer(const VmessItem& item)
     }
 
     return OperationResult::ok();
-}
-
-void ServerService::normalizeSortValues(QList<VmessItem>& items)
-{
-    for (int index = 0; index < items.size(); ++index) {
-        items[index].sort = (index + 1) * 10;
-    }
-}
-
-int ServerService::nextSortValue(const Config& config)
-{
-    int maxSort = 0;
-    for (const VmessItem& item : config.servers) {
-        maxSort = std::max(maxSort, item.sort);
-    }
-
-    return maxSort + 10;
 }
 
 OperationResult ServerService::prepareCustomServer(VmessItem& server, const VmessItem* existing) const

@@ -5,7 +5,7 @@
 SingleInstanceBootstrap* SingleInstanceBootstrap::currentInstance_ = nullptr;
 
 SingleInstanceBootstrap::SingleInstanceBootstrap()
-    : guard_(std::make_unique<SingleInstanceGuard>(QStringLiteral("SongBox-single-instance")))
+    : guard_(std::make_unique<SingleInstanceGuard>(QStringLiteral("SongBird-single-instance")))
 {
     currentInstance_ = this;
 }
@@ -41,7 +41,7 @@ bool SingleInstanceBootstrap::reacquireCurrentInstance()
     }
 
     if (currentInstance_->guard_ == nullptr) {
-        currentInstance_->guard_ = std::make_unique<SingleInstanceGuard>(QStringLiteral("SongBox-single-instance"));
+        currentInstance_->guard_ = std::make_unique<SingleInstanceGuard>(QStringLiteral("SongBird-single-instance"));
     }
     return currentInstance_->tryAcquire();
 }

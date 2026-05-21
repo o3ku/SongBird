@@ -35,8 +35,6 @@ public:
 
 private:
     static OperationResult validateServer(const VmessItem& item);
-    static void normalizeSortValues(QList<VmessItem>& items);
-    static int nextSortValue(const Config& config);
     OperationResult prepareCustomServer(VmessItem& server, const VmessItem* existing) const;
     bool removeManagedCustomConfig(const QString& address) const;
     bool isManagedCustomConfigPath(const QString& filePath) const;

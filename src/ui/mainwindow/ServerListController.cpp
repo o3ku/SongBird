@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include "domain/models/Config.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/models/ServerFilterProxyModel.h"
 #include "ui/models/ServerTableModel.h"
@@ -139,6 +140,22 @@ void ServerListController::toggleSorting(int logicalIndex)
             : Qt::AscendingOrder;
     }
 
+    applySorting(sortColumn_, sortOrder_);
+}
+
+void ServerListController::applySorting(int logicalIndex, Qt::SortOrder order)
+{
+    if (context_.serverView == nullptr
+        || context_.serverView->horizontalHeader() == nullptr
+        || context_.serverFilterModel == nullptr
+        || logicalIndex < 0
+        || logicalIndex >= context_.serverFilterModel->columnCount()) {
+        return;
+    }
+
+    sortColumn_ = logicalIndex;
+    sortOrder_ = order;
+
     QHeaderView* header = context_.serverView->horizontalHeader();
     header->setSortIndicator(sortColumn_, sortOrder_);
     context_.serverFilterModel->sort(sortColumn_, sortOrder_);
@@ -147,6 +164,31 @@ void ServerListController::toggleSorting(int logicalIndex)
     updateSelectionForVisibleRows_();
     updateActionState_();
     updateQrPreview_();
+}
+
+void ServerListController::restoreSortState(const Config& config)
+{
+    const int column = config.ui().mainServerSortColumn;
+    if (column < 0) {
+        return;
+    }
+
+    const Qt::SortOrder order = config.ui().mainServerSortOrder == static_cast<int>(Qt::DescendingOrder)
+        ? Qt::DescendingOrder
+        : Qt::AscendingOrder;
+    applySorting(column, order);
+}
+
+void ServerListController::captureSortState(Config& config) const
+{
+    if (sortColumn_ < 0) {
+        config.ui().mainServerSortColumn = -1;
+        config.ui().mainServerSortOrder = 0;
+        return;
+    }
+
+    config.ui().mainServerSortColumn = sortColumn_;
+    config.ui().mainServerSortOrder = static_cast<int>(sortOrder_);
 }
 
 QStringList ServerListController::buildReorderedServerIds(const QList<int>& movedRows, int targetRow) const

@@ -9,6 +9,7 @@ private slots:
     void enablingTunWhileCoreRunningRequestsRestartWhenElevated();
     void enablingTunWithoutElevationBlocksRuntimeApplyOnWindows();
     void enablingTunWithoutElevationPreservesConfiguredTunForSave();
+    void enablingTunWithoutElevationAlsoPersistsProxyOn();
     void changingTunParametersWhileTunDisabledDoesNotCountAsRuntimeChange();
     void configuredTunWithoutElevationBlocksOtherRuntimeHotApply();
 };
@@ -17,7 +18,7 @@ void TunSettingsApplyDecisionTests::enablingTunWhileCoreRunningRequestsRestartWh
 {
     Config previous;
     Config updated = previous;
-    updated.tunModeItem.enableTun = true;
+    updated.tun().tunModeItem.enableTun = true;
 
     const TunSettingsApplyDecision decision =
         evaluateTunSettingsApply(previous, updated, true, true, true);
@@ -32,7 +33,7 @@ void TunSettingsApplyDecisionTests::enablingTunWithoutElevationBlocksRuntimeAppl
 {
     Config previous;
     Config updated = previous;
-    updated.tunModeItem.enableTun = true;
+    updated.tun().tunModeItem.enableTun = true;
 
     const TunSettingsApplyDecision decision =
         evaluateTunSettingsApply(previous, updated, true, false, true);
@@ -48,16 +49,37 @@ void TunSettingsApplyDecisionTests::enablingTunWithoutElevationPreservesConfigur
 {
     Config previous;
     Config updated = previous;
-    updated.tunModeItem.enableTun = true;
-    updated.tunModeItem.autoRoute = true;
+    updated.tun().tunModeItem.enableTun = true;
+    updated.tun().tunModeItem.autoRoute = true;
 
     const TunSettingsSaveBehavior behavior =
         evaluateTunSettingsSaveBehavior(previous, updated, true, false, true);
 
-    QVERIFY(behavior.configToPersist.tunModeItem.enableTun);
-    QVERIFY(behavior.configToPersist.tunModeItem.autoRoute);
+    QVERIFY(behavior.configToPersist.tun().tunModeItem.enableTun);
+    QVERIFY(behavior.configToPersist.tun().tunModeItem.autoRoute);
     QVERIFY(behavior.applyDecision.requiresAdminForConfiguredTun);
     QVERIFY(!behavior.applyDecision.shouldRestartRunningCore);
+    QVERIFY(behavior.shouldPromptForAdminRestart);
+}
+
+void TunSettingsApplyDecisionTests::enablingTunWithoutElevationAlsoPersistsProxyOn()
+{
+    Config previous;
+
+    const Config updated = prepareTunToggleConfigForSave(previous, true, true, false);
+
+    QVERIFY(updated.tun().tunModeItem.enableTun);
+    QVERIFY(updated.ui().mainProxyEnabled);
+    QCOMPARE(updated.sysProxyType, toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
+
+    const TunSettingsSaveBehavior behavior =
+        evaluateTunSettingsSaveBehavior(previous, updated, true, false, true);
+
+    QVERIFY(behavior.configToPersist.tun().tunModeItem.enableTun);
+    QVERIFY(behavior.configToPersist.ui().mainProxyEnabled);
+    QCOMPARE(
+        behavior.configToPersist.sysProxyType,
+        toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
     QVERIFY(behavior.shouldPromptForAdminRestart);
 }
 
@@ -65,8 +87,8 @@ void TunSettingsApplyDecisionTests::changingTunParametersWhileTunDisabledDoesNot
 {
     Config previous;
     Config updated = previous;
-    updated.tunModeItem.mtu = 1500;
-    updated.tunModeItem.autoRoute = true;
+    updated.tun().tunModeItem.mtu = 1500;
+    updated.tun().tunModeItem.autoRoute = true;
 
     const TunSettingsApplyDecision decision =
         evaluateTunSettingsApply(previous, updated, true, true, true);
@@ -80,7 +102,7 @@ void TunSettingsApplyDecisionTests::changingTunParametersWhileTunDisabledDoesNot
 void TunSettingsApplyDecisionTests::configuredTunWithoutElevationBlocksOtherRuntimeHotApply()
 {
     Config previous;
-    previous.tunModeItem.enableTun = true;
+    previous.tun().tunModeItem.enableTun = true;
 
     Config updated = previous;
     updated.localPort = previous.localPort + 1;

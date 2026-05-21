@@ -7,7 +7,7 @@ PolicyGroupService::PolicyGroupService(IConfigRepository& repository)
 
 QList<PolicyGroupItem> PolicyGroupService::list() const
 {
-    return repository_.load().policyGroups;
+    return repository_.load().policy().policyGroups;
 }
 
 PolicyGroupItem PolicyGroupService::get(const QString& id) const
@@ -24,7 +24,7 @@ PolicyGroupItem PolicyGroupService::get(const QString& id) const
 bool PolicyGroupService::add(const PolicyGroupItem& group)
 {
     Config config = repository_.load();
-    config.policyGroups.append(group);
+    config.policy().policyGroups.append(group);
     return repository_.save(config);
 }
 
@@ -32,9 +32,9 @@ bool PolicyGroupService::update(const PolicyGroupItem& group)
 {
     Config config = repository_.load();
     bool found = false;
-    for (int i = 0; i < config.policyGroups.size(); ++i) {
-        if (config.policyGroups[i].id == group.id) {
-            config.policyGroups[i] = group;
+    for (int i = 0; i < config.policy().policyGroups.size(); ++i) {
+        if (config.policy().policyGroups[i].id == group.id) {
+            config.policy().policyGroups[i] = group;
             found = true;
             break;
         }
@@ -48,9 +48,9 @@ bool PolicyGroupService::update(const PolicyGroupItem& group)
 bool PolicyGroupService::remove(const QString& id)
 {
     Config config = repository_.load();
-    for (int i = 0; i < config.policyGroups.size(); ++i) {
-        if (config.policyGroups[i].id == id) {
-            config.policyGroups.removeAt(i);
+    for (int i = 0; i < config.policy().policyGroups.size(); ++i) {
+        if (config.policy().policyGroups[i].id == id) {
+            config.policy().policyGroups.removeAt(i);
             return repository_.save(config);
         }
     }
@@ -64,7 +64,7 @@ QList<VmessItem> PolicyGroupService::resolveMembers(const QString& groupId) cons
         return {};
     }
 
-    const QList<VmessItem> allServers = repository_.load().servers;
+    const QList<VmessItem> allServers = repository_.load().collection().servers;
     QList<VmessItem> members;
     for (const VmessItem& server : allServers) {
         if (group.memberServerIds.contains(server.indexId)) {

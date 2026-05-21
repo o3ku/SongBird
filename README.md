@@ -1,14 +1,14 @@
-# Song Box
+# SongBird
 
 A lightweight Qt/C++ rewrite and improvement of [v2rayN](https://github.com/2dust/v2rayN) — the popular Windows proxy client for V2Ray/Xray.
 
-Drop-in compatible with v2rayN's `guiNConfig.json`. No .NET runtime, no NuGet packages, no DLL hell — a single static-linked native binary.
+Uses a SongBird-only `songbird.json` configuration. No .NET runtime, no NuGet packages, no DLL hell — a single static-linked native binary.
 
-## Why Song Box?
+## Why SongBird?
 
 ### Lower Resource Usage
 
-- **Native C++, no .NET runtime** — no CLR overhead, no JIT warm-up, no runtime package downloads. Static-linked with vcpkg (`x64-windows-static-md`) producing a single self-contained `SongBox.exe`.
+- **Native C++, no .NET runtime** — no CLR overhead, no JIT warm-up, no runtime package downloads. Static-linked with vcpkg (`x64-windows-static-md`) producing a single self-contained `SongBird.exe`.
 - **Minimal dependencies** — only Qt Core/GUI/Widgets/Network. Optional protobuf+gRPC auto-detected at configure time.
 - **Plain struct domain models** — no vtables, no heap allocation for data objects. Trivial copy/move everywhere.
 - **O(1) server lookups** — `ServerTableModel` uses hash-based index mapping instead of linear scans through server lists.
@@ -50,9 +50,9 @@ Decision logic, config generation, services, UI dialogs, platform code, and pars
 
 ## Feature Compatibility
 
-| Feature | Song Box | v2rayN |
+| Feature | SongBird | v2rayN |
 |---------|--------|--------|
-| Config format | `guiNConfig.json` compatible | Original |
+| Config format | `songbird.json` only | Original |
 | Server management | Add/edit/duplicate/remove/drag-reorder/filter/QR | Same |
 | Protocols | VMess/VLESS/SS/Trojan/Hysteria2/TUIC/WireGuard/AnyTLS/Naive | Same |
 | Core engines | Xray, V2Ray, sing-box, Clash, ClashMeta | Same |
@@ -93,3 +93,6 @@ pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>
 ## License
 
 This project is licensed under the same terms as the upstream v2rayN project.
+
+
+

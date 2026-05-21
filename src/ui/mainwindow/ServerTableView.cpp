@@ -7,6 +7,7 @@
 #include <QEvent>
 #include <QItemSelectionModel>
 #include <QMouseEvent>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -45,6 +46,15 @@ void ServerTableView::setRowsMoveHandler(std::function<void(const QList<int>& ro
 bool ServerTableView::moveSelectedRowsTo(int targetRow)
 {
     return requestMoveSelectedRows(targetRow);
+}
+
+void ServerTableView::flashAttention(int durationMs)
+{
+    setAttentionHighlighted(true);
+    setFocus(Qt::OtherFocusReason);
+    QTimer::singleShot(qMax(1, durationMs), this, [this]() {
+        setAttentionHighlighted(false);
+    });
 }
 
 void ServerTableView::dragEnterEvent(QDragEnterEvent* event)
@@ -164,5 +174,14 @@ bool ServerTableView::requestMoveSelectedRows(int targetRow)
 
     rowsMoveHandler_(rows, clampedTargetRow);
     return true;
+}
+
+void ServerTableView::setAttentionHighlighted(bool highlighted)
+{
+    setProperty("serverTableAttention", highlighted);
+    setStyleSheet(highlighted
+        ? QStringLiteral("ServerTableView { border: 1px solid #c47f17; border-radius: 4px; }")
+        : QString());
+    viewport()->update();
 }
 

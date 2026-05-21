@@ -5,6 +5,8 @@
 #include <QComboBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
+#include <QImage>
 #include <QPalette>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -17,6 +19,8 @@
 #include <QTextEdit>
 
 #include "ui/dialogs/SettingsDialog.h"
+#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
+#include "ui/theme/AppTheme.h"
 
 class SettingsDialogTests : public QObject {
     Q_OBJECT
@@ -35,9 +39,7 @@ private slots:
     void defaultAllowInsecureCheckboxRoundTripsConfig();
     void defaultUserAgentComboRoundTripsConfig();
     void defaultFingerprintComboRoundTripsConfig();
-    void statisticsToggleControlsRefreshRateSpin();
-    void proxySettingsRoundTripsConfig();
-    void updateSettingsRoundTripsConfig();
+    void themeComboRoundTripsConfig();
     void tunSettingsRoundTripsConfig();
     void tunToggleControlsDependentFields();
     void tunToggleControlsCoreLegacyProtect();
@@ -57,7 +59,11 @@ private slots:
     void fakeIpToggleControlsGlobalFakeIpCheckbox();
     void dnsPageRoundTripsFields();
     void subscriptionTableUsesServerTableStyle();
+    void subscriptionTableUsesDarkThemePalette();
+    void serverTableDarkThemePaintsAlternateRowsDark();
+    void applicationThemeLoadsResourceStyleSheet();
     void subscriptionPageRoundTripsSelectedRowsAndItems();
+    void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -240,7 +246,7 @@ void SettingsDialogTests::routeOnlyCheckboxRoundTripsConfig()
 void SettingsDialogTests::enableFragmentCheckboxRoundTripsConfig()
 {
     Config config;
-    config.enableFragment = true;
+    config.dns().enableFragment = true;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -252,13 +258,13 @@ void SettingsDialogTests::enableFragmentCheckboxRoundTripsConfig()
     enableFragmentCheck->setChecked(false);
 
     const Config updated = dialog.config();
-    QVERIFY(!updated.enableFragment);
+    QVERIFY(!updated.dns().enableFragment);
 }
 
 void SettingsDialogTests::enableCacheFile4SboxCheckboxRoundTripsConfig()
 {
     Config config;
-    config.enableCacheFile4Sbox = false;
+    config.dns().enableCacheFile4Sbox = false;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -270,13 +276,13 @@ void SettingsDialogTests::enableCacheFile4SboxCheckboxRoundTripsConfig()
     enableCacheFileCheck->setChecked(true);
 
     const Config updated = dialog.config();
-    QVERIFY(updated.enableCacheFile4Sbox);
+    QVERIFY(updated.dns().enableCacheFile4Sbox);
 }
 
 void SettingsDialogTests::defaultAllowInsecureCheckboxRoundTripsConfig()
 {
     Config config;
-    config.defaultAllowInsecure = true;
+    config.dns().defaultAllowInsecure = true;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -288,13 +294,13 @@ void SettingsDialogTests::defaultAllowInsecureCheckboxRoundTripsConfig()
     defaultAllowInsecureCheck->setChecked(false);
 
     const Config updated = dialog.config();
-    QVERIFY(!updated.defaultAllowInsecure);
+    QVERIFY(!updated.dns().defaultAllowInsecure);
 }
 
 void SettingsDialogTests::defaultUserAgentComboRoundTripsConfig()
 {
     Config config;
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
+    config.dns().defaultUserAgent = QStringLiteral("Mozilla/5.0");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -306,13 +312,13 @@ void SettingsDialogTests::defaultUserAgentComboRoundTripsConfig()
     defaultUserAgentCombo->setCurrentText(QStringLiteral("curl/8.0"));
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.defaultUserAgent, QStringLiteral("curl/8.0"));
+    QCOMPARE(updated.dns().defaultUserAgent, QStringLiteral("curl/8.0"));
 }
 
 void SettingsDialogTests::defaultFingerprintComboRoundTripsConfig()
 {
     Config config;
-    config.defaultFingerprint = QStringLiteral("firefox");
+    config.dns().defaultFingerprint = QStringLiteral("firefox");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -324,94 +330,39 @@ void SettingsDialogTests::defaultFingerprintComboRoundTripsConfig()
     defaultFingerprintCombo->setCurrentText(QStringLiteral("edge"));
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.defaultFingerprint, QStringLiteral("edge"));
+    QCOMPARE(updated.dns().defaultFingerprint, QStringLiteral("edge"));
 }
 
-void SettingsDialogTests::statisticsToggleControlsRefreshRateSpin()
+void SettingsDialogTests::themeComboRoundTripsConfig()
 {
     Config config;
-    config.enableStatistics = false;
-    config.statisticsFreshRate = 7;
+    config.ui().themeName = AppTheme::darkThemeName();
 
     SettingsDialog dialog;
     dialog.setConfig(config);
 
-    auto* statisticsCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsEnableStatisticsCheck"));
-    auto* refreshRateSpin = dialog.findChild<QSpinBox*>(QStringLiteral("settingsStatisticsFreshRateSpin"));
-    QVERIFY(statisticsCheck != nullptr);
-    QVERIFY(refreshRateSpin != nullptr);
+    auto* themeCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsThemeCombo"));
+    QVERIFY(themeCombo != nullptr);
+    QCOMPARE(themeCombo->currentData().toString(), AppTheme::darkThemeName());
+    QCOMPARE(themeCombo->findData(AppTheme::lightThemeName()), 0);
+    QCOMPARE(themeCombo->findData(AppTheme::darkThemeName()), 1);
 
-    QVERIFY(!statisticsCheck->isChecked());
-    QVERIFY(!refreshRateSpin->isEnabled());
-
-    statisticsCheck->setChecked(true);
-    QVERIFY(refreshRateSpin->isEnabled());
-}
-
-void SettingsDialogTests::proxySettingsRoundTripsConfig()
-{
-    Config config;
-    config.systemProxyExceptions = QStringLiteral("localhost;127.*");
-    config.systemProxyAdvancedProtocol = QStringLiteral("{ip}:{http_port}");
-    config.pacUrl = QStringLiteral("http://proxy.example/pac");
-
-    SettingsDialog dialog;
-    dialog.setConfig(config);
-
-    auto* exceptionsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsSystemProxyExceptionsEdit"));
-    auto* protocolCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsSystemProxyAdvancedProtocolCombo"));
-    auto* pacUrlEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsPacUrlEdit"));
-    QVERIFY(exceptionsEdit != nullptr);
-    QVERIFY(protocolCombo != nullptr);
-    QVERIFY(pacUrlEdit != nullptr);
-    QCOMPARE(exceptionsEdit->text(), QStringLiteral("localhost;127.*"));
-    QCOMPARE(protocolCombo->currentText(), QStringLiteral("{ip}:{http_port}"));
-    QCOMPARE(pacUrlEdit->text(), QStringLiteral("http://proxy.example/pac"));
-
-    exceptionsEdit->setText(QStringLiteral("  10.0.0.0/8  "));
-    protocolCombo->setCurrentText(QStringLiteral("socks={ip}:{socks_port}"));
-    pacUrlEdit->setText(QStringLiteral("  http://proxy.example/custom-pac  "));
+    themeCombo->setCurrentIndex(themeCombo->findData(AppTheme::lightThemeName()));
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.systemProxyExceptions, QStringLiteral("10.0.0.0/8"));
-    QCOMPARE(updated.systemProxyAdvancedProtocol, QStringLiteral("socks={ip}:{socks_port}"));
-    QCOMPARE(updated.pacUrl, QStringLiteral("http://proxy.example/custom-pac"));
-}
-
-void SettingsDialogTests::updateSettingsRoundTripsConfig()
-{
-    Config config;
-    config.checkPreReleaseUpdate = false;
-    config.ignoreGeoUpdateCore = true;
-
-    SettingsDialog dialog;
-    dialog.setConfig(config);
-
-    auto* preReleaseCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsCheckPreReleaseUpdateCheck"));
-    auto* ignoreGeoCheck = dialog.findChild<QCheckBox*>(QStringLiteral("settingsIgnoreGeoUpdateCoreCheck"));
-    QVERIFY(preReleaseCheck != nullptr);
-    QVERIFY(ignoreGeoCheck != nullptr);
-    QVERIFY(!preReleaseCheck->isChecked());
-    QVERIFY(ignoreGeoCheck->isChecked());
-
-    preReleaseCheck->setChecked(true);
-    ignoreGeoCheck->setChecked(false);
-
-    const Config updated = dialog.config();
-    QVERIFY(updated.checkPreReleaseUpdate);
-    QVERIFY(!updated.ignoreGeoUpdateCore);
+    QCOMPARE(updated.ui().themeName, AppTheme::lightThemeName());
 }
 
 void SettingsDialogTests::tunSettingsRoundTripsConfig()
 {
     Config config;
-    config.tunModeItem.enableTun = true;
-    config.tunModeItem.autoRoute = true;
-    config.tunModeItem.strictRoute = false;
-    config.tunModeItem.mtu = 1400;
-    config.tunModeItem.stack = QStringLiteral("gvisor");
-    config.tunModeItem.enableIPv6Address = true;
-    config.tunModeItem.icmpRouting = QStringLiteral("tcp");
+    config.tun().tunModeItem.enableTun = true;
+    config.tun().tunModeItem.autoRoute = true;
+    config.tun().tunModeItem.strictRoute = false;
+    config.tun().tunModeItem.mtu = 1400;
+    config.tun().tunModeItem.stack = QStringLiteral("gvisor");
+    config.tun().tunModeItem.enableIPv6Address = true;
+    config.tun().tunModeItem.icmpRouting = QStringLiteral("tcp");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -442,19 +393,19 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     ipv6Check->setChecked(false);
 
     const Config updated = dialog.config();
-    QVERIFY(updated.tunModeItem.enableTun);
-    QVERIFY(updated.tunModeItem.autoRoute);
-    QVERIFY(updated.tunModeItem.strictRoute);
-    QCOMPARE(updated.tunModeItem.mtu, 1500);
-    QCOMPARE(updated.tunModeItem.stack, QStringLiteral("mixed"));
-    QVERIFY(!updated.tunModeItem.enableIPv6Address);
-    QCOMPARE(updated.tunModeItem.icmpRouting, QStringLiteral("udp"));
+    QVERIFY(updated.tun().tunModeItem.enableTun);
+    QVERIFY(updated.tun().tunModeItem.autoRoute);
+    QVERIFY(updated.tun().tunModeItem.strictRoute);
+    QCOMPARE(updated.tun().tunModeItem.mtu, 1500);
+    QCOMPARE(updated.tun().tunModeItem.stack, QStringLiteral("mixed"));
+    QVERIFY(!updated.tun().tunModeItem.enableIPv6Address);
+    QCOMPARE(updated.tun().tunModeItem.icmpRouting, QStringLiteral("udp"));
 }
 
 void SettingsDialogTests::tunToggleControlsDependentFields()
 {
     Config config;
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -477,7 +428,7 @@ void SettingsDialogTests::tunToggleControlsDependentFields()
 void SettingsDialogTests::tunToggleControlsCoreLegacyProtect()
 {
     Config config;
-    config.tunModeItem.enableTun = false;
+    config.tun().tunModeItem.enableTun = false;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -536,10 +487,10 @@ void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
 
     const Config updated = dialog.config();
     auto it = std::find_if(
-        updated.coreTypeItems.cbegin(),
-        updated.coreTypeItems.cend(),
+        updated.policy().coreTypeItems.cbegin(),
+        updated.policy().coreTypeItems.cend(),
         [](const CoreTypeItem& item) { return item.configType == static_cast<int>(ConfigType::HTTP); });
-    QVERIFY(it != updated.coreTypeItems.cend());
+    QVERIFY(it != updated.policy().coreTypeItems.cend());
     QCOMPARE(it->coreType, static_cast<int>(CoreType::Xray));
 }
 
@@ -559,7 +510,7 @@ void SettingsDialogTests::coreTypeTableDefaultsUseConfiguredValue()
     QCOMPARE(vmessCombo->currentText(), QStringLiteral("sing-box"));
 
     Config config;
-    config.coreTypeItems = {
+    config.policy().coreTypeItems = {
         CoreTypeItem{static_cast<int>(ConfigType::VMess), static_cast<int>(CoreType::Xray)}
     };
     dialog.setConfig(config);
@@ -611,15 +562,15 @@ void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
     routing.remarks = QStringLiteral("route");
     routing.locked = true;
     routing.rules = {rule};
-    config.routingItems = {routing};
+    config.collection().routingItems = {routing};
 
     SettingsDialog dialog;
     dialog.setConfig(config);
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.routingItems.size(), 1);
-    QCOMPARE(updated.routingItems.constFirst().rules.size(), 1);
-    const RoutingRule updatedRule = updated.routingItems.constFirst().rules.constFirst();
+    QCOMPARE(updated.collection().routingItems.size(), 1);
+    QCOMPARE(updated.collection().routingItems.constFirst().rules.size(), 1);
+    const RoutingRule updatedRule = updated.collection().routingItems.constFirst().rules.constFirst();
     QCOMPARE(updatedRule.network, QStringLiteral("tcp,udp"));
     QCOMPARE(
         updatedRule.process,
@@ -650,7 +601,7 @@ void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
     proxyRule.outboundTag = QStringLiteral("proxy");
     proxyRule.port = QStringLiteral("443");
     proxyRule.protocol = QStringList{QStringLiteral("tls")};
-    config.routingCustomRules = {blockRule, blockDomainRule, directRule, directIpRule, proxyRule};
+    config.collection().routingCustomRules = {blockRule, blockDomainRule, directRule, directIpRule, proxyRule};
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -684,14 +635,14 @@ void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
     proxyPortEdit->setText(QStringLiteral("6881-6999"));
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.routingCustomRules.size(), 3);
-    QCOMPARE(updated.routingCustomRules.at(0).outboundTag, QStringLiteral("block"));
-    QCOMPARE(updated.routingCustomRules.at(0).domain, QStringList{QStringLiteral("domain:ads.example.com")});
-    QCOMPARE(updated.routingCustomRules.at(1).outboundTag, QStringLiteral("direct"));
-    QCOMPARE(updated.routingCustomRules.at(1).ip, QStringList{QStringLiteral("192.168.0.0/16")});
-    QCOMPARE(updated.routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
-    QCOMPARE(updated.routingCustomRules.at(2).protocol, QStringList{QStringLiteral("bittorrent")});
-    QCOMPARE(updated.routingCustomRules.at(2).port, QStringLiteral("6881-6999"));
+    QCOMPARE(updated.collection().routingCustomRules.size(), 3);
+    QCOMPARE(updated.collection().routingCustomRules.at(0).outboundTag, QStringLiteral("block"));
+    QCOMPARE(updated.collection().routingCustomRules.at(0).domain, QStringList{QStringLiteral("domain:ads.example.com")});
+    QCOMPARE(updated.collection().routingCustomRules.at(1).outboundTag, QStringLiteral("direct"));
+    QCOMPARE(updated.collection().routingCustomRules.at(1).ip, QStringList{QStringLiteral("192.168.0.0/16")});
+    QCOMPARE(updated.collection().routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
+    QCOMPARE(updated.collection().routingCustomRules.at(2).protocol, QStringList{QStringLiteral("bittorrent")});
+    QCOMPARE(updated.collection().routingCustomRules.at(2).port, QStringLiteral("6881-6999"));
 }
 
 void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelection()
@@ -702,10 +653,10 @@ void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelectio
     auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
     QVERIFY(tabs != nullptr);
     QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Direct"));
-    QCOMPARE(dialog.config().settingsRoutingRuleTabKey, QStringLiteral("direct"));
+    QCOMPARE(dialog.config().ui().settingsRoutingRuleTabKey, QStringLiteral("direct"));
 
     Config config;
-    config.settingsRoutingRuleTabKey = QStringLiteral("proxy");
+    config.ui().settingsRoutingRuleTabKey = QStringLiteral("proxy");
     dialog.setConfig(config);
     QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Proxy"));
 
@@ -718,7 +669,7 @@ void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelectio
     }
     QVERIFY(blockIndex >= 0);
     tabs->setCurrentIndex(blockIndex);
-    QCOMPARE(dialog.config().settingsRoutingRuleTabKey, QStringLiteral("block"));
+    QCOMPARE(dialog.config().ui().settingsRoutingRuleTabKey, QStringLiteral("block"));
 }
 
 void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
@@ -745,7 +696,7 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
     RoutingItem routing;
     routing.remarks = QStringLiteral("Builtin");
     routing.rules = {blockRule, directRule, proxyRule};
-    config.routingItems = {routing};
+    config.collection().routingItems = {routing};
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -794,7 +745,7 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
                 QStringLiteral("domain:very-long-domain-name-that-should-wrap-in-expanded-card.example.com")};
             item.rules = {rule};
         }
-        config.routingItems.append(item);
+        config.collection().routingItems.append(item);
     }
 
     SettingsDialog dialog;
@@ -880,7 +831,7 @@ void SettingsDialogTests::routingPageShowsExplicitEmptyStateWithoutBaseRoutes()
     Config config;
     RoutingItem routing;
     routing.remarks = QStringLiteral("Builtin");
-    config.routingItems = {routing};
+    config.collection().routingItems = {routing};
     dialog.setConfig(config);
 
     QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route"));
@@ -898,24 +849,21 @@ void SettingsDialogTests::settingsDialogUsesCompactUiFontBaseline()
 
     auto* settingsTabBar = dialog.findChild<QTabBar*>(QStringLiteral("settingsTabBar"));
     auto* subTable = dialog.findChild<QTableWidget*>();
-    auto* systemProxyExceptionsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsSystemProxyExceptionsEdit"));
     auto* languageCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsLanguageCombo"));
     QVERIFY(settingsTabBar != nullptr);
     QVERIFY(subTable != nullptr);
-    QVERIFY(systemProxyExceptionsEdit != nullptr);
     QVERIFY(languageCombo != nullptr);
 
     QVERIFY(settingsTabBar->font().pointSizeF() <= baseline);
     QVERIFY(subTable->font().pointSizeF() <= baseline);
-    QVERIFY(systemProxyExceptionsEdit->font().pointSizeF() <= baseline);
     QVERIFY(languageCombo->font().pointSizeF() <= baseline);
 }
 
 void SettingsDialogTests::fakeIpToggleControlsGlobalFakeIpCheckbox()
 {
     Config config;
-    config.fakeIp = false;
-    config.globalFakeIp = true;
+    config.dns().fakeIp = false;
+    config.dns().globalFakeIp = true;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -938,20 +886,20 @@ void SettingsDialogTests::fakeIpToggleControlsGlobalFakeIpCheckbox()
 void SettingsDialogTests::dnsPageRoundTripsFields()
 {
     Config config;
-    config.remoteDns = QStringLiteral("https://one.example/dns-query");
-    config.directDns = QStringLiteral("https://two.example/dns-query");
-    config.bootstrapDns = QStringLiteral("1.1.1.1");
-    config.domainStrategyForFreedom = QStringLiteral("PreferIPv6");
-    config.domainStrategyForProxy = QStringLiteral("PreferIPv4");
-    config.useSystemHosts = true;
-    config.addCommonHosts = true;
-    config.blockBindingQuery = true;
-    config.fakeIp = true;
-    config.globalFakeIp = true;
-    config.serveStale = true;
-    config.parallelQuery = true;
-    config.directExpectedIps = QStringLiteral("geoip:private");
-    config.dnsHosts = QStringLiteral("example.com 1.2.3.4");
+    config.dns().remoteDns = QStringLiteral("https://one.example/dns-query");
+    config.dns().directDns = QStringLiteral("https://two.example/dns-query");
+    config.dns().bootstrapDns = QStringLiteral("1.1.1.1");
+    config.dns().domainStrategyForFreedom = QStringLiteral("PreferIPv6");
+    config.dns().domainStrategyForProxy = QStringLiteral("PreferIPv4");
+    config.dns().useSystemHosts = true;
+    config.dns().addCommonHosts = true;
+    config.dns().blockBindingQuery = true;
+    config.dns().fakeIp = true;
+    config.dns().globalFakeIp = true;
+    config.dns().serveStale = true;
+    config.dns().parallelQuery = true;
+    config.dns().directExpectedIps = QStringLiteral("geoip:private");
+    config.dns().dnsHosts = QStringLiteral("example.com 1.2.3.4");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -998,18 +946,20 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     dnsHostsEdit->setPlainText(QStringLiteral("full:full.example.com 5.6.7.8"));
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.remoteDns, QStringLiteral("https://changed.example/dns-query"));
-    QCOMPARE(updated.domainStrategyForFreedom, QStringLiteral("OnlyIPv4"));
-    QCOMPARE(updated.domainStrategyForProxy, QStringLiteral("OnlyIPv6"));
-    QVERIFY(!updated.useSystemHosts);
-    QVERIFY(!updated.addCommonHosts);
-    QVERIFY(!updated.blockBindingQuery);
-    QCOMPARE(updated.directExpectedIps, QStringLiteral("1.2.3.0/24"));
-    QCOMPARE(updated.dnsHosts, QStringLiteral("full:full.example.com 5.6.7.8"));
+    QCOMPARE(updated.dns().remoteDns, QStringLiteral("https://changed.example/dns-query"));
+    QCOMPARE(updated.dns().domainStrategyForFreedom, QStringLiteral("OnlyIPv4"));
+    QCOMPARE(updated.dns().domainStrategyForProxy, QStringLiteral("OnlyIPv6"));
+    QVERIFY(!updated.dns().useSystemHosts);
+    QVERIFY(!updated.dns().addCommonHosts);
+    QVERIFY(!updated.dns().blockBindingQuery);
+    QCOMPARE(updated.dns().directExpectedIps, QStringLiteral("1.2.3.0/24"));
+    QCOMPARE(updated.dns().dnsHosts, QStringLiteral("full:full.example.com 5.6.7.8"));
 }
 
 void SettingsDialogTests::subscriptionTableUsesServerTableStyle()
 {
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
+
     SettingsDialog dialog;
     dialog.setConfig(Config());
     dialog.show();
@@ -1019,14 +969,85 @@ void SettingsDialogTests::subscriptionTableUsesServerTableStyle()
     QVERIFY(subTable != nullptr);
 
     QVERIFY(subTable->property("serverTableStyle").toBool());
-    QCOMPARE(subTable->palette().color(QPalette::AlternateBase), QColor(QStringLiteral("#f9f9f9")));
+    QCOMPARE(
+        subTable->palette().color(QPalette::AlternateBase),
+        QColor(AppTheme::tableAlternateBaseColor(AppTheme::lightThemeName())));
     QVERIFY(!subTable->showGrid());
+}
+
+void SettingsDialogTests::subscriptionTableUsesDarkThemePalette()
+{
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::darkThemeName());
+
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+
+    QCOMPARE(
+        subTable->palette().color(QPalette::AlternateBase),
+        QColor(AppTheme::tableAlternateBaseColor(AppTheme::darkThemeName())));
+
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
+}
+
+void SettingsDialogTests::serverTableDarkThemePaintsAlternateRowsDark()
+{
+    struct ThemeResetter {
+        ~ThemeResetter()
+        {
+            AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
+        }
+    } resetter;
+
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::darkThemeName());
+
+    QTableWidget table(2, 1);
+    table.setObjectName(QStringLiteral("serverTableView"));
+    table.setItem(0, 0, new QTableWidgetItem(QStringLiteral("First")));
+    table.setItem(1, 0, new QTableWidgetItem(QStringLiteral("Second")));
+    table.horizontalHeader()->hide();
+    table.verticalHeader()->hide();
+    table.setColumnWidth(0, 180);
+    table.setRowHeight(0, 28);
+    table.setRowHeight(1, 28);
+    table.setFixedSize(180, 56);
+    AppTheme::applyServerTableStyle(&table);
+
+    table.show();
+    QCoreApplication::processEvents();
+
+    const QImage rendered = table.viewport()->grab().toImage();
+    QVERIFY(!rendered.isNull());
+
+    const QModelIndex alternateIndex = table.model()->index(1, 0);
+    const QRect alternateRect = table.visualRect(alternateIndex);
+    QVERIFY(alternateRect.isValid());
+
+    const QPoint samplePoint(alternateRect.right() - 8, alternateRect.center().y());
+    const QColor alternatePixel = rendered.pixelColor(samplePoint);
+    const QColor expectedAlternate(AppTheme::tableAlternateBaseColor(AppTheme::darkThemeName()));
+    QCOMPARE(alternatePixel, expectedAlternate);
+}
+
+void SettingsDialogTests::applicationThemeLoadsResourceStyleSheet()
+{
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::darkThemeName());
+
+    QVERIFY(qApp->styleSheet().contains(QStringLiteral("QMainWindow")));
+    QVERIFY(qApp->styleSheet().contains(QStringLiteral("#111418")));
+    QVERIFY(!qApp->styleSheet().contains(QStringLiteral("@surface@")));
+
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
 }
 
 void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
 {
     Config config;
-    config.subscriptions = {
+    config.collection().subscriptions = {
         SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QStringLiteral("ua-a")},
         SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), false, QStringLiteral("ua-b")}
     };
@@ -1045,12 +1066,56 @@ void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
     QCOMPARE(rows.first(), 1);
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.subscriptions.size(), 2);
-    QCOMPARE(updated.subscriptions.at(0).id, QStringLiteral("sub-1"));
-    QCOMPARE(updated.subscriptions.at(0).remarks, QStringLiteral("A"));
-    QCOMPARE(updated.subscriptions.at(1).id, QStringLiteral("sub-2"));
-    QCOMPARE(updated.subscriptions.at(1).url, QStringLiteral("https://b.example"));
-    QVERIFY(!updated.subscriptions.at(1).enabled);
+    QCOMPARE(updated.collection().subscriptions.size(), 2);
+    QCOMPARE(updated.collection().subscriptions.at(0).id, QStringLiteral("sub-1"));
+    QCOMPARE(updated.collection().subscriptions.at(0).remarks, QStringLiteral("A"));
+    QCOMPARE(updated.collection().subscriptions.at(1).id, QStringLiteral("sub-2"));
+    QCOMPARE(updated.collection().subscriptions.at(1).url, QStringLiteral("https://b.example"));
+    QVERIFY(!updated.collection().subscriptions.at(1).enabled);
+}
+
+void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    const auto addButtons = dialog.findChildren<QPushButton*>();
+    QPushButton* addButton = nullptr;
+    for (QPushButton* button : addButtons) {
+        if (button != nullptr && button->text() == QStringLiteral("Add")) {
+            addButton = button;
+            break;
+        }
+    }
+    QVERIFY(addButton != nullptr);
+    addButton->click();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    QCOMPARE(subTable->rowCount(), 1);
+
+    auto* userAgentCombo = qobject_cast<QComboBox*>(subTable->cellWidget(0, 3));
+    QVERIFY(userAgentCombo != nullptr);
+    QCOMPARE(userAgentCombo->currentText(), QString());
+    QVERIFY(userAgentCombo->isEditable());
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("ClashVerge")), 2);
+    QCOMPARE(userAgentCombo->objectName(), QStringLiteral("uaCombo"));
+    QVERIFY(userAgentCombo->styleSheet().isEmpty());
+    QVERIFY(userAgentCombo->lineEdit() != nullptr);
+    QCOMPARE(userAgentCombo->lineEdit()->objectName(), QStringLiteral("uaComboLineEdit"));
+    QVERIFY(userAgentCombo->lineEdit()->styleSheet().isEmpty());
+
+    QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(userAgentCombo->currentText()),
+             QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+    userAgentCombo->setEditText(QStringLiteral("CustomUA/9.9"));
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.collection().subscriptions.size(), 1);
+    QCOMPARE(updated.collection().subscriptions.at(0).userAgent, QStringLiteral("CustomUA/9.9"));
+    QCOMPARE(updated.collection().subscriptions.at(0).url, QStringLiteral("https://"));
 }
 
 void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()

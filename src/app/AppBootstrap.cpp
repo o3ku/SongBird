@@ -1,12 +1,16 @@
 #include "app/AppBootstrap.h"
+#include "app/ConfigPathResolver.h"
+#include "app/CoreStartupCheckpoint.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileDialog>
 #include <QFile>
@@ -60,12 +64,14 @@
 #include "common/CorePidFile.h"
 #include "common/DataSizeFormatter.h"
 #include "common/SystemProxyMode.h"
+#include "common/UserAgent.h"
 #include "domain/models/Config.h"
 #include "platform/windows/WindowsAutoRunService.h"
 #include "platform/windows/WindowsGlobalHotkeyService.h"
 #include "platform/windows/WindowsSystemProxyService.h"
 #include "persistence/JsonConfigRepository.h"
 #include "runtime/ClientConfigWriter.h"
+#include "runtime/CoreConfigPreflight.h"
 #include "runtime/CoreLifecycleService.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/QtCoreProcessHost.h"
@@ -74,12 +80,10 @@
 #include "services/ConfigBackupService.h"
 #include "services/CoreUpdateService.h"
 #include "services/GeoResourceUpdateService.h"
-#include "services/GrpcStatisticsBackend.h"
 #include "services/ProxyAvailabilityCheckService.h"
 #include "services/RoutingService.h"
 #include "services/ServerService.h"
 #include "services/SpeedTestService.h"
-#include "services/StatisticsService.h"
 #include "services/SubscriptionService.h"
 #include "services/SubscriptionUpdateService.h"
 #include "subscription/ConfigFileImportParser.h"
@@ -92,6 +96,7 @@
 #include "ui/dialogs/GlobalHotkeyDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/theme/AppTheme.h"
 #include "ui/tray/TrayController.h"
 
 namespace {
@@ -99,15 +104,44 @@ namespace {
 constexpr auto DefaultIeProxyExceptions =
     "localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;"
     "172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*";
-constexpr auto ProjectPageUrl = "https://github.com/o3ku/v2rayq";
-constexpr auto ReleasePageUrl = "https://github.com/o3ku/v2rayq/releases";
+constexpr auto ProjectPageUrl = "https://github.com/o3ku/songbird";
+constexpr auto ReleasePageUrl = "https://github.com/o3ku/songbird/releases";
 constexpr auto AppReleaseDate = __DATE__;
 constexpr auto DocumentationUrl = "https://www.v2fly.org/";
 constexpr auto DnsObjectUrl = "https://www.v2fly.org/config/dns.html#dnsobject";
 constexpr auto RuleObjectUrl = "https://www.v2fly.org/config/routing.html#ruleobject";
 constexpr int LocationProbePortOffset = 103;
+constexpr int LocationProbeTimeoutMs = 5000;
+constexpr int LocationProbeRetryDelayMs = 300;
+constexpr int LocationProbeTotalTimeoutMs = 12000;
+constexpr int LocationProbeMaxAttempts = 8;
+constexpr int CoreListenProbeRetryDelayMs = 200;
+constexpr int CoreStartupStableRunMs = 3000;
+constexpr int CoreStartupOverlayMinimumVisibleMs = 650;
+const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 
 #if defined(Q_OS_WIN)
+bool isManagedCoreProcessName(const wchar_t* processName)
+{
+    static const wchar_t* kCoreProcessNames[] = {
+        L"xray.exe",
+        L"sing-box-client.exe",
+        L"sing-box.exe",
+        L"tuic.exe",
+    };
+
+    if (processName == nullptr) {
+        return false;
+    }
+
+    for (const wchar_t* targetName : kCoreProcessNames) {
+        if (_wcsicmp(processName, targetName) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool isTunAdapterPresent()
 {
     ULONG bufferSize = 15 * 1024;
@@ -134,6 +168,100 @@ bool isTunAdapterPresent()
     }
     return true;
 }
+
+QString processNameForPid(DWORD pid)
+{
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return {};
+    }
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    QString name;
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (entry.th32ProcessID == pid) {
+                name = QString::fromWCharArray(entry.szExeFile);
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return name;
+}
+
+QSet<DWORD> tcpListeningPidsForPorts(const QSet<quint16>& ports)
+{
+    QSet<DWORD> pids;
+    if (ports.isEmpty()) {
+        return pids;
+    }
+
+    ULONG tableSize = 0;
+    DWORD result = GetExtendedTcpTable(
+        nullptr,
+        &tableSize,
+        FALSE,
+        AF_INET,
+        TCP_TABLE_OWNER_PID_LISTENER,
+        0);
+    if (result != ERROR_INSUFFICIENT_BUFFER || tableSize == 0) {
+        return pids;
+    }
+
+    std::vector<char> buffer(tableSize);
+    auto* table = reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buffer.data());
+    result = GetExtendedTcpTable(
+        table,
+        &tableSize,
+        FALSE,
+        AF_INET,
+        TCP_TABLE_OWNER_PID_LISTENER,
+        0);
+    if (result != NO_ERROR) {
+        return pids;
+    }
+
+    for (DWORD index = 0; index < table->dwNumEntries; ++index) {
+        const MIB_TCPROW_OWNER_PID& row = table->table[index];
+        const quint16 port = ntohs(static_cast<u_short>(row.dwLocalPort));
+        if (ports.contains(port) && row.dwOwningPid > 0) {
+            pids.insert(row.dwOwningPid);
+        }
+    }
+
+    return pids;
+}
+
+QStringList terminateCorePids(const QSet<qint64>& pids)
+{
+    QStringList terminatedProcesses;
+    for (qint64 pidValue : pids) {
+        if (pidValue <= 0 || pidValue == QCoreApplication::applicationPid()) {
+            continue;
+        }
+
+        const DWORD pid = static_cast<DWORD>(pidValue);
+        const QString processName = processNameForPid(pid);
+        if (processName.isEmpty()
+            || !isManagedCoreProcessName(reinterpret_cast<const wchar_t*>(processName.utf16()))) {
+            continue;
+        }
+
+        HANDLE processHandle = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (processHandle == nullptr) {
+            continue;
+        }
+
+        if (TerminateProcess(processHandle, 1)) {
+            WaitForSingleObject(processHandle, 1500);
+            terminatedProcesses.append(QStringLiteral("%1(%2)").arg(processName).arg(pidValue));
+        }
+        CloseHandle(processHandle);
+    }
+    return terminatedProcesses;
+}
 #endif
 
 QString normalizeCoreVersionTag(QString value)
@@ -148,6 +276,50 @@ QString normalizeCoreVersionTag(QString value)
     }
 
     return value;
+}
+
+QStringList missingSingBoxRuleSetTags(const QString& configPath)
+{
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return {};
+    }
+
+    const QJsonArray ruleSets = document.object()
+                                    .value(QStringLiteral("route"))
+                                    .toObject()
+                                    .value(QStringLiteral("rule_set"))
+                                    .toArray();
+    QStringList missingTags;
+    QSet<QString> seenTags;
+    const QString ruleSetDirectory = QDir(QCoreApplication::applicationDirPath()).filePath(kSingBoxRuleSetDirectoryName);
+    for (const QJsonValue& value : ruleSets) {
+        const QJsonObject ruleSet = value.toObject();
+        if (ruleSet.value(QStringLiteral("type")).toString() != QStringLiteral("remote")) {
+            continue;
+        }
+
+        const QString tag = ruleSet.value(QStringLiteral("tag")).toString().trimmed();
+        if (tag.isEmpty() || seenTags.contains(tag)) {
+            continue;
+        }
+
+        const QFileInfo localRuleSet(QDir(ruleSetDirectory).filePath(QStringLiteral("%1.srs").arg(tag)));
+        if (localRuleSet.exists() && localRuleSet.isFile() && localRuleSet.size() > 0) {
+            continue;
+        }
+
+        seenTags.insert(tag);
+        missingTags.append(tag);
+    }
+
+    return missingTags;
 }
 
 QStringList coreVersionCommandArguments(CoreType coreType)
@@ -189,6 +361,19 @@ QString extractCoreVersionFromOutput(CoreType coreType, const QString& output)
     return match.hasMatch() ? normalizeCoreVersionTag(match.captured(1)) : QString();
 }
 
+bool isRoutineCoreLogLine(const QString& line)
+{
+    static const QRegularExpression importantLevelPattern(QStringLiteral(
+        "(?:\\[(?:Warning|Error|Fatal|Panic)\\]|\\b(?:WARN|WARNING|ERROR|FATAL|PANIC)\\b)"));
+    if (importantLevelPattern.match(line).hasMatch()) {
+        return false;
+    }
+
+    static const QRegularExpression routineLevelPattern(QStringLiteral(
+        "(?:\\[(?:Info|Debug)\\]|^\\s*(?:INFO|DEBUG)\\b|\\b(?:INFO|DEBUG)\\[)"));
+    return routineLevelPattern.match(line).hasMatch();
+}
+
 QString countryCodeToFlag(const QString& countryCode)
 {
     const QString code = countryCode.trimmed().toUpper();
@@ -215,7 +400,25 @@ QString buildLocationSummaryFromPayload(const QByteArray& payload)
     }
 
     const QJsonObject object = json.object();
-    const QString city = object.value(QStringLiteral("city")).toString().trimmed();
+    const QString status = object.value(QStringLiteral("status")).toString().trimmed();
+    if (status.compare(QStringLiteral("fail"), Qt::CaseInsensitive) == 0) {
+        return {};
+    }
+    if (object.contains(QStringLiteral("success")) && !object.value(QStringLiteral("success")).toBool(true)) {
+        return {};
+    }
+
+    QString city = object.value(QStringLiteral("city")).toString().trimmed();
+    if (city.isEmpty()) {
+        city = object.value(QStringLiteral("regionName")).toString().trimmed();
+    }
+    if (city.isEmpty()) {
+        city = object.value(QStringLiteral("region_name")).toString().trimmed();
+    }
+    if (city.isEmpty()) {
+        city = object.value(QStringLiteral("region")).toString().trimmed();
+    }
+
     QString country = object.value(QStringLiteral("country")).toString().trimmed();
     if (country.isEmpty()) {
         country = object.value(QStringLiteral("country_name")).toString().trimmed();
@@ -223,6 +426,12 @@ QString buildLocationSummaryFromPayload(const QByteArray& payload)
     QString countryCode = object.value(QStringLiteral("countryCode")).toString().trimmed();
     if (countryCode.isEmpty()) {
         countryCode = object.value(QStringLiteral("country_code")).toString().trimmed();
+    }
+    if (countryCode.isEmpty()) {
+        countryCode = object.value(QStringLiteral("country_iso")).toString().trimmed();
+    }
+    if (countryCode.isEmpty() && country.size() == 2) {
+        countryCode = country;
     }
 
     QStringList parts;
@@ -234,7 +443,39 @@ QString buildLocationSummaryFromPayload(const QByteArray& payload)
         parts.append(city);
     }
 
-    return parts.join(QStringLiteral(", "));
+    const QString summary = parts.join(QStringLiteral(", "));
+    if (!summary.isEmpty()) {
+        return summary;
+    }
+
+    QString ip = object.value(QStringLiteral("query")).toString().trimmed();
+    if (ip.isEmpty()) {
+        ip = object.value(QStringLiteral("ip")).toString().trimmed();
+    }
+    return ip;
+}
+
+QStringList locationProbeUrls()
+{
+    return {
+        QStringLiteral("http://ip-api.com/json/?fields=status,message,country,countryCode,regionName,city,query"),
+        QStringLiteral("http://ipwho.is/"),
+        QStringLiteral("https://ipinfo.io/json"),
+        QStringLiteral("https://ifconfig.co/json"),
+        QStringLiteral("https://ipapi.co/json/")
+    };
+}
+
+QString locationProbeErrorMessage(const QUrl& url, const QString& error)
+{
+    const QString host = url.host().trimmed();
+    if (host.isEmpty()) {
+        return error;
+    }
+    if (error.trimmed().isEmpty()) {
+        return QStringLiteral("Outbound location request failed: %1").arg(host);
+    }
+    return QStringLiteral("%1: %2").arg(host, error.trimmed());
 }
 
 QString readCoreVersion(CoreType coreType, const QString& program)
@@ -396,16 +637,16 @@ void appendUniqueProxyException(QStringList& entries, const QString& value)
 QStringList collectRouteDerivedProxyExceptions(const Config& config)
 {
     QList<RoutingRule> effectiveRules;
-    for (const RoutingRule& rule : config.routingCustomRules) {
+    for (const RoutingRule& rule : config.collection().routingCustomRules) {
         if (rule.enabled) {
             effectiveRules.append(rule);
         }
     }
 
-    if (config.enableRoutingAdvanced
-        && config.routingIndex >= 0
-        && config.routingIndex < config.routingItems.size()) {
-        const RoutingItem& selectedRouting = config.routingItems.at(config.routingIndex);
+    if (config.collection().enableRoutingAdvanced
+        && config.collection().routingIndex >= 0
+        && config.collection().routingIndex < config.collection().routingItems.size()) {
+        const RoutingItem& selectedRouting = config.collection().routingItems.at(config.collection().routingIndex);
         for (const RoutingRule& rule : selectedRouting.rules) {
             if (rule.enabled) {
                 effectiveRules.append(rule);
@@ -445,21 +686,21 @@ constexpr auto GeoReleasePageUrl = "https://github.com/Loyalsoldier/v2ray-rules-
 
 bool interactivePromptsEnabled()
 {
-    return !qEnvironmentVariableIsSet("QT_V2RAYN_NONINTERACTIVE");
+    return !qEnvironmentVariableIsSet("SONGBIRD_NONINTERACTIVE");
 }
 
 QString tunAdminRequiredStartMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows. Run Song Box as administrator before starting the core.");
+        "TUN mode requires administrator privileges on Windows. Run SongBird as administrator before starting the core.");
 }
 
 QString tunAdminRequiredSaveMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows. The settings were saved and will take effect after restarting Song Box as administrator.");
+        "TUN mode requires administrator privileges on Windows. The settings were saved and will take effect after restarting SongBird as administrator.");
 }
 
 QString tunAdminRestartPromptTitle()
@@ -471,14 +712,25 @@ QString tunAdminRestartPromptMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "TUN mode requires administrator privileges on Windows.\nRestart Song Box as administrator now to apply the saved TUN setting?");
+        "TUN mode requires administrator privileges on Windows.\nRestart SongBird as administrator now to apply the saved TUN setting?");
 }
 
 QString tunAdminRestartFailureMessage()
 {
     return QCoreApplication::translate(
         "AppBootstrap",
-        "Failed to restart Song Box with administrator privileges.");
+        "Failed to restart SongBird with administrator privileges.");
+}
+
+QString coreStartupOverlayDetailText(QString detail)
+{
+    detail = detail.trimmed();
+    const int urlSeparatorIndex = detail.indexOf(QStringLiteral(": http"), 0, Qt::CaseInsensitive);
+    if (urlSeparatorIndex > 0) {
+        return detail.left(urlSeparatorIndex).trimmed();
+    }
+
+    return detail;
 }
 
 QString sanitizeFileNameSegment(QString value)
@@ -620,14 +872,12 @@ AppBootstrap::~AppBootstrap()
     cancelPendingCoreRestarts();
     waitForBackgroundThreads();
 
-    stopStatisticsBackends();
     if (coreLifecycleService_) {
         coreLifecycleService_->stop();
     }
     if (auxiliaryCoreLifecycleService_) {
         auxiliaryCoreLifecycleService_->stop();
     }
-    stopStatisticsSession();
 }
 
 bool AppBootstrap::run()
@@ -637,8 +887,6 @@ bool AppBootstrap::run()
     configBackupService_ = std::make_unique<ConfigBackupService>(resolveConfigPath());
     routingService_ = std::make_unique<RoutingService>(*repository_);
     speedTestService_ = std::make_unique<SpeedTestService>(resolveCustomConfigDirectory());
-    statisticsService_ = std::make_unique<StatisticsService>(resolveStatisticsFilePath());
-    grpcStatisticsBackend_ = std::make_unique<GrpcStatisticsBackend>();
     subscriptionService_ = std::make_unique<SubscriptionService>(*repository_);
     geoResourceUpdateService_ = std::make_unique<GeoResourceUpdateService>(
         QFileInfo(resolveConfigPath()).dir().absolutePath());
@@ -654,9 +902,15 @@ bool AppBootstrap::run()
 
     mainWindow_ = std::make_unique<MainWindow>();
     QObject::connect(coreLifecycleService_.get(), &CoreLifecycleService::outputReceived, mainWindow_.get(), [this](const QString& line) {
+        if (isRoutineCoreLogLine(line)) {
+            return;
+        }
         mainWindow_->appendLog(line);
     });
     QObject::connect(auxiliaryCoreLifecycleService_.get(), &CoreLifecycleService::outputReceived, mainWindow_.get(), [this](const QString& line) {
+        if (isRoutineCoreLogLine(line)) {
+            return;
+        }
         mainWindow_->appendLog(QStringLiteral("tun-compat | %1").arg(line));
     });
     QObject::connect(coreLifecycleService_.get(), &CoreLifecycleService::startFailed, mainWindow_.get(), [this](const QString& message) {
@@ -670,12 +924,6 @@ bool AppBootstrap::run()
         [this](int exitCode, QProcess::ExitStatus status, bool stopRequested) {
             handleCoreExited(exitCode, static_cast<int>(status), stopRequested, true);
         });
-    QObject::connect(statisticsService_.get(), &StatisticsService::statisticsChanged, mainWindow_.get(), [this]() {
-        syncStatusIndicators();
-    });
-    QObject::connect(statisticsService_.get(), &StatisticsService::sessionChanged, mainWindow_.get(), [this]() {
-        syncStatusIndicators();
-    });
     QObject::connect(speedTestService_.get(), &SpeedTestService::runningChanged, mainWindow_.get(), [this](bool running) {
         if (mainWindow_ != nullptr) {
             mainWindow_->setSpeedTestRunning(running);
@@ -721,65 +969,39 @@ bool AppBootstrap::run()
         if (mainWindow_ != nullptr) {
             mainWindow_->updateServerTestResult(indexId, result);
         }
+        if (trayController_ != nullptr) {
+            trayController_->setServers(
+                config_.collection().servers,
+                config_.currentIndexId);
+        }
     });
     QObject::connect(speedTestService_.get(), &SpeedTestService::finished, mainWindow_.get(), [this](const QString& summary) {
         if (mainWindow_ != nullptr) {
             mainWindow_->showTransientStatus(summary, 4000);
         }
     });
-    QObject::connect(grpcStatisticsBackend_.get(), &GrpcStatisticsBackend::trafficDeltaReceived, mainWindow_.get(), [this](quint64 up, quint64 down) {
-        if (statisticsService_ == nullptr) {
-            return;
-        }
-
-        const QString activeServerId = statisticsService_->sessionState().activeServerId.trimmed();
-        if (activeServerId.isEmpty()) {
-            return;
-        }
-
-        statisticsService_->applyTrafficDelta(activeServerId, up, down);
-    });
-    QObject::connect(
-        grpcStatisticsBackend_.get(),
-        &GrpcStatisticsBackend::pollingAvailabilityChanged,
-        mainWindow_.get(),
-        [this](bool available) {
-            if (statisticsService_ != nullptr) {
-                statisticsService_->setPollingAvailable(available);
-            }
-        });
 
     trayController_ = std::make_unique<TrayController>(mainWindow_.get());
 
     QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, mainWindow_.get(), [this]() {
         shuttingDown_.store(true);
         cancelPendingCoreRestarts();
+        cleanupRuntimeForExit(windowsShutdownRequested_);
         if (!shutdownUiStatePersisted_) {
             persistUiState();
             shutdownUiStatePersisted_ = true;
         }
-        if (isCoreRunning()) {
-            stopCore(true);
-        } else {
-            stopAuxiliaryCore();
-        }
-        applySystemProxyModeOnExit(windowsShutdownRequested_);
     });
     if (QGuiApplication* guiApplication = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
         QObject::connect(guiApplication, &QGuiApplication::commitDataRequest, mainWindow_.get(), [this](QSessionManager&) {
             windowsShutdownRequested_ = true;
             shuttingDown_.store(true);
             cancelPendingCoreRestarts();
+            cleanupRuntimeForExit(true);
             if (!shutdownUiStatePersisted_) {
                 persistUiState();
                 shutdownUiStatePersisted_ = true;
             }
-            if (isCoreRunning()) {
-                stopCore(true);
-            } else {
-                stopAuxiliaryCore();
-            }
-            applySystemProxyModeOnExit(true);
         });
     }
 
@@ -792,7 +1014,7 @@ bool AppBootstrap::run()
     }
     autoBackupCurrentConfig();
     if (registerGlobalHotkeys_) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.globalHotkeys));
+        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
     } else {
         appendResult(OperationResult::ok(QCoreApplication::translate(
             "AppBootstrap",
@@ -801,11 +1023,11 @@ bool AppBootstrap::run()
     if (systemProxyService_ != nullptr) {
         managedSystemProxyActive_ = shouldAdoptManagedSystemProxyOnStartup(
             normalizeSystemProxyMode(config_.sysProxyType),
-            config_.mainProxyEnabled,
+            config_.ui().mainProxyEnabled,
             systemProxyService_->isEnabled());
     }
     mainWindow_->show();
-    if (startHidden_ || !config_.showMainOnStartup) {
+    if (startHidden_ || !config_.ui().showMainOnStartup) {
         if (trayController_ != nullptr && trayController_->isAvailable()) {
             mainWindow_->hide();
         } else {
@@ -879,7 +1101,7 @@ void AppBootstrap::wireMainWindow()
         appendResult(result);
         syncWindow();
         if (result.success && shouldRestartCore) {
-            restartCoreIfRunning(QStringLiteral("Reloading core after editing the active server."));
+            restartCoreIfRunning(QStringLiteral("Reloading core after editing the active server."), true);
         }
     });
 
@@ -945,11 +1167,8 @@ void AppBootstrap::wireMainWindow()
         openCustomConfigFile(indexId);
     });
 
-    QObject::connect(mainWindow_.get(), &MainWindow::systemProxyModeSelected, mainWindow_.get(), [this](int mode) {
-        setSystemProxyMode(normalizeSystemProxyMode(mode));
-    });
     QObject::connect(mainWindow_.get(), &MainWindow::enableSystemProxyRequested, mainWindow_.get(), [this]() {
-        enableSystemProxy();
+        enableSystemProxy(true);
     });
     QObject::connect(mainWindow_.get(), &MainWindow::disableSystemProxyRequested, mainWindow_.get(), [this]() {
         disableSystemProxy();
@@ -958,8 +1177,8 @@ void AppBootstrap::wireMainWindow()
         setTunEnabled(enabled);
     });
     QObject::connect(mainWindow_.get(), &MainWindow::routingModeSelected, mainWindow_.get(), [this](int mode) {
-        const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
-        const int previousRoutingIndex = config_.routingIndex;
+        const bool previousAdvancedEnabled = config_.collection().enableRoutingAdvanced;
+        const int previousRoutingIndex = config_.collection().routingIndex;
         const OperationResult result = routingService_->setRoutingMode(config_, mode >= 0, mode);
         handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
     });
@@ -1058,7 +1277,7 @@ void AppBootstrap::wireMainWindow()
             return;
         }
 
-        restartCoreIfRunning(QStringLiteral("Reloading core after removing the active server."));
+        restartCoreIfRunning(QStringLiteral("Reloading core after removing the active server."), true);
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::moveServersRequested, mainWindow_.get(), [this](const QStringList& indexIds, int operation) {
@@ -1072,9 +1291,16 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::setDefaultServerRequested, mainWindow_.get(), [this](const QString& indexId) {
+        if (requestDefaultServerSwitchAfterCoreStop(indexId, false)) {
+            return;
+        }
+
         const QString previousIndexId = config_.currentIndexId;
         const OperationResult result = serverService_->setDefaultServer(config_, indexId);
         handleDefaultServerSelectionResult(result, previousIndexId);
+    });
+    QObject::connect(mainWindow_.get(), &MainWindow::setDefaultServerWithTunRequested, mainWindow_.get(), [this](const QString& indexId) {
+        setDefaultServerWithTun(indexId);
     });
     QObject::connect(mainWindow_.get(), &MainWindow::testServersRequested, mainWindow_.get(), [this](const QStringList& indexIds) {
         startSpeedTest(indexIds);
@@ -1084,34 +1310,23 @@ void AppBootstrap::wireMainWindow()
         reloadConfig();
     });
 
-    QObject::connect(mainWindow_.get(), &MainWindow::clearStatisticsRequested, mainWindow_.get(), [this]() {
-        appendResult(statisticsService_->clearAll());
-        syncWindow();
-    });
-
     QObject::connect(mainWindow_.get(), &MainWindow::hiddenToTray, mainWindow_.get(), [this]() {
         mainWindow_->appendLog(QStringLiteral("Main window hidden to tray."));
     });
 
-    QObject::connect(trayController_.get(), &TrayController::startCoreRequested, mainWindow_.get(), [this]() {
-        if (reloadConfig()) {
-            startCore();
-        }
-    });
-
-    QObject::connect(trayController_.get(), &TrayController::stopCoreRequested, mainWindow_.get(), [this]() {
-        stopCore(false);
-    });
-
     QObject::connect(trayController_.get(), &TrayController::defaultServerRequested, mainWindow_.get(), [this](const QString& indexId) {
+        if (requestDefaultServerSwitchAfterCoreStop(indexId, false)) {
+            return;
+        }
+
         const QString previousIndexId = config_.currentIndexId;
         const OperationResult result = serverService_->setDefaultServer(config_, indexId);
         handleDefaultServerSelectionResult(result, previousIndexId);
     });
 
     QObject::connect(trayController_.get(), &TrayController::routingRequested, mainWindow_.get(), [this](int index) {
-        const int previousRoutingIndex = config_.routingIndex;
-        const bool previousAdvancedEnabled = config_.enableRoutingAdvanced;
+        const int previousRoutingIndex = config_.collection().routingIndex;
+        const bool previousAdvancedEnabled = config_.collection().enableRoutingAdvanced;
         const OperationResult result = routingService_->selectRouting(config_, index);
         handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
     });
@@ -1142,38 +1357,32 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(globalHotkeyService_.get(), &WindowsGlobalHotkeyService::enableProxyRequested, mainWindow_.get(), [this]() {
-        enableSystemProxy();
+        enableSystemProxy(true);
     });
 
     QObject::connect(globalHotkeyService_.get(), &WindowsGlobalHotkeyService::disableProxyRequested, mainWindow_.get(), [this]() {
         disableSystemProxy();
     });
-
-    QObject::connect(
-        globalHotkeyService_.get(),
-        &WindowsGlobalHotkeyService::keepProxyUnchangedRequested,
-        mainWindow_.get(),
-        [this]() {
-            setSystemProxyMode(SystemProxyMode::Unchanged);
-        });
-    QObject::connect(
-        globalHotkeyService_.get(),
-        &WindowsGlobalHotkeyService::pacProxyRequested,
-        mainWindow_.get(),
-        [this]() {
-            setSystemProxyMode(SystemProxyMode::Pac);
-        });
 }
 
 void AppBootstrap::syncWindow()
 {
+    if (qApp != nullptr) {
+        AppTheme::applyApplicationTheme(*qApp, config_.ui().themeName);
+    }
+
     if (mainWindow_) {
-        mainWindow_->setConfig(config_, statisticsService_ == nullptr ? QList<ServerStatItem>() : statisticsService_->statistics());
+        mainWindow_->setConfig(config_);
     }
 
     if (trayController_ != nullptr) {
-        trayController_->setServers(config_.servers, config_.currentIndexId, config_.trayMenuServersLimit);
-        trayController_->setRoutings(config_.routingItems, config_.routingIndex, config_.enableRoutingAdvanced);
+        trayController_->setServers(
+            config_.collection().servers,
+            config_.currentIndexId);
+        trayController_->setRoutings(
+            config_.collection().routingItems,
+            config_.collection().routingIndex,
+            config_.collection().enableRoutingAdvanced);
     }
 
     syncStatusIndicators();
@@ -1185,6 +1394,12 @@ bool AppBootstrap::tryBeginBackgroundTask(BackgroundTaskKind kind)
         return false;
     }
 
+    if (isCoreStartupBlockingBackgroundTask()) {
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate("AppBootstrap", "Proxy startup is in progress.")));
+        return false;
+    }
+
     if (activeBackgroundTask_ != BackgroundTaskKind::None) {
         return false;
     }
@@ -1192,6 +1407,13 @@ bool AppBootstrap::tryBeginBackgroundTask(BackgroundTaskKind kind)
     activeBackgroundTask_ = kind;
     syncBackgroundTaskState();
     return true;
+}
+
+bool AppBootstrap::isCoreStartupBlockingBackgroundTask() const
+{
+    return coreStartPending_
+        || resumeCoreStartAfterTunCleanup_
+        || tunCleanupActive_;
 }
 
 QString AppBootstrap::backgroundTaskDescription(BackgroundTaskKind kind) const
@@ -1268,13 +1490,6 @@ void AppBootstrap::syncStatusIndicators()
     const QString currentServerName = describeServer(findServerById(config_.currentIndexId));
     const QString routingSummary = buildRoutingSummaryText();
     const QString listenSummary = buildListenSummaryText();
-    StatisticsSessionState statisticsState = statisticsService_ == nullptr
-        ? StatisticsSessionState()
-        : statisticsService_->sessionState();
-    statisticsState.enabled = config_.enableStatistics;
-    if (!statisticsState.running) {
-        statisticsState.refreshRateSeconds = qMax(1, config_.statisticsFreshRate);
-    }
 
     if (mainWindow_ != nullptr) {
         mainWindow_->setExistingCoreTypes(existingCoreTypes_);
@@ -1287,9 +1502,6 @@ void AppBootstrap::syncStatusIndicators()
         mainWindow_->setAutoRunEnabled(autoRunEnabled);
         mainWindow_->setBackgroundTaskRunning(activeBackgroundTask_ != BackgroundTaskKind::None);
         mainWindow_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
-        if (statisticsService_ != nullptr) {
-            mainWindow_->setStatisticsSessionState(statisticsState);
-        }
     }
 
     if (trayController_ != nullptr) {
@@ -1298,9 +1510,7 @@ void AppBootstrap::syncStatusIndicators()
         trayController_->setCoreRunning(coreRunning, corePending);
         trayController_->setSystemProxyState(toLegacySystemProxyModeValue(systemProxyMode_), systemProxyEnabled);
         trayController_->setAutoRunEnabled(autoRunEnabled);
-        trayController_->setRoutingSummary(routingSummary, config_.enableRoutingAdvanced);
-        trayController_->setStatisticsSummary(buildStatisticsSummaryText());
-        trayController_->setTrafficSummary(buildTrafficSummaryText());
+        trayController_->setRoutingSummary(routingSummary, config_.collection().enableRoutingAdvanced);
         trayController_->setBackgroundTaskRunning(activeBackgroundTask_ != BackgroundTaskKind::None);
         trayController_->setBackgroundTaskDescription(backgroundTaskDescription(activeBackgroundTask_));
     }
@@ -1314,13 +1524,26 @@ void AppBootstrap::clearCurrentServerLocation()
     }
 }
 
-void AppBootstrap::queryCurrentServerLocation(const QString& serverIndexId, CoreType runtimeCore)
+void AppBootstrap::queryCurrentServerLocation(
+    const QString& serverIndexId,
+    CoreType runtimeCore,
+    std::optional<bool> startupProxyEnabled)
 {
+    Q_UNUSED(runtimeCore);
+
+    const QString locationStep = QCoreApplication::translate("AppBootstrap", "Check outbound location");
     if (!coreReady_ || serverIndexId.trimmed().isEmpty()) {
+        const QString message = QStringLiteral("Core is not ready for outbound location detection.");
+        setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
+        failCoreStartup(OperationResult::fail(message));
         return;
     }
 
     clearCurrentServerLocation();
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        locationStep,
+        QStringLiteral("Detecting outbound IP location."));
 
     const VmessItem* activeServer = findServerById(serverIndexId);
     const bool usesDedicatedProbe = activeServer != nullptr
@@ -1331,50 +1554,137 @@ void AppBootstrap::queryCurrentServerLocation(const QString& serverIndexId, Core
         httpPort = config_.localPort + LocationProbePortOffset;
     }
     if (httpPort <= 0 || httpPort > 65535) {
+        const QString message = QStringLiteral("Location probe port is unavailable.");
+        setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
+        failCoreStartup(OperationResult::fail(message));
         return;
     }
 
     QPointer<QObject> uiContext(mainWindow_.get());
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     const QString activeServerId = serverIndexId.trimmed();
-    QThread* thread = QThread::create([this, uiContext, lifetimeGuard, activeServerId, httpPort]() {
-        QNetworkAccessManager manager;
-        manager.setProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), httpPort));
-
-        QNetworkRequest request(QUrl(QStringLiteral("http://ip-api.com/json/")));
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("SongBox/%1").arg(QCoreApplication::applicationVersion()));
-
-        QEventLoop loop;
-        QNetworkReply* reply = manager.get(request);
-        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-        loop.exec();
-
+    QThread* thread = QThread::create([this,
+                                       uiContext,
+                                       lifetimeGuard,
+                                       activeServerId,
+                                       httpPort,
+                                       locationStep,
+                                       startupProxyEnabled]() {
         QString location;
-        if (reply->isFinished() && reply->error() == QNetworkReply::NoError) {
-            location = buildLocationSummaryFromPayload(reply->readAll());
+        QString lastError;
+        QElapsedTimer probeTimer;
+        probeTimer.start();
+        const QStringList probeUrls = locationProbeUrls();
+        int attempt = 0;
+
+        while (location.isEmpty()
+            && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
+            && attempt < LocationProbeMaxAttempts) {
+            const QUrl probeUrl(probeUrls.at(attempt % probeUrls.size()));
+            ++attempt;
+            QNetworkAccessManager manager;
+            manager.setProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), httpPort));
+
+            QNetworkRequest request(probeUrl);
+            request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+            request.setHeader(QNetworkRequest::UserAgentHeader, fallbackUserAgent());
+
+            QEventLoop loop;
+            QNetworkReply* reply = manager.get(request);
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            QTimer::singleShot(LocationProbeTimeoutMs, &loop, &QEventLoop::quit);
+            loop.exec();
+
+            if (reply->isFinished() && reply->error() == QNetworkReply::NoError) {
+                location = buildLocationSummaryFromPayload(reply->readAll());
+                if (location.isEmpty()) {
+                    lastError = locationProbeErrorMessage(
+                        probeUrl,
+                        QStringLiteral("Outbound location response was empty."));
+                }
+            } else if (reply->isFinished()) {
+                lastError = locationProbeErrorMessage(probeUrl, reply->errorString());
+            } else {
+                lastError = locationProbeErrorMessage(
+                    probeUrl,
+                    QStringLiteral("Outbound location request timed out."));
+                reply->abort();
+            }
+            reply->deleteLater();
+
+            if (location.isEmpty()
+                && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
+                && attempt < LocationProbeMaxAttempts) {
+                QThread::msleep(LocationProbeRetryDelayMs);
+            }
         }
-        reply->deleteLater();
 
         QObject* target = uiContext.isNull()
             ? static_cast<QObject*>(QCoreApplication::instance())
             : uiContext.data();
-        invokeOnUiThread(target, [this, lifetimeGuard, activeServerId, location]() {
+        invokeOnUiThread(target, [this,
+                                  lifetimeGuard,
+                                  activeServerId,
+                                  location,
+                                  lastError,
+                                  locationStep,
+                                  startupProxyEnabled]() {
             if (lifetimeGuard.expired()) {
                 return;
             }
             if (!coreReady_ || config_.currentIndexId.trimmed() != activeServerId) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    locationStep,
+                    QStringLiteral("Outbound location detection result is stale."));
+                setCurrentActivationPending_ = false;
                 return;
             }
             currentServerLocation_ = location.trimmed();
             if (mainWindow_ != nullptr) {
                 mainWindow_->setCurrentServerLocation(currentServerLocation_);
             }
+            if (currentServerLocation_.isEmpty()) {
+                const QString message = lastError.trimmed().isEmpty()
+                    ? QStringLiteral("Outbound location unavailable.")
+                    : lastError;
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    locationStep,
+                    message);
+                setCurrentActivationPending_ = false;
+                failCoreStartup(OperationResult::fail(message));
+                return;
+            }
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                locationStep,
+                currentServerLocation_);
+            if (applySystemProxyAfterOutboundLocation(startupProxyEnabled)) {
+                clearCoreStartupChecklistAfterStableRun(activeServerId, coreStartTime_);
+            }
         });
     });
     trackBackgroundThread(thread);
     thread->start();
+}
+
+void AppBootstrap::clearCoreStartupChecklistAfterStableRun(const QString& serverIndexId, qint64 coreStartTime)
+{
+    const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch() - coreStartTime;
+    const int remainingMs = static_cast<int>(qMax<qint64>(0, CoreStartupStableRunMs - elapsedMs));
+    const int generation = ++coreStartupStableRunGeneration_;
+    QTimer::singleShot(remainingMs, mainWindow_.get(), [this, serverIndexId, coreStartTime, generation]() {
+        if (generation != coreStartupStableRunGeneration_) {
+            return;
+        }
+        if (!coreReady_
+            || coreStartTime_ != coreStartTime
+            || config_.currentIndexId.trimmed() != serverIndexId.trimmed()) {
+            return;
+        }
+        clearCoreStartupChecklist();
+    });
 }
 
 bool AppBootstrap::reloadConfig()
@@ -1393,10 +1703,7 @@ bool AppBootstrap::reloadConfig()
 
     config_ = loadedConfig;
     if (uiReady_ && registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.globalHotkeys));
-    }
-    if (statisticsService_ != nullptr) {
-        statisticsService_->load();
+        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
     }
     syncWindow();
     if (!uiStateRestored_ && mainWindow_ != nullptr) {
@@ -1405,6 +1712,11 @@ bool AppBootstrap::reloadConfig()
     }
     appendResult(OperationResult::ok(QStringLiteral("Configuration reloaded from disk.")));
     appendStartupResourceCheckResults();
+    if (uiReady_ && isCoreRunning()) {
+        restartCoreIfRunning(
+            QCoreApplication::translate("AppBootstrap", "Reloading core after reloading configuration."),
+            true);
+    }
     return true;
 }
 
@@ -1414,7 +1726,7 @@ bool AppBootstrap::shouldStartCoreOnStartup() const
         return false;
     }
 
-    return config_.mainProxyEnabled && resolveActiveServer() != nullptr;
+    return config_.ui().mainProxyEnabled && resolveActiveServer() != nullptr;
 }
 
 namespace {
@@ -1430,7 +1742,7 @@ VmessItem runtimeServerForLaunchCore(const VmessItem& server, CoreType launchCor
 
 void AppBootstrap::startCoreOnStartup()
 {
-    if (config_.mainProxyEnabled) {
+    if (config_.ui().mainProxyEnabled) {
         if (skipCoreChecks_) {
             appendResult(OperationResult::ok(QStringLiteral("Startup core checks skipped by command line.")));
         }
@@ -1455,13 +1767,15 @@ void AppBootstrap::appendStartupResourceCheckResults()
 {
     QStringList lines;
 
-    if (!config_.currentIndexId.trimmed().isEmpty() && findServerById(config_.currentIndexId) == nullptr && !config_.servers.isEmpty()) {
+    if (!config_.currentIndexId.trimmed().isEmpty()
+        && findServerById(config_.currentIndexId) == nullptr
+        && !config_.collection().servers.isEmpty()) {
         lines.append(QStringLiteral(
             "Startup check: The configured default server does not exist. The first available server will be used."));
     }
 
     int missingCustomConfigCount = 0;
-    for (const VmessItem& item : config_.servers) {
+    for (const VmessItem& item : config_.collection().servers) {
         if (item.configType != ConfigType::Custom) {
             continue;
         }
@@ -1540,6 +1854,611 @@ void AppBootstrap::appendResult(const OperationResult& result)
     }
 }
 
+void AppBootstrap::resetCoreStartupChecklist(const QStringList& steps, bool showOverlay)
+{
+    coreStartupSteps_ = steps;
+    coreStartupStepStatus_.clear();
+    coreStartupStepDetails_.clear();
+    coreStartupOverlayRequested_ = showOverlay;
+    coreStartupOverlayShown_ = false;
+    ++coreStartupStableRunGeneration_;
+    for (const QString& step : coreStartupSteps_) {
+        coreStartupStepStatus_.insert(step, CoreStartupCheckpointStatus::Pending);
+    }
+
+    if (showOverlay) {
+        syncCoreStartupChecklistOverlay();
+        if (mainWindow_ != nullptr) {
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
+    }
+}
+
+void AppBootstrap::prepareCoreStartupChecklist(bool showOverlay)
+{
+    QStringList startupSteps{
+        QCoreApplication::translate("AppBootstrap", "Environment cleanup"),
+        QCoreApplication::translate("AppBootstrap", "Validate core application"),
+        QCoreApplication::translate("AppBootstrap", "Validate core config"),
+        QCoreApplication::translate("AppBootstrap", "Validate geo files")
+    };
+    if (config_.tun().tunModeItem.enableTun) {
+        startupSteps.append(QCoreApplication::translate("AppBootstrap", "Start tun device"));
+    }
+    startupSteps.append({
+        QCoreApplication::translate("AppBootstrap", "Start core process"),
+        QCoreApplication::translate("AppBootstrap", "Check outbound location"),
+        QCoreApplication::translate("AppBootstrap", "Apply system proxy")
+    });
+    resetCoreStartupChecklist(startupSteps, showOverlay);
+}
+
+void AppBootstrap::setCoreStartupCheckpointStatus(
+    CoreStartupCheckpointStatus status,
+    const QString& step,
+    const QString& detail)
+{
+    if (!coreStartupSteps_.contains(step)) {
+        coreStartupSteps_.append(step);
+    }
+    coreStartupStepStatus_.insert(step, status);
+    coreStartupStepDetails_.insert(step, detail.trimmed());
+
+    if (!coreStartupOverlayRequested_) {
+        return;
+    }
+
+    syncCoreStartupChecklistOverlay();
+}
+
+void AppBootstrap::syncCoreStartupChecklistOverlay()
+{
+    if (mainWindow_ == nullptr || !coreStartupOverlayRequested_) {
+        return;
+    }
+
+    QStringList items;
+    for (const QString& itemStep : coreStartupSteps_) {
+        const CoreStartupCheckpointStatus itemStatus = coreStartupStepStatus_.value(
+            itemStep,
+            CoreStartupCheckpointStatus::Pending);
+        items.append(coreStartupChecklistItem(
+            itemStatus,
+            itemStep,
+            coreStartupOverlayDetailText(coreStartupStepDetails_.value(itemStep))));
+    }
+    mainWindow_->setCoreStartupChecklist(items);
+    coreStartupOverlayShown_ = true;
+    if (coreStartupOverlayShownAtMs_ <= 0) {
+        coreStartupOverlayShownAtMs_ = QDateTime::currentMSecsSinceEpoch();
+    }
+}
+
+void AppBootstrap::clearCoreStartupChecklist()
+{
+    if (coreStartupOverlayShown_ && coreStartupOverlayShownAtMs_ > 0) {
+        const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch() - coreStartupOverlayShownAtMs_;
+        if (elapsedMs < CoreStartupOverlayMinimumVisibleMs) {
+            const int generation = ++coreStartupOverlayClearGeneration_;
+            QTimer::singleShot(
+                static_cast<int>(CoreStartupOverlayMinimumVisibleMs - elapsedMs),
+                mainWindow_.get(),
+                [this, generation]() {
+                    if (generation == coreStartupOverlayClearGeneration_) {
+                        clearCoreStartupChecklist();
+                    }
+                });
+            return;
+        }
+    }
+
+    coreStartupSteps_.clear();
+    coreStartupStepStatus_.clear();
+    coreStartupStepDetails_.clear();
+    const bool shouldClearOverlay = coreStartupOverlayShown_;
+    coreStartupOverlayRequested_ = false;
+    coreStartupOverlayShown_ = false;
+    coreStartupOverlayShownAtMs_ = 0;
+    ++coreStartupOverlayClearGeneration_;
+    ++coreStartupStableRunGeneration_;
+    if (mainWindow_ != nullptr && shouldClearOverlay) {
+        mainWindow_->clearCoreStartupChecklist();
+    }
+}
+
+void AppBootstrap::keepCoreStartupChecklistForUserDismissal(const QString& step, const QString& detail)
+{
+    const QString trimmedStep = step.trimmed().isEmpty()
+        ? QCoreApplication::translate("AppBootstrap", "Core startup")
+        : step;
+    const QString trimmedDetail = detail.trimmed();
+    appendResult(OperationResult::fail(
+        trimmedDetail.isEmpty()
+            ? QCoreApplication::translate("AppBootstrap", "%1 failed.").arg(trimmedStep)
+            : QCoreApplication::translate("AppBootstrap", "%1 failed: %2").arg(trimmedStep, trimmedDetail)));
+    setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus::Failed, trimmedStep, detail);
+}
+
+void AppBootstrap::failCoreStartup(const OperationResult& result)
+{
+    cleanupAfterFailedCoreStartup();
+    appendResult(result);
+    syncStatusIndicators();
+}
+
+void AppBootstrap::cleanupAfterFailedCoreStartup()
+{
+    cancelPendingCoreRestarts();
+    disconnectPendingCoreStartConnection();
+
+    const bool proxyConfigured =
+        normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::ForcedClear
+        || config_.ui().mainProxyEnabled;
+    const bool proxyApplied = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
+    if (proxyConfigured || proxyApplied || managedSystemProxyActive_) {
+        const bool proxyCleared = systemProxyService_ == nullptr
+            ? true
+            : updateSystemProxyMode(SystemProxyMode::ForcedClear);
+        appendResult(proxyCleared
+            ? OperationResult::ok(QStringLiteral("System proxy disabled because core startup failed."))
+            : OperationResult::fail(QStringLiteral("Failed to disable system proxy after core startup failed.")));
+        if (proxyCleared) {
+            managedSystemProxyActive_ = false;
+        }
+    }
+    clearProxyStateAfterCoreStopped();
+
+    if (coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning()) {
+        keepCoreStartupChecklistOnNextStop_ = true;
+        coreStopPending_ = true;
+        appendResult(coreLifecycleService_->stop(false));
+    } else {
+        coreStopPending_ = false;
+    }
+    stopAuxiliaryCore(false);
+
+    coreStartPending_ = false;
+    coreReady_ = false;
+    coreTunEnabledAtStart_ = false;
+    clearCurrentServerLocation();
+}
+
+void AppBootstrap::downloadMissingGeoFilesAndResumeStartup(
+    const CoreInfo& coreInfo,
+    const QString& geoValidationMessage,
+    const QString& checkGeoStep,
+    bool skipTunCleanup,
+    std::optional<bool> startupProxyEnabled,
+    bool showStartupOverlay)
+{
+    const QString targetDirectory = coreInfo.workingDirectory.trimmed().isEmpty()
+        ? QFileInfo(coreInfo.program).absolutePath()
+        : coreInfo.workingDirectory;
+    if (targetDirectory.trimmed().isEmpty()) {
+        failCoreStartup(OperationResult::fail(QStringLiteral("Core working directory is empty.")));
+        return;
+    }
+
+    const QString startMessage = QCoreApplication::translate(
+        "AppBootstrap",
+        "Missing legacy geo files detected. Downloading to %1.")
+            .arg(QDir::toNativeSeparators(targetDirectory));
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        checkGeoStep,
+        startMessage);
+    appendResult(OperationResult::ok(geoValidationMessage));
+
+    geoUpdateRunning_ = true;
+    coreStartPending_ = true;
+    coreReady_ = false;
+    cancelCoreStartAfterGeoUpdate_ = false;
+    syncStatusIndicators();
+
+    QObject* uiContext = mainWindow_.get();
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this,
+                                       targetDirectory,
+                                       checkGeoStep,
+                                       skipTunCleanup,
+                                       startupProxyEnabled,
+                                       showStartupOverlay,
+                                       lifetimeGuard,
+                                       uiContext]() {
+        const auto reportProgress = [this, checkGeoStep, lifetimeGuard, uiContext](const QString& message) {
+            if (message.trimmed().isEmpty()) {
+                return;
+            }
+
+            invokeOnUiThread(uiContext, [this, checkGeoStep, message, lifetimeGuard]() {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
+                if (cancelCoreStartAfterGeoUpdate_) {
+                    return;
+                }
+
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Started,
+                    checkGeoStep,
+                    message);
+            });
+        };
+
+        GeoResourceUpdateService geoResourceUpdateService(targetDirectory, {}, reportProgress);
+        const QList<OperationResult> results{
+            geoResourceUpdateService.update(QStringLiteral("geosite")),
+            geoResourceUpdateService.update(QStringLiteral("geoip"))};
+
+        bool success = true;
+        QStringList messages;
+        for (const OperationResult& result : results) {
+            success = success && result.success;
+            if (!result.message.trimmed().isEmpty()) {
+                messages.append(result.message.trimmed());
+            }
+        }
+
+        const OperationResult result = success
+            ? OperationResult::ok(messages.join(QChar('\n')))
+            : OperationResult::fail(messages.join(QChar('\n')));
+
+        invokeOnUiThread(uiContext, [this,
+                                     result,
+                                     checkGeoStep,
+                                     skipTunCleanup,
+                                     startupProxyEnabled,
+                                     showStartupOverlay,
+                                     lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
+
+            geoUpdateRunning_ = false;
+            coreStartPending_ = false;
+            syncStatusIndicators();
+
+            if (shuttingDown_.load()) {
+                return;
+            }
+
+            const bool startupCanceled = cancelCoreStartAfterGeoUpdate_;
+            cancelCoreStartAfterGeoUpdate_ = false;
+
+            if (startupCanceled) {
+                keepCoreStartupChecklistForUserDismissal(
+                    checkGeoStep,
+                    QCoreApplication::translate(
+                        "AppBootstrap",
+                        "Proxy startup was canceled while Geo files were updating."));
+                syncStatusIndicators();
+                return;
+            }
+
+            if (!result.success) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    checkGeoStep,
+                    result.message);
+                failCoreStartup(result);
+                return;
+            }
+
+            if (startupProxyEnabled.value_or(true)
+                && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::ForcedChange) {
+                keepCoreStartupChecklistForUserDismissal(
+                    checkGeoStep,
+                    QCoreApplication::translate(
+                        "AppBootstrap",
+                        "Geo files were updated, but proxy startup was canceled."));
+                syncStatusIndicators();
+                return;
+            }
+
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                checkGeoStep,
+                result.message);
+            startCoreInternal(skipTunCleanup, startupProxyEnabled, true, showStartupOverlay);
+        });
+    });
+    trackBackgroundThread(thread);
+    thread->start();
+}
+
+void AppBootstrap::downloadMissingSingBoxRuleSetsAndResumeStartup(
+    const QStringList& missingRuleSetTags,
+    const QString& checkGeoStep,
+    bool skipTunCleanup,
+    std::optional<bool> startupProxyEnabled,
+    bool showStartupOverlay)
+{
+    QStringList tags;
+    QSet<QString> seenTags;
+    for (const QString& tag : missingRuleSetTags) {
+        const QString normalizedTag = tag.trimmed().toLower();
+        if (normalizedTag.isEmpty() || seenTags.contains(normalizedTag)) {
+            continue;
+        }
+        seenTags.insert(normalizedTag);
+        tags.append(normalizedTag);
+    }
+
+    if (tags.isEmpty()) {
+        startCoreInternal(skipTunCleanup, startupProxyEnabled, true, showStartupOverlay);
+        return;
+    }
+
+    const QString targetDirectory = QCoreApplication::applicationDirPath();
+    const QString startMessage = QCoreApplication::translate(
+        "AppBootstrap",
+        "Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
+            .arg(tags.size())
+            .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(kSingBoxRuleSetDirectoryName)));
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        checkGeoStep,
+        startMessage);
+
+    geoUpdateRunning_ = true;
+    coreStartPending_ = true;
+    coreReady_ = false;
+    cancelCoreStartAfterGeoUpdate_ = false;
+    syncStatusIndicators();
+
+    QObject* uiContext = mainWindow_.get();
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this,
+                                       targetDirectory,
+                                       tags,
+                                       checkGeoStep,
+                                       skipTunCleanup,
+                                       startupProxyEnabled,
+                                       showStartupOverlay,
+                                       lifetimeGuard,
+                                       uiContext]() {
+        const auto reportProgress = [this, checkGeoStep, lifetimeGuard, uiContext](const QString& message) {
+            if (message.trimmed().isEmpty()) {
+                return;
+            }
+
+            invokeOnUiThread(uiContext, [this, checkGeoStep, message, lifetimeGuard]() {
+                if (lifetimeGuard.expired() || cancelCoreStartAfterGeoUpdate_) {
+                    return;
+                }
+
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Started,
+                    checkGeoStep,
+                    message);
+            });
+        };
+
+        GeoResourceUpdateService geoResourceUpdateService(targetDirectory, {}, reportProgress);
+        QList<OperationResult> results;
+        for (const QString& tag : tags) {
+            results.append(geoResourceUpdateService.updateSingBoxRuleSet(tag));
+        }
+
+        bool success = true;
+        QStringList messages;
+        for (const OperationResult& result : results) {
+            success = success && result.success;
+            if (!result.message.trimmed().isEmpty()) {
+                messages.append(result.message.trimmed());
+            }
+        }
+
+        const OperationResult result = success
+            ? OperationResult::ok(messages.join(QChar('\n')))
+            : OperationResult::fail(messages.join(QChar('\n')));
+
+        invokeOnUiThread(uiContext, [this,
+                                     result,
+                                     checkGeoStep,
+                                     skipTunCleanup,
+                                     startupProxyEnabled,
+                                     showStartupOverlay,
+                                     lifetimeGuard]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
+
+            geoUpdateRunning_ = false;
+            coreStartPending_ = false;
+            syncStatusIndicators();
+
+            if (shuttingDown_.load()) {
+                return;
+            }
+
+            const bool startupCanceled = cancelCoreStartAfterGeoUpdate_;
+            cancelCoreStartAfterGeoUpdate_ = false;
+
+            if (startupCanceled) {
+                keepCoreStartupChecklistForUserDismissal(
+                    checkGeoStep,
+                    QCoreApplication::translate(
+                        "AppBootstrap",
+                        "Proxy startup was canceled while sing-box rule sets were updating."));
+                syncStatusIndicators();
+                return;
+            }
+
+            if (!result.success) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    checkGeoStep,
+                    result.message);
+                failCoreStartup(result);
+                return;
+            }
+
+            if (startupProxyEnabled.value_or(true)
+                && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::ForcedChange) {
+                keepCoreStartupChecklistForUserDismissal(
+                    checkGeoStep,
+                    QCoreApplication::translate(
+                        "AppBootstrap",
+                        "sing-box rule sets were updated, but proxy startup was canceled."));
+                syncStatusIndicators();
+                return;
+            }
+
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                checkGeoStep,
+                result.message);
+            startCoreInternal(skipTunCleanup, startupProxyEnabled, true, showStartupOverlay);
+        });
+    });
+    trackBackgroundThread(thread);
+    thread->start();
+}
+
+void AppBootstrap::downloadMissingCoreAndResumeStartup(
+    CoreType coreType,
+    const OperationResult& missingCoreResult,
+    const QString& downloadCoreStep,
+    bool skipTunCleanup,
+    std::optional<bool> startupProxyEnabled,
+    bool showStartupOverlay)
+{
+    const CoreType runtimeCore = resolveRuntimeCoreType(coreType);
+    const QString installDirectory = resolveCoreInstallDirectory(runtimeCore);
+    if (runtimeCore == CoreType::Unknown || installDirectory.trimmed().isEmpty()) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            downloadCoreStep,
+            missingCoreResult.message);
+        failCoreStartup(missingCoreResult);
+        return;
+    }
+
+    const QString startMessage = QCoreApplication::translate(
+        "AppBootstrap",
+        "Missing %1 core detected. Downloading to %2.")
+            .arg(coreTypeDisplayName(runtimeCore))
+            .arg(QDir::toNativeSeparators(installDirectory));
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        downloadCoreStep,
+        startMessage);
+    appendResult(OperationResult::ok(missingCoreResult.message));
+
+    if (!tryBeginBackgroundTask(BackgroundTaskKind::CoreUpdate)) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            downloadCoreStep,
+            QCoreApplication::translate("AppBootstrap", "Another background task is already running."));
+        failCoreStartup(OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap",
+            "Cannot download %1 while another background task is running.")
+                .arg(coreTypeDisplayName(runtimeCore))));
+        return;
+    }
+
+    coreUpdateRunning_ = true;
+    coreStartPending_ = true;
+    coreReady_ = false;
+    syncStatusIndicators();
+
+    const CoreUpdateConfig workerConfig{
+        config_.checkPreReleaseUpdate,
+        config_.ignoreGeoUpdateCore};
+    QObject* uiContext = mainWindow_.get();
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QThread* thread = QThread::create([this,
+                                       runtimeCore,
+                                       workerConfig,
+                                       installDirectory,
+                                       downloadCoreStep,
+                                       skipTunCleanup,
+                                       startupProxyEnabled,
+                                       showStartupOverlay,
+                                       lifetimeGuard,
+                                       uiContext]() {
+        runCoreUpdateTask(
+            runtimeCore,
+            workerConfig,
+            installDirectory,
+            QPointer<QObject>(uiContext),
+            true,
+            [this, downloadCoreStep, lifetimeGuard](const QString& message) {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
+                if (!coreStartPending_) {
+                    return;
+                }
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Started,
+                    downloadCoreStep,
+                    message);
+            },
+            [this,
+             runtimeCore,
+             downloadCoreStep,
+             skipTunCleanup,
+             startupProxyEnabled,
+             showStartupOverlay,
+             lifetimeGuard](const OperationResult& result) {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
+
+                coreUpdateRunning_ = false;
+                finishBackgroundTask(BackgroundTaskKind::CoreUpdate);
+                const bool startupCanceled = !coreStartPending_;
+                coreStartPending_ = false;
+                syncStatusIndicators();
+
+                if (shuttingDown_.load()) {
+                    return;
+                }
+
+                if (startupCanceled) {
+                    keepCoreStartupChecklistForUserDismissal(
+                        downloadCoreStep,
+                        QCoreApplication::translate(
+                            "AppBootstrap",
+                            "Proxy startup was canceled while the core was downloading."));
+                    syncStatusIndicators();
+                    return;
+                }
+
+                if (!result.success) {
+                    setCoreStartupCheckpointStatus(
+                        CoreStartupCheckpointStatus::Failed,
+                        downloadCoreStep,
+                        result.message);
+                    failCoreStartup(result);
+                    return;
+                }
+
+                if (startupProxyEnabled.value_or(true)
+                    && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::ForcedChange) {
+                    keepCoreStartupChecklistForUserDismissal(
+                        downloadCoreStep,
+                        QCoreApplication::translate(
+                            "AppBootstrap",
+                            "The core was downloaded, but proxy startup was canceled."));
+                    syncStatusIndicators();
+                    return;
+                }
+
+                refreshExistingCoreTypes();
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Passed,
+                    downloadCoreStep,
+                    result.message);
+                startCoreInternal(skipTunCleanup, startupProxyEnabled, true, showStartupOverlay);
+            });
+    });
+    trackBackgroundThread(thread);
+    thread->start();
+}
+
 void AppBootstrap::showOperationMessage(
     const QString& title,
     const OperationResult& result,
@@ -1560,64 +2479,124 @@ void AppBootstrap::showOperationMessage(
     DialogUtils::showWarning(messageParent, title, result.message);
 }
 
-void AppBootstrap::startCore()
+void AppBootstrap::startCore(bool showStartupOverlay)
 {
-    const bool preserveProxyEnabled = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
-    startCore(false, preserveProxyEnabled);
+    enableSystemProxy(showStartupOverlay);
 }
 
-void AppBootstrap::startCore(bool skipTunCleanup)
+void AppBootstrap::startCore(bool skipTunCleanup, bool showStartupOverlay)
 {
-    const bool preserveProxyEnabled = systemProxyService_ != nullptr && systemProxyService_->isEnabled();
-    startCore(skipTunCleanup, preserveProxyEnabled);
+    setSystemProxyMode(SystemProxyMode::ForcedChange, skipTunCleanup, false, showStartupOverlay);
 }
 
-void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupProxyEnabled)
+void AppBootstrap::startCoreInternal(
+    bool skipTunCleanup,
+    std::optional<bool> startupProxyEnabled,
+    bool environmentAlreadyChecked,
+    bool showStartupOverlay)
 {
+    const QString environmentStep = QCoreApplication::translate("AppBootstrap", "Environment cleanup");
+    const QString downloadCoreStep = QCoreApplication::translate("AppBootstrap", "Validate core application");
+    const QString checkGeoStep = QCoreApplication::translate("AppBootstrap", "Validate geo files");
+    const QString validateConfigStep = QCoreApplication::translate("AppBootstrap", "Validate core config");
+    const QString startTunDeviceStep = QCoreApplication::translate("AppBootstrap", "Start tun device");
+    const QString startCoreStep = QCoreApplication::translate("AppBootstrap", "Start core process");
+    if (!skipTunCleanup && !environmentAlreadyChecked) {
+        prepareCoreStartupChecklist(showStartupOverlay);
+    } else if (coreStartupSteps_.isEmpty()) {
+        prepareCoreStartupChecklist(showStartupOverlay);
+    } else if (showStartupOverlay && !coreStartupOverlayRequested_) {
+        coreStartupOverlayRequested_ = true;
+        syncCoreStartupChecklistOverlay();
+    }
+
     if (coreStartPending_ || coreStopPending_) {
-        appendResult(OperationResult::ok(
+        keepCoreStartupChecklistForUserDismissal(
+            QCoreApplication::translate("AppBootstrap", "Start core process"),
             coreStopPending_
                 ? QStringLiteral("Core stop is already in progress.")
-                : QStringLiteral("Core start is already in progress.")));
+                : QStringLiteral("Core start is already in progress."));
         return;
     }
     cancelPendingCoreRestarts();
     clearCurrentServerLocation();
+    cleanupCoreProcessesUsingConfiguredPorts();
     if (isTunRuntimeBlocked(config_, isWindowsPlatform(), isProcessElevated())) {
-        appendResult(OperationResult::fail(tunAdminRequiredStartMessage()));
-        syncStatusIndicators();
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            environmentStep,
+            QStringLiteral("Administrator permission is required for TUN."));
+        failCoreStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
         return;
     }
     const VmessItem* server = resolveActiveServer();
     if (server == nullptr) {
-        appendResult(OperationResult::fail(QStringLiteral("No active server is available for runtime config generation.")));
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            validateConfigStep,
+            QStringLiteral("No active server."));
+        failCoreStartup(OperationResult::fail(QStringLiteral("No active server is available for runtime config generation.")));
         return;
     }
 
-    if (config_.tunModeItem.enableTun && !skipTunCleanup) {
+    if (config_.tun().tunModeItem.enableTun && !skipTunCleanup && !environmentAlreadyChecked) {
         if (tunCleanupActive_) {
-            appendResult(OperationResult::ok(QStringLiteral("TUN adapter cleanup is already in progress.")));
+            keepCoreStartupChecklistForUserDismissal(
+                environmentStep,
+                QStringLiteral("TUN adapter cleanup is already in progress."));
             return;
         }
 
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Started,
+            environmentStep,
+            QStringLiteral("Removing stale TUN adapter if needed."));
         tunCleanupActive_ = true;
         resumeCoreStartAfterTunCleanup_ = true;
         syncStatusIndicators();
-        removeStaleTunAdapterAsync([this, startupProxyEnabled](const OperationResult& result) {
+        removeStaleTunAdapterAsync([this, startupProxyEnabled, environmentStep](const OperationResult& result) {
             tunCleanupActive_ = false;
             const bool resumeStart = resumeCoreStartAfterTunCleanup_;
             resumeCoreStartAfterTunCleanup_ = false;
-            appendResult(result);
             syncStatusIndicators();
-            if (shouldResumeCoreStartAfterTunCleanup(
+            const bool shouldResume = shouldResumeCoreStartAfterTunCleanup(
                     result.success,
                     resumeStart,
                     shuttingDown_.load(),
-                    coreStopPending_)) {
-                startCore(true, startupProxyEnabled);
+                    coreStopPending_);
+            if (!shouldResume) {
+                setCoreStartupCheckpointStatus(
+                    result.success ? CoreStartupCheckpointStatus::Passed : CoreStartupCheckpointStatus::Failed,
+                    environmentStep,
+                    result.message);
+                if (!result.success) {
+                    failCoreStartup(result);
+                } else {
+                    keepCoreStartupChecklistForUserDismissal(
+                        environmentStep,
+                        QStringLiteral("Core startup was canceled before TUN cleanup finished."));
+                }
+                return;
+            }
+
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                environmentStep,
+                result.message);
+            if (shouldResume) {
+                startCoreInternal(true, startupProxyEnabled, true, coreStartupOverlayRequested_);
             }
         });
         return;
+    }
+
+    if (!environmentAlreadyChecked) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Passed,
+            environmentStep,
+            skipTunCleanup
+                ? QStringLiteral("TUN cleanup completed.")
+                : QStringLiteral("No TUN cleanup required."));
     }
 
     const CoreType launchCore = resolveLaunchCoreType(*server);
@@ -1628,39 +2607,29 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         const CoreType runtimeCore = launchCore;
         const QStringList candidates = resolveCoreCandidates(runtimeCore);
         const QString expectedFiles = expectedCoreFilesText(candidates);
-        appendResult(OperationResult::fail(
+        const OperationResult missingCoreResult = OperationResult::fail(
             QCoreApplication::translate(
                 "AppBootstrap",
                 "No compatible %1 core executable was found for the active server \"%2\". Expected one of: %3.")
                 .arg(coreTypeDisplayName(runtimeCore))
                 .arg(describeServer(server))
-                .arg(expectedFiles)));
+                .arg(expectedFiles));
+        downloadMissingCoreAndResumeStartup(
+            runtimeCore,
+            missingCoreResult,
+            downloadCoreStep,
+            skipTunCleanup,
+            startupProxyEnabled,
+            showStartupOverlay);
 
-        if (mainWindow_ != nullptr) {
-            const QString title = QCoreApplication::translate("AppBootstrap", "Install %1 Core")
-                                      .arg(coreTypeDisplayName(runtimeCore));
-            const QString prompt = QCoreApplication::translate(
-                                       "AppBootstrap",
-                                       "The active server \"%1\" requires the %2 core, but no compatible executable was found.\nExpected one of: %3.\nInstall it now?")
-                                       .arg(describeServer(server))
-                                       .arg(coreTypeDisplayName(runtimeCore))
-                                       .arg(expectedFiles);
-            if (!interactivePromptsEnabled()) {
-                appendResult(OperationResult::ok(
-                    QCoreApplication::translate(
-                        "AppBootstrap",
-                        "Non-interactive mode suppressed the missing-core download prompt for \"%1\".")
-                        .arg(describeServer(server))));
-            } else if (DialogUtils::askYesNoQuestion(
-                           mainWindow_.get(),
-                           title,
-                           prompt,
-                           QMessageBox::Yes)
-                       == QMessageBox::Yes) {
-                updateCore(static_cast<int>(runtimeCore), true, mainWindow_.get(), mainWindow_.get(), true, true, {}, {});
-            }
-        }
         return;
+    }
+    if (coreStartupStepStatus_.value(downloadCoreStep, CoreStartupCheckpointStatus::Pending)
+        == CoreStartupCheckpointStatus::Pending) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Passed,
+            downloadCoreStep,
+            QStringLiteral("Required core executable is available."));
     }
 
     for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(runtimeConfig, runtimeServer, existingCoreTypes_)) {
@@ -1671,81 +2640,132 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         }
 
         const QString expectedFiles = expectedCoreFilesText(auxiliaryCandidates);
-        appendResult(OperationResult::fail(
+        const OperationResult missingAuxiliaryResult = OperationResult::fail(
             QCoreApplication::translate(
                 "AppBootstrap",
                 "The active server \"%1\" needs the %2 core for TUN compatibility, but no compatible executable was found.\nExpected one of: %3.")
                 .arg(describeServer(server))
                 .arg(coreTypeDisplayName(auxiliaryCoreType))
-                .arg(expectedFiles)));
+                .arg(expectedFiles));
+        downloadMissingCoreAndResumeStartup(
+            auxiliaryCoreType,
+            missingAuxiliaryResult,
+            downloadCoreStep,
+            skipTunCleanup,
+            startupProxyEnabled,
+            showStartupOverlay);
 
-        if (mainWindow_ != nullptr) {
-            const QString title = QCoreApplication::translate("AppBootstrap", "Install %1 Core")
-                                      .arg(coreTypeDisplayName(auxiliaryCoreType));
-            const QString prompt = QCoreApplication::translate(
-                                       "AppBootstrap",
-                                       "The active server \"%1\" needs the %2 core for TUN compatibility, but no compatible executable was found.\nExpected one of: %3.\nInstall it now?")
-                                       .arg(describeServer(server))
-                                       .arg(coreTypeDisplayName(auxiliaryCoreType))
-                                       .arg(expectedFiles);
-            if (!interactivePromptsEnabled()) {
-                appendResult(OperationResult::ok(
-                    QCoreApplication::translate(
-                        "AppBootstrap",
-                        "Non-interactive mode suppressed the missing-core download prompt for \"%1\".")
-                        .arg(describeServer(server))));
-            } else if (DialogUtils::askYesNoQuestion(
-                           mainWindow_.get(),
-                           title,
-                           prompt,
-                           QMessageBox::Yes)
-                       == QMessageBox::Yes) {
-                updateCore(static_cast<int>(auxiliaryCoreType), true, mainWindow_.get(), mainWindow_.get(), true, true, {}, {});
-            }
-        }
         return;
     }
 
     const QString coreConfigPath = resolveRuntimeConfigPath(*server);
     if (coreConfigPath.isEmpty()) {
-        appendResult(OperationResult::fail(QStringLiteral("Failed to resolve the runtime config output path.")));
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            validateConfigStep,
+            QStringLiteral("Runtime config path is empty."));
+        failCoreStartup(OperationResult::fail(QStringLiteral("Failed to resolve the runtime config output path.")));
         return;
     }
 
-    int statisticsPort = 0;
     const CoreType runtimeCore = launchCore;
-    if (config_.enableStatistics) {
-        if (runtimeServer.configType == ConfigType::Custom) {
-            appendResult(OperationResult::ok(QStringLiteral("Custom servers keep their own statistics settings.")));
-        } else {
-            statisticsPort = resolveStatisticsPort();
-            if (statisticsPort <= 0) {
-                appendResult(OperationResult::fail(QStringLiteral("Failed to allocate a local statistics API port.")));
-                return;
-            }
-        }
-    }
 
     QStringList auxiliaryConfigPaths;
     removeStaleSingBoxCache();
     clientConfigWriter_->setExistingCoreTypes(existingCoreTypes_);
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        validateConfigStep,
+        QStringLiteral("Generating runtime config: %1").arg(QDir::toNativeSeparators(coreConfigPath)));
     const OperationResult writeResult = clientConfigWriter_->writeClientConfigs(
         runtimeConfig,
         runtimeServer,
         coreConfigPath,
-        statisticsPort,
         &auxiliaryConfigPaths);
-    appendResult(writeResult);
     if (!writeResult.success) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            validateConfigStep,
+            writeResult.message);
+        failCoreStartup(writeResult);
         return;
     }
 
-    stopAuxiliaryCore();
+    if (runtimeCore == CoreType::SingBox) {
+        const QStringList missingRuleSets = missingSingBoxRuleSetTags(coreConfigPath);
+        if (!missingRuleSets.isEmpty()) {
+            downloadMissingSingBoxRuleSetsAndResumeStartup(
+                missingRuleSets,
+                checkGeoStep,
+                skipTunCleanup,
+                startupProxyEnabled,
+                showStartupOverlay);
+            return;
+        }
+    }
+
+    const OperationResult geoResult = validateCoreGeoFilesBeforeStart(coreInfo);
+    if (!geoResult.success) {
+        if (!coreUsesLegacyGeoFiles(coreInfo)) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Failed,
+                checkGeoStep,
+                geoResult.message);
+            failCoreStartup(geoResult);
+            return;
+        }
+
+        downloadMissingGeoFilesAndResumeStartup(
+            coreInfo,
+            geoResult.message,
+            checkGeoStep,
+            skipTunCleanup,
+            startupProxyEnabled,
+            showStartupOverlay);
+        return;
+    }
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Passed,
+        checkGeoStep,
+        geoResult.message);
+
+    if (!skipCoreChecks_) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Started,
+            validateConfigStep,
+            QFileInfo(coreInfo.program).fileName());
+        const OperationResult preflightResult = validateCoreConfigBeforeStart(coreInfo, coreConfigPath);
+        if (!preflightResult.success) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Failed,
+                validateConfigStep,
+                preflightResult.message);
+            failCoreStartup(preflightResult);
+            return;
+        }
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Passed,
+            validateConfigStep,
+            preflightResult.message);
+    } else {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Skipped,
+            validateConfigStep,
+            QStringLiteral("Startup checks are disabled."));
+    }
+
     if (!auxiliaryConfigPaths.isEmpty()) {
         const QString auxiliaryProgram = locateFirstExistingFile(resolveCoreCandidates(CoreType::SingBox));
         if (auxiliaryProgram.isEmpty()) {
-            appendResult(OperationResult::fail(
-                QStringLiteral("TUN compatibility mode requires sing-box, but no compatible sing-box executable was found.")));
+            const OperationResult missingAuxiliaryResult = OperationResult::fail(
+                QStringLiteral("TUN compatibility mode requires sing-box, but no compatible sing-box executable was found."));
+            downloadMissingCoreAndResumeStartup(
+                CoreType::SingBox,
+                missingAuxiliaryResult,
+                downloadCoreStep,
+                skipTunCleanup,
+                startupProxyEnabled,
+                showStartupOverlay);
             return;
         }
 
@@ -1755,18 +2775,54 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         auxiliaryCoreInfo.appendConfigArgument = false;
         auxiliaryCoreInfo.workingDirectory = QFileInfo(auxiliaryProgram).absolutePath();
 
-        appendResult(OperationResult::ok(QStringLiteral("Starting TUN compatibility relay core...")));
+        if (!skipCoreChecks_) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Started,
+                startTunDeviceStep,
+                QStringLiteral("Validating TUN compatibility relay."));
+            const OperationResult auxiliaryPreflightResult = validateCoreConfigBeforeStart(
+                auxiliaryCoreInfo,
+                auxiliaryConfigPaths.constFirst());
+            if (!auxiliaryPreflightResult.success) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    startTunDeviceStep,
+                    auxiliaryPreflightResult.message);
+                failCoreStartup(auxiliaryPreflightResult);
+                return;
+            }
+        }
+
+        stopAuxiliaryCore();
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Started,
+            startTunDeviceStep,
+            QStringLiteral("Starting TUN compatibility relay core."));
         const OperationResult auxiliaryStartResult = auxiliaryCoreLifecycleService_->start(
             auxiliaryCoreInfo,
             auxiliaryConfigPaths.constFirst());
-        appendResult(auxiliaryStartResult);
         if (!auxiliaryStartResult.success) {
             stopAuxiliaryCore();
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Failed,
+                startTunDeviceStep,
+                auxiliaryStartResult.message);
+            failCoreStartup(auxiliaryStartResult);
             return;
         }
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Passed,
+            startTunDeviceStep,
+            auxiliaryStartResult.message);
+    } else {
+        if (runtimeConfig.tun().tunModeItem.enableTun) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Started,
+                startTunDeviceStep,
+                QStringLiteral("TUN device will be started by the core process."));
+        }
+        stopAuxiliaryCore();
     }
-
-    stopStatisticsBackends();
 
     CoreInfo launchCoreInfo = coreInfo;
     launchCoreInfo.asyncStart = true;
@@ -1778,29 +2834,61 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
         [this,
          serverIndexId = server->indexId,
          runtimeCore,
-         statisticsPort,
          customServer = (server->configType == ConfigType::Custom),
          startupProxyEnabled](const QString& message) mutable {
             disconnectPendingCoreStartConnection();
-            appendResult(OperationResult::ok(message));
-            handleCoreStarted(serverIndexId, runtimeCore, statisticsPort, customServer, startupProxyEnabled);
+            coreStartTime_ = QDateTime::currentMSecsSinceEpoch();
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Started,
+                QCoreApplication::translate("AppBootstrap", "Start core process"),
+                message);
+            if (coreTunEnabledAtStart_
+                && coreStartupStepStatus_.value(
+                       QCoreApplication::translate("AppBootstrap", "Start tun device"),
+                       CoreStartupCheckpointStatus::Pending)
+                    == CoreStartupCheckpointStatus::Started) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Passed,
+                    QCoreApplication::translate("AppBootstrap", "Start tun device"),
+                    QStringLiteral("TUN device startup is handled by the core process."));
+            }
+            validateCoreListeningAndHandleStarted(serverIndexId, runtimeCore, customServer, startupProxyEnabled);
         });
 
     coreStartPending_ = true;
     coreReady_ = false;
-    coreTunEnabledAtStart_ = runtimeConfig.tunModeItem.enableTun;
+    coreTunEnabledAtStart_ = runtimeConfig.tun().tunModeItem.enableTun;
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        startCoreStep,
+        QFileInfo(launchCoreInfo.program).fileName());
     const OperationResult startResult = coreLifecycleService_->start(launchCoreInfo, coreConfigPath);
-    appendResult(startResult);
     if (!startResult.success) {
         coreStartPending_ = false;
         coreReady_ = false;
+        const bool tunEnabledAtFailedStart = coreTunEnabledAtStart_;
         coreTunEnabledAtStart_ = false;
         disconnectPendingCoreStartConnection();
         stopAuxiliaryCore();
-        stopStatisticsSession();
-        syncStatusIndicators();
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            startCoreStep,
+            startResult.message);
+        if (tunEnabledAtFailedStart
+            && coreStartupStepStatus_.value(startTunDeviceStep, CoreStartupCheckpointStatus::Pending)
+                == CoreStartupCheckpointStatus::Started) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Failed,
+                startTunDeviceStep,
+                startResult.message);
+        }
+        failCoreStartup(startResult);
         return;
     }
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Started,
+        startCoreStep,
+        startResult.message);
 
     syncStatusIndicators();
 }
@@ -1808,50 +2896,42 @@ void AppBootstrap::startCore(bool skipTunCleanup, std::optional<bool> startupPro
 void AppBootstrap::handleCoreStarted(
     const QString& serverIndexId,
     CoreType runtimeCore,
-    int statisticsPort,
     bool customServer,
     std::optional<bool> startupProxyEnabled)
 {
+    Q_UNUSED(runtimeCore);
+    Q_UNUSED(customServer);
+
     if (mainWindow_ != nullptr) {
         mainWindow_->setCurrentServerWarning({});
     }
     coreStartPending_ = false;
     coreReady_ = true;
     disconnectPendingCoreStartConnection();
-    if (statisticsService_ != nullptr) {
-        statisticsService_->startSession(
-            config_,
-            serverIndexId,
-            runtimeCore,
-            statisticsPort,
-            statisticsPort > 0,
-            customServer);
-    }
-    if (statisticsPort > 0) {
-        appendResult(OperationResult::ok(QStringLiteral("Statistics API enabled on 127.0.0.1:%1").arg(statisticsPort)));
-        if (grpcStatisticsBackend_ != nullptr) {
-            appendResult(grpcStatisticsBackend_->start(
-                QStringLiteral("127.0.0.1"),
-                statisticsPort,
-                qMax(1, config_.statisticsFreshRate)));
-        }
-    }
 
-    bool shouldQueryLocation = false;
+    syncStatusIndicators();
+    queryCurrentServerLocation(serverIndexId, runtimeCore, startupProxyEnabled);
+}
+
+bool AppBootstrap::applySystemProxyAfterOutboundLocation(std::optional<bool> startupProxyEnabled)
+{
     const bool shouldRestoreProxy = !startupProxyEnabled.has_value() || startupProxyEnabled.value();
     if (systemProxyService_ != nullptr
         && normalizeSystemProxyMode(config_.sysProxyType) == SystemProxyMode::ForcedChange
         && shouldRestoreProxy) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Started,
+            QCoreApplication::translate("AppBootstrap", "Apply system proxy"),
+            QStringLiteral("Applying Global system proxy."));
         const bool wasApplied = systemProxyService_->isEnabled();
-        const bool proxyUpdated = systemProxyService_->update(
-            SystemProxyMode::ForcedChange,
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol);
+        const bool proxyUpdated = updateSystemProxyMode(SystemProxyMode::ForcedChange);
         if (!proxyUpdated) {
-            appendResult(OperationResult::fail(QStringLiteral(
-                "Failed to apply the configured Global system proxy after starting the core.")));
+            const QString message = QStringLiteral("Failed to apply the configured Global system proxy after starting the core.");
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Failed,
+                QCoreApplication::translate("AppBootstrap", "Apply system proxy"),
+                QStringLiteral("Failed to apply the configured Global system proxy."));
+            failCoreStartup(OperationResult::fail(message));
             if (setCurrentActivationPending_) {
                 if (mainWindow_ != nullptr) {
                     mainWindow_->setCurrentServerWarning(
@@ -1863,35 +2943,113 @@ void AppBootstrap::handleCoreStarted(
                         "Node set successfully. It may be inaccessible. Please verify manually.")));
                 setCurrentActivationPending_ = false;
             }
+            syncStatusIndicators();
+            return false;
         } else if (!wasApplied) {
             appendResult(OperationResult::ok(QStringLiteral(
-                "Applied the configured Global system proxy after starting the core.")));
+                "Applied the configured Global system proxy after outbound location check.")));
         }
         if (proxyUpdated) {
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                QCoreApplication::translate("AppBootstrap", "Apply system proxy"),
+                QStringLiteral("Global system proxy is active."));
             managedSystemProxyActive_ = true;
-            shouldQueryLocation = true;
         }
     } else {
-        clearCurrentServerLocation();
+        const QString message = QStringLiteral("System proxy service is unavailable.");
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            QCoreApplication::translate("AppBootstrap", "Apply system proxy"),
+            message);
+        failCoreStartup(OperationResult::fail(message));
+        setCurrentActivationPending_ = false;
+        return false;
     }
     setCurrentActivationPending_ = false;
-
     syncStatusIndicators();
-    if (shouldQueryLocation) {
-        queryCurrentServerLocation(serverIndexId, runtimeCore);
-    } else {
-        clearCurrentServerLocation();
-    }
+    return true;
+}
+
+void AppBootstrap::validateCoreListeningAndHandleStarted(
+    const QString& serverIndexId,
+    CoreType runtimeCore,
+    bool customServer,
+    std::optional<bool> startupProxyEnabled)
+{
+    const QString startCoreStep = QCoreApplication::translate("AppBootstrap", "Start core process");
+    QPointer<QObject> uiContext(mainWindow_.get());
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    const QString activeServerId = serverIndexId.trimmed();
+    const qint64 startTime = coreStartTime_;
+    QThread* thread = QThread::create([this,
+                                       uiContext,
+                                       lifetimeGuard,
+                                       activeServerId,
+                                       runtimeCore,
+                                       customServer,
+                                       startupProxyEnabled,
+                                       startCoreStep,
+                                       startTime]() {
+        QThread::msleep(CoreListenProbeRetryDelayMs);
+
+        QObject* target = uiContext.isNull()
+            ? static_cast<QObject*>(QCoreApplication::instance())
+            : uiContext.data();
+        invokeOnUiThread(target, [this,
+                                  lifetimeGuard,
+                                  activeServerId,
+                                  runtimeCore,
+                                  customServer,
+                                  startupProxyEnabled,
+                                  startCoreStep,
+                                  startTime]() {
+            if (lifetimeGuard.expired()) {
+                return;
+            }
+            if (coreStartTime_ != startTime
+                || config_.currentIndexId.trimmed() != activeServerId) {
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Skipped,
+                    startCoreStep,
+                    QStringLiteral("Core listening validation result is stale."));
+                return;
+            }
+
+            setCoreStartupCheckpointStatus(
+                CoreStartupCheckpointStatus::Passed,
+                startCoreStep,
+                QStringLiteral("Core process is running."));
+            handleCoreStarted(activeServerId, runtimeCore, customServer, startupProxyEnabled);
+        });
+    });
+    trackBackgroundThread(thread);
+    thread->start();
 }
 
 void AppBootstrap::handleCoreStartFailed(const QString& message)
 {
+    const bool tunEnabledAtFailedStart = coreTunEnabledAtStart_;
+    setCoreStartupCheckpointStatus(
+        CoreStartupCheckpointStatus::Failed,
+        QCoreApplication::translate("AppBootstrap", "Start core process"),
+        message);
+    if (tunEnabledAtFailedStart
+        && coreStartupStepStatus_.value(
+               QCoreApplication::translate("AppBootstrap", "Start tun device"),
+               CoreStartupCheckpointStatus::Pending)
+            == CoreStartupCheckpointStatus::Started) {
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            QCoreApplication::translate("AppBootstrap", "Start tun device"),
+            message);
+    }
     coreStartPending_ = false;
     coreStopPending_ = false;
     coreReady_ = false;
     coreTunEnabledAtStart_ = false;
     disconnectPendingCoreStartConnection();
-    appendResult(OperationResult::fail(message));
+    failCoreStartup(OperationResult::fail(message));
     if (setCurrentActivationPending_) {
         if (mainWindow_ != nullptr) {
             mainWindow_->setCurrentServerWarning(
@@ -1904,9 +3062,7 @@ void AppBootstrap::handleCoreStartFailed(const QString& message)
         setCurrentActivationPending_ = false;
     }
     stopAuxiliaryCore();
-    stopStatisticsSession();
     clearCurrentServerLocation();
-    syncStatusIndicators();
 }
 
 void AppBootstrap::disconnectPendingCoreStartConnection()
@@ -1917,55 +3073,40 @@ void AppBootstrap::disconnectPendingCoreStartConnection()
     }
 }
 
-void AppBootstrap::stopStatisticsBackends()
-{
-    if (grpcStatisticsBackend_ != nullptr) {
-        grpcStatisticsBackend_->stop();
-    }
-}
-
-void AppBootstrap::stopStatisticsSession()
-{
-    if (statisticsService_ != nullptr) {
-        statisticsService_->stopSession();
-        statisticsService_->save();
-    }
-}
-
 void AppBootstrap::stopCore(bool immediate)
 {
-    stopCoreInternal(immediate, true);
+    setSystemProxyMode(SystemProxyMode::ForcedClear, false, immediate);
 }
 
 void AppBootstrap::stopCoreInternal(bool immediate, bool clearRestartAfterStop)
 {
+    const bool keepStartupChecklist = keepCoreStartupChecklistOnNextStop_;
+    keepCoreStartupChecklistOnNextStop_ = false;
+    const bool startupChecklistVisible = coreStartupOverlayShown_ || coreStartupOverlayRequested_;
+    const bool resourceStartupPending = (geoUpdateRunning_ || coreUpdateRunning_) && coreStartPending_ && !isCoreRunning();
+    if (resourceStartupPending) {
+        cancelCoreStartAfterGeoUpdate_ = true;
+    }
     coreStartPending_ = false;
     coreReady_ = false;
+    if (!startupChecklistVisible
+        && !restartAfterStopPending_
+        && pendingDefaultServerAfterStopId_.trimmed().isEmpty()
+        && !keepStartupChecklist) {
+        clearCoreStartupChecklist();
+    }
     clearCurrentServerLocation();
     disconnectPendingCoreStartConnection();
     cancelPendingCoreRestarts();
     resumeCoreStartAfterTunCleanup_ = false;
     if (clearRestartAfterStop) {
         restartAfterStopPending_ = false;
+        restartAfterStopShowStartupOverlay_ = false;
     }
-    if (clearRestartAfterStop
-        && systemProxyService_ != nullptr
-        && shouldClearManagedSystemProxy(managedSystemProxyActive_, systemProxyService_->isEnabled())) {
-        const bool proxyCleared = systemProxyService_->update(
-            SystemProxyMode::ForcedClear,
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol,
-            config_.pacUrl);
-        appendResult(proxyCleared
-            ? OperationResult::ok(QStringLiteral("System proxy disabled because the core was stopped."))
-            : OperationResult::fail(QStringLiteral("Failed to disable system proxy after stopping the core.")));
-        if (proxyCleared) {
-            managedSystemProxyActive_ = false;
-        }
+    clearAppliedSystemProxyAfterCoreStopped();
+    if (clearRestartAfterStop) {
+        clearProxyStateAfterCoreStopped();
     }
-    stopStatisticsBackends();
     if (!immediate && coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning()) {
         coreStopPending_ = true;
     } else {
@@ -1974,14 +3115,15 @@ void AppBootstrap::stopCoreInternal(bool immediate, bool clearRestartAfterStop)
     skipTunCleanupOnNextCoreExit_ = immediate
         && shouldCleanupTunAfterCoreStop(isWindowsPlatform(), coreTunEnabledAtStart_);
     const bool cleanupTunSynchronously = skipTunCleanupOnNextCoreExit_;
-    const OperationResult stopResult = coreLifecycleService_->stop(immediate);
+    OperationResult stopResult = resourceStartupPending
+        ? OperationResult::ok(QStringLiteral("Core startup will stop after the pending resource download finishes."))
+        : coreLifecycleService_->stop(immediate);
     appendResult(stopResult);
-    stopAuxiliaryCore(immediate);
+    stopAuxiliaryCore(true);
     if (cleanupTunSynchronously && stopResult.success) {
         tunCleanupActive_ = false;
         removeStaleTunAdapter();
     }
-    stopStatisticsSession();
     syncStatusIndicators();
 }
 
@@ -2075,63 +3217,39 @@ void AppBootstrap::cleanupOrphanCoreProcesses()
 {
 #if defined(Q_OS_WIN)
     const QSet<qint64> recordedPids = readCorePids();
-    if (recordedPids.isEmpty()) {
-        return;
-    }
-
-    static const wchar_t* kCoreProcessNames[] = {
-        L"xray.exe",
-        L"sing-box-client.exe",
-        L"sing-box.exe",
-        L"tuic.exe",
-    };
-
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    PROCESSENTRY32W entry{};
-    entry.dwSize = sizeof(entry);
-    QStringList terminatedProcesses;
-    QSet<qint64> remainingPids = recordedPids;
-
-    if (Process32FirstW(snapshot, &entry)) {
-        do {
-            if (!recordedPids.contains(static_cast<qint64>(entry.th32ProcessID))) {
-                continue;
-            }
-
-            bool nameMatches = false;
-            for (const wchar_t* targetName : kCoreProcessNames) {
-                if (_wcsicmp(entry.szExeFile, targetName) == 0) {
-                    nameMatches = true;
-                    break;
-                }
-            }
-
-            if (!nameMatches) {
-                remainingPids.remove(static_cast<qint64>(entry.th32ProcessID));
-                continue;
-            }
-
-            HANDLE processHandle = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION, FALSE, entry.th32ProcessID);
-            if (processHandle != nullptr) {
-                if (TerminateProcess(processHandle, 1)) {
-                    terminatedProcesses.append(QString::fromWCharArray(entry.szExeFile));
-                }
-                CloseHandle(processHandle);
-            }
-            remainingPids.remove(static_cast<qint64>(entry.th32ProcessID));
-        } while (Process32NextW(snapshot, &entry));
-    }
-
-    CloseHandle(snapshot);
+    QStringList terminatedProcesses = terminateCorePids(recordedPids);
     writeCorePids(QSet<qint64>());
 
     if (!terminatedProcesses.isEmpty()) {
         appendResult(OperationResult::ok(
             QStringLiteral("Cleaned up orphan core processes: %1").arg(terminatedProcesses.join(QStringLiteral(", ")))));
+    }
+#endif
+}
+
+void AppBootstrap::cleanupCoreProcessesUsingConfiguredPorts()
+{
+#if defined(Q_OS_WIN)
+    QSet<quint16> ports;
+    const auto addPort = [&ports](int port) {
+        if (port > 0 && port <= 65535) {
+            ports.insert(static_cast<quint16>(port));
+        }
+    };
+    addPort(config_.localPort);
+    addPort(config_.localPort + 1);
+    addPort(config_.localPort + LocationProbePortOffset);
+
+    QSet<qint64> pids;
+    for (DWORD pid : tcpListeningPidsForPorts(ports)) {
+        pids.insert(static_cast<qint64>(pid));
+    }
+
+    const QStringList terminatedProcesses = terminateCorePids(pids);
+    if (!terminatedProcesses.isEmpty()) {
+        appendResult(OperationResult::ok(
+            QStringLiteral("Cleaned up core processes using configured ports: %1")
+                .arg(terminatedProcesses.join(QStringLiteral(", ")))));
     }
 #endif
 }
@@ -2142,12 +3260,13 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         coreStartPending_ = false;
         coreReady_ = false;
         disconnectPendingCoreStartConnection();
+        if (stopRequested && !coreStartupOverlayShown_ && !coreStartupOverlayRequested_) {
+            clearCoreStartupChecklist();
+        }
     }
 
     if (!auxiliary) {
         coreStopPending_ = false;
-        stopStatisticsSession();
-        stopStatisticsBackends();
     }
 
     const bool cleanupTunAfterStop = !auxiliary && shouldCleanupTunAfterCoreStop(
@@ -2159,9 +3278,15 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         skipTunCleanupOnNextCoreExit_ = false;
     }
 
-    const bool restartAfterStop = !auxiliary && stopRequested && restartAfterStopPending_;
+    const bool switchDefaultServerAfterStop = !auxiliary && stopRequested && !pendingDefaultServerAfterStopId_.trimmed().isEmpty();
+    const bool restartAfterStop = !auxiliary && stopRequested && restartAfterStopPending_ && !switchDefaultServerAfterStop;
+    const bool restartAfterStopShowStartupOverlay = restartAfterStopShowStartupOverlay_;
     if (restartAfterStop) {
         restartAfterStopPending_ = false;
+        restartAfterStopShowStartupOverlay_ = false;
+    }
+    if (!auxiliary) {
+        clearAppliedSystemProxyAfterCoreStopped();
     }
 
     syncStatusIndicators();
@@ -2177,7 +3302,7 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         tunCleanupActive_ = true;
         resumeCoreStartAfterTunCleanup_ = false;
         syncStatusIndicators();
-        removeStaleTunAdapterAsync([this, restartAfterStop](const OperationResult& result) {
+        removeStaleTunAdapterAsync([this, switchDefaultServerAfterStop, restartAfterStop, restartAfterStopShowStartupOverlay](const OperationResult& result) {
             tunCleanupActive_ = false;
             appendResult(result);
             syncStatusIndicators();
@@ -2190,9 +3315,16 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
             }
             if (shouldRunPostStopActionAfterTunCleanup(
                     result.success,
+                    switchDefaultServerAfterStop,
+                    shuttingDown_.load())) {
+                scheduleDefaultServerSwitchAfterCoreStopped();
+                return;
+            }
+            if (shouldRunPostStopActionAfterTunCleanup(
+                    result.success,
                     restartAfterStop,
                     shuttingDown_.load())) {
-                startCore();
+                scheduleCoreStartAfterCoreStopped(restartAfterStopShowStartupOverlay);
             }
         });
         if (shuttingDown_.load() || stopRequested) {
@@ -2200,8 +3332,10 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
         }
     } else if (coreUpdatePendingAfterStop_ && !shuttingDown_.load()) {
         continuePendingCoreUpdate();
+    } else if (switchDefaultServerAfterStop && !shuttingDown_.load()) {
+        scheduleDefaultServerSwitchAfterCoreStopped();
     } else if (restartAfterStop && !shuttingDown_.load()) {
-        startCore();
+        scheduleCoreStartAfterCoreStopped(restartAfterStopShowStartupOverlay);
     }
     if (shuttingDown_.load() || stopRequested) {
         return;
@@ -2212,10 +3346,47 @@ void AppBootstrap::handleCoreExited(int exitCode, int status, bool stopRequested
     const QString kind = exitStatus == QProcess::CrashExit
         ? QStringLiteral("crash")
         : QStringLiteral("exit");
+
+    if (stopRequested) {
+        return;
+    }
+
+    int& crashCount = auxiliary ? auxiliaryCrashRestartCount_ : coreCrashRestartCount_;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 runDuration = coreStartTime_ > 0 ? (now - coreStartTime_) : 0;
+
+    constexpr qint64 kStableRunThresholdMs = 60000;
+    if (runDuration > kStableRunThresholdMs) {
+        crashCount = 0;
+    }
+    ++crashCount;
+
+    constexpr int kMaxCrashRestarts = 5;
+    if (crashCount > kMaxCrashRestarts) {
+        appendResult(OperationResult::ok(
+            QStringLiteral("%1 %2 detected (code=%3). Auto-restart disabled after %4 consecutive failures.")
+                .arg(core, kind).arg(exitCode).arg(kMaxCrashRestarts)));
+        if (!auxiliary && mainWindow_) {
+            mainWindow_->showTransientStatus(
+                QCoreApplication::translate(
+                    "AppBootstrap",
+                    "Core crashed %1 times. Auto-restart disabled. Check your configuration.")
+                    .arg(kMaxCrashRestarts),
+                0);
+        }
+        if (!auxiliary) {
+            clearProxyStateAfterCoreStopped();
+            syncStatusIndicators();
+        }
+        return;
+    }
+
+    const int delayMs = std::min(3000 * crashCount, 30000);
     scheduleCoreRestart(
-        QStringLiteral("%1 %2 detected (code=%3). Restarting in 3s...")
-            .arg(core, kind).arg(exitCode),
-        auxiliary);
+        QStringLiteral("%1 %2 detected (code=%3). Restarting in %4s... (attempt %5/%6)")
+            .arg(core, kind).arg(exitCode).arg(delayMs / 1000).arg(crashCount).arg(kMaxCrashRestarts),
+        auxiliary,
+        delayMs);
 }
 
 void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs)
@@ -2235,7 +3406,7 @@ void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary, in
                 return;
             }
 
-            if (!auxiliary && config_.tunModeItem.enableTun) {
+            if (!auxiliary && config_.tun().tunModeItem.enableTun) {
                 if (tunCleanupActive_) {
                     return;
                 }
@@ -2252,13 +3423,13 @@ void AppBootstrap::scheduleCoreRestart(const QString& reason, bool auxiliary, in
                             true,
                             shuttingDown_.load(),
                             coreStopPending_)) {
-                        startCore(true);
+                        startCoreInternal(true, true, false, false);
                     }
                 });
                 return;
             }
 
-            startCore();
+            startCoreInternal(false, true, false, false);
         });
     }
     slot->start(delayMs);
@@ -2274,7 +3445,7 @@ void AppBootstrap::cancelPendingCoreRestarts()
     }
 }
 
-void AppBootstrap::restartCoreIfRunning(const QString& reason)
+void AppBootstrap::restartCoreIfRunning(const QString& reason, bool showStartupOverlay)
 {
     if (!isCoreRunning() || coreStopPending_) {
         setCurrentActivationPending_ = false;
@@ -2285,43 +3456,74 @@ void AppBootstrap::restartCoreIfRunning(const QString& reason)
         appendResult(OperationResult::ok(reason));
     }
     restartAfterStopPending_ = true;
+    restartAfterStopShowStartupOverlay_ = showStartupOverlay;
+    prepareCoreStartupChecklist(showStartupOverlay);
     stopCoreInternal(false, false);
 }
 
-void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
+void AppBootstrap::scheduleCoreStartAfterCoreStopped(bool showStartupOverlay)
+{
+    QPointer<QObject> mainWindowGuard(mainWindow_.get());
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QTimer::singleShot(0, mainWindowGuard.isNull() ? QCoreApplication::instance() : mainWindowGuard.data(), [this, showStartupOverlay, lifetimeGuard]() {
+        if (lifetimeGuard.expired() || shuttingDown_.load()) {
+            return;
+        }
+
+        startCoreInternal(false, true, false, showStartupOverlay);
+    });
+}
+
+bool AppBootstrap::saveSystemProxyMode(SystemProxyMode mode)
 {
     if (serverService_ == nullptr) {
         appendResult(OperationResult::fail(QStringLiteral("System proxy mode cannot be changed before the configuration service is ready.")));
-        return;
-    }
-
-    // PAC mode is disabled until the built-in PAC server is wired up. Treat
-    // any attempt to activate it (including stale configs) as ForcedClear so
-    // the registry never points to a non-existent local PAC endpoint.
-    if (mode == SystemProxyMode::Pac) {
-        mode = SystemProxyMode::ForcedClear;
+        return false;
     }
 
     const int previousValue = config_.sysProxyType;
+    const bool previousMainProxyEnabled = config_.ui().mainProxyEnabled;
     config_.sysProxyType = toLegacySystemProxyModeValue(mode);
-    config_.mainProxyEnabled = mode == SystemProxyMode::ForcedChange;
+    config_.ui().mainProxyEnabled = mode == SystemProxyMode::ForcedChange;
     if (!serverService_->save(config_)) {
         config_.sysProxyType = previousValue;
+        config_.ui().mainProxyEnabled = previousMainProxyEnabled;
         appendResult(OperationResult::fail(QStringLiteral("Failed to save the selected system proxy mode.")));
+        syncStatusIndicators();
+        return false;
+    }
+
+    return true;
+}
+
+void AppBootstrap::setSystemProxyMode(
+    SystemProxyMode mode,
+    bool skipTunCleanup,
+    bool immediateStop,
+    bool showStartupOverlay)
+{
+    const bool coreProcessRunning = isCoreRunning();
+    const bool coreReady = isCoreReady();
+    const bool coreActivationPending = coreStartPending_ || resumeCoreStartAfterTunCleanup_;
+    if (mode == SystemProxyMode::ForcedChange
+        && !coreProcessRunning
+        && coreActivationPending) {
+        if (showStartupOverlay && !coreStartupSteps_.isEmpty()) {
+            coreStartupOverlayRequested_ = true;
+            syncCoreStartupChecklistOverlay();
+        }
+        appendResult(OperationResult::ok(QStringLiteral("Core start is already in progress.")));
         syncStatusIndicators();
         return;
     }
 
-    const bool deferManagedApply = mode == SystemProxyMode::ForcedChange && !isCoreRunning();
+    if (!saveSystemProxyMode(mode)) {
+        return;
+    }
+
+    const bool deferManagedApply = mode == SystemProxyMode::ForcedChange && !coreReady;
     const bool success = deferManagedApply
-        || systemProxyService_ == nullptr
-        || systemProxyService_->update(
-            mode,
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol,
-            config_.pacUrl);
+        || updateSystemProxyMode(mode);
     appendResult(success
         ? OperationResult::ok(
               deferManagedApply
@@ -2335,22 +3537,46 @@ void AppBootstrap::setSystemProxyMode(SystemProxyMode mode)
             : expectedSystemProxyEnabled(mode);
     }
 
-    if (mode == SystemProxyMode::ForcedChange && !isCoreRunning()) {
+    if (mode == SystemProxyMode::ForcedChange && !coreProcessRunning) {
         appendResult(OperationResult::ok(QStringLiteral("Starting the active core because Global system proxy mode was enabled.")));
-        startCore(false, true);
+        startCoreInternal(skipTunCleanup, true, false, showStartupOverlay);
         return;
     }
 
-    if (mode == SystemProxyMode::ForcedClear && isCoreRunning()) {
+    if (mode == SystemProxyMode::ForcedClear && (coreProcessRunning || coreActivationPending)) {
         appendResult(OperationResult::ok(QStringLiteral("Stopping the active core because system proxy was cleared.")));
         cancelPendingCoreRestarts();
-        QTimer::singleShot(0, mainWindow_.get(), [this]() {
-            stopCore(false);
-        });
+        stopCoreInternal(immediateStop, true);
         return;
     }
 
     syncStatusIndicators();
+}
+
+void AppBootstrap::clearAppliedSystemProxyAfterCoreStopped()
+{
+    if (systemProxyService_ == nullptr
+        || !shouldClearManagedSystemProxy(managedSystemProxyActive_, systemProxyService_->isEnabled())) {
+        return;
+    }
+
+    const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
+    appendResult(proxyCleared
+        ? OperationResult::ok(QStringLiteral("System proxy disabled because the core stopped."))
+        : OperationResult::fail(QStringLiteral("Failed to disable system proxy after the core stopped.")));
+    if (proxyCleared) {
+        managedSystemProxyActive_ = false;
+    }
+}
+
+void AppBootstrap::clearProxyStateAfterCoreStopped()
+{
+    if (config_.sysProxyType == toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear)
+        && !config_.ui().mainProxyEnabled) {
+        return;
+    }
+
+    saveSystemProxyMode(SystemProxyMode::ForcedClear);
 }
 
 void AppBootstrap::applySystemProxyModeOnExit(bool windowsShutdown)
@@ -2376,19 +3602,25 @@ void AppBootstrap::applySystemProxyModeOnExit(bool windowsShutdown)
     const SystemProxyMode mode = resolveSystemProxyModeOnExit(
         normalizeSystemProxyMode(config_.sysProxyType),
         windowsShutdown);
-    systemProxyService_->update(
-        mode,
-        config_.localPort + 1,
-        config_.localPort,
-        buildSystemProxyExceptions(),
-        config_.systemProxyAdvancedProtocol,
-        config_.pacUrl);
+    updateSystemProxyMode(mode);
     managedSystemProxyActive_ = expectedSystemProxyEnabled(mode);
 }
 
-void AppBootstrap::enableSystemProxy()
+void AppBootstrap::cleanupRuntimeForExit(bool windowsShutdown)
 {
-    setSystemProxyMode(SystemProxyMode::ForcedChange);
+    applySystemProxyModeOnExit(windowsShutdown);
+    if (coreLifecycleService_ != nullptr && coreLifecycleService_->isRunning()) {
+        coreLifecycleService_->stop(true);
+    }
+    stopAuxiliaryCore(true);
+    coreStartPending_ = false;
+    coreStopPending_ = false;
+    coreReady_ = false;
+}
+
+void AppBootstrap::enableSystemProxy(bool showStartupOverlay)
+{
+    setSystemProxyMode(SystemProxyMode::ForcedChange, false, false, showStartupOverlay);
 }
 
 void AppBootstrap::disableSystemProxy()
@@ -2424,14 +3656,27 @@ void AppBootstrap::setTunEnabled(bool enabled)
         return;
     }
 
-    if (config_.tunModeItem.enableTun == enabled) {
+    if (config_.tun().tunModeItem.enableTun == enabled) {
         syncStatusIndicators();
         return;
     }
 
+    if (enabled && resolveActiveServer() == nullptr) {
+        appendResult(OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Please select a server first.")));
+        syncWindow();
+        return;
+    }
+
     const Config previousConfig = config_;
-    Config updatedConfig = config_;
-    updatedConfig.tunModeItem.enableTun = enabled;
+    const Config updatedConfig = prepareTunToggleConfigForSave(
+        config_,
+        enabled,
+        isWindowsPlatform(),
+        isProcessElevated());
+    const bool shouldEnableProxyWithTun =
+        enabled
+        && !previousConfig.tun().tunModeItem.enableTun
+        && !isCoreRunning();
 
     const TunSettingsSaveBehavior tunSaveBehavior = evaluateTunSettingsSaveBehavior(
         previousConfig,
@@ -2440,6 +3685,11 @@ void AppBootstrap::setTunEnabled(bool enabled)
         isProcessElevated(),
         isCoreRunning());
     const TunSettingsApplyDecision& tunDecision = tunSaveBehavior.applyDecision;
+
+    if (tunSaveBehavior.shouldPromptForAdminRestart && !askRestartAsAdministratorForTun()) {
+        syncWindow();
+        return;
+    }
 
     config_ = tunSaveBehavior.configToPersist;
     if (!serverService_->save(config_)) {
@@ -2463,13 +3713,25 @@ void AppBootstrap::setTunEnabled(bool enabled)
     if (tunDecision.shouldRestartRunningCore) {
         restartCoreIfRunning(QCoreApplication::translate(
             "AppBootstrap",
-            "Reloading core after applying TUN mode changes."));
+            "Reloading core after applying TUN mode changes."),
+            true);
+    } else if (shouldEnableProxyWithTun && !tunSaveBehavior.shouldPromptForAdminRestart) {
+        enableSystemProxy(true);
     } else {
         syncStatusIndicators();
     }
 
     if (tunSaveBehavior.shouldPromptForAdminRestart) {
-        promptRestartAsAdministratorForTun();
+        persistUiState();
+        config_.ui().mainProxyEnabled = true;
+        config_.sysProxyType = toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange);
+        serverService_->save(config_);
+        if (!restartApplication(true)) {
+            config_ = previousConfig;
+            serverService_->save(config_);
+            appendResult(OperationResult::fail(tunAdminRestartFailureMessage()));
+            syncWindow();
+        }
     }
 }
 
@@ -2587,7 +3849,7 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
             MainWindow::TransientStatusPriority::Routine);
     }
 
-    for (auto& server : config_.servers) {
+    for (auto& server : config_.collection().servers) {
         server.testResult = QStringLiteral("...");
     }
     syncWindow();
@@ -2686,7 +3948,7 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
         const OperationResult saveResult = subscriptionService.saveSubscriptions(workerConfig, subscriptions);
         OperationResult result = saveResult;
         if (saveResult.success) {
-            workerConfig.mainSelectedSubId = lastSubscriptionId;
+            workerConfig.ui().mainSelectedSubId = lastSubscriptionId;
             repository.save(workerConfig);
             const OperationResult updateResult = subscriptionUpdateService.updateByIds(workerConfig, subscriptionIds);
 
@@ -2721,7 +3983,7 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
             if (result.success
                 && !activeSubscriptionId.isEmpty()
                 && subscriptionIds.contains(activeSubscriptionId)) {
-                restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."));
+                restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."), true);
             }
         });
     });
@@ -2885,8 +4147,8 @@ void AppBootstrap::updateCurrentSubscription(const QString& subscriptionId)
     }
 
     QList<int> rowIndexes;
-    for (int index = 0; index < config_.subscriptions.size(); ++index) {
-        if (config_.subscriptions.at(index).id.trimmed() == trimmedSubscriptionId) {
+    for (int index = 0; index < config_.collection().subscriptions.size(); ++index) {
+        if (config_.collection().subscriptions.at(index).id.trimmed() == trimmedSubscriptionId) {
             rowIndexes.append(index);
         }
     }
@@ -2954,7 +4216,7 @@ void AppBootstrap::deleteSubscription(const QString& subscriptionId)
         return;
     }
 
-    restartCoreIfRunning(QStringLiteral("Reloading core after deleting the active subscription."));
+    restartCoreIfRunning(QStringLiteral("Reloading core after deleting the active subscription."), true);
 }
 
 void AppBootstrap::openCustomConfigFile(const QString& indexId)
@@ -2991,7 +4253,7 @@ void AppBootstrap::openGlobalHotkeySettingsDialog()
         globalHotkeyService_->setPaused(true);
     }
     GlobalHotkeyDialog dialog(mainWindow_.get());
-    dialog.setHotkeys(config_.globalHotkeys);
+    dialog.setHotkeys(config_.collection().globalHotkeys);
     const int dialogResult = dialog.exec();
     if (globalHotkeyService_ != nullptr) {
         globalHotkeyService_->setPaused(false);
@@ -3000,10 +4262,10 @@ void AppBootstrap::openGlobalHotkeySettingsDialog()
         return;
     }
 
-    const QList<GlobalHotkeyItem> previousHotkeys = config_.globalHotkeys;
-    config_.globalHotkeys = dialog.hotkeys();
+    const QList<GlobalHotkeyItem> previousHotkeys = config_.collection().globalHotkeys;
+    config_.collection().globalHotkeys = dialog.hotkeys();
     if (!serverService_->save(config_)) {
-        config_.globalHotkeys = previousHotkeys;
+        config_.collection().globalHotkeys = previousHotkeys;
         appendResult(OperationResult::fail(
             QCoreApplication::translate("AppBootstrap", "Failed to save global hotkey settings.")));
         return;
@@ -3012,7 +4274,7 @@ void AppBootstrap::openGlobalHotkeySettingsDialog()
     appendResult(OperationResult::ok(
         QCoreApplication::translate("AppBootstrap", "Global hotkey settings saved.")));
     if (registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.globalHotkeys));
+        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
     }
 }
 
@@ -3056,12 +4318,12 @@ void AppBootstrap::handleRoutingSelectionResult(
     const RoutingSelectionPlan plan = evaluateRoutingSelectionPlan(
         result.success,
         previousAdvancedEnabled,
-        config_.enableRoutingAdvanced,
+        config_.collection().enableRoutingAdvanced,
         previousRoutingIndex,
-        config_.routingIndex,
+        config_.collection().routingIndex,
         isCoreRunning());
     if (plan.shouldRestartRunningCore) {
-        restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."));
+        restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."), true);
     }
 }
 
@@ -3086,14 +4348,120 @@ void AppBootstrap::handleDefaultServerSelectionResult(const OperationResult& res
         setCurrentActivationPending_ = true;
     }
     if (plan.shouldRestartRunningCore) {
-        restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."));
+        restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."), true);
     }
     if (plan.shouldClearCurrentActivationPending) {
         setCurrentActivationPending_ = false;
     }
-    if (plan.shouldStartCore) {
-        startCore();
+    if (plan.shouldEnableProxy) {
+        enableSystemProxy(true);
     }
+}
+
+bool AppBootstrap::requestDefaultServerSwitchAfterCoreStop(const QString& indexId, bool enableTun)
+{
+    const QString trimmedId = indexId.trimmed();
+    if (trimmedId.isEmpty() || !isCoreRunning() || config_.currentIndexId == trimmedId) {
+        return false;
+    }
+
+    pendingDefaultServerAfterStopId_ = trimmedId;
+    pendingDefaultServerAfterStopEnableTun_ = enableTun;
+    pendingDefaultServerAfterStopShowStartupOverlay_ = true;
+    setCurrentActivationPending_ = true;
+    appendResult(OperationResult::ok(QStringLiteral("Stopping current core before switching the default server.")));
+    prepareCoreStartupChecklist(true);
+    stopCoreInternal(false, false);
+    return true;
+}
+
+void AppBootstrap::scheduleDefaultServerSwitchAfterCoreStopped()
+{
+    QPointer<QObject> mainWindowGuard(mainWindow_.get());
+    const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
+    QTimer::singleShot(0, mainWindowGuard.isNull() ? QCoreApplication::instance() : mainWindowGuard.data(), [this, lifetimeGuard]() {
+        if (lifetimeGuard.expired() || shuttingDown_.load()) {
+            return;
+        }
+
+        switchDefaultServerAfterCoreStopped();
+    });
+}
+
+void AppBootstrap::switchDefaultServerAfterCoreStopped()
+{
+    const QString indexId = pendingDefaultServerAfterStopId_.trimmed();
+    const bool enableTun = pendingDefaultServerAfterStopEnableTun_;
+    const bool showStartupOverlay = pendingDefaultServerAfterStopShowStartupOverlay_;
+    pendingDefaultServerAfterStopId_.clear();
+    pendingDefaultServerAfterStopEnableTun_ = false;
+    pendingDefaultServerAfterStopShowStartupOverlay_ = false;
+
+    if (indexId.isEmpty() || serverService_ == nullptr || shuttingDown_.load()) {
+        setCurrentActivationPending_ = false;
+        return;
+    }
+
+    const QString previousIndexId = config_.currentIndexId;
+    const OperationResult result = serverService_->setDefaultServer(config_, indexId);
+    appendResult(result);
+    syncWindow();
+    if (!result.success) {
+        setCurrentActivationPending_ = false;
+        return;
+    }
+
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setCurrentServerWarning({});
+    }
+
+    if (enableTun && !config_.tun().tunModeItem.enableTun) {
+        setTunEnabled(true);
+        return;
+    }
+
+    if (previousIndexId != config_.currentIndexId || enableTun) {
+        appendResult(OperationResult::ok(QStringLiteral("Starting core after switching the default server.")));
+        startCoreInternal(false, true, false, showStartupOverlay);
+        return;
+    }
+
+    setCurrentActivationPending_ = false;
+}
+
+void AppBootstrap::setDefaultServerWithTun(const QString& indexId)
+{
+    if (serverService_ == nullptr) {
+        return;
+    }
+
+    if (requestDefaultServerSwitchAfterCoreStop(indexId, true)) {
+        return;
+    }
+
+    const QString previousIndexId = config_.currentIndexId;
+    const OperationResult result = serverService_->setDefaultServer(config_, indexId);
+    appendResult(result);
+    syncWindow();
+    if (!result.success) {
+        return;
+    }
+
+    if (mainWindow_ != nullptr) {
+        mainWindow_->setCurrentServerWarning({});
+    }
+    setCurrentActivationPending_ = true;
+
+    if (config_.tun().tunModeItem.enableTun) {
+        if (isCoreRunning() && previousIndexId != config_.currentIndexId) {
+            restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."), true);
+            return;
+        }
+        enableSystemProxy(true);
+        return;
+    }
+
+    setTunEnabled(true);
 }
 
 void AppBootstrap::runProxyAvailabilityCheck()
@@ -3109,8 +4477,8 @@ void AppBootstrap::runProxyAvailabilityCheck()
     proxyAvailabilityCheckRunning_ = true;
     const ProxyAvailabilityCheckConfig workerConfig{
         config_.localPort,
-        config_.tunModeItem.enableTun,
-        config_.speedPingTestUrl};
+        config_.tun().tunModeItem.enableTun,
+        config_.defaults().speedPingTestUrl};
     QObject* uiContext = mainWindow_.get();
     mainWindow_->showTransientStatus(
         QCoreApplication::translate("AppBootstrap", "Running availability check in the background..."),
@@ -3220,7 +4588,7 @@ void AppBootstrap::updateCore(
         pendingCoreUpdateDialogParent_ = dialogParentGuard;
         pendingCoreUpdateProgressObserver_ = progressObserver;
         pendingCoreUpdateCompletionObserver_ = completionObserver;
-        stopCore(false);
+        stopCoreInternal(false, false);
         return;
     }
 
@@ -3370,7 +4738,7 @@ void AppBootstrap::finalizeCoreUpdate(
                     0,
                     MainWindow::TransientStatusPriority::Routine);
             }
-            startCore();
+            enableSystemProxy(true);
         } else if (!result.success) {
             const QString message = QCoreApplication::translate(
                 "AppBootstrap",
@@ -3379,7 +4747,10 @@ void AppBootstrap::finalizeCoreUpdate(
                 mainWindow_->appendLog(message);
                 mainWindow_->showTransientStatus(message, 0);
             }
-            startCore();
+            enableSystemProxy(false);
+        } else {
+            clearProxyStateAfterCoreStopped();
+            syncStatusIndicators();
         }
     }
 
@@ -3394,7 +4765,7 @@ void AppBootstrap::finalizeCoreUpdate(
                 0,
                 MainWindow::TransientStatusPriority::Routine);
         }
-        startCore();
+        enableSystemProxy(true);
     }
 
     if (mainWindow_ == nullptr || result.message.trimmed().isEmpty()) {
@@ -3555,11 +4926,11 @@ void AppBootstrap::updateSelectedSubscriptions(const QList<int>& rowIndexes)
 {
     QStringList subscriptionIds;
     for (int rowIndex : rowIndexes) {
-        if (rowIndex < 0 || rowIndex >= config_.subscriptions.size()) {
+        if (rowIndex < 0 || rowIndex >= config_.collection().subscriptions.size()) {
             continue;
         }
 
-        const QString subscriptionId = config_.subscriptions.at(rowIndex).id.trimmed();
+        const QString subscriptionId = config_.collection().subscriptions.at(rowIndex).id.trimmed();
         if (!subscriptionId.isEmpty() && !subscriptionIds.contains(subscriptionId)) {
             subscriptionIds.append(subscriptionId);
         }
@@ -3592,7 +4963,7 @@ void AppBootstrap::updateSubscriptionsByIds(
     }
 
     // Clear test results as loading indicator.
-    for (auto& server : config_.servers) {
+    for (auto& server : config_.collection().servers) {
         server.testResult = QStringLiteral("...");
     }
     syncWindow();
@@ -3631,7 +5002,7 @@ void AppBootstrap::updateSubscriptionsByIds(
             if (result.success
                 && !activeSubscriptionId.isEmpty()
                 && (subscriptionIds.isEmpty() || subscriptionIds.contains(activeSubscriptionId))) {
-                restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."));
+                restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."), true);
             }
         });
     });
@@ -3685,7 +5056,7 @@ void AppBootstrap::restoreConfigFromBackup()
 
     const bool wasCoreRunning = isCoreRunning();
     if (wasCoreRunning) {
-        stopCore(true);
+        stopCoreInternal(true, false);
     }
 
     const OperationResult backupResult = configBackupService_->backupCurrentConfig(config_);
@@ -3705,23 +5076,11 @@ void AppBootstrap::restoreConfigFromBackup()
         return;
     }
 
-    if (systemProxyService_ != nullptr && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::Unchanged) {
-        const bool proxyUpdated = systemProxyService_->update(
-            normalizeSystemProxyMode(config_.sysProxyType),
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol);
-        if (!proxyUpdated) {
-            appendResult(OperationResult::fail(
-                QCoreApplication::translate("AppBootstrap", "Failed to reapply the restored system proxy settings.")));
-        } else {
-            managedSystemProxyActive_ = expectedSystemProxyEnabled(normalizeSystemProxyMode(config_.sysProxyType));
-        }
-    }
-
     if (wasCoreRunning && resolveActiveServer() != nullptr) {
-        startCore();
+        enableSystemProxy(true);
+    } else {
+        clearProxyStateAfterCoreStopped();
+        syncStatusIndicators();
     }
 
     appendResult(OperationResult::ok(
@@ -3786,7 +5145,7 @@ void AppBootstrap::openSettingsDialog(int initialTab)
 
     if (sessionResult.outcome == SettingsDialogSession::Outcome::UpdateSubscriptions) {
         const OperationResult saveResult =
-            subscriptionService_->saveSubscriptions(config_, sessionResult.config.subscriptions);
+            subscriptionService_->saveSubscriptions(config_, sessionResult.config.collection().subscriptions);
         appendResult(saveResult);
         if (saveResult.success) {
             syncWindow();
@@ -3801,6 +5160,15 @@ void AppBootstrap::openSettingsDialog(int initialTab)
 void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
 {
     const Config previousConfig = config_;
+
+    QSet<QString> previousSubIds;
+    for (const SubItem& item : previousConfig.collection().subscriptions) {
+        const QString id = item.id.trimmed();
+        if (!id.isEmpty()) {
+            previousSubIds.insert(id);
+        }
+    }
+
     const SettingsDialogApplyPlan plan = evaluateSettingsDialogApplyPlan(
         previousConfig,
         updatedConfig,
@@ -3809,6 +5177,17 @@ void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
         isCoreRunning());
 
     config_ = plan.tunSaveBehavior.configToPersist;
+    SubscriptionService::normalizeSubscriptionIds(config_.collection().subscriptions);
+
+    QStringList newSubIds;
+    for (const SubItem& item : config_.collection().subscriptions) {
+        if (item.enabled) {
+            const QString id = item.id.trimmed();
+            if (!id.isEmpty() && !previousSubIds.contains(id)) {
+                newSubIds.append(id);
+            }
+        }
+    }
     if (!serverService_->save(config_)) {
         config_ = previousConfig;
         appendResult(OperationResult::fail(
@@ -3822,9 +5201,19 @@ void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
         appendResult(OperationResult::fail(tunAdminRequiredSaveMessage()));
     }
     syncWindow();
+    if (mainWindow_ != nullptr && !newSubIds.isEmpty()) {
+        mainWindow_->selectSubscriptionTab(newSubIds.constLast());
+    }
+
+    if (!newSubIds.isEmpty()) {
+        updateSubscriptionsByIds(
+            newSubIds,
+            false,
+            QCoreApplication::translate("AppBootstrap", "Updating new subscriptions in the background..."));
+    }
 
     if (plan.autoRunChanged && autoRunService_ != nullptr) {
-        const bool success = autoRunService_->setEnabled(updatedConfig.autoRunEnabled);
+        const bool success = autoRunService_->setEnabled(updatedConfig.ui().autoRunEnabled);
         if (!success) {
             appendResult(OperationResult::fail(QStringLiteral("Failed to update auto run setting.")));
         }
@@ -3832,13 +5221,8 @@ void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
 
     if (plan.systemProxySettingsChanged
         && systemProxyService_ != nullptr
-        && normalizeSystemProxyMode(config_.sysProxyType) != SystemProxyMode::Unchanged) {
-        const bool proxyUpdated = systemProxyService_->update(
-            normalizeSystemProxyMode(config_.sysProxyType),
-            config_.localPort + 1,
-            config_.localPort,
-            buildSystemProxyExceptions(),
-            config_.systemProxyAdvancedProtocol);
+        && isCoreReady()) {
+        const bool proxyUpdated = updateSystemProxyMode(normalizeSystemProxyMode(config_.sysProxyType));
         if (!proxyUpdated) {
             appendResult(OperationResult::fail(
                 QCoreApplication::translate("AppBootstrap", "Failed to reapply system proxy settings.")));
@@ -3850,7 +5234,8 @@ void AppBootstrap::applySettingsDialogResult(const Config& updatedConfig)
     if (plan.runtimeSettingsChanged) {
         restartCoreIfRunning(QCoreApplication::translate(
             "AppBootstrap",
-            "Reloading core after applying settings changes."));
+            "Reloading core after applying settings changes."),
+            true);
     } else {
         syncStatusIndicators();
     }
@@ -3907,18 +5292,23 @@ void AppBootstrap::openLoopbackTool()
     }
 }
 
-bool AppBootstrap::promptRestartAsAdministratorForTun()
+bool AppBootstrap::askRestartAsAdministratorForTun() const
 {
     if (mainWindow_ == nullptr || !isWindowsPlatform() || isProcessElevated()) {
         return false;
     }
 
-    if (DialogUtils::askYesNoQuestion(
+    return DialogUtils::askYesNoQuestion(
             mainWindow_.get(),
             tunAdminRestartPromptTitle(),
             tunAdminRestartPromptMessage(),
             QMessageBox::Yes)
-        != QMessageBox::Yes) {
+        == QMessageBox::Yes;
+}
+
+bool AppBootstrap::promptRestartAsAdministratorForTun()
+{
+    if (!askRestartAsAdministratorForTun()) {
         return false;
     }
 
@@ -3951,7 +5341,7 @@ void AppBootstrap::promptRestartForLanguageChange()
 
     persistUiState();
     const bool requiresAdminRestart =
-        isWindowsPlatform() && !isProcessElevated() && config_.tunModeItem.enableTun;
+        isWindowsPlatform() && !isProcessElevated() && config_.tun().tunModeItem.enableTun;
     if (!restartApplication(requiresAdminRestart)) {
         appendResult(OperationResult::fail(
             QCoreApplication::translate("AppBootstrap", "Failed to restart the application.")));
@@ -3979,6 +5369,9 @@ bool AppBootstrap::restartApplication(bool requireAdministrator)
         return false;
     }
 
+    restartHandoffPending_ = true;
+    shutdownUiStatePersisted_ = true;
+    cleanupRuntimeForExit(false);
     if (mainWindow_ != nullptr) {
         mainWindow_->setAllowClose(true);
     }
@@ -4041,15 +5434,20 @@ void AppBootstrap::startSpeedTest(const QStringList& indexIds)
         static const QString pending = QStringLiteral("...");
         QStringList pendingIds;
         for (const auto& item : items) {
-            auto it = std::find_if(config_.servers.begin(), config_.servers.end(),
+            auto it = std::find_if(config_.collection().servers.begin(), config_.collection().servers.end(),
                 [&item](const VmessItem& s) { return s.indexId == item.server.indexId; });
-            if (it != config_.servers.end()) {
+            if (it != config_.collection().servers.end()) {
                 it->testResult = pending;
                 pendingIds.append(it->indexId);
             }
         }
         if (mainWindow_ != nullptr) {
             mainWindow_->updateServerTestResults(pendingIds, pending);
+        }
+        if (trayController_ != nullptr) {
+            trayController_->setServers(
+                config_.collection().servers,
+                config_.currentIndexId);
         }
     }
 }
@@ -4110,29 +5508,23 @@ bool AppBootstrap::isCoreReady() const
 
 QString AppBootstrap::resolveConfigPath() const
 {
-    if (!configPath_.isEmpty()) {
-        return configPath_;
-    }
-
-    const QString currentDirectoryPath = QDir::current().filePath(QStringLiteral("guiNConfig.json"));
-    if (QFileInfo::exists(currentDirectoryPath)) {
-        return currentDirectoryPath;
-    }
-
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("guiNConfig.json"));
+    return configPath_;
 }
 
 const VmessItem* AppBootstrap::resolveActiveServer() const
 {
-    if (!config_.currentIndexId.trimmed().isEmpty()) {
-        for (const VmessItem& item : config_.servers) {
-            if (item.indexId == config_.currentIndexId) {
-                return &item;
-            }
+    const QString currentIndexId = config_.currentIndexId.trimmed();
+    if (currentIndexId.isEmpty()) {
+        return nullptr;
+    }
+
+    for (const VmessItem& item : config_.collection().servers) {
+        if (item.indexId == currentIndexId) {
+            return &item;
         }
     }
 
-    return config_.servers.isEmpty() ? nullptr : &config_.servers.constFirst();
+    return nullptr;
 }
 
 const VmessItem* AppBootstrap::findServerById(const QString& indexId) const
@@ -4141,7 +5533,7 @@ const VmessItem* AppBootstrap::findServerById(const QString& indexId) const
         return nullptr;
     }
 
-    for (const VmessItem& item : config_.servers) {
+    for (const VmessItem& item : config_.collection().servers) {
         if (item.indexId == indexId) {
             return &item;
         }
@@ -4211,100 +5603,21 @@ QString AppBootstrap::resolveRuntimeConfigPath(const VmessItem& server) const
     return QDir(runtimeDirectory).filePath(QStringLiteral("config.generated.%1").arg(extension));
 }
 
-QString AppBootstrap::resolveStatisticsFilePath() const
-{
-    return QFileInfo(resolveConfigPath()).dir().filePath(QStringLiteral("StatisticLogOverall.json"));
-}
-
-int AppBootstrap::resolveStatisticsPort() const
-{
-    const QSet<int> reservedPorts{
-        config_.localPort,
-        config_.localPort + 1,
-        config_.localPort + 2,
-        config_.localPort + 3,
-        config_.localPort + 103};
-
-    for (int attempt = 0; attempt < 16; ++attempt) {
-        QTcpServer server;
-        if (!server.listen(QHostAddress::LocalHost, 0)) {
-            return 0;
-        }
-
-        const int port = server.serverPort();
-        server.close();
-        if (port > 0 && !reservedPorts.contains(port)) {
-            return port;
-        }
-    }
-
-    return 0;
-}
-
-QString AppBootstrap::buildTrafficSummaryText() const
-{
-    if (statisticsService_ == nullptr) {
-        return QCoreApplication::translate(
-            "AppBootstrap",
-            "Traffic: Speed D 0B/s / U 0B/s | Today D 0B / U 0B | Total D 0B / U 0B");
-    }
-
-    const ServerStatItem item = statisticsService_->currentServerStat();
-    const StatisticsSessionState state = statisticsService_->sessionState();
-    const quint64 refreshRateSeconds = static_cast<quint64>(qMax(1, state.refreshRateSeconds));
-    const quint64 downSpeed = state.running && state.pollingAvailable
-        ? state.lastDeltaDown / refreshRateSeconds
-        : 0;
-    const quint64 upSpeed = state.running && state.pollingAvailable
-        ? state.lastDeltaUp / refreshRateSeconds
-        : 0;
-
-    return QCoreApplication::translate(
-               "AppBootstrap",
-               "Traffic: Speed D %1/s / U %2/s | Today D %3 / U %4 | Total D %5 / U %6")
-        .arg(formatByteCount(downSpeed))
-        .arg(formatByteCount(upSpeed))
-        .arg(formatByteCount(item.todayDown))
-        .arg(formatByteCount(item.todayUp))
-        .arg(formatByteCount(item.totalDown))
-        .arg(formatByteCount(item.totalUp));
-}
-
-QString AppBootstrap::buildStatisticsSummaryText() const
-{
-    if (statisticsService_ == nullptr || !config_.enableStatistics) {
-        return QCoreApplication::translate("AppBootstrap", "Stats: Off");
-    }
-    const StatisticsSessionState state = statisticsService_->sessionState();
-    if (!state.running) {
-        return QCoreApplication::translate("AppBootstrap", "Stats: Idle");
-    }
-    if (state.externallyManaged) {
-        return QCoreApplication::translate("AppBootstrap", "Stats: External");
-    }
-    if (state.runtimeConfigReady && state.statePort > 0 && state.pollingAvailable) {
-        return QCoreApplication::translate("AppBootstrap", "Stats API 127.0.0.1:%1").arg(state.statePort);
-    }
-    if (state.runtimeConfigReady && state.statePort > 0) {
-        return QCoreApplication::translate("AppBootstrap", "Stats API 127.0.0.1:%1 (waiting)").arg(state.statePort);
-    }
-
-    return QCoreApplication::translate("AppBootstrap", "Stats: Enabled");
-}
-
 QString AppBootstrap::buildRoutingSummaryText() const
 {
-    if (!config_.enableRoutingAdvanced || config_.routingItems.isEmpty()) {
+    if (!config_.collection().enableRoutingAdvanced || config_.collection().routingItems.isEmpty()) {
         return QCoreApplication::translate("AppBootstrap", "Basic");
     }
 
-    if (config_.routingIndex >= 0 && config_.routingIndex < config_.routingItems.size()) {
-        const QString remarks = config_.routingItems.at(config_.routingIndex).remarks.trimmed();
+    if (config_.collection().routingIndex >= 0
+        && config_.collection().routingIndex < config_.collection().routingItems.size()) {
+        const QString remarks = config_.collection().routingItems.at(config_.collection().routingIndex).remarks.trimmed();
         if (!remarks.isEmpty()) {
             return QCoreApplication::translate("AppBootstrap", "%1 (Advanced)").arg(remarks);
         }
 
-        return QCoreApplication::translate("AppBootstrap", "Routing %1 (Advanced)").arg(config_.routingIndex + 1);
+        return QCoreApplication::translate("AppBootstrap", "Routing %1 (Advanced)")
+            .arg(config_.collection().routingIndex + 1);
     }
 
     return QCoreApplication::translate("AppBootstrap", "Advanced");
@@ -4312,15 +5625,11 @@ QString AppBootstrap::buildRoutingSummaryText() const
 
 QString AppBootstrap::buildListenSummaryText() const
 {
-    const QString listenHost = config_.allowLanConnection
-        ? QStringLiteral("0.0.0.0")
-        : QStringLiteral("127.0.0.1");
     if (config_.localPort <= 0) {
         return QCoreApplication::translate("AppBootstrap", "Unavailable");
     }
 
-    return QCoreApplication::translate("AppBootstrap", "SOCKS %1:%2 | HTTP %1:%3")
-        .arg(listenHost)
+    return QCoreApplication::translate("AppBootstrap", "SOCKS %1 | HTTP %2")
         .arg(config_.localPort)
         .arg(config_.localPort + 1);
 }
@@ -4328,19 +5637,26 @@ QString AppBootstrap::buildListenSummaryText() const
 QString AppBootstrap::buildSystemProxyExceptions() const
 {
     QStringList entries = splitProxyExceptions(
-        config_.defIeProxyExceptions.trimmed().isEmpty()
+        config_.defaults().defIeProxyExceptions.trimmed().isEmpty()
             ? QString::fromUtf8(DefaultIeProxyExceptions)
-            : config_.defIeProxyExceptions.trimmed());
-
-    for (const QString& item : splitProxyExceptions(config_.systemProxyExceptions.trimmed())) {
-        appendUniqueProxyException(entries, item);
-    }
+            : config_.defaults().defIeProxyExceptions.trimmed());
 
     for (const QString& item : collectRouteDerivedProxyExceptions(config_)) {
         appendUniqueProxyException(entries, item);
     }
 
     return entries.join(QStringLiteral(";"));
+}
+
+bool AppBootstrap::updateSystemProxyMode(SystemProxyMode mode) const
+{
+    return systemProxyService_ == nullptr
+        || systemProxyService_->update(
+            mode,
+            config_.localPort + 1,
+            config_.localPort,
+            buildSystemProxyExceptions(),
+            config_.systemProxyAdvancedProtocol);
 }
 
 CoreType AppBootstrap::resolveEffectiveCoreType(const VmessItem& server) const
@@ -4437,4 +5753,5 @@ QString AppBootstrap::resolveCoreInstallDirectory(CoreType coreType) const
 
     return QCoreApplication::applicationDirPath();
 }
+
 

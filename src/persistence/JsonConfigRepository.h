@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QJsonArray>
-#include <QJsonObject>
 #include <QString>
 
 #include "persistence/IConfigRepository.h"
@@ -17,7 +15,11 @@ public:
     QString lastLoadError() const;
 
 private:
-    QJsonObject loadExistingRootObject() const;
+    QString stateConfigPath() const;
+    Config loadPrimaryConfig();
+    bool loadStateInto(Config& config);
+    bool savePrimaryConfig(const Config& config);
+    bool saveStateConfig(const Config& config);
 
     QString configPath_;
     QString lastLoadError_;

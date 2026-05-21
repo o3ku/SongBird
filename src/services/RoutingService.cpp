@@ -22,11 +22,11 @@ OperationResult RoutingService::saveRouting(
         items[index].locked = index == effectiveIndex;
     }
 
-    config.domainStrategy = domainStrategy.trimmed();
-    config.domainMatcher = domainMatcher.trimmed();
-    config.enableRoutingAdvanced = enableAdvanced;
-    config.routingIndex = effectiveIndex < 0 ? 0 : effectiveIndex;
-    config.routingItems = std::move(items);
+    config.dns().domainStrategy = domainStrategy.trimmed();
+    config.dns().domainMatcher = domainMatcher.trimmed();
+    config.collection().enableRoutingAdvanced = enableAdvanced;
+    config.collection().routingIndex = effectiveIndex < 0 ? 0 : effectiveIndex;
+    config.collection().routingItems = std::move(items);
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save routing settings."));
@@ -37,12 +37,12 @@ OperationResult RoutingService::saveRouting(
 
 OperationResult RoutingService::setRoutingMode(Config& config, bool enableAdvanced, int selectedIndex)
 {
-    if (!enableAdvanced || config.routingItems.isEmpty()) {
-        for (RoutingItem& item : config.routingItems) {
+    if (!enableAdvanced || config.collection().routingItems.isEmpty()) {
+        for (RoutingItem& item : config.collection().routingItems) {
             item.locked = false;
         }
-        config.enableRoutingAdvanced = false;
-        config.routingIndex = 0;
+        config.collection().enableRoutingAdvanced = false;
+        config.collection().routingIndex = 0;
 
         if (!repository_.save(config)) {
             return OperationResult::fail(QStringLiteral("Failed to save the selected routing mode."));
@@ -51,16 +51,16 @@ OperationResult RoutingService::setRoutingMode(Config& config, bool enableAdvanc
         return OperationResult::ok(QStringLiteral("Routing mode switched to Basic."));
     }
 
-    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.routingItems.size());
+    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.collection().routingItems.size());
     if (effectiveIndex < 0) {
         return OperationResult::fail(QStringLiteral("No routing entry is available."));
     }
 
-    for (int index = 0; index < config.routingItems.size(); ++index) {
-        config.routingItems[index].locked = index == effectiveIndex;
+    for (int index = 0; index < config.collection().routingItems.size(); ++index) {
+        config.collection().routingItems[index].locked = index == effectiveIndex;
     }
-    config.enableRoutingAdvanced = true;
-    config.routingIndex = effectiveIndex;
+    config.collection().enableRoutingAdvanced = true;
+    config.collection().routingIndex = effectiveIndex;
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save the selected routing mode."));
@@ -71,15 +71,15 @@ OperationResult RoutingService::setRoutingMode(Config& config, bool enableAdvanc
 
 OperationResult RoutingService::selectRouting(Config& config, int selectedIndex)
 {
-    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.routingItems.size());
+    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.collection().routingItems.size());
     if (effectiveIndex < 0) {
         return OperationResult::fail(QStringLiteral("No routing entry is available."));
     }
 
-    for (int index = 0; index < config.routingItems.size(); ++index) {
-        config.routingItems[index].locked = index == effectiveIndex;
+    for (int index = 0; index < config.collection().routingItems.size(); ++index) {
+        config.collection().routingItems[index].locked = index == effectiveIndex;
     }
-    config.routingIndex = effectiveIndex;
+    config.collection().routingIndex = effectiveIndex;
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save the selected routing entry."));

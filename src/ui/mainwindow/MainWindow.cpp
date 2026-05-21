@@ -29,6 +29,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPointF>
+#include <QPushButton>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QRegularExpression>
@@ -57,6 +58,7 @@
 
 #include "domain/models/VmessItem.h"
 #include "runtime/ProtocolCoreCompat.h"
+#include "app/CoreStartupCheckpoint.h"
 #include "subscription/ShareUrlBuilder.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/LogItemDelegate.h"
@@ -86,9 +88,25 @@ constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
 constexpr int ToolbarControlSpacing = 2;
 constexpr int ToolbarControlHeight = 28;
+constexpr int ToolbarPadding = 4;
+constexpr int ToolbarBottomBorderWidth = 1;
 constexpr int HeaderFilterMinimumCharacters = 14;
 constexpr int InitialRoutingComboMinimumCharacters = 12;
 constexpr int ServerTableNoColumn = 0;
+constexpr ushort CoreStartupFailedMark = 0x274C;
+constexpr int LoadingOverlayHorizontalMargin = 24;
+constexpr int LoadingContentHorizontalPadding = 18;
+constexpr int LoadingContentVerticalPadding = 14;
+constexpr int LoadingContentMinimumWidth = 360;
+constexpr int LoadingContentMaximumWidth = 720;
+constexpr int LoadingChecklistDetailMaximumWidth = 420;
+
+bool isCoreStartupFailureItem(const QString& item)
+{
+    const QString trimmedItem = item.trimmed();
+    return trimmedItem.startsWith(QString(QChar(CoreStartupFailedMark)))
+        || trimmedItem.startsWith(QStringLiteral("[!]"));
+}
 
 QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& text, int availableWidth)
 {
@@ -135,7 +153,7 @@ void paintChevron(QPainter& painter, const QRect& rect, bool enabled)
     }
 
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(QPen(enabled ? QColor(QStringLiteral("#5b6574")) : QColor(QStringLiteral("#a7b0bf")),
+    painter.setPen(QPen(QColor(AppTheme::iconColor(enabled)),
                         1.6,
                         Qt::SolidLine,
                         Qt::RoundCap,
@@ -243,7 +261,7 @@ void configureStyledComboBox(QComboBox* comboBox)
 
     comboBox->setProperty("styledChevron", true);
     auto* popupView = new QListView(comboBox);
-    popupView->setObjectName(QStringLiteral("comboPopupView"));
+    popupView->setObjectName(QStringLiteral("toolbarComboPopupView"));
     popupView->setMouseTracking(true);
     popupView->setUniformItemSizes(true);
     popupView->setSelectionRectVisible(false);
@@ -255,10 +273,8 @@ void configureStyledComboBox(QComboBox* comboBox)
 
 QIcon loadToolbarIcon(const QString& fileName)
 {
-    return QIcon(QStringLiteral(":/toolbar/%1").arg(fileName));
+    return AppTheme::themedSvgIcon(QStringLiteral(":/toolbar/%1").arg(fileName));
 }
-
-constexpr int kServerResultColumn = 7;
 
 void syncToolbarActionButton(QToolButton* button, QAction* action)
 {
@@ -357,6 +373,19 @@ void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
     edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }
 
+QPair<QString, QString> splitCoreStartupChecklistItem(const QString& item)
+{
+    const int separatorIndex = item.indexOf(coreStartupChecklistDetailSeparator());
+    if (separatorIndex < 0) {
+        return {item, QString()};
+    }
+
+    return {
+        item.left(separatorIndex),
+        item.mid(separatorIndex + 1).trimmed()
+    };
+}
+
 void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
 {
     if (comboBox == nullptr) {
@@ -408,15 +437,16 @@ MainWindow::~MainWindow()
     delete backgroundTaskActionsController_;
 }
 
-void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& statistics)
+void MainWindow::setConfig(const Config& config)
 {
+    refreshToolbarIcons();
     updateConfigSnapshot(config);
-    rebuildShareUrlCache(config.servers);
+    rebuildShareUrlCache(config.collection().servers);
     preserveServerSelectionPreference();
 
-    serverModel_->setItems(config.servers, statistics, config.currentIndexId);
+    serverModel_->setItems(config.collection().servers, config.currentIndexId);
     currentIndexId_ = config.currentIndexId.trimmed();
-    tunEnabled_ = config.tunModeItem.enableTun;
+    tunEnabled_ = config.tun().tunModeItem.enableTun;
     updateCurrentCoreFromConfig(config);
     syncConfigControllers(config);
 
@@ -424,6 +454,7 @@ void MainWindow::setConfig(const Config& config, const QList<ServerStatItem>& st
         updateSelectionForVisibleRows();
     }
 
+    scheduleInitialCurrentServerReveal();
     updateQrPreview();
     updateActionState();
     updateWindowTitle();
@@ -536,29 +567,8 @@ void MainWindow::setAutoRunEnabled(bool enabled)
 
 void MainWindow::setSystemProxyState(int mode, bool enabled)
 {
-    systemProxyMode_ = normalizeSystemProxyMode(mode);
+    Q_UNUSED(mode);
     systemProxyApplied_ = enabled;
-
-    if (clearProxyAction_ != nullptr) {
-        clearProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::ForcedClear);
-    }
-    if (globalProxyAction_ != nullptr) {
-        globalProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::ForcedChange);
-    }
-    if (unchangedProxyAction_ != nullptr) {
-        unchangedProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::Unchanged);
-    }
-    if (pacProxyAction_ != nullptr) {
-        pacProxyAction_->setChecked(systemProxyMode_ == SystemProxyMode::Pac);
-    }
-    if (systemProxyModeCombo_ != nullptr) {
-        const QSignalBlocker blocker(systemProxyModeCombo_);
-        const int comboIndex = systemProxyModeCombo_->findData(toLegacySystemProxyModeValue(systemProxyMode_));
-        if (comboIndex >= 0) {
-            systemProxyModeCombo_->setCurrentIndex(comboIndex);
-        }
-    }
-
     updateRuntimeUiState();
 }
 
@@ -593,6 +603,7 @@ void MainWindow::setCurrentServerLocation(const QString& location)
 {
     currentServerLocation_ = location.trimmed();
     updateStatusPresentation();
+    syncProxyToolbarController();
 }
 
 void MainWindow::setCurrentServerWarning(const QString& warning)
@@ -608,15 +619,6 @@ void MainWindow::setRoutingSummary(const QString& routingText, const QString& li
     updateStatusPresentation();
 }
 
-void MainWindow::setStatisticsSessionState(const StatisticsSessionState& state)
-{
-    statisticsState_ = state;
-    if (statisticsState_.running && statisticsState_.coreType != CoreType::Unknown) {
-        currentCoreName_ = coreTypeDisplayName(statisticsState_.coreType);
-    }
-    updateStatusPresentation(true);
-}
-
 void MainWindow::setSpeedTestRunning(bool running)
 {
     speedTestRunning_ = running;
@@ -626,9 +628,34 @@ void MainWindow::setSpeedTestRunning(bool running)
 
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
-    if (serverWorkspace_ != nullptr) {
-        serverWorkspace_->setSubscriptionUpdateRunning(running);
+    setLoadingOverlayVisible(
+        running,
+        running ? tr("Updating subscriptions...") : QString(),
+        {});
+
+    updateActionState();
+}
+
+void MainWindow::setCoreStartupChecklist(const QStringList& items)
+{
+    coreStartupChecklistVisible_ = true;
+    coreStartupChecklistFailed_ = false;
+    for (const QString& item : items) {
+        if (isCoreStartupFailureItem(item)) {
+            coreStartupChecklistFailed_ = true;
+            break;
+        }
     }
+    setLoadingOverlayVisible(true, tr("Starting system proxy..."), items);
+
+    updateActionState();
+}
+
+void MainWindow::clearCoreStartupChecklist()
+{
+    coreStartupChecklistVisible_ = false;
+    coreStartupChecklistFailed_ = false;
+    setLoadingOverlayVisible(false, {}, {});
 
     updateActionState();
 }
@@ -654,10 +681,15 @@ void MainWindow::setTunEnabled(bool enabled)
 
 void MainWindow::restoreUiState(const Config& config)
 {
+    refreshToolbarIcons();
+
     if (windowLayoutStateController_ != nullptr) {
         windowLayoutStateController_->restoreFromConfig(config);
     }
-    qrPreviewVisible_ = config.mainQrPreviewVisible;
+    if (serverListController_ != nullptr) {
+        serverListController_->restoreSortState(config);
+    }
+    qrPreviewVisible_ = config.ui().mainQrPreviewVisible;
     if (sharePanel_ != nullptr) {
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
@@ -665,12 +697,12 @@ void MainWindow::restoreUiState(const Config& config)
     coreRunning_ = false;
     coreTransitionPending_ = false;
     systemProxyApplied_ = false;
-    tunEnabled_ = config.tunModeItem.enableTun;
+    tunEnabled_ = config.tun().tunModeItem.enableTun;
     updateRuntimeUiState();
     updateQrPanelActionText();
 
     if (subscriptionTabBar_ != nullptr && serverModel_ != nullptr) {
-        QString preferredTabKey = SubscriptionViewController::resolveTabKeyFromSelectionId(config.mainSelectedSubId);
+        QString preferredTabKey = SubscriptionViewController::resolveTabKeyFromSelectionId(config.ui().mainSelectedSubId);
 
         // Switch to the tab that contains the current server
         if (!config.currentIndexId.isEmpty()) {
@@ -712,10 +744,13 @@ void MainWindow::captureUiState(Config& config) const
     if (windowLayoutStateController_ != nullptr) {
         windowLayoutStateController_->captureToConfig(config);
     }
-    config.mainQrPreviewVisible = qrPreviewVisible_;
-    config.mainSelectedSubId = subscriptionViewController_ == nullptr
+    config.ui().mainQrPreviewVisible = qrPreviewVisible_;
+    config.ui().mainSelectedSubId = subscriptionViewController_ == nullptr
         ? QStringLiteral("__unsubscribed__")
         : subscriptionViewController_->persistedSelectionId();
+    if (serverListController_ != nullptr) {
+        serverListController_->captureSortState(config);
+    }
 }
 
 bool MainWindow::selectSubscriptionTab(const QString& selectionId)
@@ -750,6 +785,26 @@ void MainWindow::updateActionState()
     syncProxyToolbarController();
 }
 
+void MainWindow::refreshToolbarIcons()
+{
+    for (auto it = toolbarIconFiles_.cbegin(); it != toolbarIconFiles_.cend(); ++it) {
+        if (it.key() != nullptr) {
+            it.key()->setIcon(loadToolbarIcon(it.value()));
+        }
+    }
+    for (auto it = toolbarStandaloneIconFiles_.cbegin(); it != toolbarStandaloneIconFiles_.cend(); ++it) {
+        if (it.key() != nullptr) {
+            it.key()->setIcon(loadToolbarIcon(it.value()));
+        }
+    }
+    if (moveServerUpAction_ != nullptr) {
+        moveServerUpAction_->setIcon(AppTheme::themedSvgIcon(QStringLiteral(":/app/up.svg")));
+    }
+    if (moveServerDownAction_ != nullptr) {
+        moveServerDownAction_->setIcon(AppTheme::themedSvgIcon(QStringLiteral(":/app/down.svg")));
+    }
+}
+
 void MainWindow::updateQrPreview()
 {
     if (sharePanel_ == nullptr) {
@@ -780,9 +835,111 @@ void MainWindow::updateSelectionForVisibleRows()
     }
 }
 
+void MainWindow::showCurrentServerInTable()
+{
+    if (currentIndexId_.trimmed().isEmpty()) {
+        showTransientStatus(tr("No current server."), 4000);
+        return;
+    }
+    if (serverModel_ == nullptr
+        || serverFilterModel_ == nullptr
+        || serverView_ == nullptr
+        || serverView_->selectionModel() == nullptr) {
+        return;
+    }
+
+    const ServerTableRow* currentServer = nullptr;
+    for (int row = 0; row < serverModel_->rowCount(); ++row) {
+        const ServerTableRow* item = serverModel_->itemAt(row);
+        if (item != nullptr && item->indexId == currentIndexId_) {
+            currentServer = item;
+            break;
+        }
+    }
+    if (currentServer == nullptr) {
+        showTransientStatus(tr("Current server is unavailable."), 4000);
+        return;
+    }
+
+    if (serverFilterEdit_ != nullptr && !serverFilterEdit_->text().trimmed().isEmpty()) {
+        serverFilterEdit_->clear();
+    }
+
+    const QString subscriptionId = currentServer->subId.trimmed();
+    const QString selectionId = subscriptionId.isEmpty()
+        ? QStringLiteral("__unsubscribed__")
+        : subscriptionId;
+    if (subscriptionViewController_ != nullptr) {
+        subscriptionViewController_->selectSubscriptionTab(selectionId);
+        subscriptionViewController_->applyCurrentTabFilter();
+    }
+
+    QModelIndex targetIndex;
+    for (int proxyRow = 0; proxyRow < serverFilterModel_->rowCount(); ++proxyRow) {
+        const QModelIndex proxyIndex = serverFilterModel_->index(proxyRow, ServerTableNoColumn);
+        const QModelIndex sourceIndex = serverFilterModel_->mapToSource(proxyIndex);
+        const ServerTableRow* item = serverModel_->itemAt(sourceIndex.row());
+        if (item != nullptr && item->indexId == currentIndexId_) {
+            targetIndex = proxyIndex;
+            break;
+        }
+    }
+
+    if (!targetIndex.isValid()) {
+        showTransientStatus(tr("Current server is hidden by the current filter."), 4000);
+        return;
+    }
+
+    serverView_->setCurrentIndex(targetIndex);
+    serverView_->selectRow(targetIndex.row());
+    serverView_->scrollTo(targetIndex, QAbstractItemView::PositionAtCenter);
+    serverView_->setFocus(Qt::OtherFocusReason);
+}
+
+void MainWindow::scheduleInitialCurrentServerReveal()
+{
+    if (initialCurrentServerRevealDone_
+        || initialCurrentServerRevealScheduled_
+        || currentIndexId_.trimmed().isEmpty()
+        || serverModel_ == nullptr
+        || serverModel_->rowCount() <= 0) {
+        return;
+    }
+
+    initialCurrentServerRevealScheduled_ = true;
+    QTimer::singleShot(0, this, [this]() {
+        QTimer::singleShot(0, this, [this]() {
+            initialCurrentServerRevealScheduled_ = false;
+            if (initialCurrentServerRevealDone_ || currentIndexId_.trimmed().isEmpty()) {
+                return;
+            }
+
+            initialCurrentServerRevealDone_ = true;
+            showCurrentServerInTable();
+        });
+    });
+}
+
 bool MainWindow::canStartBackgroundTask() const
 {
-    return !backgroundTaskRunning_ && !speedTestRunning_;
+    return !backgroundTaskRunning_
+        && !speedTestRunning_
+        && (!coreStartupChecklistVisible_ || coreStartupChecklistFailed_);
+}
+
+bool MainWindow::ensureCanStartBackgroundTask()
+{
+    if (canStartBackgroundTask()) {
+        return true;
+    }
+
+    showTransientStatus(
+        coreStartupChecklistVisible_ && !coreStartupChecklistFailed_
+            ? tr("Proxy startup is in progress.")
+            : tr("A background task is already running."),
+        4000);
+    updateActionState();
+    return false;
 }
 
 bool MainWindow::isUngroupedSubscriptionTabSelected() const
@@ -796,24 +953,108 @@ void MainWindow::setupUi()
     setMinimumSize(DefaultMainWindowWidth, DefaultMainWindowHeight);
     resize(DefaultMainWindowWidth, DefaultMainWindowHeight);
 
+    mainContentWidget_ = new QWidget(this);
+    mainContentWidget_->setObjectName(QStringLiteral("mainContentWidget"));
+    mainContentLayout_ = new QVBoxLayout(mainContentWidget_);
+    mainContentLayout_->setContentsMargins(0, 0, 0, 0);
+    mainContentLayout_->setSpacing(0);
+    setCentralWidget(mainContentWidget_);
+
     setupToolbar();
     setupServerView();
     setupDiagnosticsPanel();
+    setupLoadingOverlay();
     updateWindowTitle();
+}
+
+void MainWindow::setupLoadingOverlay()
+{
+    loadingOverlay_ = new QWidget(this);
+    loadingOverlay_->setObjectName(QStringLiteral("loadingOverlay"));
+    loadingOverlay_->setAttribute(Qt::WA_StyledBackground, true);
+    loadingOverlay_->setFocusPolicy(Qt::StrongFocus);
+
+    loadingContentWidget_ = new QWidget(loadingOverlay_);
+    loadingContentWidget_->setObjectName(QStringLiteral("loadingContentWidget"));
+    loadingContentWidget_->setAttribute(Qt::WA_StyledBackground, true);
+
+    loadingTitleLabel_ = new QLabel(loadingContentWidget_);
+    loadingTitleLabel_->setObjectName(QStringLiteral("loadingTitleLabel"));
+    loadingTitleLabel_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    loadingTitleLabel_->setWordWrap(true);
+
+    loadingItemsWidget_ = new QWidget(loadingContentWidget_);
+    loadingItemsWidget_->setObjectName(QStringLiteral("loadingItemsWidget"));
+    loadingItemsLayout_ = new QVBoxLayout(loadingItemsWidget_);
+    loadingItemsLayout_->setContentsMargins(0, 0, 0, 0);
+    loadingItemsLayout_->setSpacing(6);
+
+    loadingActionWidget_ = new QWidget(loadingContentWidget_);
+    loadingActionWidget_->setObjectName(QStringLiteral("loadingActionWidget"));
+
+    loadingDismissButton_ = new QPushButton(tr("Close"), loadingActionWidget_);
+    loadingDismissButton_->setObjectName(QStringLiteral("loadingDismissButton"));
+    loadingDismissButton_->setVisible(false);
+    connect(loadingDismissButton_, &QPushButton::clicked, this, [this]() {
+        coreStartupChecklistVisible_ = false;
+        coreStartupChecklistFailed_ = false;
+        setLoadingOverlayVisible(false, {}, {});
+        updateActionState();
+    });
+
+    auto* actionLayout = new QHBoxLayout(loadingActionWidget_);
+    actionLayout->setContentsMargins(0, 0, 0, 0);
+    actionLayout->setSpacing(0);
+    actionLayout->addStretch(1);
+    actionLayout->addWidget(loadingDismissButton_);
+    actionLayout->addStretch(1);
+
+    auto* contentLayout = new QVBoxLayout(loadingContentWidget_);
+    contentLayout->setContentsMargins(
+        LoadingContentHorizontalPadding,
+        LoadingContentVerticalPadding,
+        LoadingContentHorizontalPadding,
+        LoadingContentVerticalPadding);
+    contentLayout->setSpacing(12);
+    contentLayout->addWidget(loadingTitleLabel_);
+    contentLayout->addWidget(loadingItemsWidget_);
+    contentLayout->addWidget(loadingActionWidget_);
+
+    auto* loadingLayout = new QVBoxLayout(loadingOverlay_);
+    loadingLayout->setContentsMargins(24, 24, 24, 24);
+    loadingLayout->setSpacing(12);
+    loadingLayout->addStretch(1);
+    loadingLayout->addWidget(loadingContentWidget_, 0, Qt::AlignCenter);
+    loadingLayout->addStretch(1);
+
+    updateLoadingOverlayGeometry();
+    loadingOverlay_->hide();
 }
 
 void MainWindow::setupToolbar()
 {
-    auto* toolBar = addToolBar(tr("Main"));
+    auto* toolbarHost = new QWidget(mainContentWidget_);
+    toolbarHost->setObjectName(QStringLiteral("mainToolbarHost"));
+    toolbarHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    toolbarHost->setFixedHeight(ToolbarControlHeight + (ToolbarPadding * 2) + ToolbarBottomBorderWidth);
+    auto* toolbarHostLayout = new QVBoxLayout(toolbarHost);
+    toolbarHostLayout->setContentsMargins(ToolbarPadding, ToolbarPadding, ToolbarPadding, ToolbarPadding);
+    toolbarHostLayout->setSpacing(0);
+
+    auto* toolBar = new QToolBar(tr("Main"), toolbarHost);
     toolBar->setObjectName(QStringLiteral("mainToolBar"));
     toolBar->setMovable(false);
     toolBar->setFloatable(false);
-    toolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     AppTheme::applyCompactFont(toolBar);
     const int iconExtent = qRound(toolBar->fontMetrics().height() * 1.2);
     toolBar->setIconSize(QSize(iconExtent, iconExtent));
     toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    toolBar->setContentsMargins(0, 2, 0, 2);
+    toolBar->setContentsMargins(0, 0, 0, 0);
+    toolBar->setFixedHeight(ToolbarControlHeight);
+    toolbarHostLayout->addWidget(toolBar, 0, Qt::AlignTop);
+    mainContentLayout_->addWidget(toolbarHost);
+
     createToolbarActions();
     QMenu* settingMenu = nullptr;
     QMenu* helpMenu = nullptr;
@@ -859,14 +1100,18 @@ void MainWindow::createServerToolbarActions()
     moveServerTopAction_->setObjectName(QStringLiteral("moveServerTopAction"));
     moveServerUpAction_ = new QAction(tr("Move Up"), this);
     moveServerUpAction_->setObjectName(QStringLiteral("moveServerUpAction"));
+    moveServerUpAction_->setIcon(AppTheme::themedSvgIcon(QStringLiteral(":/app/up.svg")));
     moveServerDownAction_ = new QAction(tr("Move Down"), this);
     moveServerDownAction_->setObjectName(QStringLiteral("moveServerDownAction"));
+    moveServerDownAction_->setIcon(AppTheme::themedSvgIcon(QStringLiteral(":/app/down.svg")));
     moveServerBottomAction_ = new QAction(tr("Move To Bottom"), this);
     moveServerBottomAction_->setObjectName(QStringLiteral("moveServerBottomAction"));
     testAction_ = new QAction(tr("Test"), this);
     testAction_->setObjectName(QStringLiteral("testAction"));
     setDefaultServerAction_ = new QAction(tr("Set Current"), this);
     setDefaultServerAction_->setObjectName(QStringLiteral("setDefaultServerAction"));
+    setDefaultServerWithTunAction_ = new QAction(tr("Set Current with TUN On"), this);
+    setDefaultServerWithTunAction_->setObjectName(QStringLiteral("setDefaultServerWithTunAction"));
 }
 
 void MainWindow::createSubscriptionToolbarActions()
@@ -876,7 +1121,8 @@ void MainWindow::createSubscriptionToolbarActions()
     importClientConfigAction_ = new QAction(tr("Import Client Config"), this);
     importServerConfigAction_ = new QAction(tr("Import Server Config"), this);
     subAction_ = new QAction(tr("Subscriptions"), this);
-    subAction_->setIcon(loadToolbarIcon(QStringLiteral("sub.png")));
+    toolbarIconFiles_.insert(subAction_, QStringLiteral("subscription.svg"));
+    subAction_->setIcon(loadToolbarIcon(toolbarIconFiles_.value(subAction_)));
     connect(subAction_, &QAction::triggered, this, &MainWindow::openSettingsAtSubscriptionsTabRequested);
 }
 
@@ -884,7 +1130,8 @@ void MainWindow::createUpdateToolbarActions()
 {
     routingSettingsAction_ = new QAction(tr("Routing"), this);
     routingSettingsAction_->setObjectName(QStringLiteral("routingSettingsAction"));
-    routingSettingsAction_->setIcon(loadToolbarIcon(QStringLiteral("server.png")));
+    toolbarIconFiles_.insert(routingSettingsAction_, QStringLiteral("routing.svg"));
+    routingSettingsAction_->setIcon(loadToolbarIcon(toolbarIconFiles_.value(routingSettingsAction_)));
     connect(routingSettingsAction_, &QAction::triggered, this, &MainWindow::openSettingsAtRoutingTabRequested);
     updateSubscriptionsAction_ = new QAction(tr("Update Subscriptions"), this);
     updateSubscriptionsAction_->setObjectName(QStringLiteral("updateSubscriptionsAction"));
@@ -900,19 +1147,6 @@ void MainWindow::createUpdateToolbarActions()
 
 void MainWindow::createSystemToolbarActions()
 {
-    clearProxyAction_ = new QAction(tr("Clear Proxy"), this);
-    clearProxyAction_->setObjectName(QStringLiteral("clearProxyAction"));
-    clearProxyAction_->setCheckable(true);
-    globalProxyAction_ = new QAction(tr("Global Proxy"), this);
-    globalProxyAction_->setObjectName(QStringLiteral("globalProxyAction"));
-    globalProxyAction_->setCheckable(true);
-    unchangedProxyAction_ = new QAction(tr("Unchanged Proxy"), this);
-    unchangedProxyAction_->setObjectName(QStringLiteral("unchangedProxyAction"));
-    unchangedProxyAction_->setCheckable(true);
-    pacProxyAction_ = new QAction(tr("PAC Proxy"), this);
-    pacProxyAction_->setObjectName(QStringLiteral("pacProxyAction"));
-    pacProxyAction_->setCheckable(true);
-    pacProxyAction_->setVisible(false);
     toggleAutoRunAction_ = new QAction(tr("Enable Auto Run"), this);
     reloadConfigAction_ = new QAction(tr("Reload Config"), this);
     restoreBackupAction_ = new QAction(tr("Restore Backup"), this);
@@ -923,7 +1157,8 @@ void MainWindow::createSystemToolbarActions()
     dnsSettingsAction_->setObjectName(QStringLiteral("dnsSettingsAction"));
     settingsAction_ = new QAction(tr("Settings"), this);
     settingsAction_->setObjectName(QStringLiteral("settingsAction"));
-    settingsAction_->setIcon(loadToolbarIcon(QStringLiteral("option.png")));
+    toolbarIconFiles_.insert(settingsAction_, QStringLiteral("option.svg"));
+    settingsAction_->setIcon(loadToolbarIcon(toolbarIconFiles_.value(settingsAction_)));
 }
 
 void MainWindow::createHelpToolbarActions()
@@ -952,13 +1187,12 @@ void MainWindow::createHelpToolbarActions()
 
 void MainWindow::createRuntimeToolbarActions()
 {
-    proxyToggleAction_ = new QAction(tr("PROXY"), this);
+    proxyToggleAction_ = new QAction(tr("START"), this);
     proxyToggleAction_->setObjectName(QStringLiteral("proxyToggleAction"));
     proxyToggleAction_->setCheckable(true);
     tunToggleAction_ = new QAction(tr("TUN"), this);
     tunToggleAction_->setObjectName(QStringLiteral("tunToggleAction"));
     tunToggleAction_->setCheckable(true);
-    clearStatisticsAction_ = new QAction(tr("Clear Statistics"), this);
     toggleQrPanelAction_ = new QAction(tr("Share"), this);
     toggleQrPanelAction_->setObjectName(QStringLiteral("toggleQrPanelAction"));
     toggleQrPanelAction_->setCheckable(true);
@@ -974,19 +1208,6 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& settingMenu, QMen
     });
 
     // Sub button now opens Settings at Subscriptions tab
-
-    systemProxyMenu_ = new QMenu(tr("System Proxy"), toolBar);
-    systemProxyMenu_->setObjectName(QStringLiteral("systemProxyMenu"));
-    auto* systemProxyGroup = new QActionGroup(systemProxyMenu_);
-    systemProxyGroup->setExclusive(true);
-    systemProxyGroup->addAction(clearProxyAction_);
-    systemProxyGroup->addAction(globalProxyAction_);
-    systemProxyGroup->addAction(unchangedProxyAction_);
-    systemProxyGroup->addAction(pacProxyAction_);
-    systemProxyMenu_->addAction(clearProxyAction_);
-    systemProxyMenu_->addAction(globalProxyAction_);
-    systemProxyMenu_->addAction(unchangedProxyAction_);
-    systemProxyMenu_->addAction(pacProxyAction_);
 
     settingMenu = new QMenu(toolBar);
     settingMenu->setObjectName(QStringLiteral("settingMenu"));
@@ -1014,47 +1235,62 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
         toolBar,
         QStringLiteral("settingButton"),
         tr("Settings"),
-        loadToolbarIcon(QStringLiteral("option.png")),
+        loadToolbarIcon(QStringLiteral("option.svg")),
         settingsAction_);
-    toolBar->addSeparator();
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
     createToolbarActionButton(
         toolBar,
         QStringLiteral("subButton"),
         tr("Subscriptions"),
-        loadToolbarIcon(QStringLiteral("sub.png")),
+        loadToolbarIcon(QStringLiteral("subscription.svg")),
         subAction_);
-    toolBar->addSeparator();
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
     createToolbarActionButton(
         toolBar,
         QStringLiteral("routingButton"),
         tr("Routing"),
-        loadToolbarIcon(QStringLiteral("server.png")),
+        loadToolbarIcon(QStringLiteral("routing.svg")),
         routingSettingsAction_);
-    toolBar->addSeparator();
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
 
-    createToolbarMenuButton(
+    auto* helpButton = createToolbarMenuButton(
         toolBar,
         QStringLiteral("helpButton"),
         tr("Help"),
-        loadToolbarIcon(QStringLiteral("help.png")),
+        loadToolbarIcon(QStringLiteral("help.svg")),
         helpMenu);
+    toolbarStandaloneIconFiles_.insert(helpButton, QStringLiteral("help.svg"));
 
     auto* spacer = new QWidget(toolBar);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolBar->addWidget(spacer);
 
+    selectServerHintLabel_ = new QLabel(toolBar);
+    selectServerHintLabel_->setObjectName(QStringLiteral("selectServerHintLabel"));
+    AppTheme::applyCompactFont(selectServerHintLabel_);
+    selectServerHintLabel_->setFixedHeight(ToolbarControlHeight);
+    selectServerHintLabel_->setFixedWidth(
+        selectServerHintLabel_->fontMetrics().horizontalAdvance(tr("Add a server first")) + 18);
+    selectServerHintLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
+    selectServerHintLabel_->setStyleSheet(QStringLiteral(
+        "QLabel#selectServerHintLabel { color: %1; padding: 0 8px; }")
+        .arg(AppTheme::errorStatusColor()));
+    selectServerHintLabel_->clear();
+    toolBar->addWidget(selectServerHintLabel_);
+    toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
+
     createToolbarActionButton(
         toolBar,
         QStringLiteral("proxyToggleButton"),
-        tr("PROXY"),
-        loadToolbarIcon(QStringLiteral("option.png")),
+        tr("START"),
+        QIcon(),
         proxyToggleAction_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
     createToolbarActionButton(
         toolBar,
         QStringLiteral("tunToggleButton"),
         tr("TUN"),
-        loadToolbarIcon(QStringLiteral("server.png")),
+        QIcon(),
         tunToggleAction_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
 
@@ -1071,7 +1307,7 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
         toolBar,
         QStringLiteral("qrCodeButton"),
         tr("Share"),
-        loadToolbarIcon(QStringLiteral("share.png")),
+        QIcon(),
         toggleQrPanelAction_);
 }
 
@@ -1128,7 +1364,9 @@ void MainWindow::setupServerWorkspace()
         serverView_,
         sharePanel_);
     qrPreviewVisible_ = windowLayoutStateController_->qrPreviewVisible();
-    setCentralWidget(serverWorkspace_);
+    if (mainContentLayout_ != nullptr) {
+        mainContentLayout_->addWidget(serverWorkspace_, 1);
+    }
 }
 
 void MainWindow::setupSubscriptionViewController()
@@ -1142,6 +1380,7 @@ void MainWindow::setupSubscriptionViewController()
         {
             [this]() { return canStartBackgroundTask(); },
             [this]() { copyCurrentSubscriptionUrlToClipboard(); },
+            [this](const QString& subscriptionId) { testSubscriptionServers(subscriptionId); },
             [this](const QString& subscriptionId) { emit updateCurrentSubscriptionRequested(subscriptionId); },
             [this](const QString& subscriptionId) { emit updateCurrentSubscriptionViaProxyRequested(subscriptionId); },
             [this](const QString& subscriptionId) { emit hideSubscriptionRequested(subscriptionId); },
@@ -1201,7 +1440,7 @@ void MainWindow::setupStatusBarController()
         this,
         statusBar(),
         [this]() { emit settingsRequested(); },
-        [this](const QPoint& globalPosition) { showSystemProxyMenu(globalPosition); });
+        [this]() { showCurrentServerInTable(); });
 }
 
 void MainWindow::setupServerSelectionController()
@@ -1237,10 +1476,12 @@ void MainWindow::setupServerActionsController()
             moveServerDownAction_,
             moveServerBottomAction_,
             testAction_,
-            setDefaultServerAction_},
+            setDefaultServerAction_,
+            setDefaultServerWithTunAction_},
         [this]() { return serverSelectionController_ == nullptr ? QString() : serverSelectionController_->selectedServerId(); },
         [this]() { return serverSelectionController_ == nullptr ? QStringList() : serverSelectionController_->selectedServerIds(); },
         [this]() { return isUngroupedSubscriptionTabSelected(); },
+        [this]() { return ensureCanStartBackgroundTask(); },
         [this]() { updateActionState(); },
         [this](const QString& message) { appendLog(message); },
         [this](const QString& message, int timeoutMs, int priority) {
@@ -1265,7 +1506,6 @@ void MainWindow::setupServerActionsController()
 void MainWindow::setupConnections()
 {
     setupGeneralActionConnections();
-    setupSystemProxyConnections();
     setupToggleConnections();
     setupViewConnections();
     setupShortcutConnections();
@@ -1291,8 +1531,16 @@ void MainWindow::setupImportActionConnections()
 
 void MainWindow::setupUpdateActionConnections()
 {
-    connect(updateSubscriptionsAction_, &QAction::triggered, this, &MainWindow::updateSubscriptionsRequested);
-    connect(testMeAction_, &QAction::triggered, this, &MainWindow::testMeRequested);
+    connect(updateSubscriptionsAction_, &QAction::triggered, this, [this]() {
+        if (ensureCanStartBackgroundTask()) {
+            emit updateSubscriptionsRequested();
+        }
+    });
+    connect(testMeAction_, &QAction::triggered, this, [this]() {
+        if (ensureCanStartBackgroundTask()) {
+            emit testMeRequested();
+        }
+    });
     connect(updateXrayCoreAction_, &QAction::triggered, this, [this]() {
         emit updateCoreRequested(static_cast<int>(CoreType::Xray));
     });
@@ -1338,54 +1586,61 @@ void MainWindow::setupHelpActionConnections()
     connect(openGeoReleasePageAction_, &QAction::triggered, this, &MainWindow::openGeoReleasePageRequested);
 }
 
-void MainWindow::setupSystemProxyConnections()
-{
-    connect(clearProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeSelected(toLegacySystemProxyModeValue(SystemProxyMode::ForcedClear));
-    });
-    connect(globalProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeSelected(toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange));
-    });
-    connect(unchangedProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeSelected(toLegacySystemProxyModeValue(SystemProxyMode::Unchanged));
-    });
-    connect(pacProxyAction_, &QAction::triggered, this, [this]() {
-        emit systemProxyModeSelected(toLegacySystemProxyModeValue(SystemProxyMode::Pac));
-    });
-    if (systemProxyModeCombo_ != nullptr) {
-        connect(systemProxyModeCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
-            if (systemProxyModeCombo_ == nullptr || index < 0) {
-                return;
-            }
-
-            emit systemProxyModeSelected(systemProxyModeCombo_->itemData(index).toInt());
-        });
-    }
-}
-
 void MainWindow::setupToggleConnections()
 {
     connect(proxyToggleAction_, &QAction::triggered, this, [this]() {
-        const bool isProxyChecked = coreRunning_ && systemProxyApplied_ && !coreTransitionPending_;
-        const bool isProxyUnchecked =
-            !coreProcessRunning_ && !coreRunning_ && !systemProxyApplied_ && !coreTransitionPending_;
-        if (isProxyChecked) {
+        if (proxyToolbarController_ == nullptr) {
+            return;
+        }
+
+        ProxyToolbarController::Snapshot snapshot;
+        snapshot.coreProcessRunning = coreProcessRunning_;
+        snapshot.coreRunning = coreRunning_;
+        snapshot.coreTransitionPending = coreTransitionPending_;
+        snapshot.systemProxyApplied = systemProxyApplied_;
+        snapshot.outboundLocationAvailable = !currentServerLocation_.trimmed().isEmpty();
+        snapshot.tunEnabled = tunEnabled_;
+        snapshot.existingCoreTypes = existingCoreTypes_;
+        snapshot.coreTypeItems = configSnapshot_.coreTypeItems;
+
+        if (proxyToolbarController_->shouldDisableProxy(snapshot)) {
             emit disableSystemProxyRequested();
             return;
         }
 
-        if (isProxyUnchecked) {
+        const ServerTableRow* currentActiveServer = activeServer();
+        if (currentActiveServer == nullptr) {
+            const ServerTableRow* selectedServer = serverSelectionController_ == nullptr
+                ? nullptr
+                : serverSelectionController_->selectedServer();
+            if (selectedServer != nullptr && !selectedServer->indexId.isEmpty()) {
+                clearSelectServerHint();
+                emit setDefaultServerRequested(selectedServer->indexId);
+                updateActionState();
+                return;
+            }
+            showSelectServerHint();
+            updateActionState();
+            return;
+        }
+
+        if (proxyToolbarController_->shouldEnableProxy(snapshot, currentActiveServer)) {
             emit enableSystemProxyRequested();
         }
     });
     connect(tunToggleAction_, &QAction::triggered, this, [this](bool checked) {
         if (coreTransitionPending_) {
+            updateActionState();
+            return;
+        }
+        if (activeServer() == nullptr) {
+            showSelectServerHint();
+            updateActionState();
             return;
         }
 
         emit tunEnabledChanged(checked);
     });
-    connect(clearStatisticsAction_, &QAction::triggered, this, &MainWindow::clearStatisticsRequested);
     if (sharePanel_ != nullptr) {
         connect(sharePanel_, &SharePanelWidget::transientStatusRequested, this, [this](const QString& message, int timeoutMs) {
             showTransientStatus(message, timeoutMs, TransientStatusPriority::Routine);
@@ -1558,24 +1813,51 @@ QString MainWindow::currentSubscriptionIdForUpdate() const
 
 void MainWindow::triggerCurrentSubscriptionUpdate()
 {
-    emit updateCurrentSubscriptionRequested(currentSubscriptionIdForUpdate());
-}
-
-void MainWindow::showSystemProxyMenu(const QPoint& globalPosition)
-{
-    if (systemProxyMenu_ == nullptr) {
+    if (!ensureCanStartBackgroundTask()) {
         return;
     }
 
-    systemProxyMenu_->popup(globalPosition);
+    emit updateCurrentSubscriptionRequested(currentSubscriptionIdForUpdate());
+}
+
+void MainWindow::testSubscriptionServers(const QString& subscriptionId)
+{
+    if (!ensureCanStartBackgroundTask()) {
+        return;
+    }
+
+    const QString normalizedId = subscriptionId.trimmed();
+    if (normalizedId.isEmpty() || serverModel_ == nullptr) {
+        showTransientStatus(tr("No servers available for this subscription."), 4000);
+        return;
+    }
+
+    QStringList indexIds;
+    for (int row = 0; row < serverModel_->rowCount(); ++row) {
+        const ServerTableRow* item = serverModel_->itemAt(row);
+        if (item == nullptr || item->subId.trimmed() != normalizedId || item->indexId.trimmed().isEmpty()) {
+            continue;
+        }
+
+        indexIds.append(item->indexId);
+    }
+
+    if (indexIds.isEmpty()) {
+        showTransientStatus(tr("No servers available for this subscription."), 4000);
+        return;
+    }
+
+    if (ensureCanStartBackgroundTask()) {
+        emit testServersRequested(indexIds);
+    }
 }
 
 bool MainWindow::confirmExit()
 {
     return DialogUtils::askYesNoQuestion(
                this,
-               tr("Quit Song Box"),
-               tr("Quit Song Box now?"),
+               tr("Quit SongBird"),
+               tr("Quit SongBird now?"),
                QMessageBox::No)
         == QMessageBox::Yes;
 }
@@ -1588,10 +1870,10 @@ void MainWindow::updateWindowTitle()
     const QString serverName = currentServerName_.trimmed().isEmpty()
         ? tr("None")
         : currentServerName_.trimmed();
-    const QString proxyState = systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
+    const QString proxyState = coreRunning_ && systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
     const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
 
-    setWindowTitle(tr("Song Box [%1] [%2] [%3] [%4]")
+    setWindowTitle(tr("SongBird [%1] [%2] [%3] [%4]")
                        .arg(coreName, serverName, proxyState, tunState));
 }
 
@@ -1615,6 +1897,12 @@ void MainWindow::closeEvent(QCloseEvent* event)
         QCoreApplication::quit();
     });
     event->accept();
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    updateLoadingOverlayGeometry();
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
@@ -1650,8 +1938,38 @@ const ServerTableRow* MainWindow::activeServer() const
     return serverModel_ == nullptr ? nullptr : serverModel_->currentItem();
 }
 
+void MainWindow::showSelectServerHint()
+{
+    const bool hasServers = serverModel_ != nullptr && serverModel_->rowCount() > 0;
+
+    if (selectServerHintLabel_ != nullptr) {
+        selectServerHintLabel_->setText(tr("Select a server"));
+        QTimer::singleShot(4000, this, [this]() {
+            clearSelectServerHint();
+        });
+    }
+
+    if (serverView_ != nullptr) {
+        serverView_->flashAttention();
+    }
+
+    showTransientStatus(
+        hasServers ? tr("Please select a server first.") : tr("No available server. Add or import a server first."),
+        4000);
+}
+
+void MainWindow::clearSelectServerHint()
+{
+    if (selectServerHintLabel_ != nullptr) {
+        selectServerHintLabel_->clear();
+    }
+}
+
 void MainWindow::refreshServerSelectionUi()
 {
+    if (activeServer() != nullptr) {
+        clearSelectServerHint();
+    }
     updateQrPreview();
     updateActionState();
 }
@@ -1659,10 +1977,10 @@ void MainWindow::refreshServerSelectionUi()
 void MainWindow::updateConfigSnapshot(const Config& config)
 {
     configSnapshot_.currentIndexId = config.currentIndexId;
-    configSnapshot_.subscriptions = config.subscriptions;
-    configSnapshot_.routingItems = config.routingItems;
-    configSnapshot_.routingIndex = config.routingIndex;
-    configSnapshot_.coreTypeItems = config.coreTypeItems;
+    configSnapshot_.subscriptions = config.collection().subscriptions;
+    configSnapshot_.routingItems = config.collection().routingItems;
+    configSnapshot_.routingIndex = config.collection().routingIndex;
+    configSnapshot_.coreTypeItems = config.policy().coreTypeItems;
 }
 
 void MainWindow::rebuildShareUrlCache(const QList<VmessItem>& servers)
@@ -1692,7 +2010,7 @@ void MainWindow::preserveServerSelectionPreference()
 void MainWindow::updateCurrentCoreFromConfig(const Config& config)
 {
     currentCoreName_ = QStringLiteral("Unknown");
-    for (const VmessItem& item : config.servers) {
+    for (const VmessItem& item : config.collection().servers) {
         if (item.indexId == currentIndexId_) {
             currentCoreName_ =
                 coreTypeDisplayName(resolveSelectedCoreType(config, item, availableCoreTypes()));
@@ -1704,10 +2022,10 @@ void MainWindow::updateCurrentCoreFromConfig(const Config& config)
 void MainWindow::syncConfigControllers(const Config& config)
 {
     if (routingModeController_ != nullptr) {
-        routingModeController_->setRoutingOptions(config.routingItems, config.routingIndex);
+        routingModeController_->setRoutingOptions(config.collection().routingItems, config.collection().routingIndex);
     }
     if (subscriptionViewController_ != nullptr) {
-        subscriptionViewController_->setSubscriptions(config.subscriptions);
+        subscriptionViewController_->setSubscriptions(config.collection().subscriptions);
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
         subscriptionViewController_->applyCurrentTabFilter();
     }
@@ -1738,16 +2056,8 @@ void MainWindow::syncStatusBarController()
         currentServerLocation_,
         currentServerWarning_,
         listenSummary_,
-        currentCoreName_,
-        statisticsState_,
-        systemProxyApplied_,
-        autoRunEnabled_,
-        coreProcessRunning_,
-        coreRunning_,
-        coreTransitionPending_,
         backgroundTaskRunning_,
-        backgroundTaskDescription_,
-        systemProxyMode_);
+        backgroundTaskDescription_);
 }
 
 void MainWindow::syncProxyToolbarController()
@@ -1761,9 +2071,127 @@ void MainWindow::syncProxyToolbarController()
         coreRunning_,
         coreTransitionPending_,
         systemProxyApplied_,
+        !currentServerLocation_.trimmed().isEmpty(),
         tunEnabled_,
-        serverModel_ != nullptr && serverModel_->rowCount() > 0,
         existingCoreTypes_,
         configSnapshot_.coreTypeItems,
         activeServer());
+}
+
+void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, const QStringList& items)
+{
+    if (loadingOverlay_ == nullptr) {
+        return;
+    }
+
+    bool hasFailure = false;
+    for (const QString& item : items) {
+        if (isCoreStartupFailureItem(item)) {
+            hasFailure = true;
+            break;
+        }
+    }
+
+    clearLoadingOverlayItems();
+
+    if (loadingTitleLabel_ != nullptr) {
+        loadingTitleLabel_->setText(hasFailure ? tr("Proxy startup failed") : title);
+        loadingTitleLabel_->setAlignment(
+            items.isEmpty() && !hasFailure
+                ? Qt::AlignCenter
+                : (Qt::AlignLeft | Qt::AlignVCenter));
+    }
+
+    if (loadingItemsWidget_ != nullptr) {
+        loadingItemsWidget_->setVisible(!items.isEmpty());
+    }
+    if (loadingItemsLayout_ != nullptr) {
+        for (const QString& item : items) {
+            const auto parts = splitCoreStartupChecklistItem(item);
+            auto* row = new QWidget(loadingItemsWidget_);
+            row->setObjectName(QStringLiteral("loadingChecklistRow"));
+            row->setAttribute(Qt::WA_StyledBackground, true);
+            auto* rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 0, 0, 0);
+            rowLayout->setSpacing(12);
+
+            auto* label = new QLabel(parts.first, row);
+            label->setObjectName(QStringLiteral("loadingChecklistItem"));
+            label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            label->setWordWrap(false);
+            label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+            rowLayout->addWidget(label, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+            if (!parts.second.isEmpty()) {
+                auto* detailLabel = new QLabel(row);
+                detailLabel->setObjectName(QStringLiteral("loadingChecklistDetail"));
+                detailLabel->setText(elideTextWithThreeDots(
+                    detailLabel->fontMetrics(),
+                    parts.second,
+                    LoadingChecklistDetailMaximumWidth));
+                detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                detailLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                detailLabel->setWordWrap(false);
+                detailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                detailLabel->setMinimumWidth(140);
+                detailLabel->setMaximumWidth(LoadingChecklistDetailMaximumWidth);
+                detailLabel->setFixedHeight(detailLabel->fontMetrics().height() + 2);
+                detailLabel->setToolTip(parts.second);
+                rowLayout->addWidget(detailLabel, 1, Qt::AlignRight | Qt::AlignVCenter);
+            } else {
+                rowLayout->addStretch(1);
+            }
+
+            loadingItemsLayout_->addWidget(row);
+        }
+    }
+
+    if (loadingDismissButton_ != nullptr) {
+        loadingDismissButton_->setVisible(visible && hasFailure);
+    }
+    if (loadingActionWidget_ != nullptr) {
+        loadingActionWidget_->setVisible(!items.isEmpty() || hasFailure);
+    }
+
+    if (visible) {
+        updateLoadingOverlayGeometry();
+        loadingOverlay_->raise();
+        loadingOverlay_->show();
+        loadingOverlay_->setFocus(Qt::OtherFocusReason);
+    } else {
+        loadingOverlay_->hide();
+    }
+}
+
+void MainWindow::clearLoadingOverlayItems()
+{
+    if (loadingItemsLayout_ == nullptr) {
+        return;
+    }
+
+    while (QLayoutItem* item = loadingItemsLayout_->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            delete widget;
+        }
+        delete item;
+    }
+}
+
+void MainWindow::updateLoadingOverlayGeometry()
+{
+    if (loadingOverlay_ != nullptr) {
+        loadingOverlay_->setGeometry(rect());
+        if (loadingContentWidget_ != nullptr) {
+            const int availableWidth = qMax(1, loadingOverlay_->width() - (LoadingOverlayHorizontalMargin * 2));
+            const int contentWidth = qBound(
+                qMin(LoadingContentMinimumWidth, availableWidth),
+                qRound(loadingOverlay_->width() * 0.6),
+                qMin(LoadingContentMaximumWidth, availableWidth));
+            loadingContentWidget_->setFixedWidth(qMax(1, contentWidth));
+        }
+        if (loadingOverlay_->isVisible()) {
+            loadingOverlay_->raise();
+        }
+    }
 }

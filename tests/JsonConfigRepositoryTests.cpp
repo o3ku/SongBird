@@ -1,1838 +1,763 @@
 #include <QtTest>
 
-#include <algorithm>
-
+#include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
 #include "persistence/JsonConfigRepository.h"
 
+namespace {
+
+QString makeConfigPath(QTemporaryDir& tempDir)
+{
+    return tempDir.filePath(QStringLiteral("songbird.json"));
+}
+
+QString makeStatePath(QTemporaryDir& tempDir)
+{
+    return tempDir.filePath(QStringLiteral("SongBird.state.json"));
+}
+
+bool writeJsonFile(const QString& path, const QJsonObject& root)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    return file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0;
+}
+
+QJsonObject readJsonFile(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    return document.isObject() ? document.object() : QJsonObject();
+}
+
+VmessItem makeServer()
+{
+    VmessItem item;
+    item.indexId = QStringLiteral("server-1");
+    item.configType = ConfigType::Trojan;
+    item.coreType = CoreType::SingBox;
+    item.address = QStringLiteral("1.2.3.4");
+    item.port = 443;
+    item.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
+    item.remarks = QStringLiteral("primary");
+    item.streamSecurity = QStringLiteral("tls");
+    item.muxEnabled = false;
+    item.finalmask = QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}");
+    item.cert = QStringLiteral("-----BEGIN CERTIFICATE-----");
+    item.certSha = QStringLiteral("sha256/example");
+    item.mldsa65Verify = QStringLiteral("mldsa-key");
+    item.echConfigList = QStringLiteral("ECHCONFIGBASE64");
+    item.echForceQuery = QStringLiteral("half");
+    item.subId = QStringLiteral("sub-1");
+    item.alpn = QStringList{QStringLiteral("h2"), QStringLiteral("http/1.1")};
+    return item;
+}
+
+RoutingRule makeRoutingRule()
+{
+    RoutingRule item;
+    item.type = QStringLiteral("field");
+    item.port = QStringLiteral("443");
+    item.network = QStringLiteral("tcp,udp");
+    item.outboundTag = QStringLiteral("proxy");
+    item.inboundTag = QStringList{QStringLiteral("socks"), QStringLiteral("http")};
+    item.ip = QStringList{QStringLiteral("geoip:private")};
+    item.domain = QStringList{QStringLiteral("geosite:cn")};
+    item.protocol = QStringList{QStringLiteral("bittorrent")};
+    item.process = QStringList{QStringLiteral("chrome.exe")};
+    item.enabled = true;
+    return item;
+}
+
+RoutingItem makeRoutingItem()
+{
+    RoutingItem item;
+    item.remarks = QStringLiteral("custom-route");
+    item.url = QStringLiteral("https://example.test/route.json");
+    item.rules = {makeRoutingRule()};
+    item.enabled = true;
+    item.locked = true;
+    item.customIcon = QStringLiteral("route.svg");
+    item.domainStrategy4Singbox = QStringLiteral("prefer_ipv4");
+    return item;
+}
+
+GlobalHotkeyItem makeHotkey()
+{
+    GlobalHotkeyItem item;
+    item.action = GlobalHotkeyAction::SystemProxySet;
+    item.alt = true;
+    item.control = true;
+    item.shift = false;
+    item.keyCode = 65;
+    return item;
+}
+
+SubItem makeSubscription()
+{
+    SubItem item;
+    item.id = QStringLiteral("sub-1");
+    item.remarks = QStringLiteral("feed");
+    item.url = QStringLiteral("https://example.test/sub");
+    item.enabled = true;
+    item.userAgent = QStringLiteral("SongBird/1.0");
+    return item;
+}
+
+PolicyGroupItem makePolicyGroup()
+{
+    PolicyGroupItem item;
+    item.id = QStringLiteral("group-1");
+    item.name = QStringLiteral("auto");
+    item.strategy = PolicyGroupItem::Strategy::UrlTest;
+    item.memberServerIds = QStringList{QStringLiteral("server-1"), QStringLiteral("server-2")};
+    item.urlTestUrl = QStringLiteral("https://connectivitycheck.gstatic.com/generate_204");
+    item.toleranceMs = 150;
+    return item;
+}
+
+CoreTypeItem makeCoreTypeItem()
+{
+    return CoreTypeItem{
+        static_cast<int>(ConfigType::Trojan),
+        static_cast<int>(CoreType::SingBox)};
+}
+
+QJsonObject makeCanonicalRoot()
+{
+    const VmessItem server = makeServer();
+    const RoutingItem routingItem = makeRoutingItem();
+    const RoutingRule routeRule = routingItem.rules.constFirst();
+    const GlobalHotkeyItem hotkey = makeHotkey();
+    const SubItem subscription = makeSubscription();
+    const PolicyGroupItem policyGroup = makePolicyGroup();
+    const CoreTypeItem coreTypeItem = makeCoreTypeItem();
+
+    QJsonObject defaults;
+    defaults.insert(QStringLiteral("speedPingTestUrl"), QStringLiteral("https://probe.example/test"));
+    defaults.insert(QStringLiteral("ieProxyExceptions"), QStringLiteral("localhost;127.*"));
+
+    QJsonObject inbound;
+    inbound.insert(QStringLiteral("localPort"), 10809);
+    inbound.insert(QStringLiteral("protocol"), QStringLiteral("http"));
+    inbound.insert(QStringLiteral("udpEnabled"), false);
+    inbound.insert(QStringLiteral("sniffingEnabled"), false);
+    inbound.insert(QStringLiteral("routeOnly"), true);
+    inbound.insert(QStringLiteral("allowLANConn"), true);
+    inbound.insert(QStringLiteral("user"), QStringLiteral("tester"));
+    inbound.insert(QStringLiteral("pass"), QStringLiteral("secret"));
+
+    QJsonObject mainColumnWidths;
+    mainColumnWidths.insert(QStringLiteral("address"), 240);
+
+    QJsonObject ui;
+    ui.insert(QStringLiteral("showMainOnStartup"), false);
+    ui.insert(QStringLiteral("autoRunEnabled"), true);
+    ui.insert(QStringLiteral("languageCode"), QStringLiteral("en-US"));
+    ui.insert(QStringLiteral("themeName"), QStringLiteral("Dark"));
+    ui.insert(QStringLiteral("mainLocationX"), 10);
+    ui.insert(QStringLiteral("mainLocationY"), 20);
+    ui.insert(QStringLiteral("mainSizeWidth"), 1280);
+    ui.insert(QStringLiteral("mainSizeHeight"), 720);
+    ui.insert(QStringLiteral("mainSelectedSubscriptionId"), QStringLiteral("sub-1"));
+    ui.insert(QStringLiteral("settingsRoutingRuleTabKey"), QStringLiteral("basic"));
+    ui.insert(QStringLiteral("mainServerLogSplitPercent"), 55);
+    ui.insert(QStringLiteral("mainServerQrSplitPercent"), 80);
+    ui.insert(QStringLiteral("mainQrPreviewVisible"), true);
+    ui.insert(QStringLiteral("mainProxyEnabled"), true);
+    ui.insert(QStringLiteral("mainColumnWidths"), mainColumnWidths);
+
+    QJsonObject tunModeItem;
+    tunModeItem.insert(QStringLiteral("enableTun"), true);
+    tunModeItem.insert(QStringLiteral("autoRoute"), false);
+    tunModeItem.insert(QStringLiteral("strictRoute"), false);
+    tunModeItem.insert(QStringLiteral("stack"), QStringLiteral("mixed"));
+    tunModeItem.insert(QStringLiteral("mtu"), 1400);
+    tunModeItem.insert(QStringLiteral("enableIPv6Address"), true);
+    tunModeItem.insert(QStringLiteral("icmpRouting"), QStringLiteral("direct"));
+    tunModeItem.insert(QStringLiteral("enableLegacyProtect"), true);
+
+    QJsonObject serverObject;
+    serverObject.insert(QStringLiteral("indexId"), server.indexId);
+    serverObject.insert(QStringLiteral("configType"), static_cast<int>(server.configType));
+    serverObject.insert(QStringLiteral("coreType"), static_cast<int>(server.coreType));
+    serverObject.insert(QStringLiteral("address"), server.address);
+    serverObject.insert(QStringLiteral("port"), server.port);
+    serverObject.insert(QStringLiteral("id"), server.id);
+    serverObject.insert(QStringLiteral("remarks"), server.remarks);
+    serverObject.insert(QStringLiteral("streamSecurity"), server.streamSecurity);
+    serverObject.insert(QStringLiteral("muxEnabled"), server.muxEnabled.value());
+    serverObject.insert(QStringLiteral("finalmask"), server.finalmask);
+    serverObject.insert(QStringLiteral("cert"), server.cert);
+    serverObject.insert(QStringLiteral("certSha"), server.certSha);
+    serverObject.insert(QStringLiteral("mldsa65Verify"), server.mldsa65Verify);
+    serverObject.insert(QStringLiteral("echConfigList"), server.echConfigList);
+    serverObject.insert(QStringLiteral("echForceQuery"), server.echForceQuery);
+    serverObject.insert(QStringLiteral("subscriptionId"), server.subId);
+    serverObject.insert(QStringLiteral("alpn"), QJsonArray{server.alpn.at(0), server.alpn.at(1)});
+
+    QJsonObject hotkeyObject;
+    hotkeyObject.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(hotkey.action));
+    hotkeyObject.insert(QStringLiteral("Alt"), hotkey.alt);
+    hotkeyObject.insert(QStringLiteral("Control"), hotkey.control);
+    hotkeyObject.insert(QStringLiteral("Shift"), hotkey.shift);
+    hotkeyObject.insert(QStringLiteral("KeyCode"), hotkey.keyCode.value());
+
+    QJsonObject subscriptionObject;
+    subscriptionObject.insert(QStringLiteral("id"), subscription.id);
+    subscriptionObject.insert(QStringLiteral("remarks"), subscription.remarks);
+    subscriptionObject.insert(QStringLiteral("url"), subscription.url);
+    subscriptionObject.insert(QStringLiteral("enabled"), subscription.enabled);
+    subscriptionObject.insert(QStringLiteral("userAgent"), subscription.userAgent);
+
+    QJsonObject ruleObject;
+    ruleObject.insert(QStringLiteral("type"), routeRule.type);
+    ruleObject.insert(QStringLiteral("port"), routeRule.port);
+    ruleObject.insert(QStringLiteral("network"), routeRule.network);
+    ruleObject.insert(QStringLiteral("outboundTag"), routeRule.outboundTag);
+    ruleObject.insert(QStringLiteral("enabled"), routeRule.enabled);
+    ruleObject.insert(QStringLiteral("inboundTag"), QJsonArray{routeRule.inboundTag.at(0), routeRule.inboundTag.at(1)});
+    ruleObject.insert(QStringLiteral("ip"), QJsonArray{routeRule.ip.at(0)});
+    ruleObject.insert(QStringLiteral("domain"), QJsonArray{routeRule.domain.at(0)});
+    ruleObject.insert(QStringLiteral("protocol"), QJsonArray{routeRule.protocol.at(0)});
+    ruleObject.insert(QStringLiteral("process"), QJsonArray{routeRule.process.at(0)});
+
+    QJsonObject routingObject;
+    routingObject.insert(QStringLiteral("remarks"), routingItem.remarks);
+    routingObject.insert(QStringLiteral("url"), routingItem.url);
+    routingObject.insert(QStringLiteral("enabled"), routingItem.enabled);
+    routingObject.insert(QStringLiteral("locked"), routingItem.locked);
+    routingObject.insert(QStringLiteral("customIcon"), routingItem.customIcon);
+    routingObject.insert(QStringLiteral("domainStrategyForSingbox"), routingItem.domainStrategy4Singbox);
+    routingObject.insert(QStringLiteral("rules"), QJsonArray{ruleObject});
+
+    QJsonObject policyGroupObject;
+    policyGroupObject.insert(QStringLiteral("id"), policyGroup.id);
+    policyGroupObject.insert(QStringLiteral("name"), policyGroup.name);
+    policyGroupObject.insert(QStringLiteral("strategy"), static_cast<int>(policyGroup.strategy));
+    policyGroupObject.insert(QStringLiteral("memberServerIds"), QJsonArray{policyGroup.memberServerIds.at(0), policyGroup.memberServerIds.at(1)});
+    policyGroupObject.insert(QStringLiteral("urlTestUrl"), policyGroup.urlTestUrl);
+    policyGroupObject.insert(QStringLiteral("toleranceMs"), policyGroup.toleranceMs);
+
+    QJsonObject coreTypeObject;
+    coreTypeObject.insert(QStringLiteral("configType"), coreTypeItem.configType);
+    coreTypeObject.insert(QStringLiteral("coreType"), coreTypeItem.coreType);
+
+    QJsonObject root;
+    root.insert(QStringLiteral("schemaVersion"), 7);
+    root.insert(QStringLiteral("logEnabled"), true);
+    root.insert(QStringLiteral("logLevel"), QStringLiteral("warning"));
+    root.insert(QStringLiteral("indexId"), QStringLiteral("server-1"));
+    root.insert(QStringLiteral("inbound"), QJsonArray{inbound});
+    root.insert(QStringLiteral("defaults"), defaults);
+    root.insert(QStringLiteral("muxEnabled"), true);
+    root.insert(QStringLiteral("mux4SboxProtocol"), QStringLiteral("smux"));
+    root.insert(QStringLiteral("mux4SboxMaxConnections"), 16);
+    root.insert(QStringLiteral("mux4SboxPadding"), true);
+    root.insert(QStringLiteral("sysProxyType"), 2);
+    root.insert(QStringLiteral("enableFragment"), true);
+    root.insert(QStringLiteral("enableCacheFile4Sbox"), false);
+    root.insert(QStringLiteral("defaultFingerprint"), QStringLiteral("chrome"));
+    root.insert(QStringLiteral("defaultUserAgent"), QStringLiteral("Mozilla/5.0"));
+    root.insert(QStringLiteral("directDns"), QStringLiteral("223.5.5.5"));
+    root.insert(QStringLiteral("remoteDns"), QStringLiteral("8.8.8.8"));
+    root.insert(QStringLiteral("bootstrapDns"), QStringLiteral("119.29.29.29"));
+    root.insert(QStringLiteral("fakeIp"), true);
+    root.insert(QStringLiteral("globalFakeIp"), false);
+    root.insert(QStringLiteral("serveStale"), true);
+    root.insert(QStringLiteral("parallelQuery"), true);
+    root.insert(QStringLiteral("directExpectedIps"), QStringLiteral("geoip:cn"));
+    root.insert(QStringLiteral("useSystemHosts"), true);
+    root.insert(QStringLiteral("addCommonHosts"), false);
+    root.insert(QStringLiteral("blockBindingQuery"), false);
+    root.insert(QStringLiteral("domainStrategyForFreedom"), QStringLiteral("UseIPv4"));
+    root.insert(QStringLiteral("domainStrategyForProxy"), QStringLiteral("UseIPv6"));
+    root.insert(QStringLiteral("dnsHosts"), QStringLiteral("example.com 1.2.3.4"));
+    root.insert(QStringLiteral("defaultAllowInsecure"), true);
+    root.insert(QStringLiteral("domainStrategy"), QStringLiteral("prefer_ipv4"));
+    root.insert(QStringLiteral("domainStrategyForSingbox"), QStringLiteral("prefer_ipv6"));
+    root.insert(QStringLiteral("domainMatcher"), QStringLiteral("mph"));
+    root.insert(QStringLiteral("ignoreGeoUpdateCore"), true);
+    root.insert(QStringLiteral("systemProxyAdvancedProtocol"), QStringLiteral("http"));
+    root.insert(QStringLiteral("checkPreReleaseUpdate"), true);
+    root.insert(QStringLiteral("ui"), ui);
+    root.insert(QStringLiteral("tunModeItem"), tunModeItem);
+    root.insert(QStringLiteral("servers"), QJsonArray{serverObject});
+    root.insert(QStringLiteral("subscriptions"), QJsonArray{subscriptionObject});
+    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkeyObject});
+    root.insert(QStringLiteral("routingIndex"), 1);
+    root.insert(QStringLiteral("enableRoutingAdvanced"), true);
+    root.insert(QStringLiteral("routingItems"), QJsonArray{routingObject});
+    root.insert(QStringLiteral("routingCustomRules"), QJsonArray{ruleObject});
+    root.insert(QStringLiteral("policyGroups"), QJsonArray{policyGroupObject});
+    root.insert(QStringLiteral("coreTypeItems"), QJsonArray{coreTypeObject});
+    return root;
+}
+
+} // namespace
+
 class JsonConfigRepositoryTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void loadDefaultsRouteOnlyToFalseWhenMissing();
-    void loadReadsRouteOnlyFromInbound();
-    void savePersistsRouteOnlyToInbound();
-    void loadDefaultsEnableFragmentToFalseWhenMissing();
-    void loadReadsEnableFragmentFromRoot();
-    void savePersistsEnableFragmentToRoot();
-    void loadDefaultsEnableCacheFile4SboxToTrueWhenMissing();
-    void loadReadsEnableCacheFile4SboxFromRoot();
-    void savePersistsEnableCacheFile4SboxToRoot();
-    void loadDefaultsDefaultUserAgentToEmptyWhenMissing();
-    void loadReadsDefaultUserAgentFromRoot();
-    void savePersistsDefaultUserAgentToRoot();
-    void loadDefaultsDefaultFingerprintToEmptyWhenMissing();
-    void loadReadsDefaultFingerprintFromRoot();
-    void savePersistsDefaultFingerprintToRoot();
-    void loadReadsDomainStrategy4SingboxFromRoot();
-    void savePersistsDomainStrategy4SingboxToRoot();
-    void loadDefaultsSimpleDnsBaseFieldsWhenMissing();
-    void loadReadsSimpleDnsBaseFieldsFromRoot();
-    void savePersistsSimpleDnsBaseFieldsToRoot();
-    void loadDefaultsSimpleDnsHostsFlagsWhenMissing();
-    void loadReadsSimpleDnsHostsFlagsFromRoot();
-    void savePersistsSimpleDnsHostsFlagsToRoot();
-    void loadDefaultsUseSystemHostsToFalseWhenMissing();
-    void loadReadsUseSystemHostsFromRoot();
-    void savePersistsUseSystemHostsToRoot();
-    void loadDefaultsServeStaleAndParallelQueryToFalseWhenMissing();
-    void loadReadsServeStaleAndParallelQueryFromRoot();
-    void savePersistsServeStaleAndParallelQueryToRoot();
-    void loadDefaultsDirectExpectedIpsToEmptyWhenMissing();
-    void loadReadsDirectExpectedIpsFromRoot();
-    void savePersistsDirectExpectedIpsToRoot();
-    void loadDefaultsMux4SboxProtocolToH2muxWhenMissing();
-    void loadReadsMux4SboxProtocolFromRoot();
-    void savePersistsMux4SboxProtocolToRoot();
-    void loadDefaultsMux4SboxMaxConnectionsToEightWhenMissing();
-    void loadLeavesMux4SboxPaddingUnsetWhenMissing();
-    void loadReadsMux4SboxMaxConnectionsAndPaddingFromRoot();
-    void savePersistsMux4SboxMaxConnectionsAndPaddingToRoot();
-    void loadLeavesServerMuxOverrideUnsetWhenMissing();
-    void loadReadsServerMuxOverrideWhenPresent();
-    void savePersistsServerMuxOverrideToServerArray();
-    void loadReadsServerFinalmask();
-    void savePersistsServerFinalmask();
-    void loadReadsServerCert();
-    void savePersistsServerCert();
-    void loadReadsServerCertSha();
-    void savePersistsServerCertSha();
-    void loadReadsServerMldsa65Verify();
-    void savePersistsServerMldsa65Verify();
-    void loadReadsServerEchFields();
-    void savePersistsServerEchFields();
-    void loadReadsRoutingRuleNetworkAndProcessFields();
-    void savePersistsRoutingRuleNetworkAndProcessFields();
-    void loadReadsRoutingCustomRules();
-    void savePersistsRoutingCustomRules();
-    void savePersistsSettingsRoutingRuleTabKey();
-    void loadMigratesLegacyAliasesToCanonicalModel();
-    void saveWritesSchemaVersionAndCanonicalizesLegacyKeys();
-    void savePreservesUnknownRootFields();
-    void saveRemovesDeprecatedDeadConfigKeys();
-    void loadDefaultsMainRuntimeStateToOffWhenMissing();
-    void loadReadsMainRuntimeStateFromUiItem();
-    void loadReadsMainQrPreviewVisibleFromUiItem();
-    void savePersistsMainQrPreviewVisible();
-    void savePersistsMainRuntimeStateToUiItem();
-    void loadReadsRoutingItemDomainStrategy4Singbox();
-    void savePersistsRoutingItemDomainStrategy4Singbox();
-    void loadReadsGlobalHotkeys();
-    void savePersistsGlobalHotkeys();
-    void saveRemovesDeprecatedTls13ConfigKey();
-    void loadDefaultsTunIcmpRoutingToRuleWhenMissing();
-    void loadDefaultsTunIcmpRoutingToRuleWhenEmptyObject();
-    void loadDefaultsTunEnableIpv6AddressToFalseWhenMissing();
-    void loadDefaultsTunEnableIpv6AddressToFalseWhenEmptyObject();
+    void loadMissingFileBuildsDefaultSongBirdConfig();
+    void loadReadsCanonicalSongBirdStructure();
+    void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
+    void loadIgnoresLegacyOnlyFields();
+    void saveWritesCanonicalSongBirdStructure();
+    void saveReplacesExistingRootInsteadOfMerging();
 };
 
-void JsonConfigRepositoryTests::loadDefaultsRouteOnlyToFalseWhenMissing()
+void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
+    JsonConfigRepository repository(makeConfigPath(tempDir));
     const Config config = repository.load();
 
+    QVERIFY(repository.lastLoadError().isEmpty());
     QVERIFY(!config.routeOnly);
+    QCOMPARE(config.localPort, 10808);
+    QCOMPARE(config.dns().directDns, QStringLiteral("https://dns.alidns.com/dns-query"));
+    QCOMPARE(config.dns().remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
+    QCOMPARE(config.dns().bootstrapDns, QStringLiteral("223.5.5.5"));
+    QVERIFY(config.dns().enableCacheFile4Sbox);
+    QVERIFY(!config.ui().mainProxyEnabled);
+    QCOMPARE(config.tun().tunModeItem.icmpRouting, QStringLiteral("rule"));
+    QVERIFY(!config.tun().tunModeItem.enableIPv6Address);
+    QVERIFY(config.policy().coreTypeItems.size() > 0);
+    QVERIFY(config.collection().routingItems.size() >= 3);
+    QVERIFY(config.collection().servers.isEmpty());
+    QVERIFY(config.collection().subscriptions.isEmpty());
+    QVERIFY(config.collection().globalHotkeys.isEmpty());
 }
 
-void JsonConfigRepositoryTests::loadReadsRouteOnlyFromInbound()
+void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject inbound;
-    inbound.insert(QStringLiteral("routeOnly"), true);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("inbound"), QJsonArray{inbound});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeJsonFile(configPath, makeCanonicalRoot()));
 
     JsonConfigRepository repository(configPath);
     const Config config = repository.load();
 
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QVERIFY(config.logEnabled);
+    QCOMPARE(config.logLevel, QStringLiteral("warning"));
+    QCOMPARE(config.currentIndexId, QStringLiteral("server-1"));
+    QCOMPARE(config.localPort, 10809);
+    QCOMPARE(config.localProtocol, QStringLiteral("http"));
+    QVERIFY(!config.udpEnabled);
+    QVERIFY(!config.sniffingEnabled);
     QVERIFY(config.routeOnly);
-}
-
-void JsonConfigRepositoryTests::savePersistsRouteOnlyToInbound()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.routeOnly = true;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.routeOnly);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsEnableFragmentToFalseWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.enableFragment);
-}
-
-void JsonConfigRepositoryTests::loadReadsEnableFragmentFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("enableFragment"), true);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(config.enableFragment);
-}
-
-void JsonConfigRepositoryTests::savePersistsEnableFragmentToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.enableFragment = true;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.enableFragment);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsEnableCacheFile4SboxToTrueWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(config.enableCacheFile4Sbox);
-}
-
-void JsonConfigRepositoryTests::loadReadsEnableCacheFile4SboxFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("enableCacheFile4Sbox"), false);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(!config.enableCacheFile4Sbox);
-}
-
-void JsonConfigRepositoryTests::savePersistsEnableCacheFile4SboxToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.enableCacheFile4Sbox = false;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(!reloaded.enableCacheFile4Sbox);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsDefaultUserAgentToEmptyWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(config.defaultUserAgent.isEmpty());
-}
-
-void JsonConfigRepositoryTests::loadReadsDefaultUserAgentFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("defUserAgent"), QStringLiteral("Mozilla/5.0"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.defaultUserAgent, QStringLiteral("Mozilla/5.0"));
-}
-
-void JsonConfigRepositoryTests::savePersistsDefaultUserAgentToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.defaultUserAgent = QStringLiteral("Mozilla/5.0");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.defaultUserAgent, QStringLiteral("Mozilla/5.0"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsDefaultFingerprintToEmptyWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(config.defaultFingerprint.isEmpty());
-}
-
-void JsonConfigRepositoryTests::loadReadsDefaultFingerprintFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("defFingerprint"), QStringLiteral("firefox"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.defaultFingerprint, QStringLiteral("firefox"));
-}
-
-void JsonConfigRepositoryTests::savePersistsDefaultFingerprintToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.defaultFingerprint = QStringLiteral("firefox");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.defaultFingerprint, QStringLiteral("firefox"));
-}
-
-void JsonConfigRepositoryTests::loadReadsDomainStrategy4SingboxFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("domainStrategy4Singbox"), QStringLiteral("prefer_ipv6"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.domainStrategy4Singbox, QStringLiteral("prefer_ipv6"));
-}
-
-void JsonConfigRepositoryTests::savePersistsDomainStrategy4SingboxToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.domainStrategy4Singbox = QStringLiteral("ipv4_only");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.domainStrategy4Singbox, QStringLiteral("ipv4_only"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsSimpleDnsBaseFieldsWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QCOMPARE(config.directDns, QStringLiteral("https://dns.alidns.com/dns-query"));
-    QCOMPARE(config.remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
-    QCOMPARE(config.bootstrapDns, QStringLiteral("223.5.5.5"));
-    QVERIFY(!config.fakeIp);
-    QVERIFY(config.globalFakeIp);
-    QVERIFY(config.domainStrategyForFreedom.isEmpty());
-    QVERIFY(config.domainStrategyForProxy.isEmpty());
-    QVERIFY(config.dnsHosts.isEmpty());
-}
-
-void JsonConfigRepositoryTests::loadReadsSimpleDnsBaseFieldsFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("directDNS"), QStringLiteral("https://dns.alidns.com/dns-query,223.5.5.5"));
-    root.insert(QStringLiteral("remoteDNS"), QStringLiteral("https://dns.google/dns-query,8.8.8.8"));
-    root.insert(QStringLiteral("bootstrapDNS"), QStringLiteral("119.29.29.29"));
-    root.insert(QStringLiteral("fakeIP"), true);
-    root.insert(QStringLiteral("globalFakeIp"), false);
-    root.insert(QStringLiteral("domainStrategy4Freedom"), QStringLiteral("UseIPv4"));
-    root.insert(QStringLiteral("domainStrategy4Proxy"), QStringLiteral("UseIPv6"));
-    root.insert(QStringLiteral("hosts"), QStringLiteral("example.com 1.2.3.4"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.directDns, QStringLiteral("https://dns.alidns.com/dns-query,223.5.5.5"));
-    QCOMPARE(config.remoteDns, QStringLiteral("https://dns.google/dns-query,8.8.8.8"));
-    QCOMPARE(config.bootstrapDns, QStringLiteral("119.29.29.29"));
-    QVERIFY(config.fakeIp);
-    QVERIFY(!config.globalFakeIp);
-    QCOMPARE(config.domainStrategyForFreedom, QStringLiteral("UseIPv4"));
-    QCOMPARE(config.domainStrategyForProxy, QStringLiteral("UseIPv6"));
-    QCOMPARE(config.dnsHosts, QStringLiteral("example.com 1.2.3.4"));
-}
-
-void JsonConfigRepositoryTests::savePersistsSimpleDnsBaseFieldsToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.directDns = QStringLiteral("223.5.5.5");
-    config.remoteDns = QStringLiteral("8.8.8.8");
-    config.bootstrapDns = QStringLiteral("119.29.29.29");
-    config.fakeIp = true;
-    config.globalFakeIp = false;
-    config.domainStrategyForFreedom = QStringLiteral("UseIPv4");
-    config.domainStrategyForProxy = QStringLiteral("UseIPv6");
-    config.dnsHosts = QStringLiteral("example.com 1.2.3.4");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.directDns, QStringLiteral("223.5.5.5"));
-    QCOMPARE(reloaded.remoteDns, QStringLiteral("8.8.8.8"));
-    QCOMPARE(reloaded.bootstrapDns, QStringLiteral("119.29.29.29"));
-    QVERIFY(reloaded.fakeIp);
-    QVERIFY(!reloaded.globalFakeIp);
-    QCOMPARE(reloaded.domainStrategyForFreedom, QStringLiteral("UseIPv4"));
-    QCOMPARE(reloaded.domainStrategyForProxy, QStringLiteral("UseIPv6"));
-    QCOMPARE(reloaded.dnsHosts, QStringLiteral("example.com 1.2.3.4"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsSimpleDnsHostsFlagsWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(config.addCommonHosts);
-    QVERIFY(config.blockBindingQuery);
-}
-
-void JsonConfigRepositoryTests::loadReadsSimpleDnsHostsFlagsFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("addCommonHosts"), false);
-    root.insert(QStringLiteral("blockBindingQuery"), false);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(!config.addCommonHosts);
-    QVERIFY(!config.blockBindingQuery);
-}
-
-void JsonConfigRepositoryTests::savePersistsSimpleDnsHostsFlagsToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.addCommonHosts = false;
-    config.blockBindingQuery = false;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(!reloaded.addCommonHosts);
-    QVERIFY(!reloaded.blockBindingQuery);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsUseSystemHostsToFalseWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.useSystemHosts);
-}
-
-void JsonConfigRepositoryTests::loadReadsUseSystemHostsFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("useSystemHosts"), true);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(config.useSystemHosts);
-}
-
-void JsonConfigRepositoryTests::savePersistsUseSystemHostsToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.useSystemHosts = true;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.useSystemHosts);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsServeStaleAndParallelQueryToFalseWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.serveStale);
-    QVERIFY(!config.parallelQuery);
-}
-
-void JsonConfigRepositoryTests::loadReadsServeStaleAndParallelQueryFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("serveStale"), true);
-    root.insert(QStringLiteral("enableParallelQuery"), true);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(config.serveStale);
-    QVERIFY(config.parallelQuery);
-}
-
-void JsonConfigRepositoryTests::savePersistsServeStaleAndParallelQueryToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.serveStale = true;
-    config.parallelQuery = true;
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.serveStale);
-    QVERIFY(reloaded.parallelQuery);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsDirectExpectedIpsToEmptyWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(config.directExpectedIps.isEmpty());
-}
-
-void JsonConfigRepositoryTests::loadReadsDirectExpectedIpsFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("directExpectedIPs"), QStringLiteral("geoip:cn,1.2.3.0/24"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.directExpectedIps, QStringLiteral("geoip:cn,1.2.3.0/24"));
-}
-
-void JsonConfigRepositoryTests::savePersistsDirectExpectedIpsToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.directExpectedIps, QStringLiteral("geoip:cn,1.2.3.0/24"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsMux4SboxProtocolToH2muxWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QCOMPARE(config.mux4SboxProtocol, QStringLiteral("h2mux"));
-}
-
-void JsonConfigRepositoryTests::loadReadsMux4SboxProtocolFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("mux4SboxProtocol"), QStringLiteral("yamux"));
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.mux4SboxProtocol, QStringLiteral("yamux"));
-}
-
-void JsonConfigRepositoryTests::savePersistsMux4SboxProtocolToRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.mux4SboxProtocol = QStringLiteral("smux");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.mux4SboxProtocol, QStringLiteral("smux"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsMux4SboxMaxConnectionsToEightWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QCOMPARE(config.mux4SboxMaxConnections, 8);
-}
-
-void JsonConfigRepositoryTests::loadLeavesMux4SboxPaddingUnsetWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.mux4SboxPadding.has_value());
-}
-
-void JsonConfigRepositoryTests::loadReadsMux4SboxMaxConnectionsAndPaddingFromRoot()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("mux4SboxMaxConnections"), 3);
-    root.insert(QStringLiteral("mux4SboxPadding"), true);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.mux4SboxMaxConnections, 3);
+    QVERIFY(config.allowLanConnection);
+    QCOMPARE(config.inboundUser, QStringLiteral("tester"));
+    QCOMPARE(config.inboundPassword, QStringLiteral("secret"));
+    QCOMPARE(config.defaults().speedPingTestUrl, QStringLiteral("https://probe.example/test"));
+    QCOMPARE(config.defaults().defIeProxyExceptions, QStringLiteral("localhost;127.*"));
+    QVERIFY(config.muxEnabled);
+    QCOMPARE(config.mux4SboxProtocol, QStringLiteral("smux"));
+    QCOMPARE(config.mux4SboxMaxConnections, 16);
     QVERIFY(config.mux4SboxPadding.has_value());
-    QCOMPARE(config.mux4SboxPadding.value(), true);
+    QVERIFY(config.mux4SboxPadding.value());
+    QCOMPARE(config.sysProxyType, 2);
+    QVERIFY(config.dns().enableFragment);
+    QVERIFY(!config.dns().enableCacheFile4Sbox);
+    QCOMPARE(config.dns().defaultFingerprint, QStringLiteral("chrome"));
+    QCOMPARE(config.dns().defaultUserAgent, QStringLiteral("Mozilla/5.0"));
+    QCOMPARE(config.dns().directDns, QStringLiteral("223.5.5.5"));
+    QCOMPARE(config.dns().remoteDns, QStringLiteral("8.8.8.8"));
+    QCOMPARE(config.dns().bootstrapDns, QStringLiteral("119.29.29.29"));
+    QVERIFY(config.dns().fakeIp);
+    QVERIFY(!config.dns().globalFakeIp);
+    QVERIFY(config.dns().serveStale);
+    QVERIFY(config.dns().parallelQuery);
+    QCOMPARE(config.dns().directExpectedIps, QStringLiteral("geoip:cn"));
+    QVERIFY(config.dns().useSystemHosts);
+    QVERIFY(!config.dns().addCommonHosts);
+    QVERIFY(!config.dns().blockBindingQuery);
+    QCOMPARE(config.dns().domainStrategyForFreedom, QStringLiteral("UseIPv4"));
+    QCOMPARE(config.dns().domainStrategyForProxy, QStringLiteral("UseIPv6"));
+    QCOMPARE(config.dns().dnsHosts, QStringLiteral("example.com 1.2.3.4"));
+    QVERIFY(config.dns().defaultAllowInsecure);
+    QCOMPARE(config.dns().domainStrategy, QStringLiteral("prefer_ipv4"));
+    QCOMPARE(config.dns().domainStrategy4Singbox, QStringLiteral("prefer_ipv6"));
+    QCOMPARE(config.dns().domainMatcher, QStringLiteral("mph"));
+    QVERIFY(config.ignoreGeoUpdateCore);
+    QCOMPARE(config.systemProxyAdvancedProtocol, QStringLiteral("http"));
+    QVERIFY(config.checkPreReleaseUpdate);
+    QVERIFY(!config.ui().showMainOnStartup);
+    QVERIFY(config.ui().autoRunEnabled);
+    QCOMPARE(config.ui().languageCode, QStringLiteral("en-US"));
+    QCOMPARE(config.ui().themeName, QStringLiteral("Dark"));
+    QCOMPARE(config.ui().mainLocationX, 10);
+    QCOMPARE(config.ui().mainLocationY, 20);
+    QCOMPARE(config.ui().mainSizeWidth, 1280);
+    QCOMPARE(config.ui().mainSizeHeight, 720);
+    QCOMPARE(config.ui().mainSelectedSubId, QStringLiteral("sub-1"));
+    QCOMPARE(config.ui().settingsRoutingRuleTabKey, QStringLiteral("basic"));
+    QCOMPARE(config.ui().mainServerLogSplitPercent, 55);
+    QCOMPARE(config.ui().mainServerQrSplitPercent, 80);
+    QVERIFY(config.ui().mainQrPreviewVisible);
+    QVERIFY(config.ui().mainProxyEnabled);
+    QCOMPARE(config.ui().mainColumnWidths.value(QStringLiteral("address")), 240);
+    QVERIFY(config.tun().tunModeItem.enableTun);
+    QVERIFY(!config.tun().tunModeItem.autoRoute);
+    QVERIFY(!config.tun().tunModeItem.strictRoute);
+    QCOMPARE(config.tun().tunModeItem.stack, QStringLiteral("mixed"));
+    QCOMPARE(config.tun().tunModeItem.mtu, 1400);
+    QVERIFY(config.tun().tunModeItem.enableIPv6Address);
+    QCOMPARE(config.tun().tunModeItem.icmpRouting, QStringLiteral("direct"));
+    QVERIFY(config.tun().tunModeItem.enableLegacyProtect);
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers.constFirst().configType, ConfigType::Trojan);
+    QCOMPARE(config.collection().servers.constFirst().coreType, CoreType::SingBox);
+    QCOMPARE(config.collection().servers.constFirst().subId, QStringLiteral("sub-1"));
+    QVERIFY(config.collection().servers.constFirst().muxEnabled.has_value());
+    QVERIFY(!config.collection().servers.constFirst().muxEnabled.value());
+    QCOMPARE(config.collection().servers.constFirst().finalmask, QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
+    QCOMPARE(config.collection().servers.constFirst().cert, QStringLiteral("-----BEGIN CERTIFICATE-----"));
+    QCOMPARE(config.collection().servers.constFirst().certSha, QStringLiteral("sha256/example"));
+    QCOMPARE(config.collection().servers.constFirst().mldsa65Verify, QStringLiteral("mldsa-key"));
+    QCOMPARE(config.collection().servers.constFirst().echConfigList, QStringLiteral("ECHCONFIGBASE64"));
+    QCOMPARE(config.collection().servers.constFirst().echForceQuery, QStringLiteral("half"));
+    QCOMPARE(config.collection().subscriptions.size(), 1);
+    QCOMPARE(config.collection().subscriptions.constFirst().remarks, QStringLiteral("feed"));
+    QCOMPARE(config.collection().globalHotkeys.size(), 1);
+    QCOMPARE(config.collection().globalHotkeys.constFirst().action, GlobalHotkeyAction::SystemProxySet);
+    QVERIFY(config.collection().globalHotkeys.constFirst().control);
+    QVERIFY(config.collection().globalHotkeys.constFirst().alt);
+    QVERIFY(config.collection().globalHotkeys.constFirst().keyCode.has_value());
+    QCOMPARE(config.collection().globalHotkeys.constFirst().keyCode.value(), 65);
+    QCOMPARE(config.collection().routingIndex, 1);
+    QVERIFY(config.collection().enableRoutingAdvanced);
+    QVERIFY(config.collection().routingItems.size() >= 1);
+    QCOMPARE(config.collection().routingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
+    QCOMPARE(config.collection().routingItems.constFirst().rules.constFirst().network, QStringLiteral("tcp,udp"));
+    const QStringList expectedRuleProcess{QStringLiteral("chrome.exe")};
+    QCOMPARE(config.collection().routingItems.constFirst().rules.constFirst().process, expectedRuleProcess);
+    QCOMPARE(config.collection().routingCustomRules.size(), 1);
+    QCOMPARE(config.collection().routingCustomRules.constFirst().network, QStringLiteral("tcp,udp"));
+    QCOMPARE(config.collection().routingCustomRules.constFirst().process, expectedRuleProcess);
+    QCOMPARE(config.policy().policyGroups.size(), 1);
+    QCOMPARE(config.policy().policyGroups.constFirst().name, QStringLiteral("auto"));
+    QCOMPARE(config.policy().policyGroups.constFirst().strategy, PolicyGroupItem::Strategy::UrlTest);
+    const QStringList expectedMemberServerIds{
+        QStringLiteral("server-1"),
+        QStringLiteral("server-2")
+    };
+    QCOMPARE(config.policy().policyGroups.constFirst().memberServerIds, expectedMemberServerIds);
+    QCOMPARE(config.policy().coreTypeItems.size(), 1);
+    QCOMPARE(config.policy().coreTypeItems.constFirst().configType, static_cast<int>(ConfigType::Trojan));
+    QCOMPARE(config.policy().coreTypeItems.constFirst().coreType, static_cast<int>(CoreType::SingBox));
 }
 
-void JsonConfigRepositoryTests::savePersistsMux4SboxMaxConnectionsAndPaddingToRoot()
+void JsonConfigRepositoryTests::loadMergesStateFileWithoutBlockingOnMissingOrInvalidState()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeJsonFile(configPath, makeCanonicalRoot()));
+
+    QJsonObject stateUi;
+    stateUi.insert(QStringLiteral("mainLocationX"), 99);
+    stateUi.insert(QStringLiteral("mainSelectedSubscriptionId"), QStringLiteral("override-sub"));
+    stateUi.insert(QStringLiteral("settingsRoutingRuleTabKey"), QStringLiteral("override-tab"));
+    stateUi.insert(QStringLiteral("mainProxyEnabled"), true);
+
+    QJsonObject serverState;
+    serverState.insert(QStringLiteral("indexId"), QStringLiteral("server-1"));
+    serverState.insert(QStringLiteral("testResult"), QStringLiteral("42 ms"));
+
+    QJsonObject stateRoot;
+    stateRoot.insert(QStringLiteral("ui"), stateUi);
+    stateRoot.insert(QStringLiteral("serverStates"), QJsonArray{serverState});
+    QVERIFY(writeJsonFile(makeStatePath(tempDir), stateRoot));
+
     JsonConfigRepository repository(configPath);
-
     Config config = repository.load();
-    config.mux4SboxMaxConnections = 16;
-    config.mux4SboxPadding = false;
 
-    QVERIFY(repository.save(config));
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.ui().mainLocationX, 99);
+    QCOMPARE(config.ui().mainSelectedSubId, QStringLiteral("override-sub"));
+    QCOMPARE(config.ui().settingsRoutingRuleTabKey, QStringLiteral("override-tab"));
+    QVERIFY(config.ui().mainProxyEnabled);
+    QCOMPARE(config.collection().servers.constFirst().testResult, QStringLiteral("42 ms"));
 
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
+    QFile invalidState(makeStatePath(tempDir));
+    QVERIFY(invalidState.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+    QVERIFY(invalidState.write("{invalid-json") >= 0);
+    invalidState.close();
 
-    QCOMPARE(reloaded.mux4SboxMaxConnections, 16);
-    QVERIFY(reloaded.mux4SboxPadding.has_value());
-    QCOMPARE(reloaded.mux4SboxPadding.value(), false);
+    config = repository.load();
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.currentIndexId, QStringLiteral("server-1"));
+    QVERIFY(config.collection().servers.size() == 1);
 }
 
-void JsonConfigRepositoryTests::loadLeavesServerMuxOverrideUnsetWhenMissing()
+void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    const QString configPath = makeConfigPath(tempDir);
+
+    QJsonObject uiItem;
+    uiItem.insert(QStringLiteral("mainProxyEnabled"), true);
 
     QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
+    server.insert(QStringLiteral("indexId"), QStringLiteral("legacy-server"));
+    server.insert(QStringLiteral("configType"), 1);
+    server.insert(QStringLiteral("address"), QStringLiteral("9.9.9.9"));
     server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QVERIFY(!config.servers.constFirst().muxEnabled.has_value());
-}
-
-void JsonConfigRepositoryTests::loadReadsServerMuxOverrideWhenPresent()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(QStringLiteral("muxEnabled"), false);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QVERIFY(config.servers.constFirst().muxEnabled.has_value());
-    QCOMPARE(config.servers.constFirst().muxEnabled.value(), false);
-}
-
-void JsonConfigRepositoryTests::savePersistsServerMuxOverrideToServerArray()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.muxEnabled = true;
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QVERIFY(reloaded.servers.constFirst().muxEnabled.has_value());
-    QCOMPARE(reloaded.servers.constFirst().muxEnabled.value(), true);
-}
-
-void JsonConfigRepositoryTests::loadReadsServerFinalmask()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(QStringLiteral("finalmask"), QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.constFirst().finalmask, QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
-}
-
-void JsonConfigRepositoryTests::savePersistsServerFinalmask()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.finalmask = QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}");
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QCOMPARE(reloaded.servers.constFirst().finalmask, QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
-}
-
-void JsonConfigRepositoryTests::loadReadsServerCert()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(
-        QStringLiteral("cert"),
-        QStringLiteral(
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-ONE\n"
-            "-----END CERTIFICATE-----\n"
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-TWO\n"
-            "-----END CERTIFICATE-----"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(
-        config.servers.constFirst().cert,
-        QStringLiteral(
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-ONE\n"
-            "-----END CERTIFICATE-----\n"
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-TWO\n"
-            "-----END CERTIFICATE-----"));
-}
-
-void JsonConfigRepositoryTests::savePersistsServerCert()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.cert = QStringLiteral(
-        "-----BEGIN CERTIFICATE-----\n"
-        "CERT-ONE\n"
-        "-----END CERTIFICATE-----\n"
-        "-----BEGIN CERTIFICATE-----\n"
-        "CERT-TWO\n"
-        "-----END CERTIFICATE-----");
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QCOMPARE(
-        reloaded.servers.constFirst().cert,
-        QStringLiteral(
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-ONE\n"
-            "-----END CERTIFICATE-----\n"
-            "-----BEGIN CERTIFICATE-----\n"
-            "CERT-TWO\n"
-            "-----END CERTIFICATE-----"));
-}
-
-void JsonConfigRepositoryTests::loadReadsServerCertSha()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(QStringLiteral("certSha"), QStringLiteral("sha256/base64-one,sha256/base64-two"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.constFirst().certSha, QStringLiteral("sha256/base64-one,sha256/base64-two"));
-}
-
-void JsonConfigRepositoryTests::savePersistsServerCertSha()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.certSha = QStringLiteral("sha256/base64-one,sha256/base64-two");
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QCOMPARE(reloaded.servers.constFirst().certSha, QStringLiteral("sha256/base64-one,sha256/base64-two"));
-}
-
-void JsonConfigRepositoryTests::loadReadsServerMldsa65Verify()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(QStringLiteral("mldsa65Verify"), QStringLiteral("mldsa65-public-key"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.constFirst().mldsa65Verify, QStringLiteral("mldsa65-public-key"));
-}
-
-void JsonConfigRepositoryTests::savePersistsServerMldsa65Verify()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.mldsa65Verify = QStringLiteral("mldsa65-public-key");
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QCOMPARE(reloaded.servers.constFirst().mldsa65Verify, QStringLiteral("mldsa65-public-key"));
-}
-
-void JsonConfigRepositoryTests::loadReadsServerEchFields()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject server;
-    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
-    server.insert(QStringLiteral("port"), 443);
-    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
-    server.insert(QStringLiteral("echConfigList"), QStringLiteral("ECHCONFIGBASE64"));
-    server.insert(QStringLiteral("echForceQuery"), QStringLiteral("half"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("vmess"), QJsonArray{server});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.servers.size(), 1);
-    QCOMPARE(config.servers.constFirst().echConfigList, QStringLiteral("ECHCONFIGBASE64"));
-    QCOMPARE(config.servers.constFirst().echForceQuery, QStringLiteral("half"));
-}
-
-void JsonConfigRepositoryTests::savePersistsServerEchFields()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    VmessItem server;
-    server.address = QStringLiteral("example.com");
-    server.port = 443;
-    server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
-    server.echConfigList = QStringLiteral("ECHCONFIGBASE64");
-    server.echForceQuery = QStringLiteral("half");
-    config.servers.append(server);
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.servers.size(), 1);
-    QCOMPARE(reloaded.servers.constFirst().echConfigList, QStringLiteral("ECHCONFIGBASE64"));
-    QCOMPARE(reloaded.servers.constFirst().echForceQuery, QStringLiteral("half"));
-}
-
-void JsonConfigRepositoryTests::loadReadsRoutingRuleNetworkAndProcessFields()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject rule;
-    rule.insert(QStringLiteral("type"), QStringLiteral("field"));
-    rule.insert(QStringLiteral("outboundTag"), QStringLiteral("proxy"));
-    rule.insert(QStringLiteral("network"), QStringLiteral("tcp,udp"));
-    rule.insert(QStringLiteral("process"), QJsonArray{
-                                              QStringLiteral("self/"),
-                                              QStringLiteral("C:/Program Files/Test/test.exe")});
-
-    QJsonObject routing;
-    routing.insert(QStringLiteral("remarks"), QStringLiteral("route"));
-    routing.insert(QStringLiteral("rules"), QJsonArray{rule});
-
-    QJsonObject root;
-    root.insert(QStringLiteral("routings"), QJsonArray{routing});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.routingItems.size(), 1);
-    QCOMPARE(config.routingItems.constFirst().rules.size(), 1);
-    const RoutingRule loadedRule = config.routingItems.constFirst().rules.constFirst();
-    QCOMPARE(loadedRule.network, QStringLiteral("tcp,udp"));
-    QCOMPARE(
-        loadedRule.process,
-        QStringList({QStringLiteral("self/"), QStringLiteral("C:/Program Files/Test/test.exe")}));
-}
-
-void JsonConfigRepositoryTests::savePersistsRoutingRuleNetworkAndProcessFields()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    RoutingRule rule;
-    rule.type = QStringLiteral("field");
-    rule.outboundTag = QStringLiteral("proxy");
-    rule.network = QStringLiteral("tcp,udp");
-    rule.process = QStringList{QStringLiteral("self/"), QStringLiteral("test.exe")};
-
-    RoutingItem item;
-    item.remarks = QStringLiteral("route");
-    item.rules = {rule};
-    item.locked = true;
-    config.routingItems = {item};
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.routingItems.size() >= 1);
-    const auto it = std::find_if(
-        reloaded.routingItems.cbegin(),
-        reloaded.routingItems.cend(),
-        [](const RoutingItem& item) { return item.remarks == QStringLiteral("route"); });
-    QVERIFY(it != reloaded.routingItems.cend());
-    QCOMPARE(it->rules.size(), 1);
-    const RoutingRule reloadedRule = it->rules.constFirst();
-    QCOMPARE(reloadedRule.network, QStringLiteral("tcp,udp"));
-    QCOMPARE(reloadedRule.process, QStringList({QStringLiteral("self/"), QStringLiteral("test.exe")}));
-}
-
-void JsonConfigRepositoryTests::loadReadsRoutingCustomRules()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject blockRule;
-    blockRule.insert(QStringLiteral("type"), QStringLiteral("field"));
-    blockRule.insert(QStringLiteral("outboundTag"), QStringLiteral("block"));
-    blockRule.insert(QStringLiteral("domain"), QJsonArray{QStringLiteral("geosite:category-ads-all")});
-
-    QJsonObject directRule;
-    directRule.insert(QStringLiteral("type"), QStringLiteral("field"));
-    directRule.insert(QStringLiteral("outboundTag"), QStringLiteral("direct"));
-    directRule.insert(QStringLiteral("ip"), QJsonArray{QStringLiteral("geoip:private")});
-
-    QJsonObject proxyRule;
-    proxyRule.insert(QStringLiteral("type"), QStringLiteral("field"));
-    proxyRule.insert(QStringLiteral("outboundTag"), QStringLiteral("proxy"));
-    proxyRule.insert(QStringLiteral("port"), QStringLiteral("443"));
-    proxyRule.insert(QStringLiteral("protocol"), QJsonArray{QStringLiteral("tls")});
-
-    QJsonObject root;
-    root.insert(QStringLiteral("routingCustomRules"), QJsonArray{blockRule, directRule, proxyRule});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.routingCustomRules.size(), 3);
-    QCOMPARE(config.routingCustomRules.at(0).outboundTag, QStringLiteral("block"));
-    QCOMPARE(config.routingCustomRules.at(0).domain, QStringList{QStringLiteral("geosite:category-ads-all")});
-    QCOMPARE(config.routingCustomRules.at(1).outboundTag, QStringLiteral("direct"));
-    QCOMPARE(config.routingCustomRules.at(1).ip, QStringList{QStringLiteral("geoip:private")});
-    QCOMPARE(config.routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
-    QCOMPARE(config.routingCustomRules.at(2).port, QStringLiteral("443"));
-    QCOMPARE(config.routingCustomRules.at(2).protocol, QStringList{QStringLiteral("tls")});
-}
-
-void JsonConfigRepositoryTests::savePersistsRoutingCustomRules()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    RoutingRule rule;
-    rule.type = QStringLiteral("field");
-    rule.outboundTag = QStringLiteral("proxy");
-    rule.domain = QStringList{QStringLiteral("domain:openai.com")};
-    config.routingCustomRules = {rule};
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.routingCustomRules.size(), 1);
-    QCOMPARE(reloaded.routingCustomRules.constFirst().outboundTag, QStringLiteral("proxy"));
-    QCOMPARE(reloaded.routingCustomRules.constFirst().domain, QStringList{QStringLiteral("domain:openai.com")});
-}
-
-void JsonConfigRepositoryTests::savePersistsSettingsRoutingRuleTabKey()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.settingsRoutingRuleTabKey = QStringLiteral("proxy");
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.settingsRoutingRuleTabKey, QStringLiteral("proxy"));
-}
-
-void JsonConfigRepositoryTests::loadMigratesLegacyAliasesToCanonicalModel()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    server.insert(QStringLiteral("subid"), QStringLiteral("legacy-sub"));
 
     QJsonObject hotkey;
     hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
     hotkey.insert(QStringLiteral("Control"), true);
     hotkey.insert(QStringLiteral("KeyCode"), 70);
 
-    QJsonObject routing;
-    routing.insert(QStringLiteral("remarks"), QStringLiteral("legacy-route"));
-    routing.insert(QStringLiteral("locked"), true);
-
     QJsonObject root;
-    root.insert(QStringLiteral("languageCode"), QStringLiteral("zh-CN"));
-    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkey});
-    root.insert(QStringLiteral("routingItems"), QJsonArray{routing});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.languageCode, QStringLiteral("zh-CN"));
-    QCOMPARE(config.globalHotkeys.size(), 1);
-    QVERIFY(config.globalHotkeys.constFirst().control);
-    QVERIFY(config.globalHotkeys.constFirst().keyCode.has_value());
-    QCOMPARE(config.globalHotkeys.constFirst().keyCode.value(), 70);
-    QVERIFY(config.routingItems.size() >= 1);
-
-    const auto it = std::find_if(
-        config.routingItems.cbegin(),
-        config.routingItems.cend(),
-        [](const RoutingItem& item) { return item.remarks == QStringLiteral("legacy-route"); });
-    QVERIFY(it != config.routingItems.cend());
-    QVERIFY(it->locked);
-}
-
-void JsonConfigRepositoryTests::saveWritesSchemaVersionAndCanonicalizesLegacyKeys()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject hotkey;
-    hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
-
-    QJsonObject routing;
-    routing.insert(QStringLiteral("remarks"), QStringLiteral("legacy-route"));
-    routing.insert(QStringLiteral("locked"), true);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("languageCode"), QStringLiteral("en-US"));
-    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkey});
-    root.insert(QStringLiteral("routingItems"), QJsonArray{routing});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    Config config = repository.load();
-    QVERIFY(repository.save(config));
-
-    QFile reloadedFile(configPath);
-    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
-    QVERIFY(document.isObject());
-
-    const QJsonObject savedRoot = document.object();
-    QCOMPARE(savedRoot.value(QStringLiteral("schemaVersion")).toInt(), 1);
-    QVERIFY(savedRoot.contains(QStringLiteral("GlobalHotkeys")));
-    QVERIFY(savedRoot.contains(QStringLiteral("routings")));
-    QVERIFY(!savedRoot.contains(QStringLiteral("globalHotkeys")));
-    QVERIFY(!savedRoot.contains(QStringLiteral("routingItems")));
-    QVERIFY(!savedRoot.contains(QStringLiteral("languageCode")));
-    QCOMPARE(
-        savedRoot.value(QStringLiteral("uiItem")).toObject().value(QStringLiteral("languageCode")).toString(),
-        QStringLiteral("en-US"));
-}
-
-void JsonConfigRepositoryTests::savePreservesUnknownRootFields()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("customPreservedField"), QStringLiteral("keep-me"));
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    Config config = repository.load();
-    QVERIFY(repository.save(config));
-
-    QFile reloadedFile(configPath);
-    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
-    QVERIFY(document.isObject());
-    QCOMPARE(
-        document.object().value(QStringLiteral("customPreservedField")).toString(),
-        QStringLiteral("keep-me"));
-}
-
-void JsonConfigRepositoryTests::saveRemovesDeprecatedDeadConfigKeys()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject uiItem;
-    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), true);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("keepOlderDedupl"), true);
+    root.insert(QStringLiteral("defUserAgent"), QStringLiteral("LegacyAgent"));
+    root.insert(QStringLiteral("domainStrategy4Singbox"), QStringLiteral("prefer_ipv4"));
     root.insert(QStringLiteral("uiItem"), uiItem);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    Config config = repository.load();
-    QVERIFY(repository.save(config));
-
-    QFile reloadedFile(configPath);
-    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
-    QVERIFY(document.isObject());
-
-    const QJsonObject savedRoot = document.object();
-    QVERIFY(!savedRoot.contains(QStringLiteral("keepOlderDedupl")));
-    QCOMPARE(savedRoot.value(QStringLiteral("uiItem")).toObject().value(QStringLiteral("mainQrPreviewVisible")).toBool(), true);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsMainRuntimeStateToOffWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.mainProxyEnabled);
-}
-
-void JsonConfigRepositoryTests::loadReadsMainRuntimeStateFromUiItem()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject uiItem;
-    uiItem.insert(QStringLiteral("mainProxyEnabled"), true);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("uiItem"), uiItem);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
+    root.insert(QStringLiteral("vmess"), QJsonArray{server});
+    root.insert(QStringLiteral("subItem"), QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("legacy-sub")}}});
+    root.insert(QStringLiteral("GlobalHotkeys"), QJsonArray{hotkey});
+    root.insert(QStringLiteral("routings"), QJsonArray{QJsonObject{{QStringLiteral("remarks"), QStringLiteral("legacy-route")}}});
+    QVERIFY(writeJsonFile(configPath, root));
 
     JsonConfigRepository repository(configPath);
     const Config config = repository.load();
 
-    QVERIFY(config.mainProxyEnabled);
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QVERIFY(config.dns().defaultUserAgent.isEmpty());
+    QVERIFY(config.dns().domainStrategy4Singbox.isEmpty());
+    QVERIFY(!config.ui().mainProxyEnabled);
+    QVERIFY(config.collection().servers.isEmpty());
+    QVERIFY(config.collection().subscriptions.isEmpty());
+    QVERIFY(config.collection().globalHotkeys.isEmpty());
+    QVERIFY(config.collection().routingItems.size() >= 3);
 }
 
-void JsonConfigRepositoryTests::loadReadsMainQrPreviewVisibleFromUiItem()
+void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject uiItem;
-    uiItem.insert(QStringLiteral("mainQrPreviewVisible"), true);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("uiItem"), uiItem);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(config.mainQrPreviewVisible);
-}
-
-void JsonConfigRepositoryTests::savePersistsMainQrPreviewVisible()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    const QString configPath = makeConfigPath(tempDir);
     JsonConfigRepository repository(configPath);
 
     Config config;
-    config.mainQrPreviewVisible = true;
+    config.logEnabled = true;
+    config.logLevel = QStringLiteral("debug");
+    config.currentIndexId = QStringLiteral("server-1");
+    config.localPort = 2080;
+    config.localProtocol = QStringLiteral("http");
+    config.udpEnabled = false;
+    config.sniffingEnabled = false;
+    config.routeOnly = true;
+    config.allowLanConnection = true;
+    config.inboundUser = QStringLiteral("alice");
+    config.inboundPassword = QStringLiteral("pw");
+    config.defaults().speedPingTestUrl = QStringLiteral("https://probe.example/test");
+    config.defaults().defIeProxyExceptions = QStringLiteral("localhost;127.*");
+    config.muxEnabled = true;
+    config.mux4SboxProtocol = QStringLiteral("smux");
+    config.mux4SboxMaxConnections = 32;
+    config.mux4SboxPadding = true;
+    config.sysProxyType = 1;
+    config.dns().enableFragment = true;
+    config.dns().enableCacheFile4Sbox = false;
+    config.dns().defaultFingerprint = QStringLiteral("firefox");
+    config.dns().defaultUserAgent = QStringLiteral("Agent/2.0");
+    config.dns().directDns = QStringLiteral("1.1.1.1");
+    config.dns().remoteDns = QStringLiteral("8.8.4.4");
+    config.dns().bootstrapDns = QStringLiteral("9.9.9.9");
+    config.dns().fakeIp = true;
+    config.dns().globalFakeIp = false;
+    config.dns().serveStale = true;
+    config.dns().parallelQuery = true;
+    config.dns().directExpectedIps = QStringLiteral("geoip:private");
+    config.dns().useSystemHosts = true;
+    config.dns().addCommonHosts = false;
+    config.dns().blockBindingQuery = false;
+    config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv4");
+    config.dns().domainStrategyForProxy = QStringLiteral("UseIPv6");
+    config.dns().dnsHosts = QStringLiteral("example.com 127.0.0.1");
+    config.dns().defaultAllowInsecure = true;
+    config.dns().domainStrategy = QStringLiteral("ipv4_only");
+    config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv4");
+    config.dns().domainMatcher = QStringLiteral("hybrid");
+    config.ignoreGeoUpdateCore = true;
+    config.systemProxyAdvancedProtocol = QStringLiteral("socks");
+    config.checkPreReleaseUpdate = true;
+    config.ui().showMainOnStartup = false;
+    config.ui().autoRunEnabled = true;
+    config.ui().languageCode = QStringLiteral("zh-CN");
+    config.ui().themeName = QStringLiteral("Dark");
+    config.ui().mainLocationX = 100;
+    config.ui().mainLocationY = 200;
+    config.ui().mainSizeWidth = 1440;
+    config.ui().mainSizeHeight = 900;
+    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
+    config.ui().settingsRoutingRuleTabKey = QStringLiteral("advanced");
+    config.ui().mainServerLogSplitPercent = 45;
+    config.ui().mainServerQrSplitPercent = 75;
+    config.ui().mainQrPreviewVisible = true;
+    config.ui().mainProxyEnabled = true;
+    config.ui().mainColumnWidths.insert(QStringLiteral("address"), 260);
+    config.tun().tunModeItem.enableTun = true;
+    config.tun().tunModeItem.autoRoute = false;
+    config.tun().tunModeItem.strictRoute = false;
+    config.tun().tunModeItem.stack = QStringLiteral("gvisor");
+    config.tun().tunModeItem.mtu = 1500;
+    config.tun().tunModeItem.enableIPv6Address = true;
+    config.tun().tunModeItem.icmpRouting = QStringLiteral("direct");
+    config.tun().tunModeItem.enableLegacyProtect = true;
+    config.collection().servers = {makeServer()};
+    config.collection().servers[0].testResult = QStringLiteral("123 ms");
+    config.collection().subscriptions = {makeSubscription()};
+    config.collection().globalHotkeys = {makeHotkey()};
+    config.collection().routingIndex = 2;
+    config.collection().enableRoutingAdvanced = true;
+    config.collection().routingItems = {makeRoutingItem()};
+    config.collection().routingCustomRules = {makeRoutingRule()};
+    config.policy().policyGroups = {makePolicyGroup()};
+    config.policy().coreTypeItems = {makeCoreTypeItem()};
+
     QVERIFY(repository.save(config));
+
+    const QJsonObject savedRoot = readJsonFile(configPath);
+    const QJsonObject savedState = readJsonFile(makeStatePath(tempDir));
+    QVERIFY(!savedRoot.isEmpty());
+    QVERIFY(!savedState.isEmpty());
+    QCOMPARE(savedRoot.value(QStringLiteral("schemaVersion")).toInt(), 7);
+    QVERIFY(savedRoot.contains(QStringLiteral("defaults")));
+    QVERIFY(savedRoot.contains(QStringLiteral("ui")));
+    QVERIFY(savedRoot.contains(QStringLiteral("tunModeItem")));
+    QVERIFY(savedRoot.contains(QStringLiteral("servers")));
+    QVERIFY(savedRoot.contains(QStringLiteral("subscriptions")));
+    QVERIFY(savedRoot.contains(QStringLiteral("globalHotkeys")));
+    QVERIFY(savedRoot.contains(QStringLiteral("routingItems")));
+    QVERIFY(savedRoot.contains(QStringLiteral("routingCustomRules")));
+    QVERIFY(savedRoot.contains(QStringLiteral("policyGroups")));
+    QVERIFY(savedRoot.contains(QStringLiteral("coreTypeItems")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("uiItem")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("constItem")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("vmess")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("subItem")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("GlobalHotkeys")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("routings")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("loglevel")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("defUserAgent")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("defFingerprint")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("directDNS")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("remoteDNS")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("bootstrapDNS")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("fakeIP")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("enableParallelQuery")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("directExpectedIPs")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("domainStrategy4Freedom")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("domainStrategy4Proxy")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("hosts")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("defAllowInsecure")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("domainStrategy4Singbox")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("languageCode")));
+
+    const QJsonObject savedUi = savedRoot.value(QStringLiteral("ui")).toObject();
+    QCOMPARE(savedUi.value(QStringLiteral("languageCode")).toString(), QStringLiteral("zh-CN"));
+    QCOMPARE(savedUi.value(QStringLiteral("themeName")).toString(), QStringLiteral("Dark"));
+    QVERIFY(!savedUi.contains(QStringLiteral("settingsRoutingRuleTabKey")));
+    QVERIFY(!savedUi.contains(QStringLiteral("mainSelectedSubscriptionId")));
+    QVERIFY(!savedUi.contains(QStringLiteral("mainProxyEnabled")));
+    QVERIFY(!savedUi.contains(QStringLiteral("mainColumnWidths")));
+
+    const QJsonObject savedStateUi = savedState.value(QStringLiteral("ui")).toObject();
+    QCOMPARE(savedStateUi.value(QStringLiteral("mainSelectedSubscriptionId")).toString(), QStringLiteral("sub-1"));
+    QCOMPARE(savedStateUi.value(QStringLiteral("settingsRoutingRuleTabKey")).toString(), QStringLiteral("advanced"));
+    QCOMPARE(savedStateUi.value(QStringLiteral("mainColumnWidths")).toObject().value(QStringLiteral("address")).toInt(), 260);
+    QCOMPARE(savedStateUi.value(QStringLiteral("mainLocationX")).toInt(), 100);
+    QCOMPARE(savedStateUi.value(QStringLiteral("mainSizeWidth")).toInt(), 1440);
+    QVERIFY(savedStateUi.value(QStringLiteral("mainProxyEnabled")).toBool());
+    QVERIFY(!savedStateUi.contains(QStringLiteral("themeName")));
+
+    const QJsonObject savedDefaults = savedRoot.value(QStringLiteral("defaults")).toObject();
+    QCOMPARE(savedDefaults.value(QStringLiteral("ieProxyExceptions")).toString(), QStringLiteral("localhost;127.*"));
+
+    const QJsonObject savedServer = savedRoot.value(QStringLiteral("servers")).toArray().at(0).toObject();
+    QCOMPARE(savedServer.value(QStringLiteral("configType")).toInt(), static_cast<int>(ConfigType::Trojan));
+    QVERIFY(!savedServer.contains(QStringLiteral("coreType")));
+    QCOMPARE(savedServer.value(QStringLiteral("subscriptionId")).toString(), QStringLiteral("sub-1"));
+    QVERIFY(!savedServer.contains(QStringLiteral("sort")));
+    QVERIFY(!savedServer.contains(QStringLiteral("testResult")));
+
+    const QJsonObject savedServerState = savedState.value(QStringLiteral("serverStates")).toArray().at(0).toObject();
+    QCOMPARE(savedServerState.value(QStringLiteral("indexId")).toString(), QStringLiteral("server-1"));
+    QCOMPARE(savedServerState.value(QStringLiteral("testResult")).toString(), QStringLiteral("123 ms"));
+
+    const QJsonObject savedRouting = savedRoot.value(QStringLiteral("routingItems")).toArray().at(0).toObject();
+    QCOMPARE(savedRouting.value(QStringLiteral("domainStrategyForSingbox")).toString(), QStringLiteral("prefer_ipv4"));
+    QCOMPARE(savedRouting.value(QStringLiteral("rules")).toArray().at(0).toObject().value(QStringLiteral("network")).toString(), QStringLiteral("tcp,udp"));
+    QCOMPARE(savedRouting.value(QStringLiteral("rules")).toArray().at(0).toObject().value(QStringLiteral("process")).toArray().at(0).toString(), QStringLiteral("chrome.exe"));
 
     const Config reloaded = repository.load();
-    QVERIFY(reloaded.mainQrPreviewVisible);
+    QVERIFY(reloaded.routeOnly);
+    QCOMPARE(reloaded.ui().mainSelectedSubId, QStringLiteral("sub-1"));
+    QCOMPARE(reloaded.collection().servers.size(), 1);
+    QCOMPARE(reloaded.collection().servers.constFirst().subId, QStringLiteral("sub-1"));
+    QCOMPARE(reloaded.collection().routingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
+    QCOMPARE(reloaded.policy().policyGroups.size(), 1);
 }
 
-void JsonConfigRepositoryTests::savePersistsMainRuntimeStateToUiItem()
+void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
 {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
 
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
+    const QString configPath = makeConfigPath(tempDir);
+
+    QJsonObject legacyRoot;
+    legacyRoot.insert(QStringLiteral("customPreservedField"), QStringLiteral("keep-me"));
+    legacyRoot.insert(QStringLiteral("uiItem"), QJsonObject{{QStringLiteral("mainProxyEnabled"), true}});
+    legacyRoot.insert(QStringLiteral("GlobalHotkeys"), QJsonArray{QJsonObject{{QStringLiteral("Control"), true}}});
+    QVERIFY(writeJsonFile(configPath, legacyRoot));
+
     JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    config.mainProxyEnabled = true;
-
+    Config config;
+    config.ui().languageCode = QStringLiteral("en-US");
+    config.ui().mainProxyEnabled = true;
     QVERIFY(repository.save(config));
 
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
+    const QJsonObject savedRoot = readJsonFile(configPath);
+    QVERIFY(!savedRoot.isEmpty());
+    QVERIFY(!savedRoot.contains(QStringLiteral("customPreservedField")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("uiItem")));
+    QVERIFY(!savedRoot.contains(QStringLiteral("GlobalHotkeys")));
+    QCOMPARE(savedRoot.value(QStringLiteral("ui")).toObject().value(QStringLiteral("languageCode")).toString(), QStringLiteral("en-US"));
+    QVERIFY(!savedRoot.value(QStringLiteral("ui")).toObject().contains(QStringLiteral("mainProxyEnabled")));
 
-    QVERIFY(reloaded.mainProxyEnabled);
-}
-
-void JsonConfigRepositoryTests::loadReadsRoutingItemDomainStrategy4Singbox()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject routing;
-    routing.insert(QStringLiteral("remarks"), QStringLiteral("route"));
-    routing.insert(QStringLiteral("domainStrategy4Singbox"), QStringLiteral("prefer_ipv4"));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("routings"), QJsonArray{routing});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.routingItems.size(), 1);
-    QCOMPARE(config.routingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
-}
-
-void JsonConfigRepositoryTests::savePersistsRoutingItemDomainStrategy4Singbox()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    RoutingItem item;
-    item.remarks = QStringLiteral("route");
-    item.locked = true;
-    item.domainStrategy4Singbox = QStringLiteral("ipv6_only");
-    config.routingItems = {item};
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QVERIFY(reloaded.routingItems.size() >= 1);
-    const auto it = std::find_if(
-        reloaded.routingItems.cbegin(),
-        reloaded.routingItems.cend(),
-        [](const RoutingItem& item) { return item.remarks == QStringLiteral("route"); });
-    QVERIFY(it != reloaded.routingItems.cend());
-    QCOMPARE(it->domainStrategy4Singbox, QStringLiteral("ipv6_only"));
-}
-
-void JsonConfigRepositoryTests::loadReadsGlobalHotkeys()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject hotkey;
-    hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
-    hotkey.insert(QStringLiteral("Control"), true);
-    hotkey.insert(QStringLiteral("Alt"), true);
-    hotkey.insert(QStringLiteral("Shift"), false);
-    hotkey.insert(QStringLiteral("KeyCode"), 65);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("GlobalHotkeys"), QJsonArray{hotkey});
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.globalHotkeys.size(), 1);
-    const GlobalHotkeyItem item = config.globalHotkeys.constFirst();
-    QCOMPARE(item.action, GlobalHotkeyAction::ShowForm);
-    QVERIFY(item.control);
-    QVERIFY(item.alt);
-    QVERIFY(!item.shift);
-    QVERIFY(item.keyCode.has_value());
-    QCOMPARE(item.keyCode.value(), 65);
-}
-
-void JsonConfigRepositoryTests::savePersistsGlobalHotkeys()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    Config config = repository.load();
-    GlobalHotkeyItem item;
-    item.action = GlobalHotkeyAction::SystemProxySet;
-    item.control = true;
-    item.alt = false;
-    item.shift = true;
-    item.keyCode = 91;
-    config.globalHotkeys = {item};
-
-    QVERIFY(repository.save(config));
-
-    JsonConfigRepository reloadedRepository(configPath);
-    const Config reloaded = reloadedRepository.load();
-
-    QCOMPARE(reloaded.globalHotkeys.size(), 1);
-    const GlobalHotkeyItem reloadedItem = reloaded.globalHotkeys.constFirst();
-    QCOMPARE(reloadedItem.action, GlobalHotkeyAction::SystemProxySet);
-    QVERIFY(reloadedItem.control);
-    QVERIFY(!reloadedItem.alt);
-    QVERIFY(reloadedItem.shift);
-    QVERIFY(reloadedItem.keyCode.has_value());
-    QCOMPARE(reloadedItem.keyCode.value(), 91);
-}
-
-void JsonConfigRepositoryTests::saveRemovesDeprecatedTls13ConfigKey()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-
-    QJsonObject root;
-    root.insert(QStringLiteral("enableSecurityProtocolTls13"), true);
-
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-    QVERIFY(repository.save(config));
-
-    QFile reloadedFile(configPath);
-    QVERIFY(reloadedFile.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QJsonDocument document = QJsonDocument::fromJson(reloadedFile.readAll());
-    QVERIFY(document.isObject());
-    QVERIFY(!document.object().contains(QStringLiteral("enableSecurityProtocolTls13")));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsTunIcmpRoutingToRuleWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QCOMPARE(config.tunModeItem.icmpRouting, QStringLiteral("rule"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsTunIcmpRoutingToRuleWhenEmptyObject()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-    const QJsonObject root;
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QCOMPARE(config.tunModeItem.icmpRouting, QStringLiteral("rule"));
-}
-
-void JsonConfigRepositoryTests::loadDefaultsTunEnableIpv6AddressToFalseWhenMissing()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    JsonConfigRepository repository(configPath);
-
-    const Config config = repository.load();
-
-    QVERIFY(!config.tunModeItem.enableIPv6Address);
-}
-
-void JsonConfigRepositoryTests::loadDefaultsTunEnableIpv6AddressToFalseWhenEmptyObject()
-{
-    QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
-
-    const QString configPath = tempDir.filePath(QStringLiteral("guiNConfig.json"));
-    QFile file(configPath);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-    const QJsonObject root;
-    QVERIFY(file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0);
-    file.close();
-
-    JsonConfigRepository repository(configPath);
-    const Config config = repository.load();
-
-    QVERIFY(!config.tunModeItem.enableIPv6Address);
+    const QJsonObject savedState = readJsonFile(makeStatePath(tempDir));
+    QCOMPARE(savedState.value(QStringLiteral("ui")).toObject().value(QStringLiteral("mainProxyEnabled")).toBool(), true);
 }
 
 QTEST_MAIN(JsonConfigRepositoryTests)
 
 #include "JsonConfigRepositoryTests.moc"
+
+

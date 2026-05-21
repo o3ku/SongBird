@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QBrush>
 #include <QFont>
+#include <QIcon>
 #include <utility>
 
 namespace {
@@ -23,7 +24,7 @@ ServerTableModel::ServerTableModel(QObject* parent)
 {
 }
 
-void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> statistics, QString currentIndexId)
+void ServerTableModel::setItems(QList<VmessItem> items, QString currentIndexId)
 {
     beginResetModel();
     items_.clear();
@@ -39,8 +40,7 @@ void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> st
             item.network,
             item.streamSecurity,
             item.testResult,
-            item.subId,
-            item.sort});
+            item.subId});
     }
     rowByIndexId_.clear();
     rowByIndexId_.reserve(items_.size());
@@ -48,12 +48,6 @@ void ServerTableModel::setItems(QList<VmessItem> items, QList<ServerStatItem> st
         const QString trimmedId = items_.at(row).indexId.trimmed();
         if (!trimmedId.isEmpty()) {
             rowByIndexId_.insert(trimmedId, row);
-        }
-    }
-    statistics_.clear();
-    for (const ServerStatItem& item : statistics) {
-        if (!item.itemId.trimmed().isEmpty()) {
-            statistics_.insert(item.itemId, item);
         }
     }
     currentIndexId_ = std::move(currentIndexId);
@@ -115,21 +109,7 @@ const ServerTableRow* ServerTableModel::itemByIndexId(const QString& indexId) co
 
 const ServerTableRow* ServerTableModel::currentItem() const
 {
-    if (const ServerTableRow* current = itemByIndexId(currentIndexId_)) {
-        return current;
-    }
-
-    return items_.isEmpty() ? nullptr : &items_.constFirst();
-}
-
-ServerStatItem ServerTableModel::statisticAt(int row) const
-{
-    const ServerTableRow* item = itemAt(row);
-    if (item == nullptr) {
-        return {};
-    }
-
-    return statistics_.value(item->indexId);
+    return itemByIndexId(currentIndexId_);
 }
 
 QString ServerTableModel::currentIndexId() const
@@ -170,24 +150,22 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case DefaultColumn:
-            return isDefault ? QVariant(QStringLiteral(">")) : QVariant(QString::number(index.row() + 1));
+            return isDefault ? QVariant() : QVariant(QString::number(index.row() + 1));
         case TypeColumn:
             return configTypeDisplayName(item->configType);
         case RemarksColumn:
             return item->remarks;
         case AddressColumn:
             return formatAddressDisplay(*item);
-        case SecurityColumn:
-            return item->security;
-        case NetworkColumn:
-            return item->network;
-        case StreamSecurityColumn:
-            return item->streamSecurity;
         case TestResultColumn:
             return item->testResult;
         default:
             return {};
         }
+    }
+
+    if (role == Qt::DecorationRole && index.column() == DefaultColumn && isDefault) {
+        return QIcon(QStringLiteral(":/app/logo.svg"));
     }
 
     if (role == Qt::TextAlignmentRole) {
@@ -244,12 +222,6 @@ QVariant ServerTableModel::headerData(int section, Qt::Orientation orientation, 
         return tr("Alias");
     case AddressColumn:
         return tr("Address");
-    case SecurityColumn:
-        return tr("Security");
-    case NetworkColumn:
-        return tr("Network");
-    case StreamSecurityColumn:
-        return tr("TLS");
     case TestResultColumn:
         return tr("Result");
     default:
