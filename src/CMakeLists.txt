@@ -270,6 +270,26 @@ set_target_properties(songbird PROPERTIES
     OUTPUT_NAME "SongBird"
 )
 
+option(SONGBIRD_ENABLE_UPX "Compress release SongBird executable with UPX when upx is available" ON)
+set(SONGBIRD_UPX_BUILD_TYPES "Release;MinSizeRel" CACHE STRING "Build types that run UPX on SongBird executable")
+if(SONGBIRD_ENABLE_UPX)
+    find_program(SONGBIRD_UPX_EXECUTABLE NAMES upx upx.exe)
+    if(SONGBIRD_UPX_EXECUTABLE)
+        message(STATUS "UPX found: ${SONGBIRD_UPX_EXECUTABLE}")
+        if(CMAKE_BUILD_TYPE IN_LIST SONGBIRD_UPX_BUILD_TYPES)
+            add_custom_command(TARGET songbird POST_BUILD
+                COMMAND "${SONGBIRD_UPX_EXECUTABLE}" -9 "$<TARGET_FILE:songbird>"
+                COMMENT "Compressing SongBird executable with UPX"
+                VERBATIM
+            )
+        else()
+            message(STATUS "UPX compression skipped for build type: ${CMAKE_BUILD_TYPE}")
+        endif()
+    else()
+        message(STATUS "UPX not found; SongBird executable compression disabled.")
+    endif()
+endif()
+
 if(TARGET songbird_translations)
     add_dependencies(songbird songbird_translations)
 endif()
