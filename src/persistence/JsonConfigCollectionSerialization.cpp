@@ -5,7 +5,11 @@
 
 #include <utility>
 
+#include "persistence/JsonConfigUtils.h"
+
 namespace {
+
+using namespace JsonConfigUtils;
 
 const QString kBuiltinRoutingWhitelistName = QStringLiteral("\u7ed5\u8fc7\u5927\u9646(Whitelist)");
 const QString kBuiltinRoutingBlacklistName = QStringLiteral("\u9ed1\u540d\u5355(Blacklist)");
@@ -208,37 +212,16 @@ QList<RoutingRule> parseRoutingRules(const QJsonArray& array)
 
         const QJsonObject object = value.toObject();
         RoutingRule item;
-        item.type = object.value(QStringLiteral("type")).toString();
-        item.port = object.value(QStringLiteral("port")).toString();
-        item.network = object.value(QStringLiteral("network")).toString();
-        item.outboundTag = object.value(QStringLiteral("outboundTag")).toString();
-        item.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-
-        const QJsonArray inboundTagArray = object.value(QStringLiteral("inboundTag")).toArray();
-        for (const QJsonValue& inboundTagValue : inboundTagArray) {
-            item.inboundTag.append(inboundTagValue.toString());
-        }
-
-        const QJsonArray ipArray = object.value(QStringLiteral("ip")).toArray();
-        for (const QJsonValue& ipValue : ipArray) {
-            item.ip.append(ipValue.toString());
-        }
-
-        const QJsonArray domainArray = object.value(QStringLiteral("domain")).toArray();
-        for (const QJsonValue& domainValue : domainArray) {
-            item.domain.append(domainValue.toString());
-        }
-
-        const QJsonArray protocolArray = object.value(QStringLiteral("protocol")).toArray();
-        for (const QJsonValue& protocolValue : protocolArray) {
-            item.protocol.append(protocolValue.toString());
-        }
-
-        const QJsonArray processArray = object.value(QStringLiteral("process")).toArray();
-        for (const QJsonValue& processValue : processArray) {
-            item.process.append(processValue.toString());
-        }
-
+        item.type = readString(object, QStringLiteral("type"));
+        item.port = readString(object, QStringLiteral("port"));
+        item.network = readString(object, QStringLiteral("network"));
+        item.outboundTag = readString(object, QStringLiteral("outboundTag"));
+        item.enabled = readBool(object, QStringLiteral("enabled"), true);
+        item.inboundTag = readStringList(object, QStringLiteral("inboundTag"));
+        item.ip = readStringList(object, QStringLiteral("ip"));
+        item.domain = readStringList(object, QStringLiteral("domain"));
+        item.protocol = readStringList(object, QStringLiteral("protocol"));
+        item.process = readStringList(object, QStringLiteral("process"));
         items.append(item);
     }
 
@@ -250,62 +233,16 @@ QJsonArray toRoutingRuleArray(const QList<RoutingRule>& items)
     QJsonArray array;
     for (const RoutingRule& item : items) {
         QJsonObject object;
-        if (!item.type.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("type"), item.type);
-        }
-        if (!item.port.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("port"), item.port);
-        }
-        if (!item.network.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("network"), item.network);
-        }
-        if (!item.outboundTag.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("outboundTag"), item.outboundTag);
-        }
-        if (!item.enabled) {
-            object.insert(QStringLiteral("enabled"), false);
-        }
-
-        QJsonArray inboundTagArray;
-        for (const QString& value : item.inboundTag) {
-            inboundTagArray.append(value);
-        }
-        if (!inboundTagArray.isEmpty()) {
-            object.insert(QStringLiteral("inboundTag"), inboundTagArray);
-        }
-
-        QJsonArray ipArray;
-        for (const QString& value : item.ip) {
-            ipArray.append(value);
-        }
-        if (!ipArray.isEmpty()) {
-            object.insert(QStringLiteral("ip"), ipArray);
-        }
-
-        QJsonArray domainArray;
-        for (const QString& value : item.domain) {
-            domainArray.append(value);
-        }
-        if (!domainArray.isEmpty()) {
-            object.insert(QStringLiteral("domain"), domainArray);
-        }
-
-        QJsonArray protocolArray;
-        for (const QString& value : item.protocol) {
-            protocolArray.append(value);
-        }
-        if (!protocolArray.isEmpty()) {
-            object.insert(QStringLiteral("protocol"), protocolArray);
-        }
-
-        QJsonArray processArray;
-        for (const QString& value : item.process) {
-            processArray.append(value);
-        }
-        if (!processArray.isEmpty()) {
-            object.insert(QStringLiteral("process"), processArray);
-        }
-
+        writeIfNotEmpty(object, QStringLiteral("type"), item.type);
+        writeIfNotEmpty(object, QStringLiteral("port"), item.port);
+        writeIfNotEmpty(object, QStringLiteral("network"), item.network);
+        writeIfNotEmpty(object, QStringLiteral("outboundTag"), item.outboundTag);
+        writeIfNotDefault(object, QStringLiteral("enabled"), item.enabled, true);
+        writeStringListIfNotEmpty(object, QStringLiteral("inboundTag"), item.inboundTag);
+        writeStringListIfNotEmpty(object, QStringLiteral("ip"), item.ip);
+        writeStringListIfNotEmpty(object, QStringLiteral("domain"), item.domain);
+        writeStringListIfNotEmpty(object, QStringLiteral("protocol"), item.protocol);
+        writeStringListIfNotEmpty(object, QStringLiteral("process"), item.process);
         array.append(object);
     }
 

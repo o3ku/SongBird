@@ -3,9 +3,28 @@
 #include <QJsonArray>
 #include <QJsonValue>
 
+#include "persistence/JsonConfigUtils.h"
 #include "runtime/ProtocolCoreCompat.h"
 
 namespace {
+
+using namespace JsonConfigUtils;
+
+PolicyGroupItem::Strategy parsePolicyGroupStrategy(const QJsonObject& object)
+{
+    const int value = readInt(object, QStringLiteral("strategy"), 0);
+    switch (value) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+        return static_cast<PolicyGroupItem::Strategy>(value);
+    default:
+        return PolicyGroupItem::Strategy::LeastPing;
+    }
+}
 
 QList<PolicyGroupItem> parsePolicyGroups(const QJsonArray& array)
 {
@@ -19,18 +38,12 @@ QList<PolicyGroupItem> parsePolicyGroups(const QJsonArray& array)
 
         const QJsonObject object = value.toObject();
         PolicyGroupItem item;
-        item.id = object.value(QStringLiteral("id")).toString();
-        item.name = object.value(QStringLiteral("name")).toString();
-        item.strategy = static_cast<PolicyGroupItem::Strategy>(
-            object.value(QStringLiteral("strategy")).toInt(0));
-        item.urlTestUrl = object.value(QStringLiteral("urlTestUrl")).toString();
-        item.toleranceMs = object.value(QStringLiteral("toleranceMs")).toInt(0);
-
-        const QJsonArray membersArray = object.value(QStringLiteral("memberServerIds")).toArray();
-        for (const QJsonValue& memberValue : membersArray) {
-            item.memberServerIds.append(memberValue.toString());
-        }
-
+        item.id = readString(object, QStringLiteral("id"));
+        item.name = readString(object, QStringLiteral("name"));
+        item.strategy = parsePolicyGroupStrategy(object);
+        item.urlTestUrl = readString(object, QStringLiteral("urlTestUrl"));
+        item.toleranceMs = readInt(object, QStringLiteral("toleranceMs"), 0);
+        item.memberServerIds = readStringList(object, QStringLiteral("memberServerIds"));
         items.append(item);
     }
 
@@ -47,13 +60,7 @@ QJsonArray toPolicyGroupArray(const QList<PolicyGroupItem>& items)
         object.insert(QStringLiteral("strategy"), static_cast<int>(item.strategy));
         object.insert(QStringLiteral("urlTestUrl"), item.urlTestUrl);
         object.insert(QStringLiteral("toleranceMs"), item.toleranceMs);
-
-        QJsonArray membersArray;
-        for (const QString& memberId : item.memberServerIds) {
-            membersArray.append(memberId);
-        }
-        object.insert(QStringLiteral("memberServerIds"), membersArray);
-
+        object.insert(QStringLiteral("memberServerIds"), toStringArray(item.memberServerIds));
         array.append(object);
     }
 
@@ -72,8 +79,8 @@ QList<CoreTypeItem> parseCoreTypeItems(const QJsonArray& array)
 
         const QJsonObject object = value.toObject();
         CoreTypeItem item;
-        item.configType = object.value(QStringLiteral("configType")).toInt(0);
-        item.coreType = object.value(QStringLiteral("coreType")).toInt(0);
+        item.configType = readInt(object, QStringLiteral("configType"), 0);
+        item.coreType = readInt(object, QStringLiteral("coreType"), 0);
         items.append(item);
     }
 
