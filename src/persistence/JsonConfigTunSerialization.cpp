@@ -45,7 +45,7 @@ namespace JsonConfigTunSerialization {
 
 void read(const QJsonObject& root, TunConfigState& config)
 {
-    config.tunModeItem = parseTunModeItem(root.value(QStringLiteral("tunModeItem")).toObject());
+    config.tunModeItem = parseTunModeItem(readObject(root, QStringLiteral("tunModeItem")));
 }
 
 void write(QJsonObject& root, const TunConfigState& config)

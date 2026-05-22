@@ -23,10 +23,20 @@ inline bool readBool(const QJsonObject& object, const QString& key, bool fallbac
     return object.value(key).toBool(fallback);
 }
 
+inline QJsonObject readObject(const QJsonObject& object, const QString& key)
+{
+    return object.value(key).toObject();
+}
+
+inline QJsonArray readArray(const QJsonObject& object, const QString& key)
+{
+    return object.value(key).toArray();
+}
+
 inline QStringList readStringList(const QJsonObject& object, const QString& key)
 {
     QStringList values;
-    const QJsonArray array = object.value(key).toArray();
+    const QJsonArray array = readArray(object, key);
     values.reserve(array.size());
     for (const QJsonValue& value : array) {
         values.append(value.toString());

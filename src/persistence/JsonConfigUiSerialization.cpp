@@ -17,7 +17,7 @@ namespace JsonConfigUiSerialization {
 
 void read(const QJsonObject& root, UiConfigState& config)
 {
-    const QJsonObject ui = root.value(QStringLiteral("ui")).toObject();
+    const QJsonObject ui = readObject(root, QStringLiteral("ui"));
     config.ui().showMainOnStartup = readBool(ui, QStringLiteral("showMainOnStartup"), true);
     config.ui().autoRunEnabled = readBool(ui, QStringLiteral("autoRunEnabled"), false);
     config.ui().languageCode = readString(ui, QStringLiteral("languageCode"));
@@ -45,7 +45,7 @@ void read(const QJsonObject& root, UiConfigState& config)
     config.ui().mainQrPreviewVisible = readBool(ui, QStringLiteral("mainQrPreviewVisible"), false);
     config.ui().mainProxyEnabled = readBool(ui, QStringLiteral("mainProxyEnabled"), false);
 
-    const QJsonObject mainColumnWidths = ui.value(QStringLiteral("mainColumnWidths")).toObject();
+    const QJsonObject mainColumnWidths = readObject(ui, QStringLiteral("mainColumnWidths"));
     for (auto it = mainColumnWidths.constBegin(); it != mainColumnWidths.constEnd(); ++it) {
         if (!it.value().isDouble()) {
             continue;

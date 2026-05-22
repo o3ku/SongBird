@@ -111,8 +111,8 @@ namespace JsonConfigPolicySerialization {
 
 void read(const QJsonObject& root, PolicyConfigState& config)
 {
-    config.policyGroups = parsePolicyGroups(root.value(QStringLiteral("policyGroups")).toArray());
-    config.coreTypeItems = parseCoreTypeItems(root.value(QStringLiteral("coreTypeItems")).toArray());
+    config.policyGroups = parsePolicyGroups(readArray(root, QStringLiteral("policyGroups")));
+    config.coreTypeItems = parseCoreTypeItems(readArray(root, QStringLiteral("coreTypeItems")));
     if (config.coreTypeItems.isEmpty()) {
         config.coreTypeItems = defaultCoreTypeItems();
     }

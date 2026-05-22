@@ -62,7 +62,7 @@ namespace JsonConfigStateSerialization {
 
 void read(const QJsonObject& root, Config& config)
 {
-    const QJsonObject ui = root.value(QStringLiteral("ui")).toObject();
+    const QJsonObject ui = readObject(root, QStringLiteral("ui"));
     if (!ui.isEmpty()) {
         config.ui().mainLocationX = readInt(ui, QStringLiteral("mainLocationX"), config.ui().mainLocationX);
         config.ui().mainLocationY = readInt(ui, QStringLiteral("mainLocationY"), config.ui().mainLocationY);
@@ -91,7 +91,7 @@ void read(const QJsonObject& root, Config& config)
         config.ui().mainProxyEnabled =
             readBool(ui, QStringLiteral("mainProxyEnabled"), config.ui().mainProxyEnabled);
 
-        const QJsonObject mainColumnWidths = ui.value(QStringLiteral("mainColumnWidths")).toObject();
+        const QJsonObject mainColumnWidths = readObject(ui, QStringLiteral("mainColumnWidths"));
         for (auto it = mainColumnWidths.constBegin(); it != mainColumnWidths.constEnd(); ++it) {
             if (!it.value().isDouble()) {
                 continue;
@@ -104,7 +104,7 @@ void read(const QJsonObject& root, Config& config)
         }
     }
 
-    const QJsonArray serverStates = root.value(QStringLiteral("serverStates")).toArray();
+    const QJsonArray serverStates = readArray(root, QStringLiteral("serverStates"));
     for (const QJsonValue& value : serverStates) {
         if (!value.isObject()) {
             continue;

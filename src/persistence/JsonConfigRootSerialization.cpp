@@ -20,7 +20,7 @@ void read(const QJsonObject& root, RootConfigState& config)
     config.logLevel = readString(root, QStringLiteral("logLevel"));
     config.currentIndexId = readString(root, QStringLiteral("indexId"));
 
-    const QJsonArray inbounds = root.value(QStringLiteral("inbound")).toArray();
+    const QJsonArray inbounds = readArray(root, QStringLiteral("inbound"));
     if (!inbounds.isEmpty() && inbounds.at(0).isObject()) {
         const QJsonObject inbound = inbounds.at(0).toObject();
         config.localPort = readInt(inbound, QStringLiteral("localPort"), 10808);
@@ -33,7 +33,7 @@ void read(const QJsonObject& root, RootConfigState& config)
         config.inboundPassword = readString(inbound, QStringLiteral("pass"));
     }
 
-    const QJsonObject defaults = root.value(QStringLiteral("defaults")).toObject();
+    const QJsonObject defaults = readObject(root, QStringLiteral("defaults"));
     config.defaults().speedPingTestUrl = readString(defaults, QStringLiteral("speedPingTestUrl"));
     config.defaults().defIeProxyExceptions = readString(defaults, QStringLiteral("ieProxyExceptions"));
 
