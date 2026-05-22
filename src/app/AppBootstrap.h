@@ -21,6 +21,8 @@
 struct SettingsDialogApplyPlan;
 
 class CoreLifecycleService;
+class CoreStartupChecklistController;
+class BackgroundTaskCoordinator;
 class ClientConfigWriter;
 class ServerConfigWriter;
 class MainWindow;
@@ -48,15 +50,6 @@ class WindowsSystemProxyService;
 
 class AppBootstrap {
 public:
-    enum class BackgroundTaskKind {
-        None,
-        SpeedTest,
-        SubscriptionUpdate,
-        ProxyAvailabilityCheck,
-        CoreUpdate,
-        GeoUpdate
-    };
-
     explicit AppBootstrap(
         QString configPath = {},
         bool startHidden = false,
@@ -70,15 +63,10 @@ private:
     void syncWindow();
     void syncStatusIndicators();
     bool reloadConfig();
-    bool shouldStartCoreOnStartup() const;
     void startCoreOnStartup();
     void appendStartupResourceCheckResults();
     void appendResult(const OperationResult& result);
-    void resetCoreStartupChecklist(const QStringList& steps, bool showOverlay);
     void prepareCoreStartupChecklist(bool showOverlay);
-    void setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus status, const QString& step, const QString& detail = {});
-    void syncCoreStartupChecklistOverlay();
-    void clearCoreStartupChecklist();
     void keepCoreStartupChecklistForUserDismissal(const QString& step, const QString& detail);
     void failCoreStartup(const OperationResult& result);
     void cleanupAfterFailedCoreStartup();
@@ -159,7 +147,6 @@ private:
     void exportServerConfig(const QString& indexId);
     void importClientConfigFromFile();
     void importServerConfigFromFile();
-    OperationResult importCustomConfigText(const QString& text);
     void updateAllSubscriptions();
     void updateCurrentSubscription(const QString& subscriptionId);
     void updateCurrentSubscriptionViaProxy(const QString& subscriptionId);
@@ -241,12 +228,7 @@ private:
     QString buildListenSummaryText() const;
     QString buildSystemProxyExceptions() const;
     bool updateSystemProxyMode(SystemProxyMode mode) const;
-    QString backgroundTaskDescription(BackgroundTaskKind kind) const;
-    void resetSpeedTestProgressState();
-    bool tryBeginBackgroundTask(BackgroundTaskKind kind);
     bool isCoreStartupBlockingBackgroundTask() const;
-    void finishBackgroundTask(BackgroundTaskKind kind);
-    void syncBackgroundTaskState();
     void trackBackgroundThread(QThread* thread);
     void waitForBackgroundThreads();
     void stopAuxiliaryCore(bool immediate = false);
@@ -275,6 +257,8 @@ private:
     std::unique_ptr<ServerConfigWriter> serverConfigWriter_;
     std::unique_ptr<QtCoreProcessHost> coreProcessHost_;
     std::unique_ptr<CoreLifecycleService> coreLifecycleService_;
+    std::unique_ptr<CoreStartupChecklistController> coreStartupChecklist_;
+    std::unique_ptr<BackgroundTaskCoordinator> backgroundTasks_;
     std::unique_ptr<QtCoreProcessHost> auxiliaryCoreProcessHost_;
     std::unique_ptr<CoreLifecycleService> auxiliaryCoreLifecycleService_;
     std::unique_ptr<WindowsAutoRunService> autoRunService_;
@@ -287,25 +271,12 @@ private:
     bool uiStateRestored_ = false;
     bool shutdownUiStatePersisted_ = false;
     bool exitProxyStateApplied_ = false;
-    bool restartHandoffPending_ = false;
     bool windowsShutdownRequested_ = false;
-    bool subscriptionUpdateRunning_ = false;
-    bool proxyAvailabilityCheckRunning_ = false;
-    bool coreUpdateRunning_ = false;
-    bool geoUpdateRunning_ = false;
     bool speedTestResultsDirty_ = false;
     bool coreStartPending_ = false;
     bool coreStopPending_ = false;
     bool coreReady_ = false;
     QString currentServerLocation_;
-    QStringList coreStartupSteps_;
-    QHash<QString, CoreStartupCheckpointStatus> coreStartupStepStatus_;
-    QHash<QString, QString> coreStartupStepDetails_;
-    bool coreStartupOverlayRequested_ = false;
-    bool coreStartupOverlayShown_ = false;
-    qint64 coreStartupOverlayShownAtMs_ = 0;
-    int coreStartupOverlayClearGeneration_ = 0;
-    int coreStartupStableRunGeneration_ = 0;
     bool cancelCoreStartAfterGeoUpdate_ = false;
     bool coreTunEnabledAtStart_ = false;
     bool managedSystemProxyActive_ = false;
@@ -317,13 +288,8 @@ private:
     QString pendingDefaultServerAfterStopId_;
     bool pendingDefaultServerAfterStopEnableTun_ = false;
     bool pendingDefaultServerAfterStopShowStartupOverlay_ = false;
-    bool keepCoreStartupChecklistOnNextStop_ = false;
     bool setCurrentActivationPending_ = false;
     bool coreUpdatePendingAfterStop_ = false;
-    BackgroundTaskKind activeBackgroundTask_ = BackgroundTaskKind::None;
-    int speedTestTotalCount_ = 0;
-    int speedTestCompletedCount_ = 0;
-    QString speedTestProgressServerName_;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;
     bool pendingCoreUpdateStartAfterSuccess_ = false;
     bool pendingCoreUpdateSkipLocalVersionCheck_ = false;

@@ -4,6 +4,10 @@ set(SONGBIRD_SOURCES
     app/AppBootstrap.cpp
     app/ConfigPathResolver.h
     app/CoreStartupCheckpoint.h
+    app/CoreStartupChecklistController.h
+    app/CoreStartupChecklistController.cpp
+    app/BackgroundTaskCoordinator.h
+    app/BackgroundTaskCoordinator.cpp
     app/SettingsDialogSession.h
     app/SettingsDialogSession.cpp
     app/SingleInstanceBootstrap.h
