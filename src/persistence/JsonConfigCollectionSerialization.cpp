@@ -415,21 +415,11 @@ QJsonArray toSubscriptionArray(const QList<SubItem>& items)
     QJsonArray array;
     for (const SubItem& item : items) {
         QJsonObject object;
-        if (!item.id.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("id"), item.id);
-        }
-        if (!item.remarks.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("remarks"), item.remarks);
-        }
-        if (!item.url.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("url"), item.url);
-        }
-        if (!item.enabled) {
-            object.insert(QStringLiteral("enabled"), false);
-        }
-        if (!item.userAgent.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("userAgent"), item.userAgent);
-        }
+        writeIfNotEmpty(object, QStringLiteral("id"), item.id);
+        writeIfNotEmpty(object, QStringLiteral("remarks"), item.remarks);
+        writeIfNotEmpty(object, QStringLiteral("url"), item.url);
+        writeIfNotDefault(object, QStringLiteral("enabled"), item.enabled, true);
+        writeIfNotEmpty(object, QStringLiteral("userAgent"), item.userAgent);
         array.append(object);
     }
 
@@ -466,24 +456,12 @@ QJsonArray toRoutingArray(const QList<RoutingItem>& items)
     QJsonArray array;
     for (const RoutingItem& item : items) {
         QJsonObject object;
-        if (!item.remarks.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("remarks"), item.remarks);
-        }
-        if (!item.url.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("url"), item.url);
-        }
-        if (!item.enabled) {
-            object.insert(QStringLiteral("enabled"), false);
-        }
-        if (item.locked) {
-            object.insert(QStringLiteral("locked"), true);
-        }
-        if (!item.customIcon.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("customIcon"), item.customIcon);
-        }
-        if (!item.domainStrategy4Singbox.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("domainStrategyForSingbox"), item.domainStrategy4Singbox);
-        }
+        writeIfNotEmpty(object, QStringLiteral("remarks"), item.remarks);
+        writeIfNotEmpty(object, QStringLiteral("url"), item.url);
+        writeIfNotDefault(object, QStringLiteral("enabled"), item.enabled, true);
+        writeIfTrue(object, QStringLiteral("locked"), item.locked);
+        writeIfNotEmpty(object, QStringLiteral("customIcon"), item.customIcon);
+        writeIfNotEmpty(object, QStringLiteral("domainStrategyForSingbox"), item.domainStrategy4Singbox);
         const QJsonArray rules = toRoutingRuleArray(item.rules);
         if (!rules.isEmpty()) {
             object.insert(QStringLiteral("rules"), rules);
@@ -521,12 +499,8 @@ void write(QJsonObject& root, const CollectionConfigState& config)
         root.insert(QStringLiteral("subscriptions"), subscriptions);
     }
 
-    if (config.routingIndex != 0) {
-        root.insert(QStringLiteral("routingIndex"), config.routingIndex);
-    }
-    if (config.enableRoutingAdvanced) {
-        root.insert(QStringLiteral("enableRoutingAdvanced"), true);
-    }
+    writeIfNotDefault(root, QStringLiteral("routingIndex"), config.routingIndex, 0);
+    writeIfTrue(root, QStringLiteral("enableRoutingAdvanced"), config.enableRoutingAdvanced);
 
     const QJsonArray routingItems = toRoutingArray(config.routingItems);
     if (!routingItems.isEmpty()) {
