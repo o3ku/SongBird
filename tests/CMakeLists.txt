@@ -8,6 +8,7 @@ set(SONGBIRD_SHARE_URL_TEST_SOURCES
     ../src/subscription/ShareUrlParser.cpp
     ../src/subscription/SubscriptionImportTextParser.h
     ../src/subscription/SubscriptionImportTextParser.cpp
+    ../src/common/PortValidator.h
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -844,6 +845,7 @@ set(SONGBIRD_SUBSCRIPTION_PARSER_TEST_SOURCES
     ../src/subscription/ShareUrlParser.cpp
     ../src/subscription/SubscriptionImportTextParser.h
     ../src/subscription/SubscriptionImportTextParser.cpp
+    ../src/common/PortValidator.h
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -1050,4 +1052,3 @@ set_tests_properties(end-to-end-smoke PROPERTIES
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_end_to_end_smoke_tests)
 endif()
-

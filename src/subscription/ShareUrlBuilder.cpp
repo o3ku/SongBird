@@ -27,6 +27,11 @@ QString normalizeJsonText(const QString& value)
     return QString::fromUtf8(document.toJson(QJsonDocument::Compact));
 }
 
+QString encodeUserInfoPart(const QString& value)
+{
+    return QString::fromUtf8(QUrl::toPercentEncoding(value));
+}
+
 } // namespace
 
 QString ShareUrlBuilder::build(const VmessItem& item)
@@ -106,7 +111,7 @@ QString ShareUrlBuilder::buildSocks(const VmessItem& item)
 QString ShareUrlBuilder::buildTrojan(const VmessItem& item)
 {
     return QStringLiteral("trojan://")
-        + item.id
+        + encodeUserInfoPart(item.id)
         + QStringLiteral("@")
         + wrapIpv6(item.address)
         + QStringLiteral(":")
@@ -126,7 +131,7 @@ QString ShareUrlBuilder::buildVless(const VmessItem& item)
     }
 
     return QStringLiteral("vless://")
-        + item.id
+        + encodeUserInfoPart(item.id)
         + QStringLiteral("@")
         + wrapIpv6(item.address)
         + QStringLiteral(":")
@@ -190,9 +195,9 @@ QString ShareUrlBuilder::buildTuic(const VmessItem& item)
         entries.append(qMakePair(QStringLiteral("alpn"), joinList(item.alpn)));
     }
 
-    QString credentials = item.id;
+    QString credentials = encodeUserInfoPart(item.id);
     if (!item.security.trimmed().isEmpty()) {
-        credentials += QStringLiteral(":") + item.security;
+        credentials += QStringLiteral(":") + encodeUserInfoPart(item.security);
     }
 
     return QStringLiteral("tuic://")

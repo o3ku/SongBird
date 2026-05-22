@@ -8,6 +8,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "common/PortValidator.h"
 #include "subscription/SubscriptionImportTextParser.h"
 
 namespace {
@@ -27,6 +28,16 @@ QString normalizeJsonText(const QString& value)
     }
 
     return QString::fromUtf8(document.toJson(QJsonDocument::Compact));
+}
+
+QString decodedUserName(const QUrl& url)
+{
+    return QUrl::fromPercentEncoding(url.userName().toUtf8());
+}
+
+QString decodedPassword(const QUrl& url)
+{
+    return QUrl::fromPercentEncoding(url.password().toUtf8());
 }
 
 } // namespace
@@ -105,7 +116,7 @@ VmessItem ShareUrlParser::parseVmess(const QString& shareUrl, bool* ok)
     }
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -297,7 +308,7 @@ VmessItem ShareUrlParser::parseShadowsocks(const QString& shareUrl, bool* ok)
     if (!url.isValid()) {
         item = parseLegacyShadowsocks(shareUrl);
         if (ok != nullptr) {
-            *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+            *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
         }
         return item;
     }
@@ -316,7 +327,7 @@ VmessItem ShareUrlParser::parseShadowsocks(const QString& shareUrl, bool* ok)
     if (parts.size() < 2 || url.host().trimmed().isEmpty() || url.port() <= 0) {
         item = parseLegacyShadowsocks(shareUrl);
         if (ok != nullptr) {
-            *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+            *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
         }
         return item;
     }
@@ -329,7 +340,7 @@ VmessItem ShareUrlParser::parseShadowsocks(const QString& shareUrl, bool* ok)
     item.id = parts.mid(1).join(QStringLiteral(":"));
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -342,7 +353,7 @@ VmessItem ShareUrlParser::parseSocks(const QString& shareUrl, bool* ok)
     if (!url.isValid()) {
         item = parseLegacySocks(shareUrl);
         if (ok != nullptr) {
-            *ok = !item.address.isEmpty() && item.port > 0;
+            *ok = !item.address.isEmpty() && isValidTcpPort(item.port);
         }
         return item;
     }
@@ -351,8 +362,8 @@ VmessItem ShareUrlParser::parseSocks(const QString& shareUrl, bool* ok)
     item.remarks = url.fragment(QUrl::FullyDecoded);
     item.address = url.host();
     item.port = url.port();
-    item.id = QUrl::fromPercentEncoding(url.userName().toUtf8());
-    item.security = QUrl::fromPercentEncoding(url.password().toUtf8());
+    item.id = decodedUserName(url);
+    item.security = decodedPassword(url);
 
     if (item.address.trimmed().isEmpty() || item.port <= 0) {
         item = parseLegacySocks(shareUrl);
@@ -369,7 +380,7 @@ VmessItem ShareUrlParser::parseSocks(const QString& shareUrl, bool* ok)
     }
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0;
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port);
     }
 
     return item;
@@ -387,12 +398,12 @@ VmessItem ShareUrlParser::parseTrojan(const QString& shareUrl, bool* ok)
     item.remarks = url.fragment(QUrl::FullyDecoded);
     item.address = url.host();
     item.port = url.port();
-    item.id = url.userName();
+    item.id = decodedUserName(url);
 
     resolveStandardTransport(QUrlQuery(url), item);
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -411,7 +422,7 @@ VmessItem ShareUrlParser::parseVless(const QString& shareUrl, bool* ok)
     item.remarks = url.fragment(QUrl::FullyDecoded);
     item.address = url.host();
     item.port = url.port();
-    item.id = url.userName();
+    item.id = decodedUserName(url);
     item.security = query.queryItemValue(QStringLiteral("encryption"));
     if (item.security.isEmpty()) {
         item.security = QStringLiteral("none");
@@ -420,7 +431,7 @@ VmessItem ShareUrlParser::parseVless(const QString& shareUrl, bool* ok)
     resolveStandardTransport(query, item);
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -440,7 +451,7 @@ VmessItem ShareUrlParser::parseHysteria2(const QString& shareUrl, bool* ok)
     item.address = url.host();
     item.port = url.port();
     // hysteria2://password@host:port or hy2://password@host:port
-    item.id = QUrl::fromPercentEncoding(url.userName().toUtf8());
+    item.id = decodedUserName(url);
 
     item.sni = query.queryItemValue(QStringLiteral("sni"));
     item.streamSecurity = QStringLiteral("tls");
@@ -459,7 +470,7 @@ VmessItem ShareUrlParser::parseHysteria2(const QString& shareUrl, bool* ok)
     }
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0;
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port);
     }
 
     return item;
@@ -479,8 +490,8 @@ VmessItem ShareUrlParser::parseTuic(const QString& shareUrl, bool* ok)
     item.address = url.host();
     item.port = url.port();
     // tuic://uuid:password@host:port
-    item.id = url.userName();
-    item.security = url.password();
+    item.id = decodedUserName(url);
+    item.security = decodedPassword(url);
 
     item.sni = query.queryItemValue(QStringLiteral("sni"));
     item.streamSecurity = QStringLiteral("tls");
@@ -497,7 +508,7 @@ VmessItem ShareUrlParser::parseTuic(const QString& shareUrl, bool* ok)
     item.alpn = splitCsv(query.queryItemValue(QStringLiteral("alpn")));
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -516,7 +527,7 @@ VmessItem ShareUrlParser::parseWireguard(const QString& shareUrl, bool* ok)
     item.remarks = url.fragment(QUrl::FullyDecoded);
     item.address = url.host();
     item.port = url.port();
-    item.privateKey = QUrl::fromPercentEncoding(url.userName().toUtf8());
+    item.privateKey = decodedUserName(url);
 
     item.peerPublicKey = query.queryItemValue(QStringLiteral("publickey"));
     item.localAddress = query.queryItemValue(QStringLiteral("address"));
@@ -531,7 +542,7 @@ VmessItem ShareUrlParser::parseWireguard(const QString& shareUrl, bool* ok)
     }
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.privateKey.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.privateKey.isEmpty();
     }
 
     return item;
@@ -552,7 +563,7 @@ VmessItem ShareUrlParser::parseAnytls(const QString& shareUrl, bool* ok)
     item.address = url.host();
     item.port = url.port();
     // anytls://password@host:port
-    item.id = QUrl::fromPercentEncoding(url.userName().toUtf8());
+    item.id = decodedUserName(url);
 
     item.sni = query.queryItemValue(QStringLiteral("sni"));
     item.streamSecurity = QStringLiteral("tls");
@@ -564,7 +575,7 @@ VmessItem ShareUrlParser::parseAnytls(const QString& shareUrl, bool* ok)
     item.alpn = splitCsv(QUrl::fromPercentEncoding(query.queryItemValue(QStringLiteral("alpn")).toUtf8()));
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -585,8 +596,8 @@ VmessItem ShareUrlParser::parseNaive(const QString& shareUrl, bool* ok)
     item.address = url.host();
     item.port = url.port();
     // naive+https://user:pass@host:port  or naive+quic://user:pass@host:port
-    item.username = QUrl::fromPercentEncoding(url.userName().toUtf8());
-    item.id = QUrl::fromPercentEncoding(url.password().toUtf8());
+    item.username = decodedUserName(url);
+    item.id = decodedPassword(url);
     item.naiveQuic = url.scheme().compare(QStringLiteral("naive+quic"), Qt::CaseInsensitive) == 0;
 
     item.sni = query.queryItemValue(QStringLiteral("sni"));
@@ -607,7 +618,7 @@ VmessItem ShareUrlParser::parseNaive(const QString& shareUrl, bool* ok)
     }
 
     if (ok != nullptr) {
-        *ok = !item.address.isEmpty() && item.port > 0 && !item.id.isEmpty();
+        *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
     }
 
     return item;
@@ -740,7 +751,7 @@ bool ShareUrlParser::tryParseAddressAndPort(const QString& endpoint, QString& ad
 
         address = trimmed.mid(1, closingIndex - 1);
         port = parseInt(trimmed.mid(closingIndex + 2));
-        return !address.isEmpty() && port > 0;
+        return !address.isEmpty() && isValidTcpPort(port);
     }
 
     const int separatorIndex = trimmed.lastIndexOf(QChar(':'));
@@ -750,7 +761,7 @@ bool ShareUrlParser::tryParseAddressAndPort(const QString& endpoint, QString& ad
 
     address = trimmed.left(separatorIndex);
     port = parseInt(trimmed.mid(separatorIndex + 1));
-    return !address.isEmpty() && port > 0;
+    return !address.isEmpty() && isValidTcpPort(port);
 }
 
 void ShareUrlParser::resolveStandardTransport(const QUrlQuery& query, VmessItem& item)

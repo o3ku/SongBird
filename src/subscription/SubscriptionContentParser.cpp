@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QStringList>
 
+#include "common/PortValidator.h"
 #include "subscription/ShareUrlParser.h"
 
 namespace {
@@ -96,7 +97,7 @@ bool parsePortValue(const QJsonValue& value, int* port)
 
     if (value.isDouble()) {
         *port = value.toInt();
-        return *port > 0;
+        return isValidTcpPort(*port);
     }
 
     if (!value.isString()) {
@@ -105,7 +106,7 @@ bool parsePortValue(const QJsonValue& value, int* port)
 
     bool ok = false;
     const int parsed = value.toString().trimmed().toInt(&ok);
-    if (!ok || parsed <= 0) {
+    if (!ok || !isValidTcpPort(parsed)) {
         return false;
     }
 
@@ -713,11 +714,11 @@ QList<VmessItem> SubscriptionContentParser::tryParseSip008(const QString& conten
         item.configType = ConfigType::Shadowsocks;
         item.remarks = object.value(QStringLiteral("remarks")).toString();
         item.address = object.value(QStringLiteral("server")).toString();
-        item.port = object.value(QStringLiteral("server_port")).toInt(0);
+        parsePortValue(object.value(QStringLiteral("server_port")), &item.port);
         item.security = object.value(QStringLiteral("method")).toString();
         item.id = object.value(QStringLiteral("password")).toString();
 
-        if (!item.address.isEmpty() && item.port > 0) {
+        if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
             items.append(item);
         }
     }
@@ -913,7 +914,7 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBoxOutboundObject(const 
     item.shortId = firstNonEmpty(object, {"reality_short_id", "short_id"});
     item.extra = compactJson(object.value(QStringLiteral("transport")));
 
-    if (!item.address.isEmpty() && item.port > 0) {
+    if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
         items.append(item);
     }
     return items;
@@ -1048,7 +1049,7 @@ QList<VmessItem> SubscriptionContentParser::tryParseClashProxyArray(const QJsonA
         if (item.headerType.isEmpty()) {
             item.headerType = QStringLiteral("none");
         }
-        if (!item.address.isEmpty() && item.port > 0) {
+        if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
             items.append(item);
         }
     }

@@ -19,6 +19,9 @@ private slots:
     void buildAndParseAnytlsRoundTrips();
     void buildAndParseNaiveHttpsRoundTrips();
     void buildAndParseNaiveQuicRoundTrips();
+    void buildAndParseTrojanEscapesUserInfo();
+    void buildAndParseTuicEscapesUserInfo();
+    void parseRejectsOutOfRangePort();
     void parseHysteria2PinSha256IntoCertSha();
     void parseVlessTlsVisionShareUrl();
     void parseVlessRealityVisionShareUrl();
@@ -236,6 +239,65 @@ void ShareUrlTests::buildAndParseNaiveQuicRoundTrips()
     QCOMPARE(parsed.username, source.username);
     QCOMPARE(parsed.id, source.id);
     QCOMPARE(parsed.congestionControl, source.congestionControl);
+}
+
+void ShareUrlTests::buildAndParseTrojanEscapesUserInfo()
+{
+    VmessItem source;
+    source.configType = ConfigType::Trojan;
+    source.address = QStringLiteral("example.com");
+    source.port = 443;
+    source.id = QStringLiteral("p@ss:/?#");
+    source.remarks = QStringLiteral("trojan-special");
+
+    const QString url = ShareUrlBuilder::build(source);
+
+    QVERIFY(url.startsWith(QStringLiteral("trojan://p%40ss%3A%2F%3F%23@example.com:443")));
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::Trojan);
+    QCOMPARE(parsed.id, source.id);
+    QCOMPARE(parsed.address, source.address);
+    QCOMPARE(parsed.port, source.port);
+    QCOMPARE(parsed.remarks, source.remarks);
+}
+
+void ShareUrlTests::buildAndParseTuicEscapesUserInfo()
+{
+    VmessItem source;
+    source.configType = ConfigType::TUIC;
+    source.address = QStringLiteral("tuic.example.com");
+    source.port = 443;
+    source.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
+    source.security = QStringLiteral("p@ss:/?#");
+
+    const QString url = ShareUrlBuilder::build(source);
+
+    QVERIFY(url.startsWith(QStringLiteral("tuic://11111111-1111-1111-1111-111111111111:p%40ss%3A%2F%3F%23@tuic.example.com:443")));
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::TUIC);
+    QCOMPARE(parsed.id, source.id);
+    QCOMPARE(parsed.security, source.security);
+    QCOMPARE(parsed.address, source.address);
+    QCOMPARE(parsed.port, source.port);
+}
+
+void ShareUrlTests::parseRejectsOutOfRangePort()
+{
+    bool ok = true;
+    const VmessItem parsed = ShareUrlParser::parse(
+        QStringLiteral("trojan://password@example.com:65536#bad-port"),
+        &ok);
+
+    QVERIFY(!ok);
+    Q_UNUSED(parsed);
 }
 
 void ShareUrlTests::parseHysteria2PinSha256IntoCertSha()

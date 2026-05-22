@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "common/PortValidator.h"
+
 ServerService::ServerService(IConfigRepository& repository, QString customConfigDirectory)
     : repository_(repository)
     , customConfigDirectory_(std::move(customConfigDirectory))
@@ -420,13 +422,13 @@ OperationResult ServerService::validateServer(const VmessItem& item)
     }
 
     if (item.configType == ConfigType::Custom) {
-        if (item.preSocksPort < 0 || item.preSocksPort > 65535) {
+        if (!isValidOptionalTcpPort(item.preSocksPort)) {
             return OperationResult::fail(QStringLiteral("Pre-Socks port must be between 0 and 65535."));
         }
         return OperationResult::ok();
     }
 
-    if (item.port <= 0 || item.port > 65535) {
+    if (!isValidTcpPort(item.port)) {
         return OperationResult::fail(QStringLiteral("Server port must be between 1 and 65535."));
     }
 

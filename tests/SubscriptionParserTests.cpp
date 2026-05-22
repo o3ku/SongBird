@@ -20,10 +20,13 @@ private slots:
     void subscriptionBase64UrlSafeChars();
     void subscriptionBase64MissingPadding();
     void subscriptionSip008SkipsInvalidEntries();
+    void subscriptionSip008RejectsOutOfRangePort();
     void subscriptionJsonStringArrayOfShareUrls();
     void subscriptionNestedBase64DecodesRepeatedly();
     void subscriptionSingBoxOutboundsJson();
+    void subscriptionSingBoxRejectsOutOfRangePort();
     void subscriptionClashYamlProxies();
+    void subscriptionClashRejectsOutOfRangePort();
     void subscriptionClashYamlFlowStyleVlessReality();
 
     // --- CustomConfigTextParser ---
@@ -212,6 +215,24 @@ void SubscriptionParserTests::subscriptionSip008SkipsInvalidEntries()
     QCOMPARE(items[0].remarks, QStringLiteral("valid"));
 }
 
+void SubscriptionParserTests::subscriptionSip008RejectsOutOfRangePort()
+{
+    const QString json = QStringLiteral(
+        "["
+        "  {"
+        "    \"remarks\": \"bad-port\","
+        "    \"server\": \"10.0.0.1\","
+        "    \"server_port\": 65536,"
+        "    \"method\": \"aes-256-gcm\","
+        "    \"password\": \"pw\""
+        "  }"
+        "]"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(json);
+    QVERIFY(items.isEmpty());
+}
+
 void SubscriptionParserTests::subscriptionJsonStringArrayOfShareUrls()
 {
     const QString content = QStringLiteral(
@@ -276,6 +297,26 @@ void SubscriptionParserTests::subscriptionSingBoxOutboundsJson()
     QCOMPARE(items[1].remarks, QStringLiteral("sb-trojan"));
 }
 
+void SubscriptionParserTests::subscriptionSingBoxRejectsOutOfRangePort()
+{
+    const QString json = QStringLiteral(
+        "{"
+        "\"outbounds\":["
+        "  {"
+        "    \"type\":\"trojan\","
+        "    \"tag\":\"bad-port\","
+        "    \"server\":\"trojan.example.com\","
+        "    \"server_port\":65536,"
+        "    \"password\":\"trojan-pass\""
+        "  }"
+        "]"
+        "}"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(json);
+    QVERIFY(items.isEmpty());
+}
+
 void SubscriptionParserTests::subscriptionClashYamlProxies()
 {
     const QString yaml = QStringLiteral(
@@ -306,6 +347,21 @@ void SubscriptionParserTests::subscriptionClashYamlProxies()
     QCOMPARE(items[0].path, QStringLiteral("/ws"));
     QCOMPARE(items[1].configType, ConfigType::Shadowsocks);
     QCOMPARE(items[1].remarks, QStringLiteral("clash-ss"));
+}
+
+void SubscriptionParserTests::subscriptionClashRejectsOutOfRangePort()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: bad-port\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 65536\n"
+        "    password: secret\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QVERIFY(items.isEmpty());
 }
 
 void SubscriptionParserTests::subscriptionClashYamlFlowStyleVlessReality()
