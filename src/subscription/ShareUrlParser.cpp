@@ -40,6 +40,18 @@ QString decodedPassword(const QUrl& url)
     return QUrl::fromPercentEncoding(url.password().toUtf8());
 }
 
+QString firstNonEmptyQueryValue(const QUrlQuery& query, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = query.queryItemValue(key);
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+
+    return {};
+}
+
 } // namespace
 
 VmessItem ShareUrlParser::parse(const QString& shareUrl, bool* ok)
@@ -573,6 +585,9 @@ VmessItem ShareUrlParser::parseAnytls(const QString& shareUrl, bool* ok)
     }
     item.fingerprint = query.queryItemValue(QStringLiteral("fp"));
     item.alpn = splitCsv(QUrl::fromPercentEncoding(query.queryItemValue(QStringLiteral("alpn")).toUtf8()));
+    item.idleSessionCheckInterval = query.queryItemValue(QStringLiteral("idle_session_check_interval"));
+    item.idleSessionTimeout = query.queryItemValue(QStringLiteral("idle_session_timeout"));
+    item.minIdleSession = query.queryItemValue(QStringLiteral("min_idle_session"));
 
     if (ok != nullptr) {
         *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();
@@ -771,6 +786,9 @@ void ShareUrlParser::resolveStandardTransport(const QUrlQuery& query, VmessItem&
     };
     item.flow = query.queryItemValue(QStringLiteral("flow"));
     item.streamSecurity = query.queryItemValue(QStringLiteral("security"));
+    item.allowInsecure = firstNonEmptyQueryValue(
+        query,
+        {QStringLiteral("allowInsecure"), QStringLiteral("allow_insecure"), QStringLiteral("insecure")});
     item.sni = decodedQueryValue(QStringLiteral("sni"));
     item.alpn = splitCsv(decodedQueryValue(QStringLiteral("alpn")));
     item.echConfigList = decodedQueryValue(QStringLiteral("ech"));
@@ -781,6 +799,9 @@ void ShareUrlParser::resolveStandardTransport(const QUrlQuery& query, VmessItem&
     item.spiderX = decodedQueryValue(QStringLiteral("spx"));
     item.mldsa65Verify = decodedQueryValue(QStringLiteral("pqv"));
     item.finalmask = normalizeJsonText(decodedQueryValue(QStringLiteral("fm")));
+    item.packetEncoding = firstNonEmptyQueryValue(
+        query,
+        {QStringLiteral("packetEncoding"), QStringLiteral("packet_encoding")});
     item.network = query.queryItemValue(QStringLiteral("type"));
     if (item.network.isEmpty()) {
         item.network = QStringLiteral("tcp");

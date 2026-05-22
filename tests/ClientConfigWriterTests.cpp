@@ -108,6 +108,8 @@ private slots:
     void generateClientConfigsBuildsSingBoxHysteria2Outbound();
     void generateClientConfigsOmitsSingBoxDnsAndDefaultResolverWhenDnsInputsAreEmpty();
     void generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls();
+    void generateClientConfigsWritesSingBoxAnyTlsIdleSessionSettings();
+    void generateClientConfigsWritesSingBoxVlessPacketEncoding();
 };
 
 namespace {
@@ -2933,6 +2935,65 @@ void ClientConfigWriterTests::generateClientConfigsDoesNotEmitSingBoxNetworkForA
         QStringLiteral("proxy"));
     QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("anytls"));
     QVERIFY(proxyOutbound.value(QStringLiteral("network")).isUndefined());
+}
+
+void ClientConfigWriterTests::generateClientConfigsWritesSingBoxAnyTlsIdleSessionSettings()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.configType = ConfigType::AnyTLS;
+    server.address = QStringLiteral("82.152.166.143");
+    server.port = 18963;
+    server.id = QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8");
+    server.streamSecurity = QStringLiteral("tls");
+    server.sni = QStringLiteral("hycs3.ipl.cc.cd");
+    server.idleSessionCheckInterval = QStringLiteral("30s");
+    server.idleSessionTimeout = QStringLiteral("30s");
+    server.minIdleSession = QStringLiteral("5");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("anytls"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("idle_session_check_interval")).toString(), QStringLiteral("30s"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("idle_session_timeout")).toString(), QStringLiteral("30s"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("min_idle_session")).toInt(), 5);
+}
+
+void ClientConfigWriterTests::generateClientConfigsWritesSingBoxVlessPacketEncoding()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    setProtocolCore(config, ConfigType::VLESS, CoreType::SingBox);
+
+    VmessItem server = baseServer();
+    server.configType = ConfigType::VLESS;
+    server.address = QStringLiteral("82.152.166.143");
+    server.port = 18961;
+    server.id = QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8");
+    server.streamSecurity = QStringLiteral("reality");
+    server.flow = QStringLiteral("xtls-rprx-vision");
+    server.sni = QStringLiteral("www.icloud.com");
+    server.fingerprint = QStringLiteral("safari");
+    server.publicKey = QStringLiteral("JAid5nKTI2w_Xpqszf80hSsYFn4sUkTAorIkd_PDlmw");
+    server.shortId = QStringLiteral("9f");
+    server.packetEncoding = QStringLiteral("xudp");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("vless"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("flow")).toString(), QStringLiteral("xtls-rprx-vision"));
+    QCOMPARE(proxyOutbound.value(QStringLiteral("packet_encoding")).toString(), QStringLiteral("xudp"));
 }
 
 QTEST_MAIN(ClientConfigWriterTests)

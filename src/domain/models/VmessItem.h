@@ -105,6 +105,7 @@ struct VmessItem {
     QString testResult;
     QString subId;
     QString flow;
+    QString packetEncoding;
     QString sni;
     QStringList alpn;
     int preSocksPort = 0;
@@ -139,4 +140,8 @@ struct VmessItem {
     QString username;
     bool naiveQuic = false;
     int insecureConcurrency = 0;
+    // AnyTLS fields
+    QString idleSessionCheckInterval;
+    QString idleSessionTimeout;
+    QString minIdleSession;
 };

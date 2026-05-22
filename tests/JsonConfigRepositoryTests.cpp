@@ -52,6 +52,7 @@ VmessItem makeServer()
     item.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
     item.remarks = QStringLiteral("primary");
     item.streamSecurity = QStringLiteral("tls");
+    item.packetEncoding = QStringLiteral("xudp");
     item.muxEnabled = false;
     item.finalmask = QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}");
     item.cert = QStringLiteral("-----BEGIN CERTIFICATE-----");
@@ -59,6 +60,9 @@ VmessItem makeServer()
     item.mldsa65Verify = QStringLiteral("mldsa-key");
     item.echConfigList = QStringLiteral("ECHCONFIGBASE64");
     item.echForceQuery = QStringLiteral("half");
+    item.idleSessionCheckInterval = QStringLiteral("30s");
+    item.idleSessionTimeout = QStringLiteral("30s");
+    item.minIdleSession = QStringLiteral("5");
     item.subId = QStringLiteral("sub-1");
     item.alpn = QStringList{QStringLiteral("h2"), QStringLiteral("http/1.1")};
     return item;
@@ -185,6 +189,7 @@ QJsonObject makeCanonicalRoot()
     serverObject.insert(QStringLiteral("id"), server.id);
     serverObject.insert(QStringLiteral("remarks"), server.remarks);
     serverObject.insert(QStringLiteral("streamSecurity"), server.streamSecurity);
+    serverObject.insert(QStringLiteral("packetEncoding"), server.packetEncoding);
     serverObject.insert(QStringLiteral("muxEnabled"), server.muxEnabled.value());
     serverObject.insert(QStringLiteral("finalmask"), server.finalmask);
     serverObject.insert(QStringLiteral("cert"), server.cert);
@@ -192,6 +197,9 @@ QJsonObject makeCanonicalRoot()
     serverObject.insert(QStringLiteral("mldsa65Verify"), server.mldsa65Verify);
     serverObject.insert(QStringLiteral("echConfigList"), server.echConfigList);
     serverObject.insert(QStringLiteral("echForceQuery"), server.echForceQuery);
+    serverObject.insert(QStringLiteral("idleSessionCheckInterval"), server.idleSessionCheckInterval);
+    serverObject.insert(QStringLiteral("idleSessionTimeout"), server.idleSessionTimeout);
+    serverObject.insert(QStringLiteral("minIdleSession"), server.minIdleSession);
     serverObject.insert(QStringLiteral("subscriptionId"), server.subId);
     serverObject.insert(QStringLiteral("alpn"), QJsonArray{server.alpn.at(0), server.alpn.at(1)});
 
@@ -413,9 +421,13 @@ void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
     QCOMPARE(config.collection().servers.constFirst().finalmask, QStringLiteral("{\"udp\":[{\"type\":\"mkcp-original\"}]}"));
     QCOMPARE(config.collection().servers.constFirst().cert, QStringLiteral("-----BEGIN CERTIFICATE-----"));
     QCOMPARE(config.collection().servers.constFirst().certSha, QStringLiteral("sha256/example"));
+    QCOMPARE(config.collection().servers.constFirst().packetEncoding, QStringLiteral("xudp"));
     QCOMPARE(config.collection().servers.constFirst().mldsa65Verify, QStringLiteral("mldsa-key"));
     QCOMPARE(config.collection().servers.constFirst().echConfigList, QStringLiteral("ECHCONFIGBASE64"));
     QCOMPARE(config.collection().servers.constFirst().echForceQuery, QStringLiteral("half"));
+    QCOMPARE(config.collection().servers.constFirst().idleSessionCheckInterval, QStringLiteral("30s"));
+    QCOMPARE(config.collection().servers.constFirst().idleSessionTimeout, QStringLiteral("30s"));
+    QCOMPARE(config.collection().servers.constFirst().minIdleSession, QStringLiteral("5"));
     QCOMPARE(config.collection().subscriptions.size(), 1);
     QCOMPARE(config.collection().subscriptions.constFirst().remarks, QStringLiteral("feed"));
     QCOMPARE(config.collection().routingIndex, 1);
@@ -693,6 +705,10 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QCOMPARE(savedServer.value(QStringLiteral("configType")).toInt(), static_cast<int>(ConfigType::Trojan));
     QVERIFY(!savedServer.contains(QStringLiteral("coreType")));
     QCOMPARE(savedServer.value(QStringLiteral("subscriptionId")).toString(), QStringLiteral("sub-1"));
+    QCOMPARE(savedServer.value(QStringLiteral("packetEncoding")).toString(), QStringLiteral("xudp"));
+    QCOMPARE(savedServer.value(QStringLiteral("idleSessionCheckInterval")).toString(), QStringLiteral("30s"));
+    QCOMPARE(savedServer.value(QStringLiteral("idleSessionTimeout")).toString(), QStringLiteral("30s"));
+    QCOMPARE(savedServer.value(QStringLiteral("minIdleSession")).toString(), QStringLiteral("5"));
     QVERIFY(!savedServer.contains(QStringLiteral("sort")));
     QVERIFY(!savedServer.contains(QStringLiteral("testResult")));
 
@@ -770,4 +786,3 @@ void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
 QTEST_MAIN(JsonConfigRepositoryTests)
 
 #include "JsonConfigRepositoryTests.moc"
-

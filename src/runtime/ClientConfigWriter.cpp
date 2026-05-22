@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QJsonValue>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
@@ -253,6 +254,18 @@ bool isValidJsonObjectText(const QString& value)
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(value.toUtf8(), &parseError);
     return parseError.error == QJsonParseError::NoError && document.isObject();
+}
+
+void insertPositiveIntOrString(QJsonObject& object, const QString& key, const QString& value)
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty()) {
+        return;
+    }
+
+    bool ok = false;
+    const int number = trimmed.toInt(&ok);
+    object.insert(key, ok && number > 0 ? QJsonValue(number) : QJsonValue(trimmed));
 }
 
 QString resolveLegacyUserAgent(const Config& config, const VmessItem& server)
@@ -2272,6 +2285,9 @@ QJsonObject ClientConfigWriter::buildPrimaryOutbound(const Config& config, const
         if (!server.flow.trimmed().isEmpty()) {
             user.insert(QStringLiteral("flow"), server.flow);
         }
+        if (!server.packetEncoding.trimmed().isEmpty()) {
+            user.insert(QStringLiteral("packetEncoding"), server.packetEncoding.trimmed());
+        }
     } else {
         outbound.insert(QStringLiteral("protocol"), QStringLiteral("vmess"));
         user.insert(QStringLiteral("alterId"), server.alterId);
@@ -2334,6 +2350,9 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
         outbound.insert(QStringLiteral("uuid"), server.id);
         if (!server.flow.trimmed().isEmpty()) {
             outbound.insert(QStringLiteral("flow"), server.flow);
+        }
+        if (!server.packetEncoding.trimmed().isEmpty()) {
+            outbound.insert(QStringLiteral("packet_encoding"), server.packetEncoding.trimmed());
         }
         break;
     case ConfigType::Trojan:
@@ -2448,6 +2467,12 @@ QJsonObject ClientConfigWriter::buildSingBoxPrimaryOutbound(const Config& config
     }
     case ConfigType::AnyTLS:
         outbound.insert(QStringLiteral("password"), server.id);
+        insertPositiveIntOrString(
+            outbound,
+            QStringLiteral("idle_session_check_interval"),
+            server.idleSessionCheckInterval);
+        insertPositiveIntOrString(outbound, QStringLiteral("idle_session_timeout"), server.idleSessionTimeout);
+        insertPositiveIntOrString(outbound, QStringLiteral("min_idle_session"), server.minIdleSession);
         break;
     case ConfigType::Naive:
         if (!server.username.trimmed().isEmpty()) {

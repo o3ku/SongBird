@@ -278,6 +278,7 @@ QList<VmessItem> parseServers(const QJsonArray& array)
         item.allowInsecure = object.value(QStringLiteral("allowInsecure")).toString();
         item.testResult = object.value(QStringLiteral("testResult")).toString();
         item.flow = object.value(QStringLiteral("flow")).toString();
+        item.packetEncoding = object.value(QStringLiteral("packetEncoding")).toString();
         item.sni = object.value(QStringLiteral("sni")).toString();
         item.preSocksPort = object.value(QStringLiteral("preSocksPort")).toInt(0);
         item.fingerprint = object.value(QStringLiteral("fingerprint")).toString();
@@ -309,6 +310,9 @@ QList<VmessItem> parseServers(const QJsonArray& array)
         item.username = object.value(QStringLiteral("username")).toString();
         item.naiveQuic = object.value(QStringLiteral("naiveQuic")).toBool(false);
         item.insecureConcurrency = object.value(QStringLiteral("insecureConcurrency")).toInt(0);
+        item.idleSessionCheckInterval = object.value(QStringLiteral("idleSessionCheckInterval")).toString();
+        item.idleSessionTimeout = object.value(QStringLiteral("idleSessionTimeout")).toString();
+        item.minIdleSession = object.value(QStringLiteral("minIdleSession")).toString();
         item.subId = object.value(QStringLiteral("subscriptionId")).toString();
 
         const QJsonArray alpnArray = object.value(QStringLiteral("alpn")).toArray();
@@ -347,6 +351,7 @@ QJsonArray toServerArray(const QList<VmessItem>& items)
         writeIfNotEmpty(object, QStringLiteral("streamSecurity"), item.streamSecurity);
         writeIfNotEmpty(object, QStringLiteral("allowInsecure"), item.allowInsecure);
         writeIfNotEmpty(object, QStringLiteral("flow"), item.flow);
+        writeIfNotEmpty(object, QStringLiteral("packetEncoding"), item.packetEncoding);
         writeIfNotEmpty(object, QStringLiteral("sni"), item.sni);
         writeIfNotDefault(object, QStringLiteral("preSocksPort"), item.preSocksPort, 0);
         writeIfNotEmpty(object, QStringLiteral("fingerprint"), item.fingerprint);
@@ -378,6 +383,9 @@ QJsonArray toServerArray(const QList<VmessItem>& items)
         writeIfNotEmpty(object, QStringLiteral("username"), item.username);
         writeIfTrue(object, QStringLiteral("naiveQuic"), item.naiveQuic);
         writeIfNotDefault(object, QStringLiteral("insecureConcurrency"), item.insecureConcurrency, 0);
+        writeIfNotEmpty(object, QStringLiteral("idleSessionCheckInterval"), item.idleSessionCheckInterval);
+        writeIfNotEmpty(object, QStringLiteral("idleSessionTimeout"), item.idleSessionTimeout);
+        writeIfNotEmpty(object, QStringLiteral("minIdleSession"), item.minIdleSession);
         writeIfNotEmpty(object, QStringLiteral("subscriptionId"), item.subId);
         writeStringListIfNotEmpty(object, QStringLiteral("alpn"), item.alpn);
 

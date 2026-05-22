@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
 
 #include "subscription/ShareUrlBuilder.h"
 #include "subscription/ShareUrlParser.h"
@@ -25,6 +26,9 @@ private slots:
     void parseHysteria2PinSha256IntoCertSha();
     void parseVlessTlsVisionShareUrl();
     void parseVlessRealityVisionShareUrl();
+    void parseVlessRealityVisionShareUrlKeepsPacketEncoding();
+    void parseAnytlsShareUrlKeepsIdleSessionSettings();
+    void parseTrojanShareUrlKeepsAllowInsecure();
     void parseSocksUrlWithEmptyBase64Credentials();
     void parseLegacyVmessShareUrlKeepsVmessType();
 };
@@ -362,6 +366,69 @@ void ShareUrlTests::parseVlessRealityVisionShareUrl()
     QCOMPARE(parsed.shortId, QStringLiteral("ebfeeffb94d5bd5d"));
     QCOMPARE(parsed.network, QStringLiteral("tcp"));
     QCOMPARE(parsed.headerType, QStringLiteral("none"));
+}
+
+void ShareUrlTests::parseVlessRealityVisionShareUrlKeepsPacketEncoding()
+{
+    const QString url =
+        QStringLiteral("vless://83e96db9-34ec-4d85-ac13-e37e44006aa8@82.152.166.143:18961?"
+                       "encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.icloud.com&"
+                       "fp=safari&pbk=JAid5nKTI2w_Xpqszf80hSsYFn4sUkTAorIkd_PDlmw&sid=9f&"
+                       "packetEncoding=xudp#HK-01%F0%9F%87%AD%F0%9F%87%B0");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::VLESS);
+    QCOMPARE(parsed.flow, QStringLiteral("xtls-rprx-vision"));
+    QCOMPARE(parsed.streamSecurity, QStringLiteral("reality"));
+    QCOMPARE(parsed.sni, QStringLiteral("www.icloud.com"));
+    QCOMPARE(parsed.fingerprint, QStringLiteral("safari"));
+    QCOMPARE(parsed.publicKey, QStringLiteral("JAid5nKTI2w_Xpqszf80hSsYFn4sUkTAorIkd_PDlmw"));
+    QCOMPARE(parsed.shortId, QStringLiteral("9f"));
+    QCOMPARE(parsed.packetEncoding, QStringLiteral("xudp"));
+    QCOMPARE(parsed.remarks, QUrl::fromPercentEncoding(QByteArrayLiteral("HK-01%F0%9F%87%AD%F0%9F%87%B0")));
+}
+
+void ShareUrlTests::parseAnytlsShareUrlKeepsIdleSessionSettings()
+{
+    const QString url =
+        QStringLiteral("anytls://83e96db9-34ec-4d85-ac13-e37e44006aa8@82.152.166.143:18963?"
+                       "idle_session_check_interval=30s&idle_session_timeout=30s&min_idle_session=5&"
+                       "security=tls&sni=hycs3.ipl.cc.cd&allowInsecure=true#HK-02");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::AnyTLS);
+    QCOMPARE(parsed.address, QStringLiteral("82.152.166.143"));
+    QCOMPARE(parsed.port, 18963);
+    QCOMPARE(parsed.id, QStringLiteral("83e96db9-34ec-4d85-ac13-e37e44006aa8"));
+    QCOMPARE(parsed.streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(parsed.sni, QStringLiteral("hycs3.ipl.cc.cd"));
+    QCOMPARE(parsed.allowInsecure, QStringLiteral("true"));
+    QCOMPARE(parsed.idleSessionCheckInterval, QStringLiteral("30s"));
+    QCOMPARE(parsed.idleSessionTimeout, QStringLiteral("30s"));
+    QCOMPARE(parsed.minIdleSession, QStringLiteral("5"));
+}
+
+void ShareUrlTests::parseTrojanShareUrlKeepsAllowInsecure()
+{
+    const QString url =
+        QStringLiteral("trojan://%E5%8D%87%E7%BA%A7%E8%AE%A2%E9%98%85@z-eu1.mfa.cat:10030?"
+                       "security=tls&sni=www.cloudflare.com&allowInsecure=true#trojan");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::Trojan);
+    QCOMPARE(parsed.id, QUrl::fromPercentEncoding(QByteArrayLiteral("%E5%8D%87%E7%BA%A7%E8%AE%A2%E9%98%85")));
+    QCOMPARE(parsed.streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(parsed.sni, QStringLiteral("www.cloudflare.com"));
+    QCOMPARE(parsed.allowInsecure, QStringLiteral("true"));
 }
 
 void ShareUrlTests::buildAndParseRealityMldsa65VerifyRoundTrips()

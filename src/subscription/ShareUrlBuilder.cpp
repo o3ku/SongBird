@@ -252,6 +252,15 @@ QString ShareUrlBuilder::buildAnytls(const VmessItem& item)
     if (!item.fingerprint.trimmed().isEmpty()) {
         entries.append(qMakePair(QStringLiteral("fp"), item.fingerprint));
     }
+    if (!item.idleSessionCheckInterval.trimmed().isEmpty()) {
+        entries.append(qMakePair(QStringLiteral("idle_session_check_interval"), item.idleSessionCheckInterval));
+    }
+    if (!item.idleSessionTimeout.trimmed().isEmpty()) {
+        entries.append(qMakePair(QStringLiteral("idle_session_timeout"), item.idleSessionTimeout));
+    }
+    if (!item.minIdleSession.trimmed().isEmpty()) {
+        entries.append(qMakePair(QStringLiteral("min_idle_session"), item.minIdleSession));
+    }
 
     return QStringLiteral("anytls://")
         + QString::fromUtf8(QUrl::toPercentEncoding(item.id))
@@ -311,6 +320,9 @@ QList<QPair<QString, QString>> ShareUrlBuilder::buildStandardTransportEntries(co
     QList<QPair<QString, QString>> entries;
     if (!item.flow.trimmed().isEmpty()) {
         entries.append(qMakePair(QStringLiteral("flow"), item.flow));
+    }
+    if (!item.packetEncoding.trimmed().isEmpty()) {
+        entries.append(qMakePair(QStringLiteral("packetEncoding"), item.packetEncoding));
     }
 
     if (!item.streamSecurity.trimmed().isEmpty()) {

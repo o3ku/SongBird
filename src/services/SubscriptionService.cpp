@@ -239,7 +239,15 @@ QString SubscriptionService::serverReuseKey(const VmessItem& item)
         + QLatin1Char('|')
         + normalizedValue(item.flow)
         + QLatin1Char('|')
-        + normalizedValue(item.security);
+        + normalizedValue(item.packetEncoding)
+        + QLatin1Char('|')
+        + normalizedValue(item.security)
+        + QLatin1Char('|')
+        + normalizedValue(item.idleSessionCheckInterval)
+        + QLatin1Char('|')
+        + normalizedValue(item.idleSessionTimeout)
+        + QLatin1Char('|')
+        + normalizedValue(item.minIdleSession);
 
     switch (item.configType) {
     case ConfigType::Shadowsocks:
