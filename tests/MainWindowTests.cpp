@@ -591,11 +591,11 @@ void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
     QVERIFY(darkTheme.open(QIODevice::ReadOnly));
     const QString darkStyle = QString::fromUtf8(darkTheme.readAll());
     QVERIFY(darkStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QComboBox#routingModeCombo { border: 1px solid #4c5967;")));
+        "QToolBar#mainToolBar QComboBox#routingModeCombo { border: 1px solid #36404a;")));
     QVERIFY(darkStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { border: 1px solid #4c5967;")));
+        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { border: 1px solid #36404a;")));
     QVERIFY(darkStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QToolButton#qrCodeButton { border: 1px solid #4c5967;")));
+        "QToolBar#mainToolBar QToolButton#qrCodeButton { border: 1px solid #36404a;")));
 
     QFile lightTheme(QStringLiteral(":/themes/Light.qss"));
     QVERIFY(lightTheme.open(QIODevice::ReadOnly));
