@@ -31,6 +31,7 @@ SettingsDialogSession::Result SettingsDialogSession::exec(
 
         ~ThreadJoiner()
         {
+            constexpr unsigned long kCoreVersionProbeJoinMs = 8000;
             const QVector<QPointer<QThread>> threadList = threads;
             for (const QPointer<QThread>& threadGuard : threadList) {
                 QThread* thread = threadGuard.data();
@@ -39,9 +40,9 @@ SettingsDialogSession::Result SettingsDialogSession::exec(
                 }
                 thread->requestInterruption();
                 thread->quit();
-                if (!thread->wait(3000)) {
-                    thread->terminate();
-                    thread->wait();
+                while (!thread->wait(kCoreVersionProbeJoinMs)) {
+                    thread->requestInterruption();
+                    thread->quit();
                 }
             }
         }
