@@ -148,7 +148,9 @@ bool JsonConfigRepository::saveStateConfig(const Config& config)
     }
 
     if (root.isEmpty()) {
-        QFile::remove(path);
+        if (QFileInfo::exists(path) && !QFile::remove(path)) {
+            return false;
+        }
         return true;
     }
 
@@ -164,4 +166,3 @@ bool JsonConfigRepository::saveStateConfig(const Config& config)
 
     return file.commit();
 }
-

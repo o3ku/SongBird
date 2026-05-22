@@ -297,6 +297,7 @@ private slots:
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
     void saveWritesCanonicalSongBirdStructure();
+    void saveRemovesEmptyStateFile();
     void saveReplacesExistingRootInsteadOfMerging();
 };
 
@@ -713,6 +714,30 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QCOMPARE(reloaded.policy().policyGroups.size(), 1);
 }
 
+void JsonConfigRepositoryTests::saveRemovesEmptyStateFile()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    QJsonObject staleState;
+    staleState.insert(QStringLiteral("serverStates"), QJsonArray{
+        QJsonObject{
+            {QStringLiteral("indexId"), QStringLiteral("server-1")},
+            {QStringLiteral("testResult"), QStringLiteral("999 ms")}
+        }
+    });
+    QVERIFY(writeJsonFile(makeStatePath(tempDir), staleState));
+    QVERIFY(QFileInfo::exists(makeStatePath(tempDir)));
+
+    Config config;
+    config.collection().servers = {makeServer()};
+    config.collection().servers[0].testResult.clear();
+
+    QVERIFY(repository.save(config));
+    QVERIFY(!QFileInfo::exists(makeStatePath(tempDir)));
+}
+
 void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
 {
     QTemporaryDir tempDir;
@@ -745,5 +770,4 @@ void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
 QTEST_MAIN(JsonConfigRepositoryTests)
 
 #include "JsonConfigRepositoryTests.moc"
-
 

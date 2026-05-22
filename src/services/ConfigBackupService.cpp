@@ -244,7 +244,9 @@ OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) 
 
     const QString statePath = stateConfigPathFor(configPath_);
     if (stateRoot.isEmpty()) {
-        QFile::remove(statePath);
+        if (QFileInfo::exists(statePath) && !QFile::remove(statePath)) {
+            return OperationResult::fail(QStringLiteral("Failed to remove the restored UI/runtime state file."));
+        }
     } else if (!writeJsonObject(statePath, stateRoot)) {
         return OperationResult::fail(QStringLiteral("Failed to restore the UI/runtime state file."));
     }
@@ -291,7 +293,10 @@ OperationResult ConfigBackupService::backupToPath(const QString& targetPath, con
         if (!writeJsonObject(targetPath, backupRoot)) {
             return OperationResult::fail(QStringLiteral("Failed to finalize the backup file."));
         }
-        QFile::remove(stateConfigPathFor(targetPath));
+        const QString targetStatePath = stateConfigPathFor(targetPath);
+        if (QFileInfo::exists(targetStatePath) && !QFile::remove(targetStatePath)) {
+            return OperationResult::fail(QStringLiteral("Failed to remove the temporary backup state file."));
+        }
     }
 
     return OperationResult::ok(QStringLiteral("Configuration backed up to %1.").arg(QDir::toNativeSeparators(targetPath)));
