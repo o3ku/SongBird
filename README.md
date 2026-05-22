@@ -41,7 +41,7 @@ SongBird uses `songbird.json` for user configuration. It does not require the .N
 
 ### Server Testing
 
-- **URL test results** are persisted in `songbird.json`.
+- **URL test results** are persisted in the sidecar state file next to `songbird.json`.
 - **Subscription updates and deletion** synchronize stored test-result data so stale results are removed.
 - **Tray switch-server menu** sorts candidates by latency, keeps the current server first, and displays only `xxx ms`, `unavailable`, or blank for each result.
 - **Group test action** is available from the server tab context menu.
