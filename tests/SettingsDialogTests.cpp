@@ -1038,7 +1038,7 @@ void SettingsDialogTests::applicationThemeLoadsResourceStyleSheet()
     AppTheme::applyApplicationTheme(*qApp, AppTheme::darkThemeName());
 
     QVERIFY(qApp->styleSheet().contains(QStringLiteral("QMainWindow")));
-    QVERIFY(qApp->styleSheet().contains(QStringLiteral("#111418")));
+    QVERIFY(qApp->styleSheet().contains(QStringLiteral("#1a1f25")));
     QVERIFY(!qApp->styleSheet().contains(QStringLiteral("@surface@")));
 
     AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());

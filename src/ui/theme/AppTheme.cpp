@@ -77,12 +77,12 @@ constexpr ThemePalette kLightPalette{
     "rgba(255, 255, 255, 224)"};
 
 constexpr ThemePalette kDarkPalette{
-    "#111418",
-    "#181c20",
-    "#20262c",
-    "#15191e",
-    "#3b4652",
-    "#2b343d",
+    "#1a1f25",
+    "#20262d",
+    "#252d35",
+    "#1d232a",
+    "#414b56",
+    "#36404a",
     "#657384",
     "#e6eaf0",
     "#aab4c1",
@@ -96,7 +96,7 @@ constexpr ThemePalette kDarkPalette{
     "#e06f6f",
     "#b8c4d2",
     "#e06f6f",
-    "rgba(17, 20, 24, 224)"};
+    "rgba(26, 31, 37, 224)"};
 
 const ThemePalette& paletteForName(QStringView themeName)
 {
