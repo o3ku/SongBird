@@ -94,7 +94,7 @@ void AboutDialog::refreshSubtitle()
     const QString release = releaseDate_.isEmpty() ? QString() : tr("Released %1").arg(releaseDate_);
     subtitleLabel_->setText(release.isEmpty()
         ? version
-        : QStringLiteral("%1  ·  %2").arg(version, release));
+        : QStringLiteral("%1  %2  %3").arg(version, QChar(0x00B7), release));
 }
 
 void AboutDialog::setupUi()
