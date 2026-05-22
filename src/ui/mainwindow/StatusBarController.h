@@ -34,7 +34,6 @@ public:
         std::function<void()> settingsRequested,
         std::function<void()> currentServerRequested);
 
-    void setSnapshot(const Snapshot& snapshot);
     void refresh(
         const QString& currentServerName,
         const QString& currentServerLocation,

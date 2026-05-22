@@ -21,7 +21,6 @@ public:
 
     void setup();
     void setPreferredSelectionId(const QString& indexId);
-    QString preferredSelectionId() const;
     void updateSelectionForVisibleRows();
     QList<const ServerTableRow*> selectedServers() const;
     const ServerTableRow* selectedServer() const;

@@ -99,23 +99,6 @@ QStringList LogListModel::lines() const
     return result;
 }
 
-QStringList LogListModel::linesAt(const QModelIndexList& indexes) const
-{
-    QStringList values;
-    QSet<int> seenRows;
-    for (const QModelIndex& index : indexes) {
-        if (!index.isValid() || seenRows.contains(index.row())) {
-            continue;
-        }
-
-        seenRows.insert(index.row());
-        if (index.row() >= 0 && index.row() < entries_.size()) {
-            values.append(entries_.at(index.row()).text);
-        }
-    }
-
-    return values;
-}
 
 int LogListModel::computeVisualLineCount(const QString& text) const
 {

@@ -22,11 +22,6 @@ void LogFilterProxyModel::setPattern(const QString& pattern, bool regexEnabled)
     endResetModel();
 }
 
-bool LogFilterProxyModel::hasActivePattern() const
-{
-    return !pattern_.isEmpty();
-}
-
 bool LogFilterProxyModel::hasValidPattern() const
 {
     return validPattern_;

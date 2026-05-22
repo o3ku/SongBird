@@ -106,12 +106,6 @@ StatusBarController::StatusBarController(
     updateStatusIndicators();
 }
 
-void StatusBarController::setSnapshot(const Snapshot& snapshot)
-{
-    snapshot_ = snapshot;
-    updateStatusIndicators();
-}
-
 void StatusBarController::refresh(
     const QString& currentServerName,
     const QString& currentServerLocation,

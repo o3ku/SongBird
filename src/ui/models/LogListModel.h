@@ -22,7 +22,6 @@ public:
     void appendLine(const QString& line);
     void clear();
     QStringList lines() const;
-    QStringList linesAt(const QModelIndexList& indexes) const;
 
 private:
     struct LogEntry {

@@ -48,11 +48,6 @@ void ServerSelectionController::setPreferredSelectionId(const QString& indexId)
     preferredSelectionId_ = indexId.trimmed();
 }
 
-QString ServerSelectionController::preferredSelectionId() const
-{
-    return preferredSelectionId_;
-}
-
 void ServerSelectionController::updateSelectionForVisibleRows()
 {
     if (serverView_ == nullptr

@@ -10,7 +10,6 @@ public:
     explicit LogFilterProxyModel(QObject* parent = nullptr);
 
     void setPattern(const QString& pattern, bool regexEnabled);
-    bool hasActivePattern() const;
     bool hasValidPattern() const;
 
 protected:

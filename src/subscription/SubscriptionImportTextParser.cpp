@@ -29,21 +29,6 @@ bool SubscriptionImportTextParser::isSubscriptionUrl(const QString& text)
         || value.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
 }
 
-bool SubscriptionImportTextParser::isKnownServerShareUrl(const QString& text)
-{
-    const QString value = text.trimmed();
-    return value.startsWith(QStringLiteral("vmess://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("vless://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("trojan://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("ss://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("socks://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("hysteria2://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("hy2://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("tuic://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("wg://"), Qt::CaseInsensitive)
-        || value.startsWith(QStringLiteral("wireguard://"), Qt::CaseInsensitive);
-}
-
 QString SubscriptionImportTextParser::extractHostOrIpFromUrl(const QString& url)
 {
     const QString normalizedUrl = url.trimmed();
