@@ -51,9 +51,7 @@ void read(const QJsonObject& root, TunConfigState& config)
 void write(QJsonObject& root, const TunConfigState& config)
 {
     const QJsonObject tunModeItem = toTunModeItem(config.tunModeItem);
-    if (!tunModeItem.isEmpty()) {
-        root.insert(QStringLiteral("tunModeItem"), tunModeItem);
-    }
+    writeObjectIfNotEmpty(root, QStringLiteral("tunModeItem"), tunModeItem);
 }
 
 } // namespace JsonConfigTunSerialization

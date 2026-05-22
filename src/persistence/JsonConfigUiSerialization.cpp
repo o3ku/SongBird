@@ -71,9 +71,7 @@ void write(QJsonObject& root, const UiConfigState& config)
     if (themeName != QStringLiteral("Light")) {
         ui.insert(QStringLiteral("themeName"), themeName);
     }
-    if (!ui.isEmpty()) {
-        root.insert(QStringLiteral("ui"), ui);
-    }
+    writeObjectIfNotEmpty(root, QStringLiteral("ui"), ui);
 }
 
 } // namespace JsonConfigUiSerialization

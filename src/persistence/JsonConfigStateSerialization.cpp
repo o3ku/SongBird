@@ -32,9 +32,7 @@ QJsonObject toUiStateObject(const Config& config)
             mainColumnWidths.insert(it.key(), it.value());
         }
     }
-    if (!mainColumnWidths.isEmpty()) {
-        ui.insert(QStringLiteral("mainColumnWidths"), mainColumnWidths);
-    }
+    writeObjectIfNotEmpty(ui, QStringLiteral("mainColumnWidths"), mainColumnWidths);
 
     return ui;
 }
@@ -136,14 +134,10 @@ void write(QJsonObject& root, const Config& config)
     root = QJsonObject();
 
     const QJsonObject ui = toUiStateObject(config);
-    if (!ui.isEmpty()) {
-        root.insert(QStringLiteral("ui"), ui);
-    }
+    writeObjectIfNotEmpty(root, QStringLiteral("ui"), ui);
 
     const QJsonArray serverStates = toServerStateArray(config.collection().servers);
-    if (!serverStates.isEmpty()) {
-        root.insert(QStringLiteral("serverStates"), serverStates);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("serverStates"), serverStates);
 }
 
 } // namespace JsonConfigStateSerialization

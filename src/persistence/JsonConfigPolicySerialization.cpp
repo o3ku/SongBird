@@ -121,9 +121,7 @@ void read(const QJsonObject& root, PolicyConfigState& config)
 void write(QJsonObject& root, const PolicyConfigState& config)
 {
     const QJsonArray policyGroups = toPolicyGroupArray(config.policyGroups);
-    if (!policyGroups.isEmpty()) {
-        root.insert(QStringLiteral("policyGroups"), policyGroups);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("policyGroups"), policyGroups);
 
     if (!isDefaultCoreTypeItems(config.coreTypeItems)) {
         root.insert(QStringLiteral("coreTypeItems"), toCoreTypeItemArray(config.coreTypeItems));

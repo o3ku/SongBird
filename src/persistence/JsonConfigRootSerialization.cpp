@@ -125,9 +125,7 @@ void write(QJsonObject& root, const RootConfigState& config)
     QJsonObject defaults;
     writeIfNotEmpty(defaults, QStringLiteral("speedPingTestUrl"), config.defaults().speedPingTestUrl);
     writeIfNotEmpty(defaults, QStringLiteral("ieProxyExceptions"), config.defaults().defIeProxyExceptions);
-    if (!defaults.isEmpty()) {
-        root.insert(QStringLiteral("defaults"), defaults);
-    }
+    writeObjectIfNotEmpty(root, QStringLiteral("defaults"), defaults);
 
     writeIfNotDefault(root, QStringLiteral("muxEnabled"), config.muxEnabled, false);
     writeIfNotDefault(

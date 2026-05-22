@@ -89,12 +89,24 @@ inline void writeIfNotDefault(
     }
 }
 
+inline void writeArrayIfNotEmpty(QJsonObject& object, const QString& key, const QJsonArray& value)
+{
+    if (!value.isEmpty()) {
+        object.insert(key, value);
+    }
+}
+
+inline void writeObjectIfNotEmpty(QJsonObject& object, const QString& key, const QJsonObject& value)
+{
+    if (!value.isEmpty()) {
+        object.insert(key, value);
+    }
+}
+
 inline void writeStringListIfNotEmpty(QJsonObject& object, const QString& key, const QStringList& values)
 {
     const QJsonArray array = toStringArray(values);
-    if (!array.isEmpty()) {
-        object.insert(key, array);
-    }
+    writeArrayIfNotEmpty(object, key, array);
 }
 
 } // namespace JsonConfigUtils

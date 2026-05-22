@@ -463,9 +463,7 @@ QJsonArray toRoutingArray(const QList<RoutingItem>& items)
         writeIfNotEmpty(object, QStringLiteral("customIcon"), item.customIcon);
         writeIfNotEmpty(object, QStringLiteral("domainStrategyForSingbox"), item.domainStrategy4Singbox);
         const QJsonArray rules = toRoutingRuleArray(item.rules);
-        if (!rules.isEmpty()) {
-            object.insert(QStringLiteral("rules"), rules);
-        }
+        writeArrayIfNotEmpty(object, QStringLiteral("rules"), rules);
         array.append(object);
     }
 
@@ -490,27 +488,19 @@ void read(const QJsonObject& root, CollectionConfigState& config)
 void write(QJsonObject& root, const CollectionConfigState& config)
 {
     const QJsonArray servers = toServerArray(config.servers);
-    if (!servers.isEmpty()) {
-        root.insert(QStringLiteral("servers"), servers);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("servers"), servers);
 
     const QJsonArray subscriptions = toSubscriptionArray(config.subscriptions);
-    if (!subscriptions.isEmpty()) {
-        root.insert(QStringLiteral("subscriptions"), subscriptions);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("subscriptions"), subscriptions);
 
     writeIfNotDefault(root, QStringLiteral("routingIndex"), config.routingIndex, 0);
     writeIfTrue(root, QStringLiteral("enableRoutingAdvanced"), config.enableRoutingAdvanced);
 
     const QJsonArray routingItems = toRoutingArray(config.routingItems);
-    if (!routingItems.isEmpty()) {
-        root.insert(QStringLiteral("routingItems"), routingItems);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("routingItems"), routingItems);
 
     const QJsonArray routingCustomRules = toRoutingRuleArray(config.routingCustomRules);
-    if (!routingCustomRules.isEmpty()) {
-        root.insert(QStringLiteral("routingCustomRules"), routingCustomRules);
-    }
+    writeArrayIfNotEmpty(root, QStringLiteral("routingCustomRules"), routingCustomRules);
 }
 
 } // namespace JsonConfigCollectionSerialization
