@@ -601,11 +601,11 @@ void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
     QVERIFY(lightTheme.open(QIODevice::ReadOnly));
     const QString lightStyle = QString::fromUtf8(lightTheme.readAll());
     QVERIFY(lightStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QComboBox#routingModeCombo { border: 1px solid #d0d5dd;")));
+        "QToolBar#mainToolBar QComboBox#routingModeCombo { background: #f8fafc; border: 1px solid #c5ced8;")));
     QVERIFY(lightStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { border: 1px solid #d0d5dd;")));
+        "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { background: #f8fafc; border: 1px solid #c5ced8;")));
     QVERIFY(lightStyle.contains(QStringLiteral(
-        "QToolBar#mainToolBar QToolButton#qrCodeButton { border: 1px solid #d0d5dd;")));
+        "QToolBar#mainToolBar QToolButton#qrCodeButton { background: #f8fafc; border: 1px solid #c5ced8;")));
 }
 
 void MainWindowTests::sharePanelShowsSelectedServerShareLink()
