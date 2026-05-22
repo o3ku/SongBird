@@ -17,8 +17,10 @@ ServerListController::ServerListController(
     std::function<void()> updateSelectionForVisibleRows,
     std::function<void()> updateActionState,
     std::function<void()> updateQrPreview,
-    std::function<void(const QStringList&)> reorderServersRequested)
-    : context_(context)
+    std::function<void(const QStringList&)> reorderServersRequested,
+    QObject* parent)
+    : QObject(parent)
+    , context_(context)
     , applyTextFilter_(std::move(applyTextFilter))
     , applyCurrentTabFilter_(std::move(applyCurrentTabFilter))
     , updateSelectionForVisibleRows_(std::move(updateSelectionForVisibleRows))
@@ -28,10 +30,17 @@ ServerListController::ServerListController(
 {
 }
 
+ServerListController::~ServerListController()
+{
+    if (context_.serverView != nullptr) {
+        context_.serverView->setRowsMoveHandler({});
+    }
+}
+
 void ServerListController::setup()
 {
     if (context_.serverFilterEdit != nullptr) {
-        QObject::connect(context_.serverFilterEdit, &QLineEdit::textChanged, [this](const QString& text) {
+        QObject::connect(context_.serverFilterEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
             handleFilterTextChanged(text);
         });
     }
@@ -40,6 +49,7 @@ void ServerListController::setup()
         QObject::connect(
             context_.serverView->horizontalHeader(),
             &QHeaderView::sectionClicked,
+            this,
             [this](int logicalIndex) {
                 toggleSorting(logicalIndex);
             });

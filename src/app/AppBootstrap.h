@@ -44,7 +44,6 @@ class SubscriptionService;
 class SubscriptionUpdateService;
 class TrayController;
 class WindowsAutoRunService;
-class WindowsGlobalHotkeyService;
 class WindowsSystemProxyService;
 
 class AppBootstrap {
@@ -60,9 +59,7 @@ public:
 
     explicit AppBootstrap(
         QString configPath = {},
-        bool autoStartCore = false,
         bool startHidden = false,
-        bool registerGlobalHotkeys = true,
         bool skipCoreChecks = false);
     ~AppBootstrap();
 
@@ -200,8 +197,6 @@ private:
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);
     void openCustomConfigFile(const QString& indexId);
-    void openGlobalHotkeySettingsDialog();
-    void openDnsSettingsDialog();
     void handleRoutingSelectionResult(
         const OperationResult& result,
         bool previousAdvancedEnabled,
@@ -227,7 +222,8 @@ private:
     bool isCoreReady() const;
     const VmessItem* findServerById(const QString& indexId) const;
     const VmessItem* resolveActiveServer() const;
-    QString describeServer(const VmessItem* server) const;
+    std::optional<VmessItem> findServerSnapshotById(const QString& indexId) const;
+    std::optional<VmessItem> resolveActiveServerSnapshot() const;
     QString resolveConfigPath() const;
     QString resolveCustomConfigDirectory() const;
     QString resolveCustomConfigPath(const QString& address) const;
@@ -265,9 +261,7 @@ private:
     void cancelPendingCoreRestarts();
 
     QString configPath_;
-    bool autoStartCore_ = false;
     bool startHidden_ = false;
-    bool registerGlobalHotkeys_ = true;
     bool skipCoreChecks_ = false;
     Config config_;
     std::unique_ptr<JsonConfigRepository> repository_;
@@ -284,7 +278,6 @@ private:
     std::unique_ptr<QtCoreProcessHost> auxiliaryCoreProcessHost_;
     std::unique_ptr<CoreLifecycleService> auxiliaryCoreLifecycleService_;
     std::unique_ptr<WindowsAutoRunService> autoRunService_;
-    std::unique_ptr<WindowsGlobalHotkeyService> globalHotkeyService_;
     std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
     std::unique_ptr<TrayController> trayController_;
     std::unique_ptr<MainWindow> mainWindow_;
@@ -339,7 +332,7 @@ private:
     std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;
     std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
     QMetaObject::Connection coreStartedConnection_;
-    QList<QThread*> backgroundThreads_;
+    QList<QPointer<QThread>> backgroundThreads_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();
     std::atomic_bool shuttingDown_{false};
     QTimer* coreRestartTimer_ = nullptr;

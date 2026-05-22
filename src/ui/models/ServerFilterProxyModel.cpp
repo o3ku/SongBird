@@ -215,7 +215,7 @@ bool ServerFilterProxyModel::lessThan(const QModelIndex& sourceLeft, const QMode
         comparison = compareText(configTypeDisplayName(leftItem->configType), configTypeDisplayName(rightItem->configType));
         break;
     case RemarksColumn:
-        comparison = compareText(leftItem->remarks, rightItem->remarks);
+        comparison = compareText(leftItem->displayName, rightItem->displayName);
         break;
     case AddressColumn:
         comparison = compareText(leftItem->address, rightItem->address);

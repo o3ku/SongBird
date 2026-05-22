@@ -62,7 +62,6 @@ private:
     void updateTrayIcon();
     void rebuildServerMenu();
     void rebuildRoutingMenu();
-    static QString describeServer(const VmessItem& item);
     static QString describeRouting(const RoutingItem& item, int index);
 
     QPointer<MainWindow> mainWindow_;

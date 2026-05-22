@@ -74,9 +74,8 @@ WindowLayoutStateController::WindowLayoutStateController(
     }
 }
 
-QList<int> WindowLayoutStateController::defaultServerColumnWidths(int availableWidth)
+QList<int> WindowLayoutStateController::defaultServerColumnWidths()
 {
-    Q_UNUSED(availableWidth);
     QList<int> widths{
         44,
         90,

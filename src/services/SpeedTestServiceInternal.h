@@ -117,7 +117,6 @@ inline Config makeUrlTestRuntimeConfig(Config config)
     config.dns().enableCacheFile4Sbox = false;
     config.collection().servers.clear();
     config.collection().subscriptions.clear();
-    config.collection().globalHotkeys.clear();
     config.policy().coreTypeItems.clear();
 
     // Keep URL tests close to the actual "set current server" data path.

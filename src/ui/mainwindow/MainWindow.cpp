@@ -90,6 +90,8 @@ constexpr int ToolbarControlSpacing = 2;
 constexpr int ToolbarControlHeight = 28;
 constexpr int ToolbarPadding = 4;
 constexpr int ToolbarBottomBorderWidth = 1;
+constexpr int ToolbarButtonHorizontalPadding = 8;
+constexpr int ToolbarButtonBorderWidth = 1;
 constexpr int HeaderFilterMinimumCharacters = 14;
 constexpr int InitialRoutingComboMinimumCharacters = 12;
 constexpr int ServerTableNoColumn = 0;
@@ -100,6 +102,7 @@ constexpr int LoadingContentVerticalPadding = 14;
 constexpr int LoadingContentMinimumWidth = 360;
 constexpr int LoadingContentMaximumWidth = 720;
 constexpr int LoadingChecklistDetailMaximumWidth = 420;
+constexpr int WindowTitleServerNameMaximumWidth = 300;
 
 bool isCoreStartupFailureItem(const QString& item)
 {
@@ -349,6 +352,21 @@ QWidget* createToolbarSpacing(QWidget* parent, int width)
     spacer->setFixedWidth(width);
     spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     return spacer;
+}
+
+int toolbarTextButtonWidth(const QWidget* widget, const QStringList& texts)
+{
+    if (widget == nullptr) {
+        return 0;
+    }
+
+    int textWidth = 0;
+    const QFontMetrics fontMetrics(widget->font());
+    for (const QString& text : texts) {
+        textWidth = qMax(textWidth, fontMetrics.horizontalAdvance(text));
+    }
+
+    return textWidth + (ToolbarButtonHorizontalPadding * 2) + (ToolbarButtonBorderWidth * 2);
 }
 
 int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
@@ -1056,10 +1074,8 @@ void MainWindow::setupToolbar()
     mainContentLayout_->addWidget(toolbarHost);
 
     createToolbarActions();
-    QMenu* settingMenu = nullptr;
     QMenu* helpMenu = nullptr;
-    createToolbarMenus(toolBar, settingMenu, helpMenu);
-    Q_UNUSED(settingMenu)
+    createToolbarMenus(toolBar, helpMenu);
     populateToolbarWidgets(toolBar, helpMenu);
     initializeToolbarControllers();
 }
@@ -1151,10 +1167,6 @@ void MainWindow::createSystemToolbarActions()
     reloadConfigAction_ = new QAction(tr("Reload Config"), this);
     restoreBackupAction_ = new QAction(tr("Restore Backup"), this);
     restoreBackupAction_->setObjectName(QStringLiteral("restoreBackupAction"));
-    globalHotkeySettingsAction_ = new QAction(tr("Global Hotkey Settings"), this);
-    globalHotkeySettingsAction_->setObjectName(QStringLiteral("globalHotkeySettingsAction"));
-    dnsSettingsAction_ = new QAction(tr("DNS Settings"), this);
-    dnsSettingsAction_->setObjectName(QStringLiteral("dnsSettingsAction"));
     settingsAction_ = new QAction(tr("Settings"), this);
     settingsAction_->setObjectName(QStringLiteral("settingsAction"));
     toolbarIconFiles_.insert(settingsAction_, QStringLiteral("option.svg"));
@@ -1199,7 +1211,7 @@ void MainWindow::createRuntimeToolbarActions()
     toggleQrPanelAction_->setChecked(qrPreviewVisible_);
 }
 
-void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& settingMenu, QMenu*& helpMenu)
+void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
 {
     updateCurrentSubscriptionAction_ = new QAction(tr("Update Current Subscription"), this);
     updateCurrentSubscriptionAction_->setObjectName(QStringLiteral("updateCurrentSubscriptionMenuAction"));
@@ -1208,13 +1220,6 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& settingMenu, QMen
     });
 
     // Sub button now opens Settings at Subscriptions tab
-
-    settingMenu = new QMenu(toolBar);
-    settingMenu->setObjectName(QStringLiteral("settingMenu"));
-    settingMenu->addAction(settingsAction_);
-    settingMenu->addAction(routingSettingsAction_);
-    settingMenu->addAction(dnsSettingsAction_);
-    settingMenu->addAction(globalHotkeySettingsAction_);
 
     helpMenu = new QMenu(tr("Help"), toolBar);
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
@@ -1279,12 +1284,15 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
     toolBar->addWidget(selectServerHintLabel_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
 
-    createToolbarActionButton(
+    auto* proxyToggleButton = createToolbarActionButton(
         toolBar,
         QStringLiteral("proxyToggleButton"),
         tr("START"),
         QIcon(),
         proxyToggleAction_);
+    proxyToggleButton->setFixedWidth(toolbarTextButtonWidth(
+        proxyToggleButton,
+        {tr("START"), tr("STOP")}));
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
     createToolbarActionButton(
         toolBar,
@@ -1326,7 +1334,7 @@ void MainWindow::initializeToolbarControllers()
     proxyToolbarController_ = new ProxyToolbarController(proxyToggleAction_, tunToggleAction_);
     routingModeController_ = new RoutingModeController(routingModeCombo_, [this](int mode) {
         emit routingModeSelected(mode);
-    });
+    }, this);
     routingModeController_->setup();
     syncProxyToolbarController();
     updateQrPanelActionText();
@@ -1420,7 +1428,8 @@ void MainWindow::setupServerListController()
         [this]() { updateSelectionForVisibleRows(); },
         [this]() { updateActionState(); },
         [this]() { updateQrPreview(); },
-        [this](const QStringList& reorderedIds) { emit reorderServersRequested(reorderedIds); });
+        [this](const QStringList& reorderedIds) { emit reorderServersRequested(reorderedIds); },
+        this);
     serverListController_->setup();
     serverListController_->updateReorderAvailability();
 }
@@ -1555,8 +1564,6 @@ void MainWindow::setupSettingsActionConnections()
     connect(toggleAutoRunAction_, &QAction::triggered, this, &MainWindow::toggleAutoRunRequested);
     connect(reloadConfigAction_, &QAction::triggered, this, &MainWindow::reloadConfigRequested);
     connect(restoreBackupAction_, &QAction::triggered, this, &MainWindow::restoreBackupRequested);
-    connect(globalHotkeySettingsAction_, &QAction::triggered, this, &MainWindow::globalHotkeySettingsRequested);
-    connect(dnsSettingsAction_, &QAction::triggered, this, &MainWindow::dnsSettingsRequested);
     connect(settingsAction_, &QAction::triggered, this, &MainWindow::settingsRequested);
 }
 
@@ -1869,7 +1876,10 @@ void MainWindow::updateWindowTitle()
         : currentCoreName_.trimmed();
     const QString serverName = currentServerName_.trimmed().isEmpty()
         ? tr("None")
-        : currentServerName_.trimmed();
+        : elideTextWithThreeDots(
+            fontMetrics(),
+            currentServerName_.trimmed(),
+            WindowTitleServerNameMaximumWidth);
     const QString proxyState = coreRunning_ && systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
     const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
 

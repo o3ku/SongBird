@@ -93,17 +93,6 @@ RoutingItem makeRoutingItem()
     return item;
 }
 
-GlobalHotkeyItem makeHotkey()
-{
-    GlobalHotkeyItem item;
-    item.action = GlobalHotkeyAction::SystemProxySet;
-    item.alt = true;
-    item.control = true;
-    item.shift = false;
-    item.keyCode = 65;
-    return item;
-}
-
 SubItem makeSubscription()
 {
     SubItem item;
@@ -139,7 +128,6 @@ QJsonObject makeCanonicalRoot()
     const VmessItem server = makeServer();
     const RoutingItem routingItem = makeRoutingItem();
     const RoutingRule routeRule = routingItem.rules.constFirst();
-    const GlobalHotkeyItem hotkey = makeHotkey();
     const SubItem subscription = makeSubscription();
     const PolicyGroupItem policyGroup = makePolicyGroup();
     const CoreTypeItem coreTypeItem = makeCoreTypeItem();
@@ -206,13 +194,6 @@ QJsonObject makeCanonicalRoot()
     serverObject.insert(QStringLiteral("echForceQuery"), server.echForceQuery);
     serverObject.insert(QStringLiteral("subscriptionId"), server.subId);
     serverObject.insert(QStringLiteral("alpn"), QJsonArray{server.alpn.at(0), server.alpn.at(1)});
-
-    QJsonObject hotkeyObject;
-    hotkeyObject.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(hotkey.action));
-    hotkeyObject.insert(QStringLiteral("Alt"), hotkey.alt);
-    hotkeyObject.insert(QStringLiteral("Control"), hotkey.control);
-    hotkeyObject.insert(QStringLiteral("Shift"), hotkey.shift);
-    hotkeyObject.insert(QStringLiteral("KeyCode"), hotkey.keyCode.value());
 
     QJsonObject subscriptionObject;
     subscriptionObject.insert(QStringLiteral("id"), subscription.id);
@@ -295,7 +276,6 @@ QJsonObject makeCanonicalRoot()
     root.insert(QStringLiteral("tunModeItem"), tunModeItem);
     root.insert(QStringLiteral("servers"), QJsonArray{serverObject});
     root.insert(QStringLiteral("subscriptions"), QJsonArray{subscriptionObject});
-    root.insert(QStringLiteral("globalHotkeys"), QJsonArray{hotkeyObject});
     root.insert(QStringLiteral("routingIndex"), 1);
     root.insert(QStringLiteral("enableRoutingAdvanced"), true);
     root.insert(QStringLiteral("routingItems"), QJsonArray{routingObject});
@@ -313,6 +293,7 @@ class JsonConfigRepositoryTests : public QObject {
 private slots:
     void loadMissingFileBuildsDefaultSongBirdConfig();
     void loadReadsCanonicalSongBirdStructure();
+    void loadTreatsMissingServerConfigTypeAsVmess();
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
     void saveWritesCanonicalSongBirdStructure();
@@ -341,7 +322,6 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     QVERIFY(config.collection().routingItems.size() >= 3);
     QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.collection().subscriptions.isEmpty());
-    QVERIFY(config.collection().globalHotkeys.isEmpty());
 }
 
 void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
@@ -437,12 +417,6 @@ void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
     QCOMPARE(config.collection().servers.constFirst().echForceQuery, QStringLiteral("half"));
     QCOMPARE(config.collection().subscriptions.size(), 1);
     QCOMPARE(config.collection().subscriptions.constFirst().remarks, QStringLiteral("feed"));
-    QCOMPARE(config.collection().globalHotkeys.size(), 1);
-    QCOMPARE(config.collection().globalHotkeys.constFirst().action, GlobalHotkeyAction::SystemProxySet);
-    QVERIFY(config.collection().globalHotkeys.constFirst().control);
-    QVERIFY(config.collection().globalHotkeys.constFirst().alt);
-    QVERIFY(config.collection().globalHotkeys.constFirst().keyCode.has_value());
-    QCOMPARE(config.collection().globalHotkeys.constFirst().keyCode.value(), 65);
     QCOMPARE(config.collection().routingIndex, 1);
     QVERIFY(config.collection().enableRoutingAdvanced);
     QVERIFY(config.collection().routingItems.size() >= 1);
@@ -464,6 +438,30 @@ void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
     QCOMPARE(config.policy().coreTypeItems.size(), 1);
     QCOMPARE(config.policy().coreTypeItems.constFirst().configType, static_cast<int>(ConfigType::Trojan));
     QCOMPARE(config.policy().coreTypeItems.constFirst().coreType, static_cast<int>(CoreType::SingBox));
+}
+
+void JsonConfigRepositoryTests::loadTreatsMissingServerConfigTypeAsVmess()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+
+    QJsonObject server;
+    server.insert(QStringLiteral("indexId"), QStringLiteral("vmess-server"));
+    server.insert(QStringLiteral("address"), QStringLiteral("159.13.48.30"));
+    server.insert(QStringLiteral("port"), 13668);
+    server.insert(QStringLiteral("id"), QStringLiteral("7011399b-5745-4395-82c3-cfafe486e863"));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("servers"), QJsonArray{server});
+    QVERIFY(writeJsonFile(configPath, root));
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers.constFirst().configType, ConfigType::VMess);
 }
 
 void JsonConfigRepositoryTests::loadMergesStateFileWithoutBlockingOnMissingOrInvalidState()
@@ -527,18 +525,12 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
     server.insert(QStringLiteral("port"), 443);
     server.insert(QStringLiteral("subid"), QStringLiteral("legacy-sub"));
 
-    QJsonObject hotkey;
-    hotkey.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(GlobalHotkeyAction::ShowForm));
-    hotkey.insert(QStringLiteral("Control"), true);
-    hotkey.insert(QStringLiteral("KeyCode"), 70);
-
     QJsonObject root;
     root.insert(QStringLiteral("defUserAgent"), QStringLiteral("LegacyAgent"));
     root.insert(QStringLiteral("domainStrategy4Singbox"), QStringLiteral("prefer_ipv4"));
     root.insert(QStringLiteral("uiItem"), uiItem);
     root.insert(QStringLiteral("vmess"), QJsonArray{server});
     root.insert(QStringLiteral("subItem"), QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("legacy-sub")}}});
-    root.insert(QStringLiteral("GlobalHotkeys"), QJsonArray{hotkey});
     root.insert(QStringLiteral("routings"), QJsonArray{QJsonObject{{QStringLiteral("remarks"), QStringLiteral("legacy-route")}}});
     QVERIFY(writeJsonFile(configPath, root));
 
@@ -551,7 +543,6 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
     QVERIFY(!config.ui().mainProxyEnabled);
     QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.collection().subscriptions.isEmpty());
-    QVERIFY(config.collection().globalHotkeys.isEmpty());
     QVERIFY(config.collection().routingItems.size() >= 3);
 }
 
@@ -633,7 +624,6 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     config.collection().servers = {makeServer()};
     config.collection().servers[0].testResult = QStringLiteral("123 ms");
     config.collection().subscriptions = {makeSubscription()};
-    config.collection().globalHotkeys = {makeHotkey()};
     config.collection().routingIndex = 2;
     config.collection().enableRoutingAdvanced = true;
     config.collection().routingItems = {makeRoutingItem()};
@@ -653,7 +643,6 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QVERIFY(savedRoot.contains(QStringLiteral("tunModeItem")));
     QVERIFY(savedRoot.contains(QStringLiteral("servers")));
     QVERIFY(savedRoot.contains(QStringLiteral("subscriptions")));
-    QVERIFY(savedRoot.contains(QStringLiteral("globalHotkeys")));
     QVERIFY(savedRoot.contains(QStringLiteral("routingItems")));
     QVERIFY(savedRoot.contains(QStringLiteral("routingCustomRules")));
     QVERIFY(savedRoot.contains(QStringLiteral("policyGroups")));
@@ -662,7 +651,6 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QVERIFY(!savedRoot.contains(QStringLiteral("constItem")));
     QVERIFY(!savedRoot.contains(QStringLiteral("vmess")));
     QVERIFY(!savedRoot.contains(QStringLiteral("subItem")));
-    QVERIFY(!savedRoot.contains(QStringLiteral("GlobalHotkeys")));
     QVERIFY(!savedRoot.contains(QStringLiteral("routings")));
     QVERIFY(!savedRoot.contains(QStringLiteral("loglevel")));
     QVERIFY(!savedRoot.contains(QStringLiteral("defUserAgent")));
@@ -735,7 +723,6 @@ void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
     QJsonObject legacyRoot;
     legacyRoot.insert(QStringLiteral("customPreservedField"), QStringLiteral("keep-me"));
     legacyRoot.insert(QStringLiteral("uiItem"), QJsonObject{{QStringLiteral("mainProxyEnabled"), true}});
-    legacyRoot.insert(QStringLiteral("GlobalHotkeys"), QJsonArray{QJsonObject{{QStringLiteral("Control"), true}}});
     QVERIFY(writeJsonFile(configPath, legacyRoot));
 
     JsonConfigRepository repository(configPath);
@@ -748,7 +735,6 @@ void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
     QVERIFY(!savedRoot.isEmpty());
     QVERIFY(!savedRoot.contains(QStringLiteral("customPreservedField")));
     QVERIFY(!savedRoot.contains(QStringLiteral("uiItem")));
-    QVERIFY(!savedRoot.contains(QStringLiteral("GlobalHotkeys")));
     QCOMPARE(savedRoot.value(QStringLiteral("ui")).toObject().value(QStringLiteral("languageCode")).toString(), QStringLiteral("en-US"));
     QVERIFY(!savedRoot.value(QStringLiteral("ui")).toObject().contains(QStringLiteral("mainProxyEnabled")));
 

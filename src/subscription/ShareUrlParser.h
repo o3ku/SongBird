@@ -27,7 +27,7 @@ private:
     static VmessItem parseKitsunebiVmess(const QString& shareUrl);
     static VmessItem parseLegacyShadowsocks(const QString& shareUrl);
     static VmessItem parseLegacySocks(const QString& shareUrl);
-    static bool tryAssignUserInfo(QString credentials, QString& first, QString& second);
+    static bool tryAssignUserInfo(QString credentials, QString& first, QString& second, bool allowEmpty = false);
     static bool tryParseAddressAndPort(const QString& endpoint, QString& address, int& port);
     static void resolveStandardTransport(const QUrlQuery& query, VmessItem& item);
     static QString decodeBase64(const QString& value);

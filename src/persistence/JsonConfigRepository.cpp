@@ -69,8 +69,11 @@ Config JsonConfigRepository::loadPrimaryConfig()
         return {};
     }
 
+    const QByteArray payload = file.readAll();
+    file.close();
+
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         lastLoadError_ = parseError.error != QJsonParseError::NoError
             ? QStringLiteral("Failed to parse configuration file: %1 (offset %2: %3).")
@@ -97,8 +100,11 @@ bool JsonConfigRepository::loadStateInto(Config& config)
         return true;
     }
 
+    const QByteArray payload = file.readAll();
+    file.close();
+
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         return true;
     }

@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <QObject>
 #include <QStringList>
 
 struct Config;
@@ -10,7 +11,7 @@ class ServerFilterProxyModel;
 class ServerTableModel;
 class ServerTableView;
 
-class ServerListController final {
+class ServerListController final : public QObject {
 public:
     struct Context {
         ServerTableView* serverView = nullptr;
@@ -26,7 +27,10 @@ public:
         std::function<void()> updateSelectionForVisibleRows,
         std::function<void()> updateActionState,
         std::function<void()> updateQrPreview,
-        std::function<void(const QStringList&)> reorderServersRequested);
+        std::function<void(const QStringList&)> reorderServersRequested,
+        QObject* parent = nullptr);
+
+    ~ServerListController() override;
 
     void setup();
     void setDynamicSortEnabled(bool enabled, bool invalidateModel);

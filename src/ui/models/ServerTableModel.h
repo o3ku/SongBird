@@ -11,6 +11,7 @@ struct ServerTableRow {
     QString indexId;
     ConfigType configType = ConfigType::Unknown;
     QString remarks;
+    QString displayName;
     QString address;
     int port = 0;
     QString security;

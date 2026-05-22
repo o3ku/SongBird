@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QPointer>
 #include <QRegularExpression>
 
 #include <utility>
@@ -18,6 +19,7 @@ QtCoreProcessHost::~QtCoreProcessHost()
 {
     stop(true);
     resetProcessState();
+    processHandle_.reset();
 }
 
 OperationResult QtCoreProcessHost::start(
@@ -41,7 +43,9 @@ OperationResult QtCoreProcessHost::start(
         return stopResult;
     }
 
-    process_ = std::make_unique<QProcess>();
+    process_ = new QProcess();
+    processHandle_ = std::make_shared<ProcessHandle>();
+    processHandle_->process = process_;
     outputReceived_ = std::move(outputReceived);
     startedCallback_ = std::move(started);
     startFailedCallback_ = std::move(startFailed);
@@ -141,22 +145,36 @@ QStringList QtCoreProcessHost::buildArguments(const CoreInfo& coreInfo, const QS
 
 void QtCoreProcessHost::bindOutputSignals()
 {
+    QProcess* process = process_.data();
+    std::weak_ptr<ProcessHandle> processHandle = processHandle_;
     if (lastCoreInfo_.captureOutput) {
-        QObject::connect(process_.get(), &QProcess::readyReadStandardOutput, process_.get(), [this]() {
+        QObject::connect(process, &QProcess::readyReadStandardOutput, process, [this, process, processHandle]() {
+            const std::shared_ptr<ProcessHandle> handle = processHandle.lock();
+            if (!handle || handle->process != process) {
+                return;
+            }
             emitBufferedOutput(QProcess::StandardOutput);
         });
 
-        QObject::connect(process_.get(), &QProcess::readyReadStandardError, process_.get(), [this]() {
+        QObject::connect(process, &QProcess::readyReadStandardError, process, [this, process, processHandle]() {
+            const std::shared_ptr<ProcessHandle> handle = processHandle.lock();
+            if (!handle || handle->process != process) {
+                return;
+            }
             emitBufferedOutput(QProcess::StandardError);
         });
     }
 
     QObject::connect(
-        process_.get(),
+        process,
         &QProcess::started,
-        process_.get(),
-        [this]() {
-            recordCorePid(process_->processId());
+        process,
+        [this, process, processHandle]() {
+            const std::shared_ptr<ProcessHandle> handle = processHandle.lock();
+            if (!handle || handle->process != process) {
+                return;
+            }
+            recordCorePid(process->processId());
 
             if (startNotified_) {
                 return;
@@ -170,10 +188,14 @@ void QtCoreProcessHost::bindOutputSignals()
         });
 
     QObject::connect(
-        process_.get(),
+        process,
         &QProcess::errorOccurred,
-        process_.get(),
-        [this](QProcess::ProcessError error) {
+        process,
+        [this, process, processHandle](QProcess::ProcessError error) {
+            const std::shared_ptr<ProcessHandle> handle = processHandle.lock();
+            if (!handle || handle->process != process) {
+                return;
+            }
             if (startNotified_ || error != QProcess::FailedToStart) {
                 return;
             }
@@ -181,16 +203,20 @@ void QtCoreProcessHost::bindOutputSignals()
             startNotified_ = true;
             if (startFailedCallback_) {
                 startFailedCallback_(
-                    QStringLiteral("Failed to start core process: %1").arg(process_->errorString()));
+                    QStringLiteral("Failed to start core process: %1").arg(process->errorString()));
             }
         });
 
     QObject::connect(
-        process_.get(),
+        process,
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
-        process_.get(),
-        [this](int exitCode, QProcess::ExitStatus status) {
-            removeCorePid(process_->processId());
+        process,
+        [this, process, processHandle](int exitCode, QProcess::ExitStatus status) {
+            const std::shared_ptr<ProcessHandle> handle = processHandle.lock();
+            if (!handle || handle->process != process) {
+                return;
+            }
+            removeCorePid(process->processId());
             if (forcedKillTimer_ != nullptr) {
                 forcedKillTimer_->stop();
             }
@@ -283,9 +309,13 @@ void QtCoreProcessHost::resetProcessState(ProcessCleanupMode cleanupMode)
     }
 
     if (cleanupMode == ProcessCleanupMode::DeleteLater && process_) {
-        process_.release()->deleteLater();
+        processHandle_->process.clear();
+        process_->deleteLater();
+        process_.clear();
     } else {
-        process_.reset();
+        processHandle_->process.clear();
+        delete process_.data();
+        process_.clear();
     }
     startedCallback_ = {};
     startFailedCallback_ = {};
@@ -303,9 +333,9 @@ void QtCoreProcessHost::scheduleForcedKill()
     }
 
     if (forcedKillTimer_ == nullptr) {
-        forcedKillTimer_ = new QTimer(process_.get());
+        forcedKillTimer_ = new QTimer(process_.data());
         forcedKillTimer_->setSingleShot(true);
-        QProcess* process = process_.get();
+        QProcess* process = process_.data();
         QObject::connect(forcedKillTimer_, &QTimer::timeout, process, [process]() {
             if (process->state() != QProcess::NotRunning) {
                 process->kill();

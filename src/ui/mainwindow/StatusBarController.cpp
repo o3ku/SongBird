@@ -17,6 +17,9 @@
 
 namespace {
 
+constexpr int CurrentServerNameMaximumWidth = 260;
+constexpr int CurrentServerTooltipNameMaximumWidth = 360;
+
 QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& text, int availableWidth)
 {
     static const QString ellipsis = QStringLiteral("...");
@@ -41,6 +44,23 @@ QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& t
     }
 
     return text.left(low) + ellipsis;
+}
+
+QString displayCurrentServerName(const QLabel* label, const QString& name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) {
+        return noServerPlaceholderText();
+    }
+
+    if (label == nullptr) {
+        return trimmed;
+    }
+
+    return elideTextWithThreeDots(
+        label->fontMetrics(),
+        trimmed,
+        CurrentServerNameMaximumWidth);
 }
 
 } // namespace
@@ -224,9 +244,9 @@ bool StatusBarController::handleEvent(QObject* watched, QEvent* event)
 void StatusBarController::updateStatusIndicators()
 {
     if (currentServerStatusLabel_ != nullptr) {
-        const QString currentServerText = snapshot_.currentServerName.trimmed().isEmpty()
-            ? noServerPlaceholderText()
-            : snapshot_.currentServerName.trimmed();
+        const QString currentServerText = displayCurrentServerName(
+            currentServerStatusLabel_,
+            snapshot_.currentServerName);
         QString labelText = QObject::tr("Current: %1").arg(currentServerText);
         if (!snapshot_.currentServerLocation.isEmpty()) {
             labelText += QStringLiteral(" | %1").arg(snapshot_.currentServerLocation);
@@ -235,6 +255,14 @@ void StatusBarController::updateStatusIndicators()
             labelText += QStringLiteral(" | %1").arg(snapshot_.currentServerWarning);
         }
         currentServerStatusLabel_->setText(labelText);
+        currentServerStatusLabel_->setToolTip(
+            snapshot_.currentServerName.trimmed().isEmpty()
+                ? QObject::tr("Click to show the current server.")
+                : QObject::tr("Click to show the current server: %1").arg(
+                    elideTextWithThreeDots(
+                        currentServerStatusLabel_->fontMetrics(),
+                        snapshot_.currentServerName.trimmed(),
+                        CurrentServerTooltipNameMaximumWidth)));
     }
 
     if (routingStatusLabel_ != nullptr) {

@@ -22,6 +22,8 @@ private slots:
     void parseHysteria2PinSha256IntoCertSha();
     void parseVlessTlsVisionShareUrl();
     void parseVlessRealityVisionShareUrl();
+    void parseSocksUrlWithEmptyBase64Credentials();
+    void parseLegacyVmessShareUrlKeepsVmessType();
 };
 
 void ShareUrlTests::buildAndParseHttpupgradeTransportRoundTrips()
@@ -344,6 +346,38 @@ void ShareUrlTests::buildAndParseEchRoundTrips()
 
     QVERIFY(ok);
     QCOMPARE(parsed.echConfigList, source.echConfigList);
+}
+
+void ShareUrlTests::parseSocksUrlWithEmptyBase64Credentials()
+{
+    const QString url = QStringLiteral("socks://Og==@192.168.100.117:1080#local");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::Socks);
+    QCOMPARE(parsed.address, QStringLiteral("192.168.100.117"));
+    QCOMPARE(parsed.port, 1080);
+    QCOMPARE(parsed.remarks, QStringLiteral("local"));
+    QVERIFY(parsed.id.isEmpty());
+    QVERIFY(parsed.security.isEmpty());
+}
+
+void ShareUrlTests::parseLegacyVmessShareUrlKeepsVmessType()
+{
+    const QString url = QStringLiteral(
+        "vmess://eyJhZGQiOiIxNTkuMTMuNDguMzAiLCJhaWQiOiIwIiwiYWxwbiI6IiIsImhvc3QiOiIiLCJpZCI6IjcwMTEzOTliLTU3NDUtNDM5NS04MmMzLWNmYWZlNDg2ZTg2MyIsIm5ldCI6InRjcCIsInBhdGgiOiIiLCJwb3J0IjoiMTM2NjgiLCJwcyI6ImF1MTMiLCJzY3kiOiJhdXRvIiwic25pIjoiIiwidGxzIjoiIiwidHlwZSI6Im5vbmUiLCJ2IjoiMiJ9");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::VMess);
+    QCOMPARE(parsed.address, QStringLiteral("159.13.48.30"));
+    QCOMPARE(parsed.port, 13668);
+    QCOMPARE(parsed.id, QStringLiteral("7011399b-5745-4395-82c3-cfafe486e863"));
+    QCOMPARE(parsed.remarks, QStringLiteral("au13"));
 }
 
 QTEST_MAIN(ShareUrlTests)

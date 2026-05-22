@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include <QProcess>
 #include <QTimer>
 
@@ -31,6 +32,10 @@ private:
         DeleteLater
     };
 
+    struct ProcessHandle {
+        QPointer<QProcess> process;
+    };
+
     QStringList buildArguments(const CoreInfo& coreInfo, const QString& configFilePath) const;
     void bindOutputSignals();
     void emitBufferedOutput(QProcess::ProcessChannel channel);
@@ -38,13 +43,14 @@ private:
     void resetProcessState(ProcessCleanupMode cleanupMode = ProcessCleanupMode::DeleteNow);
     void scheduleForcedKill();
 
-    std::unique_ptr<QProcess> process_;
+    QPointer<QProcess> process_;
     CoreInfo lastCoreInfo_;
     QString lastConfigFilePath_;
     std::function<void(const QString&)> outputReceived_;
     StartedCallback startedCallback_;
     StartFailedCallback startFailedCallback_;
     ExitedCallback exitedCallback_;
+    std::shared_ptr<ProcessHandle> processHandle_ = std::make_shared<ProcessHandle>();
     bool stopRequested_ = false;
     bool startNotified_ = false;
     QString standardOutputBuffer_;

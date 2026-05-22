@@ -22,7 +22,7 @@ public:
         ServerTableView* serverView,
         SharePanelWidget* sharePanel);
 
-    static QList<int> defaultServerColumnWidths(int availableWidth = 0);
+    static QList<int> defaultServerColumnWidths();
 
     bool qrPreviewVisible() const;
 

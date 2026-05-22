@@ -324,20 +324,6 @@ Restart as administrator now?</source>
     <message><source>MTU</source><translation>MTU</translation></message>
     <message><source>Stack</source><translation>网络栈</translation></message>
     <message><source>ICMP Routing</source><translation>ICMP 路由</translation></message>
-    <message><source>Remote DNS</source><translation>远程 DNS</translation></message>
-    <message><source>Direct DNS</source><translation>直连 DNS</translation></message>
-    <message><source>Bootstrap DNS</source><translation>引导 DNS</translation></message>
-    <message><source>Domain Strategy (Freedom)</source><translation>域名策略（自由出站）</translation></message>
-    <message><source>Domain Strategy (Proxy)</source><translation>域名策略（代理出站）</translation></message>
-    <message><source>Use system hosts file</source><translation>使用系统 hosts 文件</translation></message>
-    <message><source>Add common hosts (google, github, etc.)</source><translation>添加常用 hosts（google、github 等）</translation></message>
-    <message><source>Block binding query</source><translation>阻止绑定查询</translation></message>
-    <message><source>Enable FakeIP</source><translation>启用 FakeIP</translation></message>
-    <message><source>Global FakeIP</source><translation>全局 FakeIP</translation></message>
-    <message><source>Serve stale DNS cache</source><translation>提供过期 DNS 缓存</translation></message>
-    <message><source>Parallel DNS query</source><translation>并行 DNS 查询</translation></message>
-    <message><source>Direct Expected IPs</source><translation>直连预期 IP</translation></message>
-    <message><source>DNS Hosts</source><translation>DNS Hosts</translation></message>
     <message><source>Subscriptions</source><translation>订阅</translation></message>
     <message><source>Routing</source><translation>路由</translation></message>
     <message><source>Core</source><translation>核心</translation></message>
@@ -354,42 +340,6 @@ Restart as administrator now?</source>
     <message><source>Install</source><translation>安装</translation></message>
     <message><source>Installed</source><translation>已安装</translation></message>
     <message><source>Protocol</source><translation>协议</translation></message>
-</context>
-<context>
-    <name>DnsSettingsDialog</name>
-    <message><source>Behaviour</source><translation>行为</translation></message>
-    <message><source>Block binding queries on direct outbound</source><translation>在直连出站时阻止绑定查询</translation></message>
-    <message><source>Comma-separated CIDRs that direct DNS answers must match</source><translation>直连 DNS 应答必须匹配的 CIDR，多个以逗号分隔</translation></message>
-    <message><source>DNS Servers</source><translation>DNS 服务器</translation></message>
-    <message><source>DNS Settings</source><translation>DNS 设置</translation></message>
-    <message><source>Domain Strategy</source><translation>域名策略</translation></message>
-    <message><source>Extras</source><translation>附加项</translation></message>
-    <message><source>Global FakeIP (apply to all domains)</source><translation>全局 FakeIP（应用于所有域名）</translation></message>
-    <message><source>Hosts</source><translation>Hosts</translation></message>
-    <message><source>Include built-in common hosts</source><translation>包含内置常用 hosts</translation></message>
-    <message><source>One host per line: example.com 1.2.3.4</source><translation>每行一个 host：example.com 1.2.3.4</translation></message>
-    <message><source>Query upstream servers in parallel</source><translation>并行查询上游服务器</translation></message>
-    <message><source>Read entries from the system hosts file</source><translation>读取系统 hosts 文件中的条目</translation></message>
-    <message><source>Serve stale answers when upstream fails</source><translation>上游失败时提供过期应答</translation></message>
-    <message><source>Strategy for Freedom</source><translation>Freedom 的策略</translation></message>
-    <message><source>Strategy for Proxy</source><translation>Proxy 的策略</translation></message>
-    <message><source>Used for direct connections, e.g. https://dns.alidns.com/dns-query</source><translation>用于直连，例如 https://dns.alidns.com/dns-query</translation></message>
-    <message><source>Used for proxied domains, e.g. https://cloudflare-dns.com/dns-query</source><translation>用于代理域名，例如 https://cloudflare-dns.com/dns-query</translation></message>
-    <message><source>Used to resolve DoH/DoT server names, e.g. 223.5.5.5</source><translation>用于解析 DoH/DoT 服务器名称，例如 223.5.5.5</translation></message>
-</context>
-<context>
-    <name>GlobalHotkeyDialog</name>
-    <message><source>Global Hotkey Settings</source><translation>全局热键设置</translation></message>
-    <message><source>Press a shortcut</source><translation>按下快捷键</translation></message>
-    <message><source>PAC proxy mode is not available in the current Qt rewrite. Its shortcut is kept for config compatibility.</source><translation>当前 Qt 重写版暂不支持 PAC 代理模式；对应快捷键会保留在配置中以保持兼容。</translation></message>
-    <message><source>Show Main Window</source><translation>显示主窗口</translation></message>
-    <message><source>Clear System Proxy</source><translation>清除系统代理</translation></message>
-    <message><source>Set System Proxy</source><translation>设置系统代理</translation></message>
-    <message><source>Keep System Proxy Unchanged</source><translation>保持系统代理不变</translation></message>
-    <message><source>System Proxy PAC</source><translation>系统代理 PAC</translation></message>
-    <message><source>Reset</source><translation>重置</translation></message>
-    <message><source>Save</source><translation>保存</translation></message>
-    <message><source>Cancel</source><translation>取消</translation></message>
 </context>
 <context>
     <name>AboutDialog</name>
@@ -431,15 +381,21 @@ Restart as administrator now?</source>
     <message><source>Unnamed Server</source><translation>未命名服务器</translation></message>
 </context>
 <context>
-    <name>WindowsGlobalHotkeyService</name>
-    <message><source>Cannot register global hotkeys before the Qt application exists.</source><translation>Qt 应用创建完成前无法注册全局热键。</translation></message>
-    <message><source>No global hotkeys configured.</source><translation>当前未配置全局热键。</translation></message>
-    <message><source>%1 -&gt; %2 (Win32 error %3)</source><translation>%1 -&gt; %2（Win32 错误 %3）</translation></message>
-    <message><source>Failed to register global hotkeys.
-%1</source><translation>注册全局热键失败。
-%1</translation></message>
-    <message><source>Global hotkeys ready:</source><translation>全局热键已就绪：</translation></message>
-    <message><source>Global hotkey registration failed for:</source><translation>以下全局热键注册失败：</translation></message>
+    <name>DnsSettingsPageWidget</name>
+    <message><source>Remote DNS</source><translation>远程 DNS</translation></message>
+    <message><source>Direct DNS</source><translation>直连 DNS</translation></message>
+    <message><source>Bootstrap DNS</source><translation>引导 DNS</translation></message>
+    <message><source>Domain Strategy (Freedom)</source><translation>域名策略（自由出站）</translation></message>
+    <message><source>Domain Strategy (Proxy)</source><translation>域名策略（代理出站）</translation></message>
+    <message><source>Use system hosts file</source><translation>使用系统 hosts 文件</translation></message>
+    <message><source>Add common hosts (google, github, etc.)</source><translation>添加常用 hosts（google、github 等）</translation></message>
+    <message><source>Block binding query</source><translation>阻止绑定查询</translation></message>
+    <message><source>Enable FakeIP</source><translation>启用 FakeIP</translation></message>
+    <message><source>Global FakeIP</source><translation>全局 FakeIP</translation></message>
+    <message><source>Serve stale DNS cache</source><translation>提供过期 DNS 缓存</translation></message>
+    <message><source>Parallel DNS query</source><translation>并行 DNS 查询</translation></message>
+    <message><source>Direct Expected IPs</source><translation>直连预期 IP</translation></message>
+    <message><source>DNS Hosts</source><translation>DNS Hosts</translation></message>
 </context>
 <context>
     <name>AppBootstrap</name>

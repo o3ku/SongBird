@@ -54,8 +54,10 @@ void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
 
 RoutingModeController::RoutingModeController(
     QComboBox* routingModeCombo,
-    std::function<void(int)> routingModeSelected)
-    : routingModeCombo_(routingModeCombo)
+    std::function<void(int)> routingModeSelected,
+    QObject* parent)
+    : QObject(parent)
+    , routingModeCombo_(routingModeCombo)
     , routingModeSelected_(std::move(routingModeSelected))
 {
 }
@@ -66,7 +68,7 @@ void RoutingModeController::setup()
         return;
     }
 
-    QObject::connect(routingModeCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+    QObject::connect(routingModeCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (routingModeCombo_ == nullptr || index < 0) {
             return;
         }

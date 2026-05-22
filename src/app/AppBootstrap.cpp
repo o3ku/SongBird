@@ -33,6 +33,7 @@
 #include <QSessionManager>
 #include <QStandardPaths>
 #include <QTcpServer>
+#include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -63,11 +64,11 @@
 #include "app/TunRuntimeState.h"
 #include "common/CorePidFile.h"
 #include "common/DataSizeFormatter.h"
+#include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "common/UserAgent.h"
 #include "domain/models/Config.h"
 #include "platform/windows/WindowsAutoRunService.h"
-#include "platform/windows/WindowsGlobalHotkeyService.h"
 #include "platform/windows/WindowsSystemProxyService.h"
 #include "persistence/JsonConfigRepository.h"
 #include "runtime/ClientConfigWriter.h"
@@ -92,8 +93,6 @@
 #include "ui/dialogs/AddServerDialog.h"
 #include "ui/dialogs/AboutDialog.h"
 #include "ui/dialogs/CustomServerDialog.h"
-#include "ui/dialogs/DnsSettingsDialog.h"
-#include "ui/dialogs/GlobalHotkeyDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/theme/AppTheme.h"
@@ -115,7 +114,10 @@ constexpr int LocationProbeTimeoutMs = 5000;
 constexpr int LocationProbeRetryDelayMs = 300;
 constexpr int LocationProbeTotalTimeoutMs = 12000;
 constexpr int LocationProbeMaxAttempts = 8;
-constexpr int CoreListenProbeRetryDelayMs = 200;
+constexpr int CoreListenProbeConnectTimeoutMs = 500;
+constexpr int CoreListenProbeRetryDelayMs = 250;
+constexpr int CoreListenProbeTotalTimeoutMs = 15000;
+constexpr int TunCoreListenProbeTotalTimeoutMs = 45000;
 constexpr int CoreStartupStableRunMs = 3000;
 constexpr int CoreStartupOverlayMinimumVisibleMs = 650;
 const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
@@ -464,6 +466,48 @@ QStringList locationProbeUrls()
         QStringLiteral("https://ifconfig.co/json"),
         QStringLiteral("https://ipapi.co/json/")
     };
+}
+
+bool isValidTcpPort(int port)
+{
+    return port > 0 && port <= 65535;
+}
+
+int resolveLocationProbeHttpPort(const Config& config, bool usesDedicatedProbe)
+{
+    if (usesDedicatedProbe) {
+        return isValidTcpPort(config.localLocationProbePort)
+            ? config.localLocationProbePort
+            : config.localPort + LocationProbePortOffset;
+    }
+
+    return isValidTcpPort(config.localHttpPort)
+        ? config.localHttpPort
+        : config.localPort + 1;
+}
+
+bool waitForLocalTcpPortReady(int port, int timeoutMs)
+{
+    if (!isValidTcpPort(port) || timeoutMs <= 0) {
+        return false;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        QTcpSocket socket;
+        socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
+        if (socket.waitForConnected(CoreListenProbeConnectTimeoutMs)) {
+            socket.disconnectFromHost();
+            return true;
+        }
+
+        if (timer.elapsed() < timeoutMs) {
+            QThread::msleep(CoreListenProbeRetryDelayMs);
+        }
+    }
+
+    return false;
 }
 
 QString locationProbeErrorMessage(const QUrl& url, const QString& error)
@@ -853,14 +897,10 @@ auto invokeOnUiThreadBlocking(QObject* context, Callback&& callback) -> decltype
 
 AppBootstrap::AppBootstrap(
     QString configPath,
-    bool autoStartCore,
     bool startHidden,
-    bool registerGlobalHotkeys,
     bool skipCoreChecks)
     : configPath_(std::move(configPath))
-    , autoStartCore_(autoStartCore)
     , startHidden_(startHidden)
-    , registerGlobalHotkeys_(registerGlobalHotkeys)
     , skipCoreChecks_(skipCoreChecks)
 {
 }
@@ -897,7 +937,6 @@ bool AppBootstrap::run()
     auxiliaryCoreProcessHost_ = std::make_unique<QtCoreProcessHost>();
     auxiliaryCoreLifecycleService_ = std::make_unique<CoreLifecycleService>(*auxiliaryCoreProcessHost_);
     autoRunService_ = std::make_unique<WindowsAutoRunService>();
-    globalHotkeyService_ = std::make_unique<WindowsGlobalHotkeyService>();
     systemProxyService_ = std::make_unique<WindowsSystemProxyService>();
 
     mainWindow_ = std::make_unique<MainWindow>();
@@ -925,8 +964,9 @@ bool AppBootstrap::run()
             handleCoreExited(exitCode, static_cast<int>(status), stopRequested, true);
         });
     QObject::connect(speedTestService_.get(), &SpeedTestService::runningChanged, mainWindow_.get(), [this](bool running) {
-        if (mainWindow_ != nullptr) {
-            mainWindow_->setSpeedTestRunning(running);
+        QPointer<MainWindow> mainWindowGuard(mainWindow_.get());
+        if (!mainWindowGuard.isNull()) {
+            mainWindowGuard->setSpeedTestRunning(running);
         }
         if (!running) {
             resetSpeedTestProgressState();
@@ -941,9 +981,10 @@ bool AppBootstrap::run()
         }
     });
     QObject::connect(speedTestService_.get(), &SpeedTestService::logGenerated, mainWindow_.get(), [this](const QString& message) {
-        if (mainWindow_ != nullptr) {
-            mainWindow_->appendLog(message);
-            mainWindow_->showTransientStatus(
+        QPointer<MainWindow> mainWindowGuard(mainWindow_.get());
+        if (!mainWindowGuard.isNull()) {
+            mainWindowGuard->appendLog(message);
+            mainWindowGuard->showTransientStatus(
                 message,
                 3000,
                 MainWindow::TransientStatusPriority::Routine);
@@ -962,7 +1003,8 @@ bool AppBootstrap::run()
         speedTestResultsDirty_ = true;
         if (speedTestTotalCount_ > 0) {
             speedTestCompletedCount_ = qMin(speedTestCompletedCount_ + 1, speedTestTotalCount_);
-            speedTestProgressServerName_ = describeServer(findServerById(indexId));
+            const VmessItem* speedTestServer = findServerById(indexId);
+            speedTestProgressServerName_ = speedTestServer == nullptr ? QString() : serverDisplayName(*speedTestServer);
             syncBackgroundTaskState();
         }
 
@@ -1013,13 +1055,6 @@ bool AppBootstrap::run()
         return false;
     }
     autoBackupCurrentConfig();
-    if (registerGlobalHotkeys_) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
-    } else {
-        appendResult(OperationResult::ok(QCoreApplication::translate(
-            "AppBootstrap",
-            "Global hotkeys disabled by command line.")));
-    }
     if (systemProxyService_ != nullptr) {
         managedSystemProxyActive_ = shouldAdoptManagedSystemProxyOnStartup(
             normalizeSystemProxyMode(config_.sysProxyType),
@@ -1067,20 +1102,22 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::editServerRequested, mainWindow_.get(), [this](const QString& indexId) {
-        const VmessItem* existing = findServerById(indexId);
-        if (existing == nullptr) {
-            mainWindow_->appendLog(QStringLiteral("The selected server could not be found for editing."));
+        const std::optional<VmessItem> existing = findServerSnapshotById(indexId);
+        QPointer<MainWindow> mainWindowGuard(mainWindow_.get());
+        if (!existing.has_value()) {
+            if (!mainWindowGuard.isNull()) {
+                mainWindowGuard->appendLog(QStringLiteral("The selected server could not be found for editing."));
+            }
             return;
         }
 
-        const QString activeServerId = resolveActiveServer() == nullptr
-            ? QString()
-            : resolveActiveServer()->indexId;
+        const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+        const QString activeServerId = activeServer.has_value() ? activeServer->indexId : QString();
         const bool shouldRestartCore = isCoreRunning() && activeServerId == indexId;
         OperationResult result;
 
         if (existing->configType == ConfigType::Custom) {
-            CustomServerDialog dialog(mainWindow_.get());
+            CustomServerDialog dialog(mainWindowGuard.data());
             dialog.setWindowTitle(QStringLiteral("Edit Custom Server"));
             dialog.setServer(*existing, serverService_->resolveCustomConfigPath(existing->address));
             if (dialog.exec() != QDialog::Accepted) {
@@ -1089,7 +1126,7 @@ void AppBootstrap::wireMainWindow()
 
             result = serverService_->updateServer(config_, indexId, dialog.server());
         } else {
-            AddServerDialog dialog(mainWindow_.get());
+            AddServerDialog dialog(mainWindowGuard.data());
             dialog.setWindowTitle(QStringLiteral("Edit Server"));
             dialog.setServer(*existing);
             if (dialog.exec() != QDialog::Accepted) {
@@ -1191,16 +1228,8 @@ void AppBootstrap::wireMainWindow()
         restoreConfigFromBackup();
     });
 
-    QObject::connect(mainWindow_.get(), &MainWindow::globalHotkeySettingsRequested, mainWindow_.get(), [this]() {
-        openGlobalHotkeySettingsDialog();
-    });
-
     QObject::connect(mainWindow_.get(), &MainWindow::settingsRequested, mainWindow_.get(), [this]() {
         openSettingsDialog();
-    });
-
-    QObject::connect(mainWindow_.get(), &MainWindow::dnsSettingsRequested, mainWindow_.get(), [this]() {
-        openDnsSettingsDialog();
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::openSettingsAtSubscriptionsTabRequested, mainWindow_.get(), [this]() {
@@ -1260,9 +1289,8 @@ void AppBootstrap::wireMainWindow()
     });
 
     QObject::connect(mainWindow_.get(), &MainWindow::removeServersRequested, mainWindow_.get(), [this](const QStringList& indexIds) {
-        const QString activeServerId = resolveActiveServer() == nullptr
-            ? QString()
-            : resolveActiveServer()->indexId;
+        const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+        const QString activeServerId = activeServer.has_value() ? activeServer->indexId : QString();
         const bool activeServerRemoved = !activeServerId.isEmpty() && indexIds.contains(activeServerId);
         const OperationResult result = serverService_->removeServers(config_, indexIds);
         appendResult(result);
@@ -1271,7 +1299,7 @@ void AppBootstrap::wireMainWindow()
             return;
         }
 
-        if (resolveActiveServer() == nullptr) {
+        if (!resolveActiveServerSnapshot().has_value()) {
             appendResult(OperationResult::ok(QStringLiteral("Stopping core because the active server was removed.")));
             stopCore(false);
             return;
@@ -1335,34 +1363,6 @@ void AppBootstrap::wireMainWindow()
         mainWindow_->requestExit();
     });
 
-    QObject::connect(globalHotkeyService_.get(), &WindowsGlobalHotkeyService::toggleMainWindowRequested, mainWindow_.get(), [this]() {
-        if (trayController_ != nullptr && trayController_->isAvailable()) {
-            trayController_->toggleMainWindow();
-            return;
-        }
-
-        if (mainWindow_ == nullptr) {
-            return;
-        }
-
-        if (mainWindow_->isVisible()) {
-            mainWindow_->showMinimized();
-            return;
-        }
-
-        mainWindow_->show();
-        mainWindow_->showNormal();
-        mainWindow_->raise();
-        mainWindow_->activateWindow();
-    });
-
-    QObject::connect(globalHotkeyService_.get(), &WindowsGlobalHotkeyService::enableProxyRequested, mainWindow_.get(), [this]() {
-        enableSystemProxy(true);
-    });
-
-    QObject::connect(globalHotkeyService_.get(), &WindowsGlobalHotkeyService::disableProxyRequested, mainWindow_.get(), [this]() {
-        disableSystemProxy();
-    });
 }
 
 void AppBootstrap::syncWindow()
@@ -1487,7 +1487,8 @@ void AppBootstrap::syncStatusIndicators()
     const bool corePending = coreStartPending_ || coreStopPending_ || coreRestartPending;
     const bool coreProcessRunning = isCoreRunning();
     const bool coreRunning = isCoreReady();
-    const QString currentServerName = describeServer(findServerById(config_.currentIndexId));
+    const VmessItem* currentServer = findServerById(config_.currentIndexId);
+    const QString currentServerName = currentServer == nullptr ? QString() : serverDisplayName(*currentServer);
     const QString routingSummary = buildRoutingSummaryText();
     const QString listenSummary = buildListenSummaryText();
 
@@ -1549,11 +1550,8 @@ void AppBootstrap::queryCurrentServerLocation(
     const bool usesDedicatedProbe = activeServer != nullptr
         && activeServer->configType != ConfigType::Custom;
 
-    int httpPort = config_.localPort + 1;
-    if (usesDedicatedProbe) {
-        httpPort = config_.localPort + LocationProbePortOffset;
-    }
-    if (httpPort <= 0 || httpPort > 65535) {
+    const int httpPort = resolveLocationProbeHttpPort(config_, usesDedicatedProbe);
+    if (!isValidTcpPort(httpPort)) {
         const QString message = QStringLiteral("Location probe port is unavailable.");
         setCoreStartupCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
         failCoreStartup(OperationResult::fail(message));
@@ -1641,8 +1639,9 @@ void AppBootstrap::queryCurrentServerLocation(
                 return;
             }
             currentServerLocation_ = location.trimmed();
-            if (mainWindow_ != nullptr) {
-                mainWindow_->setCurrentServerLocation(currentServerLocation_);
+            QPointer<MainWindow> mainWindowGuard(mainWindow_.get());
+            if (!mainWindowGuard.isNull()) {
+                mainWindowGuard->setCurrentServerLocation(currentServerLocation_);
             }
             if (currentServerLocation_.isEmpty()) {
                 const QString message = lastError.trimmed().isEmpty()
@@ -1674,7 +1673,14 @@ void AppBootstrap::clearCoreStartupChecklistAfterStableRun(const QString& server
     const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch() - coreStartTime;
     const int remainingMs = static_cast<int>(qMax<qint64>(0, CoreStartupStableRunMs - elapsedMs));
     const int generation = ++coreStartupStableRunGeneration_;
-    QTimer::singleShot(remainingMs, mainWindow_.get(), [this, serverIndexId, coreStartTime, generation]() {
+    QPointer<MainWindow> mainWindowGuard(mainWindow_.get());
+    QObject* target = mainWindowGuard.isNull()
+        ? static_cast<QObject*>(QCoreApplication::instance())
+        : static_cast<QObject*>(mainWindowGuard.data());
+    QTimer::singleShot(remainingMs, target, [this, mainWindowGuard, serverIndexId, coreStartTime, generation]() {
+        if (mainWindowGuard.isNull()) {
+            return;
+        }
         if (generation != coreStartupStableRunGeneration_) {
             return;
         }
@@ -1702,9 +1708,6 @@ bool AppBootstrap::reloadConfig()
     }
 
     config_ = loadedConfig;
-    if (uiReady_ && registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
-    }
     syncWindow();
     if (!uiStateRestored_ && mainWindow_ != nullptr) {
         mainWindow_->restoreUiState(config_);
@@ -1786,8 +1789,8 @@ void AppBootstrap::appendStartupResourceCheckResults()
         }
     }
 
-    const VmessItem* activeServer = resolveActiveServer();
-    if (activeServer != nullptr) {
+    const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+    if (activeServer.has_value()) {
         if (activeServer->configType == ConfigType::Custom) {
             const QString customConfigPath = resolveCustomConfigPath(activeServer->address);
             if (customConfigPath.trimmed().isEmpty() || !QFileInfo::exists(customConfigPath)) {
@@ -1802,7 +1805,7 @@ void AppBootstrap::appendStartupResourceCheckResults()
                 const CoreType runtimeCore = resolveLaunchCoreType(*activeServer);
                 const QStringList candidates = resolveCoreCandidates(runtimeCore);
                 lines.append(QStringLiteral("Startup check: No compatible core executable was found for default server \"%1\". Expected one of: %2.")
-                                 .arg(describeServer(activeServer))
+                                 .arg(elidedServerDisplayName(*activeServer, 64))
                                  .arg(expectedCoreFilesText(candidates)));
             }
 
@@ -1810,7 +1813,7 @@ void AppBootstrap::appendStartupResourceCheckResults()
                 const QStringList candidates = resolveCoreCandidates(auxiliaryCoreType);
                 if (locateFirstExistingFile(candidates).isEmpty()) {
                     lines.append(QStringLiteral("Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.")
-                                     .arg(describeServer(activeServer))
+                                     .arg(elidedServerDisplayName(*activeServer, 64))
                                      .arg(coreTypeDisplayName(auxiliaryCoreType))
                                      .arg(expectedCoreFilesText(candidates)));
                 }
@@ -2529,8 +2532,8 @@ void AppBootstrap::startCoreInternal(
         failCoreStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
         return;
     }
-    const VmessItem* server = resolveActiveServer();
-    if (server == nullptr) {
+    const std::optional<VmessItem> server = resolveActiveServerSnapshot();
+    if (!server.has_value()) {
         setCoreStartupCheckpointStatus(
             CoreStartupCheckpointStatus::Failed,
             validateConfigStep,
@@ -2612,7 +2615,7 @@ void AppBootstrap::startCoreInternal(
                 "AppBootstrap",
                 "No compatible %1 core executable was found for the active server \"%2\". Expected one of: %3.")
                 .arg(coreTypeDisplayName(runtimeCore))
-                .arg(describeServer(server))
+                .arg(elidedServerDisplayName(*server, 64))
                 .arg(expectedFiles));
         downloadMissingCoreAndResumeStartup(
             runtimeCore,
@@ -2644,7 +2647,7 @@ void AppBootstrap::startCoreInternal(
             QCoreApplication::translate(
                 "AppBootstrap",
                 "The active server \"%1\" needs the %2 core for TUN compatibility, but no compatible executable was found.\nExpected one of: %3.")
-                .arg(describeServer(server))
+                .arg(elidedServerDisplayName(*server, 64))
                 .arg(coreTypeDisplayName(auxiliaryCoreType))
                 .arg(expectedFiles));
         downloadMissingCoreAndResumeStartup(
@@ -2978,10 +2981,26 @@ void AppBootstrap::validateCoreListeningAndHandleStarted(
     std::optional<bool> startupProxyEnabled)
 {
     const QString startCoreStep = QCoreApplication::translate("AppBootstrap", "Start core process");
+    const bool usesDedicatedProbe = !customServer;
+    const int listenPort = resolveLocationProbeHttpPort(config_, usesDedicatedProbe);
+    if (!isValidTcpPort(listenPort)) {
+        const QString message = QStringLiteral("Local proxy listen port is unavailable.");
+        setCoreStartupCheckpointStatus(
+            CoreStartupCheckpointStatus::Failed,
+            startCoreStep,
+            message);
+        failCoreStartup(OperationResult::fail(message));
+        return;
+    }
+
     QPointer<QObject> uiContext(mainWindow_.get());
     const std::weak_ptr<char> lifetimeGuard = lifetimeGuard_;
     const QString activeServerId = serverIndexId.trimmed();
     const qint64 startTime = coreStartTime_;
+    const bool tunEnabledAtStart = coreTunEnabledAtStart_;
+    const int listenProbeTimeoutMs = tunEnabledAtStart
+        ? TunCoreListenProbeTotalTimeoutMs
+        : CoreListenProbeTotalTimeoutMs;
     QThread* thread = QThread::create([this,
                                        uiContext,
                                        lifetimeGuard,
@@ -2990,8 +3009,10 @@ void AppBootstrap::validateCoreListeningAndHandleStarted(
                                        customServer,
                                        startupProxyEnabled,
                                        startCoreStep,
-                                       startTime]() {
-        QThread::msleep(CoreListenProbeRetryDelayMs);
+                                       startTime,
+                                       listenPort,
+                                       listenProbeTimeoutMs]() {
+        const bool portReady = waitForLocalTcpPortReady(listenPort, listenProbeTimeoutMs);
 
         QObject* target = uiContext.isNull()
             ? static_cast<QObject*>(QCoreApplication::instance())
@@ -3003,7 +3024,10 @@ void AppBootstrap::validateCoreListeningAndHandleStarted(
                                   customServer,
                                   startupProxyEnabled,
                                   startCoreStep,
-                                  startTime]() {
+                                  startTime,
+                                  listenPort,
+                                  listenProbeTimeoutMs,
+                                  portReady]() {
             if (lifetimeGuard.expired()) {
                 return;
             }
@@ -3013,13 +3037,32 @@ void AppBootstrap::validateCoreListeningAndHandleStarted(
                     CoreStartupCheckpointStatus::Skipped,
                     startCoreStep,
                     QStringLiteral("Core listening validation result is stale."));
+                // Defensive: currentIndexId drifted but no fresh startCoreInternal was
+                // issued (coreStartTime_ unchanged). The launched core is orphaned —
+                // stop it so coreReady_/managedSystemProxyActive_ stay consistent.
+                if (coreStartTime_ == startTime && isCoreRunning() && !coreStopPending_) {
+                    stopCore(false);
+                }
+                return;
+            }
+
+            if (!portReady) {
+                const QString message = QStringLiteral(
+                    "Core did not open the local proxy port %1 within %2 seconds.")
+                    .arg(listenPort)
+                    .arg((listenProbeTimeoutMs + 999) / 1000);
+                setCoreStartupCheckpointStatus(
+                    CoreStartupCheckpointStatus::Failed,
+                    startCoreStep,
+                    message);
+                failCoreStartup(OperationResult::fail(message));
                 return;
             }
 
             setCoreStartupCheckpointStatus(
                 CoreStartupCheckpointStatus::Passed,
                 startCoreStep,
-                QStringLiteral("Core process is running."));
+                QStringLiteral("Core local proxy is listening on 127.0.0.1:%1.").arg(listenPort));
             handleCoreStarted(activeServerId, runtimeCore, customServer, startupProxyEnabled);
         });
     });
@@ -3661,7 +3704,7 @@ void AppBootstrap::setTunEnabled(bool enabled)
         return;
     }
 
-    if (enabled && resolveActiveServer() == nullptr) {
+    if (enabled && !resolveActiveServerSnapshot().has_value()) {
         appendResult(OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Please select a server first.")));
         syncWindow();
         return;
@@ -3835,9 +3878,8 @@ void AppBootstrap::importSubscriptionUrlsFromTextAsync(const QString& text)
         return;
     }
 
-    const QString activeSubscriptionId = resolveActiveServer() == nullptr
-        ? QString()
-        : resolveActiveServer()->subId.trimmed();
+    const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+    const QString activeSubscriptionId = activeServer.has_value() ? activeServer->subId.trimmed() : QString();
     if (mainWindow_ != nullptr) {
         const QString message = QCoreApplication::translate(
             "AppBootstrap",
@@ -4198,9 +4240,8 @@ void AppBootstrap::deleteSubscription(const QString& subscriptionId)
     }
 
     const QString normalizedId = subscriptionId.trimmed();
-    const QString activeSubscriptionId = resolveActiveServer() == nullptr
-        ? QString()
-        : resolveActiveServer()->subId.trimmed();
+    const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+    const QString activeSubscriptionId = activeServer.has_value() ? activeServer->subId.trimmed() : QString();
     const bool activeSubscriptionRemoved = !activeSubscriptionId.isEmpty() && activeSubscriptionId == normalizedId;
 
     const OperationResult result = subscriptionService_->removeSubscription(config_, normalizedId);
@@ -4210,7 +4251,7 @@ void AppBootstrap::deleteSubscription(const QString& subscriptionId)
         return;
     }
 
-    if (resolveActiveServer() == nullptr) {
+    if (!resolveActiveServerSnapshot().has_value()) {
         appendResult(OperationResult::ok(QStringLiteral("Stopping core because the active subscription was deleted.")));
         stopCore(false);
         return;
@@ -4241,70 +4282,6 @@ void AppBootstrap::openCustomConfigFile(const QString& indexId)
     appendResult(opened
         ? OperationResult::ok(QStringLiteral("Opened custom config: %1").arg(QDir::toNativeSeparators(filePath)))
         : OperationResult::fail(QStringLiteral("Failed to open custom config file.")));
-}
-
-void AppBootstrap::openGlobalHotkeySettingsDialog()
-{
-    if (mainWindow_ == nullptr || serverService_ == nullptr) {
-        return;
-    }
-
-    if (globalHotkeyService_ != nullptr) {
-        globalHotkeyService_->setPaused(true);
-    }
-    GlobalHotkeyDialog dialog(mainWindow_.get());
-    dialog.setHotkeys(config_.collection().globalHotkeys);
-    const int dialogResult = dialog.exec();
-    if (globalHotkeyService_ != nullptr) {
-        globalHotkeyService_->setPaused(false);
-    }
-    if (dialogResult != QDialog::Accepted) {
-        return;
-    }
-
-    const QList<GlobalHotkeyItem> previousHotkeys = config_.collection().globalHotkeys;
-    config_.collection().globalHotkeys = dialog.hotkeys();
-    if (!serverService_->save(config_)) {
-        config_.collection().globalHotkeys = previousHotkeys;
-        appendResult(OperationResult::fail(
-            QCoreApplication::translate("AppBootstrap", "Failed to save global hotkey settings.")));
-        return;
-    }
-
-    appendResult(OperationResult::ok(
-        QCoreApplication::translate("AppBootstrap", "Global hotkey settings saved.")));
-    if (registerGlobalHotkeys_ && globalHotkeyService_ != nullptr) {
-        appendResult(globalHotkeyService_->registerHotkeys(config_.collection().globalHotkeys));
-    }
-}
-
-void AppBootstrap::openDnsSettingsDialog()
-{
-    if (mainWindow_ == nullptr || serverService_ == nullptr) {
-        return;
-    }
-
-    DnsSettingsDialog dialog(mainWindow_.get());
-    dialog.setConfig(config_);
-    if (dialog.exec() != QDialog::Accepted) {
-        return;
-    }
-
-    const Config previous = config_;
-    config_ = dialog.config();
-    if (!serverService_->save(config_)) {
-        config_ = previous;
-        appendResult(OperationResult::fail(
-            QCoreApplication::translate("AppBootstrap", "Failed to save DNS settings.")));
-        return;
-    }
-
-    appendResult(OperationResult::ok(
-        QCoreApplication::translate("AppBootstrap", "DNS settings saved.")));
-    if (isCoreRunning()) {
-        appendResult(OperationResult::ok(
-            QCoreApplication::translate("AppBootstrap", "Restart the core to apply the new DNS settings.")));
-    }
 }
 
 void AppBootstrap::handleRoutingSelectionResult(
@@ -4544,9 +4521,9 @@ void AppBootstrap::updateCore(
     const QString title = QCoreApplication::translate("AppBootstrap", "Install / Update %1 Core")
                               .arg(coreTypeDisplayName(coreType));
     const QString installDirectory = resolveCoreInstallDirectory(coreType);
-    const VmessItem* activeServer = resolveActiveServer();
+    const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
     const bool shouldRestartRunningCore = isCoreRunning()
-        && activeServer != nullptr
+        && activeServer.has_value()
         && resolveRuntimeCoreType(activeServer->coreType) == coreType;
     const CoreUpdateConfig workerConfig{
         config_.checkPreReleaseUpdate,
@@ -4951,9 +4928,8 @@ void AppBootstrap::updateSubscriptionsByIds(
         return;
     }
 
-    const QString activeSubscriptionId = resolveActiveServer() == nullptr
-        ? QString()
-        : resolveActiveServer()->subId.trimmed();
+    const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
+    const QString activeSubscriptionId = activeServer.has_value() ? activeServer->subId.trimmed() : QString();
     if (mainWindow_ != nullptr) {
         mainWindow_->appendLog(startupMessage);
         mainWindow_->showTransientStatus(
@@ -5259,6 +5235,7 @@ void AppBootstrap::openAboutDialog()
     dialog.setVersion(QCoreApplication::applicationVersion());
     dialog.setReleaseDate(QString::fromLatin1(AppReleaseDate));
     dialog.setConfigPath(QDir::toNativeSeparators(resolveConfigPath()));
+    dialog.setProxyActive(isCoreReady());
     dialog.exec();
 }
 
@@ -5369,7 +5346,6 @@ bool AppBootstrap::restartApplication(bool requireAdministrator)
         return false;
     }
 
-    restartHandoffPending_ = true;
     shutdownUiStatePersisted_ = true;
     cleanupRuntimeForExit(false);
     if (mainWindow_ != nullptr) {
@@ -5458,39 +5434,37 @@ void AppBootstrap::trackBackgroundThread(QThread* thread)
         return;
     }
 
-    backgroundThreads_.append(thread);
-    QObject* cleanupContext = mainWindow_ != nullptr
-        ? static_cast<QObject*>(mainWindow_.get())
-        : static_cast<QObject*>(QCoreApplication::instance());
-    if (cleanupContext == nullptr) {
-        return;
+    for (int index = backgroundThreads_.size() - 1; index >= 0; --index) {
+        const QPointer<QThread>& trackedThread = backgroundThreads_.at(index);
+        if (trackedThread.isNull() || !trackedThread->isRunning()) {
+            backgroundThreads_.removeAt(index);
+        }
     }
 
-    QObject::connect(thread, &QThread::finished, cleanupContext, [this, thread]() {
-        backgroundThreads_.removeAll(thread);
-        thread->deleteLater();
-    });
+    backgroundThreads_.append(thread);
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
 }
 
 void AppBootstrap::waitForBackgroundThreads()
 {
     // Workers cooperatively check QThread::isInterruptionRequested() at their
     // iteration boundaries (subscription update, geo update) or via service-level
-    // cancel flags. With a healthy worker they should bail within a few seconds;
-    // the soft cap below catches a stuck worker so app shutdown is not blocked
-    // indefinitely. We do NOT terminate() -- that would leak QNetworkAccessManager
-    // / temp dir state -- the OS reaps the thread on process exit.
+    // cancel flags. Keep waiting during destruction: these workers capture
+    // AppBootstrap members, so continuing teardown while one is still running
+    // would leave a use-after-free behind.
     constexpr unsigned long kShutdownWaitMs = 15000;
-    const QList<QThread*> threads = backgroundThreads_;
-    for (QThread* thread : threads) {
+    const QList<QPointer<QThread>> threads = backgroundThreads_;
+    for (const QPointer<QThread>& threadGuard : threads) {
+        QThread* thread = threadGuard.data();
         if (thread == nullptr) {
             continue;
         }
 
         thread->requestInterruption();
-        if (!thread->wait(kShutdownWaitMs)) {
-            qWarning("AppBootstrap: background thread did not honor interruption within %lums; leaving it to the OS",
+        while (!thread->wait(kShutdownWaitMs)) {
+            qWarning("AppBootstrap: background thread did not honor interruption within %lums; still waiting",
                 kShutdownWaitMs);
+            thread->requestInterruption();
         }
     }
     backgroundThreads_.clear();
@@ -5527,6 +5501,16 @@ const VmessItem* AppBootstrap::resolveActiveServer() const
     return nullptr;
 }
 
+std::optional<VmessItem> AppBootstrap::resolveActiveServerSnapshot() const
+{
+    const VmessItem* server = resolveActiveServer();
+    if (server == nullptr) {
+        return std::nullopt;
+    }
+
+    return *server;
+}
+
 const VmessItem* AppBootstrap::findServerById(const QString& indexId) const
 {
     if (indexId.trimmed().isEmpty()) {
@@ -5542,21 +5526,14 @@ const VmessItem* AppBootstrap::findServerById(const QString& indexId) const
     return nullptr;
 }
 
-QString AppBootstrap::describeServer(const VmessItem* server) const
+std::optional<VmessItem> AppBootstrap::findServerSnapshotById(const QString& indexId) const
 {
+    const VmessItem* server = findServerById(indexId);
     if (server == nullptr) {
-        return {};
+        return std::nullopt;
     }
 
-    if (!server->remarks.trimmed().isEmpty()) {
-        return server->remarks.trimmed();
-    }
-
-    if (!server->address.trimmed().isEmpty() && server->port > 0) {
-        return QStringLiteral("%1:%2").arg(server->address.trimmed()).arg(server->port);
-    }
-
-    return server->address.trimmed();
+    return *server;
 }
 
 QString AppBootstrap::resolveCustomConfigDirectory() const

@@ -12,6 +12,7 @@ set(SONGBIRD_SOURCES
     common/OperationResult.h
     common/DataSizeFormatter.h
     common/GitHubMirrorHelper.h
+    common/ServerDisplayName.h
     common/SystemProxyMode.h
     common/UserAgent.h
     domain/models/Config.h
@@ -24,12 +25,6 @@ set(SONGBIRD_SOURCES
     platform/windows/SingleInstanceGuard.cpp
     platform/windows/WindowsAutoRunService.h
     platform/windows/WindowsAutoRunService.cpp
-    platform/windows/WindowsGlobalHotkeyBinding.h
-    platform/windows/WindowsGlobalHotkeyBinding.cpp
-    platform/windows/WindowsGlobalHotkeyKeyInterop.h
-    platform/windows/WindowsGlobalHotkeyKeyInterop.cpp
-    platform/windows/WindowsGlobalHotkeyService.h
-    platform/windows/WindowsGlobalHotkeyService.cpp
     platform/windows/WindowsSystemProxyService.h
     platform/windows/WindowsSystemProxyService.cpp
     runtime/CoreInfo.h
@@ -102,14 +97,10 @@ set(SONGBIRD_SOURCES
     ui/dialogs/CustomServerDialog.cpp
     ui/dialogs/AboutDialog.h
     ui/dialogs/AboutDialog.cpp
-    ui/dialogs/DnsSettingsDialog.h
-    ui/dialogs/DnsSettingsDialog.cpp
     ui/dialogs/DnsSettingsPageWidget.h
     ui/dialogs/DnsSettingsPageWidget.cpp
     ui/dialogs/GeneralSettingsPageWidget.h
     ui/dialogs/GeneralSettingsPageWidget.cpp
-    ui/dialogs/GlobalHotkeyDialog.h
-    ui/dialogs/GlobalHotkeyDialog.cpp
     ui/dialogs/CoreSettingsPageWidget.h
     ui/dialogs/CoreSettingsPageWidget.cpp
     ui/dialogs/RoutingSettingsPageWidget.h

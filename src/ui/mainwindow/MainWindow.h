@@ -121,8 +121,6 @@ signals:
     void toggleAutoRunRequested();
     void reloadConfigRequested();
     void restoreBackupRequested();
-    void globalHotkeySettingsRequested();
-    void dnsSettingsRequested();
     void settingsRequested();
     void aboutRequested();
     void openProjectPageRequested();
@@ -163,7 +161,7 @@ private:
     void createSystemToolbarActions();
     void createHelpToolbarActions();
     void createRuntimeToolbarActions();
-    void createToolbarMenus(QToolBar* toolBar, QMenu*& settingMenu, QMenu*& helpMenu);
+    void createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu);
     void populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu);
     void initializeToolbarControllers();
     void setupServerView();
@@ -272,8 +270,6 @@ private:
     QAction* toggleAutoRunAction_ = nullptr;
     QAction* reloadConfigAction_ = nullptr;
     QAction* restoreBackupAction_ = nullptr;
-    QAction* globalHotkeySettingsAction_ = nullptr;
-    QAction* dnsSettingsAction_ = nullptr;
     QAction* settingsAction_ = nullptr;
     QAction* aboutAction_ = nullptr;
     QAction* openProjectPageAction_ = nullptr;

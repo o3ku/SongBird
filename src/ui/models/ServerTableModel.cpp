@@ -6,6 +6,8 @@
 #include <QIcon>
 #include <utility>
 
+#include "common/ServerDisplayName.h"
+
 namespace {
 
 QString formatAddressDisplay(const ServerTableRow& item)
@@ -34,6 +36,7 @@ void ServerTableModel::setItems(QList<VmessItem> items, QString currentIndexId)
             item.indexId,
             item.configType,
             item.remarks,
+            serverDisplayName(item),
             item.address,
             item.port,
             item.security,
@@ -154,7 +157,7 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
         case TypeColumn:
             return configTypeDisplayName(item->configType);
         case RemarksColumn:
-            return item->remarks;
+            return item->displayName;
         case AddressColumn:
             return formatAddressDisplay(*item);
         case TestResultColumn:

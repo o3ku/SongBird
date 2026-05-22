@@ -121,6 +121,10 @@ void ensureBuiltinRoutingItems(CollectionConfigState& config)
 
 ConfigType parseConfigType(const QJsonValue& value)
 {
+    if (value.isUndefined() || value.isNull()) {
+        return ConfigType::VMess;
+    }
+
     if (!value.isDouble()) {
         return ConfigType::Unknown;
     }
@@ -588,60 +592,6 @@ QJsonArray toSubscriptionArray(const QList<SubItem>& items)
     return array;
 }
 
-QList<GlobalHotkeyItem> parseGlobalHotkeys(const QJsonArray& array)
-{
-    QList<GlobalHotkeyItem> items;
-    items.reserve(array.size());
-
-    for (const QJsonValue& value : array) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        const QJsonObject object = value.toObject();
-        GlobalHotkeyItem item;
-        item.action = static_cast<GlobalHotkeyAction>(
-            object.value(QStringLiteral("EGlobalHotkey")).toInt(static_cast<int>(GlobalHotkeyAction::ShowForm)));
-        item.alt = object.value(QStringLiteral("Alt")).toBool(false);
-        item.control = object.value(QStringLiteral("Control")).toBool(false);
-        item.shift = object.value(QStringLiteral("Shift")).toBool(false);
-        if (object.contains(QStringLiteral("KeyCode")) && object.value(QStringLiteral("KeyCode")).isDouble()) {
-            item.keyCode = object.value(QStringLiteral("KeyCode")).toInt();
-        } else {
-            item.keyCode.reset();
-        }
-        items.append(item);
-    }
-
-    return items;
-}
-
-QJsonArray toGlobalHotkeyArray(const QList<GlobalHotkeyItem>& items)
-{
-    QJsonArray array;
-    for (const GlobalHotkeyItem& item : items) {
-        QJsonObject object;
-        if (item.action != GlobalHotkeyAction::ShowForm) {
-            object.insert(QStringLiteral("EGlobalHotkey"), static_cast<int>(item.action));
-        }
-        if (item.alt) {
-            object.insert(QStringLiteral("Alt"), true);
-        }
-        if (item.control) {
-            object.insert(QStringLiteral("Control"), true);
-        }
-        if (item.shift) {
-            object.insert(QStringLiteral("Shift"), true);
-        }
-        if (item.keyCode.has_value()) {
-            object.insert(QStringLiteral("KeyCode"), item.keyCode.value());
-        }
-        array.append(object);
-    }
-
-    return array;
-}
-
 QList<RoutingItem> parseRoutingItems(const QJsonArray& array)
 {
     QList<RoutingItem> items;
@@ -708,7 +658,6 @@ void read(const QJsonObject& root, CollectionConfigState& config)
 {
     config.servers = parseServers(root.value(QStringLiteral("servers")).toArray());
     config.subscriptions = parseSubscriptions(root.value(QStringLiteral("subscriptions")).toArray());
-    config.globalHotkeys = parseGlobalHotkeys(root.value(QStringLiteral("globalHotkeys")).toArray());
     config.routingIndex = root.value(QStringLiteral("routingIndex")).toInt(0);
     config.enableRoutingAdvanced = root.value(QStringLiteral("enableRoutingAdvanced")).toBool(false);
     config.routingItems = parseRoutingItems(root.value(QStringLiteral("routingItems")).toArray());
@@ -726,11 +675,6 @@ void write(QJsonObject& root, const CollectionConfigState& config)
     const QJsonArray subscriptions = toSubscriptionArray(config.subscriptions);
     if (!subscriptions.isEmpty()) {
         root.insert(QStringLiteral("subscriptions"), subscriptions);
-    }
-
-    const QJsonArray globalHotkeys = toGlobalHotkeyArray(config.globalHotkeys);
-    if (!globalHotkeys.isEmpty()) {
-        root.insert(QStringLiteral("globalHotkeys"), globalHotkeys);
     }
 
     if (config.routingIndex != 0) {

@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/ServerDisplayName.h"
 #include "common/UserAgent.h"
 #include "runtime/ClientConfigWriter.h"
 #include "services/SpeedTestServiceInternal.h"
@@ -50,17 +51,6 @@ const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 // gstatic responds with 204 on every working egress and is not blocked from
 // most CN exits, so it produces fewer false negatives than google.com.
 const QString kDefaultUrlTestUrl = QStringLiteral("https://www.gstatic.com/generate_204");
-
-QString describeServer(const VmessItem& server)
-{
-    if (!server.remarks.trimmed().isEmpty()) {
-        return server.remarks.trimmed();
-    }
-    if (!server.address.trimmed().isEmpty() && server.port > 0) {
-        return QStringLiteral("%1:%2").arg(server.address.trimmed()).arg(server.port);
-    }
-    return server.indexId.trimmed();
-}
 
 QString defaultUrlTestUrl(const Config& config)
 {
@@ -314,7 +304,7 @@ QString runUrlTest(
     const std::atomic_bool& cancelled,
     const std::function<void(const QString&)>& log)
 {
-    const QString serverName = describeServer(item.server);
+    const QString serverName = serverDisplayName(item.server);
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
         return QStringLiteral("Core missing");
     }
@@ -680,7 +670,7 @@ bool runBatchedGroup(
 
         BatchProbeEntry entry;
         entry.indexId = item.server.indexId;
-        entry.serverName = describeServer(item.server);
+        entry.serverName = serverDisplayName(item.server);
         entry.outboundTag = outboundTag;
         entry.inboundTag = inboundTag;
         entry.outbound = outbound;
@@ -736,6 +726,12 @@ bool runBatchedGroup(
             return false;
         }
         configFile.write(QJsonDocument(batchRoot).toJson(QJsonDocument::Compact));
+    }
+
+    if (groupItems.isEmpty()) {
+        log(QStringLiteral("URL Test batch | no servers to test"));
+        releaseAllPorts();
+        return false;
     }
 
     const CoreInfo& coreInfo = groupItems.first().coreInfo;
@@ -900,7 +896,7 @@ public:
             if (cancelled_.load()) {
                 break;
             }
-            const QString serverName = describeServer(items[index].server);
+            const QString serverName = serverDisplayName(items[index].server);
             emit logGenerated(QStringLiteral("URL Test: %1").arg(serverName));
             const QString result = QStringLiteral("Unsupported");
             ++completed;
@@ -918,7 +914,7 @@ public:
             groupItems.reserve(indices.size());
             for (int idx : indices) {
                 groupItems.append(items[idx]);
-                emit logGenerated(QStringLiteral("URL Test: %1").arg(describeServer(items[idx].server)));
+                emit logGenerated(QStringLiteral("URL Test: %1").arg(serverDisplayName(items[idx].server)));
             }
 
             const bool batched = runBatchedGroup(
@@ -1002,7 +998,7 @@ private:
             }
 
             const SpeedTestRequestItem item = items[idx];
-            const QString serverName = describeServer(item.server);
+            const QString serverName = serverDisplayName(item.server);
 
             pending.push_back(PendingItem{
                 item.server.indexId,
@@ -1133,7 +1129,11 @@ SpeedTestService::~SpeedTestService()
     cancelled_ = true;
 
     workerThread_->quit();
-    workerThread_->wait();
+    while (!workerThread_->wait(5000)) {
+        workerThread_->requestInterruption();
+        workerThread_->quit();
+        qWarning("SpeedTestService: worker thread did not exit before shutdown; still waiting");
+    }
 }
 
 #include "SpeedTestService.moc"

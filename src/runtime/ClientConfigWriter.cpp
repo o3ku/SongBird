@@ -642,7 +642,14 @@ void mergeSystemHostsFromFile(const QString& path, QMap<QString, QString>& hosts
         return;
     }
 
-    const QMap<QString, QString> parsedHosts = parseSystemHostsText(QString::fromUtf8(file.readAll()));
+    const QByteArray content = file.readAll();
+    const auto readError = file.error();
+    file.close();
+    if (content.isEmpty() && readError != QFileDevice::NoError) {
+        return;
+    }
+
+    const QMap<QString, QString> parsedHosts = parseSystemHostsText(QString::fromUtf8(content));
     for (auto it = parsedHosts.constBegin(); it != parsedHosts.constEnd(); ++it) {
         hosts.insert(it.key(), it.value());
     }
@@ -2650,8 +2657,9 @@ QJsonObject ClientConfigWriter::buildStreamSettings(const Config& config, const 
     }
 
     if (!server.finalmask.trimmed().isEmpty()) {
-        const QJsonDocument finalmaskDocument = QJsonDocument::fromJson(server.finalmask.toUtf8());
-        if (finalmaskDocument.isObject()) {
+        QJsonParseError parseError;
+        const QJsonDocument finalmaskDocument = QJsonDocument::fromJson(server.finalmask.toUtf8(), &parseError);
+        if (parseError.error == QJsonParseError::NoError && finalmaskDocument.isObject()) {
             streamSettings.insert(QStringLiteral("finalmask"), finalmaskDocument.object());
         }
     }

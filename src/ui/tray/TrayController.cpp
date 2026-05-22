@@ -14,12 +14,15 @@
 
 #include <algorithm>
 
+#include "common/ServerDisplayName.h"
 #include "services/SpeedTestServiceInternal.h"
 #include "ui/mainwindow/MainWindow.h"
 
 namespace {
 
 constexpr int TrayServerNameTextMaxWidth = 300;
+constexpr int TrayCurrentServerNameTextMaxWidth = 260;
+constexpr int TrayCurrentServerTooltipNameTextMaxWidth = 360;
 constexpr int TrayServerMenuMaxCount = 20;
 
 struct TrayServerSortKey
@@ -43,6 +46,18 @@ QString elidedMenuText(QMenu* menu, const QString& text)
         text,
         Qt::ElideRight,
         TrayServerNameTextMaxWidth);
+}
+
+QString elidedTrayText(QMenu* menu, const QString& text, int maximumWidth)
+{
+    if (menu == nullptr) {
+        return text;
+    }
+
+    return menu->fontMetrics().elidedText(
+        text,
+        Qt::ElideRight,
+        maximumWidth);
 }
 
 QString formatTrayTestResult(const QString& value)
@@ -281,7 +296,7 @@ void TrayController::setServers(const QList<VmessItem>& servers, const QString& 
     servers_.clear();
     servers_.reserve(servers.size());
     for (const VmessItem& item : servers) {
-        servers_.append(TrayServerEntry{item.indexId, describeServer(item), item.testResult});
+        servers_.append(TrayServerEntry{item.indexId, serverDisplayName(item), item.testResult});
     }
     currentServerId_ = currentIndexId.trimmed();
     rebuildServerMenu();
@@ -351,9 +366,18 @@ void TrayController::updateMenuText()
     if (currentServerAction_ != nullptr) {
         const QString currentServerText = currentServerName_.trimmed().isEmpty()
             ? noServerPlaceholderText()
-            : currentServerName_.trimmed();
+            : elidedTrayText(
+                trayMenu_,
+                currentServerName_.trimmed(),
+                TrayCurrentServerNameTextMaxWidth);
         currentServerAction_->setText(trayText("Current: %1").arg(
             currentServerText));
+        currentServerAction_->setToolTip(currentServerName_.trimmed().isEmpty()
+            ? QString()
+            : elidedTrayText(
+                trayMenu_,
+                currentServerName_.trimmed(),
+                TrayCurrentServerTooltipNameTextMaxWidth));
     }
 
     if (serversMenu_ != nullptr) {
@@ -375,9 +399,16 @@ void TrayController::updateToolTip()
     }
 
     const QString proxyText = coreRunning_ && systemProxyApplied_ ? trayText("On") : trayText("Off");
+    const QString currentServerText = currentServerName_.isEmpty()
+        ? trayText("No default server")
+        : currentServerName_;
+    const QString currentServerDisplayText = elidedTrayText(
+        trayMenu_,
+        currentServerText,
+        TrayCurrentServerNameTextMaxWidth);
 
     QString tooltip = QStringLiteral("SongBird | %1 | %2 | %3 | %4")
-                          .arg(currentServerName_.isEmpty() ? trayText("No default server") : currentServerName_)
+                          .arg(currentServerDisplayText)
                           .arg(trayText("Core %1").arg(
                               coreRunning_ ? trayText("Running")
                                            : coreProcessRunning_ ? trayText("Starting")
@@ -463,9 +494,13 @@ void TrayController::rebuildServerMenu()
         const TrayServerEntry& item = servers_.at(serverIndex);
         QAction* action = serversMenu_->addAction(formatServerMenuText(serversMenu_, item));
         const QString result = formatTrayTestResult(item.testResult);
+        const QString tooltipName = elidedTrayText(
+            serversMenu_,
+            item.displayName,
+            TrayCurrentServerTooltipNameTextMaxWidth);
         action->setToolTip(result.isEmpty()
-            ? item.displayName
-            : QStringLiteral("%1 | %2").arg(item.displayName, result));
+            ? tooltipName
+            : QStringLiteral("%1 | %2").arg(tooltipName, result));
         action->setCheckable(true);
         action->setChecked(item.indexId == currentServerId_);
         action->setData(item.indexId);
@@ -510,20 +545,6 @@ void TrayController::rebuildRoutingMenu()
             emit routingRequested(action->data().toInt());
         });
     }
-}
-
-QString TrayController::describeServer(const VmessItem& item)
-{
-    const QString remarks = item.remarks.trimmed();
-    if (!remarks.isEmpty()) {
-        return remarks;
-    }
-
-    if (!item.address.trimmed().isEmpty() && item.port > 0) {
-        return QStringLiteral("%1:%2").arg(item.address.trimmed()).arg(item.port);
-    }
-
-    return item.address.trimmed().isEmpty() ? trayText("Unnamed Server") : item.address.trimmed();
 }
 
 QString TrayController::describeRouting(const RoutingItem& item, int index)

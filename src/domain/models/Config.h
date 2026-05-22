@@ -7,7 +7,6 @@
 #include <QString>
 
 #include "domain/models/CoreTypeItem.h"
-#include "domain/models/GlobalHotkeyItem.h"
 #include "domain/models/PolicyGroupItem.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/SubItem.h"
@@ -103,7 +102,6 @@ struct RootConfigState {
 struct CollectionConfigState {
     QList<VmessItem> servers;
     QList<SubItem> subscriptions;
-    QList<GlobalHotkeyItem> globalHotkeys;
     int routingIndex = 0;
     bool enableRoutingAdvanced = false;
     QList<RoutingItem> routingItems;

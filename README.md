@@ -49,10 +49,10 @@ SongBird uses `songbird.json` for user configuration. It does not require the .N
 ### Automation & CLI
 
 - `--config <path>`: use a specific `songbird.json` file.
-- `--auto-start` / `--start-hidden`: control launch behavior.
+- `--start-hidden`: hide to tray or minimize after startup.
 - `--skip-core` / `--non-interactive`: suppress core launch and blocking dialogs for automation.
 - `--quit-after-ms <ms>`: exit automatically after a timeout.
-- `--disable-single-instance` / `--disable-global-hotkeys`: opt out of platform features.
+- `--disable-single-instance`: opt out of the single-instance guard.
 
 ## Feature Compatibility
 
@@ -65,7 +65,6 @@ SongBird uses `songbird.json` for user configuration. It does not require the .N
 | TUN mode | sing-box with admin elevation and cleanup |
 | Speed test | Ping, TCP ping, real ping, download, URL test result persistence |
 | System proxy | Managed Windows global proxy on/off |
-| Global hotkeys | Supported |
 | Translation | Embedded `.qm` resources |
 | Themes | Embedded light and dark QSS themes |
 | GitHub mirror | Configurable mirror fallback for core and geo resource updates |

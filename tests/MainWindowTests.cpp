@@ -45,7 +45,6 @@ private slots:
     void logStickToBottomButtonMatchesFilterHeight();
     void informationHeaderClickTogglesLogCollapse();
     void logContextMenuUsesViewportCoordinates();
-    void globalHotkeySettingsActionEmitsSignal();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
@@ -58,8 +57,8 @@ private slots:
     void proxyToggleButtonRemainsEnabledToDisableActiveProxyWithoutServers();
     void proxyToggleButtonAllowsStartWhenNoCompatibleCoreInstalled();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
-    void tunToggleButtonAlsoEnablesProxyWhenBothWereOff();
-    void tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyStateWasStale();
+    void tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff();
+    void tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxyStateWasStale();
     void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
@@ -126,6 +125,118 @@ void scrollToMiddle(QListView* logView)
     QCoreApplication::processEvents();
 }
 
+void selectServerRow(QTableView* serverView, int row)
+{
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    const QModelIndex index = serverView->model()->index(row, 0);
+    QVERIFY(index.isValid());
+    serverView->selectionModel()->setCurrentIndex(
+        index,
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows | QItemSelectionModel::Current);
+}
+
+int serverRowByDisplayName(QTableView* serverView, const QString& displayName)
+{
+    if (serverView == nullptr || serverView->model() == nullptr) {
+        return -1;
+    }
+
+    constexpr int RemarksColumn = 2;
+    for (int row = 0; row < serverView->model()->rowCount(); ++row) {
+        if (serverView->model()->index(row, RemarksColumn).data(Qt::DisplayRole).toString() == displayName) {
+            return row;
+        }
+    }
+
+    return -1;
+}
+
+void selectServerByDisplayName(QTableView* serverView, const QString& displayName)
+{
+    const int row = serverRowByDisplayName(serverView, displayName);
+    QVERIFY(row >= 0);
+    selectServerRow(serverView, row);
+}
+
+void selectServerRows(QTableView* serverView, int firstRow, int lastRow)
+{
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    const QModelIndex firstIndex = serverView->model()->index(firstRow, 0);
+    const QModelIndex lastIndex = serverView->model()->index(lastRow, 0);
+    QVERIFY(firstIndex.isValid());
+    QVERIFY(lastIndex.isValid());
+    serverView->selectionModel()->select(
+        QItemSelection(firstIndex, lastIndex),
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    serverView->selectionModel()->setCurrentIndex(
+        lastIndex,
+        QItemSelectionModel::NoUpdate);
+}
+
+void selectServerRowsByDisplayName(QTableView* serverView, const QStringList& displayNames)
+{
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QVERIFY(serverView->selectionModel() != nullptr);
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    serverView->selectionModel()->clearSelection();
+    for (const QString& displayName : displayNames) {
+        const int row = serverRowByDisplayName(serverView, displayName);
+        QVERIFY(row >= 0);
+        const QModelIndex index = serverView->model()->index(row, 0);
+        serverView->selectionModel()->select(
+            index,
+            QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        serverView->selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+    }
+}
+
+bool waitForClipboardText(const QString& expectedText, int timeoutMs = 1000)
+{
+    if (QApplication::clipboard() == nullptr) {
+        return false;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
+        if (QApplication::clipboard()->text() == expectedText) {
+            return true;
+        }
+    }
+
+    return QApplication::clipboard()->text() == expectedText;
+}
+
+QStringList selectedServerDisplayNames(QTableView* serverView)
+{
+    QStringList names;
+    if (serverView == nullptr || serverView->model() == nullptr || serverView->selectionModel() == nullptr) {
+        return names;
+    }
+
+    constexpr int RemarksColumn = 2;
+    const QModelIndexList selectedRows = serverView->selectionModel()->selectedRows();
+    for (const QModelIndex& rowIndex : selectedRows) {
+        names.append(serverView->model()->index(rowIndex.row(), RemarksColumn).data(Qt::DisplayRole).toString());
+    }
+    names.sort();
+    return names;
+}
+
 VmessItem createServer(const QString& id, const QString& remarks, int sequence)
 {
     VmessItem item;
@@ -146,6 +257,17 @@ Config createServerSelectionConfig()
         createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3)};
     config.currentIndexId = QStringLiteral("server-1");
     return config;
+}
+
+QString shareUrlForServerRemarks(const Config& config, const QString& remarks)
+{
+    for (const VmessItem& server : config.collection().servers) {
+        if (server.remarks == remarks) {
+            return ShareUrlBuilder::build(server);
+        }
+    }
+
+    return {};
 }
 
 Config createGroupedServerSelectionConfig()
@@ -391,20 +513,6 @@ void MainWindowTests::logContextMenuUsesViewportCoordinates()
     QTRY_VERIFY(QApplication::activePopupWidget() == nullptr);
 }
 
-void MainWindowTests::globalHotkeySettingsActionEmitsSignal()
-{
-    MainWindow window;
-    QSignalSpy spy(&window, SIGNAL(globalHotkeySettingsRequested()));
-    QVERIFY(spy.isValid());
-
-    auto* action = window.findChild<QAction*>(QStringLiteral("globalHotkeySettingsAction"));
-    QVERIFY(action != nullptr);
-
-    action->trigger();
-
-    QCOMPARE(spy.count(), 1);
-}
-
 void MainWindowTests::toolbarOrdersSettingsSubscriptionsAndRoutingButtons()
 {
     MainWindow window;
@@ -639,7 +747,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
 
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     QVERIFY(proxyButton != nullptr);
-    QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
+    QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(proxyButton->isEnabled());
 
@@ -651,12 +759,13 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     window.setCoreProcessRunning(true);
     window.setCoreRunning(true, false);
     QCoreApplication::processEvents();
-    QCOMPARE(proxyButton->text(), QStringLiteral("PROXY"));
+    QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 
     window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
+    QCOMPARE(proxyButton->text(), QStringLiteral("STOP"));
     QVERIFY(proxyButton->isChecked());
     QVERIFY(proxyButton->isEnabled());
 
@@ -669,6 +778,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     window.setCoreRunning(true, false);
     window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
+    QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 }
@@ -763,7 +873,7 @@ void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(tunSpy.at(1).at(0).toBool(), false);
 }
 
-void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenBothWereOff()
+void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
@@ -789,10 +899,10 @@ void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenBothWereOff()
 
     QCOMPARE(tunSpy.count(), 1);
     QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
-    QCOMPARE(enableProxySpy.count(), 1);
+    QCOMPARE(enableProxySpy.count(), 0);
 }
 
-void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyStateWasStale()
+void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxyStateWasStale()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
@@ -804,7 +914,9 @@ void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyState
     window.setProxyEnabled(true);
     QCoreApplication::processEvents();
 
+    QSignalSpy tunSpy(&window, SIGNAL(tunEnabledChanged(bool)));
     QSignalSpy enableProxySpy(&window, SIGNAL(enableSystemProxyRequested()));
+    QVERIFY(tunSpy.isValid());
     QVERIFY(enableProxySpy.isValid());
 
     auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
@@ -813,7 +925,9 @@ void MainWindowTests::tunToggleButtonAlsoEnablesProxyWhenCoreWasOffButProxyState
     tunButton->click();
     QCoreApplication::processEvents();
 
-    QCOMPARE(enableProxySpy.count(), 1);
+    QCOMPARE(tunSpy.count(), 1);
+    QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
+    QCOMPARE(enableProxySpy.count(), 0);
 }
 
 void MainWindowTests::restoreAndCaptureUiStatePreservesQrPreviewVisibility()
@@ -927,9 +1041,7 @@ void MainWindowTests::enterOnServerTableSetsCurrentWithoutMovingSelection()
     QVERIFY(serverView->selectionModel() != nullptr);
 
     serverView->setFocus();
-    serverView->selectRow(1);
-    serverView->setCurrentIndex(serverView->model()->index(1, 2));
-    QCoreApplication::processEvents();
+    selectServerByDisplayName(serverView, QStringLiteral("Second"));
 
     QSignalSpy spy(&window, SIGNAL(setDefaultServerRequested(QString)));
     QVERIFY(spy.isValid());
@@ -969,9 +1081,7 @@ void MainWindowTests::speedTestRefreshKeepsCurrentSelectionOnTriggeredRow()
     QVERIFY(serverView->selectionModel() != nullptr);
 
     serverView->setFocus();
-    serverView->selectRow(1);
-    serverView->setCurrentIndex(serverView->model()->index(1, 2));
-    QCoreApplication::processEvents();
+    selectServerByDisplayName(serverView, QStringLiteral("Second"));
 
     QSignalSpy spy(&window, SIGNAL(testServersRequested(QStringList)));
     QVERIFY(spy.isValid());
@@ -1006,9 +1116,7 @@ void MainWindowTests::defaultServerRefreshKeepsCurrentSelectionOnTriggeredRow()
     QVERIFY(serverView->selectionModel() != nullptr);
 
     serverView->setFocus();
-    serverView->selectRow(1);
-    serverView->setCurrentIndex(serverView->model()->index(1, 2));
-    QCoreApplication::processEvents();
+    selectServerByDisplayName(serverView, QStringLiteral("Second"));
 
     QSignalSpy spy(&window, SIGNAL(setDefaultServerRequested(QString)));
     QVERIFY(spy.isValid());
@@ -1124,16 +1232,8 @@ void MainWindowTests::serverTableDisablesDragReorderingAndKeepsMultiSelection()
     QVERIFY(!serverView->rowsReorderEnabled());
     QVERIFY(serverView->toolTip().isEmpty());
 
-    serverView->selectionModel()->select(
-        serverView->model()->index(0, 0),
-        QItemSelectionModel::Select | QItemSelectionModel::Rows);
-    serverView->selectionModel()->select(
-        serverView->model()->index(1, 0),
-        QItemSelectionModel::Select | QItemSelectionModel::Rows);
-    QCoreApplication::processEvents();
-
-    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
-    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    selectServerRowsByDisplayName(serverView, {QStringLiteral("First"), QStringLiteral("Second")});
+    QCOMPARE(selectedServerDisplayNames(serverView), QStringList({QStringLiteral("First"), QStringLiteral("Second")}));
     QCOMPARE(serverView->selectionModel()->selectedRows().size(), 2);
     QVERIFY(!serverView->moveSelectedRowsTo(2));
 
@@ -1155,18 +1255,17 @@ void MainWindowTests::serverContextMenuKeepsExistingMultiSelection()
     QVERIFY(serverView != nullptr);
     QVERIFY(serverView->selectionModel() != nullptr);
 
-    const QModelIndex firstIndex = serverView->model()->index(0, 0);
-    const QModelIndex secondIndex = serverView->model()->index(1, 0);
+    const int firstRow = serverRowByDisplayName(serverView, QStringLiteral("First"));
+    const int secondRow = serverRowByDisplayName(serverView, QStringLiteral("Second"));
+    QVERIFY(firstRow >= 0);
+    QVERIFY(secondRow >= 0);
+    const QModelIndex firstIndex = serverView->model()->index(firstRow, 0);
+    const QModelIndex secondIndex = serverView->model()->index(secondRow, 0);
     QVERIFY(firstIndex.isValid());
     QVERIFY(secondIndex.isValid());
 
-    serverView->selectionModel()->select(
-        QItemSelection(firstIndex, secondIndex),
-        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-    QCoreApplication::processEvents();
-
-    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
-    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    selectServerRowsByDisplayName(serverView, {QStringLiteral("First"), QStringLiteral("Second")});
+    QCOMPARE(selectedServerDisplayNames(serverView), QStringList({QStringLiteral("First"), QStringLiteral("Second")}));
 
     const QPoint menuPoint = serverView->visualRect(secondIndex).center();
 
@@ -1185,8 +1284,7 @@ void MainWindowTests::serverContextMenuKeepsExistingMultiSelection()
         Q_ARG(QPoint, menuPoint));
     QCoreApplication::processEvents();
 
-    QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
-    QVERIFY(serverView->selectionModel()->isRowSelected(1, QModelIndex()));
+    QCOMPARE(selectedServerDisplayNames(serverView), QStringList({QStringLiteral("First"), QStringLiteral("Second")}));
     QCOMPARE(serverView->selectionModel()->selectedRows().size(), 2);
 }
 
@@ -1267,14 +1365,14 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
         serverView->visualRect(firstIndex).center(),
         QStringLiteral("copyUrlAction"),
         &singleSelectionActions));
-    QCOMPARE(QApplication::clipboard()->text(), ShareUrlBuilder::build(config.collection().servers.at(0)));
+    const QString firstShareUrl = shareUrlForServerRemarks(config, QStringLiteral("First"));
+    QVERIFY(!firstShareUrl.isEmpty());
+    QVERIFY(waitForClipboardText(firstShareUrl));
     QVERIFY(singleSelectionActions.contains(QStringLiteral("Copy Url")));
 
     QStringList multiSelectionActions;
     QApplication::clipboard()->clear();
-    serverView->selectionModel()->select(
-        QItemSelection(firstIndex, secondIndex),
-        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    selectServerRowsByDisplayName(serverView, {QStringLiteral("First"), QStringLiteral("Second")});
     QCoreApplication::processEvents();
 
     QVERIFY(triggerServerContextMenuAction(
@@ -1282,9 +1380,9 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
         serverView->visualRect(secondIndex).center(),
         QStringLiteral("copyUrlAction"),
         &multiSelectionActions));
-    QCOMPARE(
-        QApplication::clipboard()->text(),
-        ShareUrlBuilder::build(config.collection().servers.at(0)) + QChar('\n') + ShareUrlBuilder::build(config.collection().servers.at(1)));
+    const QString secondShareUrl = shareUrlForServerRemarks(config, QStringLiteral("Second"));
+    QVERIFY(!secondShareUrl.isEmpty());
+    QVERIFY(waitForClipboardText(firstShareUrl + QChar('\n') + secondShareUrl));
     QVERIFY(multiSelectionActions.contains(QStringLiteral("Copy Url")));
 }
 
@@ -1470,7 +1568,7 @@ void MainWindowTests::coreStartupChecklistOverlayShowsGeoDownloadProgress()
         checklistItem(0x23F3, QStringLiteral("Validate geo files")));
     QCOMPARE(
         overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
-        QStringLiteral("Starting core..."));
+        QStringLiteral("Starting system proxy..."));
 }
 
 void MainWindowTests::coreStartupChecklistOverlayShowsCoreDownloadProgress()
@@ -1508,7 +1606,7 @@ void MainWindowTests::coreStartupChecklistOverlayShowsCoreDownloadProgress()
         checklistItem(0x23F3, QStringLiteral("Validate core application")));
     QCOMPARE(
         overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
-        QStringLiteral("Starting core..."));
+        QStringLiteral("Starting system proxy..."));
 }
 
 void MainWindowTests::subscriptionUpdateOverlayCentersTextWithoutActionArea()
@@ -1871,10 +1969,10 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(serverHeaderRow->testAttribute(Qt::WA_StyledBackground));
     QCOMPARE(serverFilterEdit->parentWidget(), subscriptionTabBarContainer);
     const QMargins subscriptionTabBarMargins = subscriptionTabBarContainer->layout()->contentsMargins();
-    QCOMPARE(subscriptionTabBarMargins.left(), 0);
-    QCOMPARE(subscriptionTabBarMargins.top(), 0);
-    QCOMPARE(subscriptionTabBarMargins.right(), 0);
-    QCOMPARE(subscriptionTabBarMargins.bottom(), 0);
+    QCOMPARE(subscriptionTabBarMargins.left(), 6);
+    QCOMPARE(subscriptionTabBarMargins.top(), 4);
+    QCOMPARE(subscriptionTabBarMargins.right(), 4);
+    QCOMPARE(subscriptionTabBarMargins.bottom(), 4);
     auto* serverPanelLayout = qobject_cast<QBoxLayout*>(serverHeaderRow->parentWidget()->layout());
     QVERIFY(serverPanelLayout != nullptr);
     QCOMPARE(serverPanelLayout->spacing(), 0);

@@ -3,6 +3,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
+#include <QVector>
 
 #include "runtime/ProtocolCoreCompat.h"
 #include "ui/dialogs/SettingsDialog.h"
@@ -25,6 +26,27 @@ SettingsDialogSession::Result SettingsDialogSession::exec(
     const QList<CoreType>& existingCoreTypes,
     const std::weak_ptr<char>& lifetimeGuard) const
 {
+    struct ThreadJoiner {
+        QVector<QPointer<QThread>> threads;
+
+        ~ThreadJoiner()
+        {
+            const QVector<QPointer<QThread>> threadList = threads;
+            for (const QPointer<QThread>& threadGuard : threadList) {
+                QThread* thread = threadGuard.data();
+                if (thread == nullptr) {
+                    continue;
+                }
+                thread->requestInterruption();
+                thread->quit();
+                if (!thread->wait(3000)) {
+                    thread->terminate();
+                    thread->wait();
+                }
+            }
+        }
+    } threadJoiner;
+
     Result result;
 
     SettingsDialog dialog(parent_);
@@ -48,6 +70,7 @@ SettingsDialogSession::Result SettingsDialogSession::exec(
                 }, Qt::QueuedConnection);
             }
         });
+        threadJoiner.threads.append(thread);
         trackThread_(thread);
         thread->start();
     }

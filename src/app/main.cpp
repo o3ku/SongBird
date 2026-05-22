@@ -63,7 +63,10 @@ QString loadConfiguredLanguageCode(const QString& configPath)
         return {};
     }
 
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    const QByteArray payload = file.readAll();
+    file.close();
+
+    const QJsonDocument document = QJsonDocument::fromJson(payload);
     if (!document.isObject()) {
         return {};
     }
@@ -80,7 +83,10 @@ QString loadConfiguredThemeName(const QString& configPath)
         return AppTheme::lightThemeName();
     }
 
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    const QByteArray payload = file.readAll();
+    file.close();
+
+    const QJsonDocument document = QJsonDocument::fromJson(payload);
     if (!document.isObject()) {
         return AppTheme::lightThemeName();
     }
@@ -97,7 +103,9 @@ bool loadConfiguredTunEnabled(const QString& configPath)
         return false;
     }
 
-    return startupConfigHasTunEnabled(file.readAll());
+    const QByteArray payload = file.readAll();
+    file.close();
+    return startupConfigHasTunEnabled(payload);
 }
 
 void installConfiguredTranslator(QApplication& app, QTranslator& translator, const QString& languageCode)
@@ -165,25 +173,6 @@ bool installQtTranslator(
     return false;
 }
 
-QString startupAdminPromptTitle()
-{
-    return QCoreApplication::translate("main", "Administrator Permission");
-}
-
-QString startupAdminPromptMessage()
-{
-    return QCoreApplication::translate(
-        "main",
-        "SongBird is not running with administrator privileges.\nRestart as administrator now?");
-}
-
-QString startupAdminRestartFailureMessage()
-{
-    return QCoreApplication::translate(
-        "main",
-        "Failed to restart SongBird with administrator privileges.");
-}
-
 } // namespace
 
 int main(int argc, char* argv[])
@@ -227,9 +216,6 @@ int main(int argc, char* argv[])
         QStringList{QStringLiteral("config")},
         QCoreApplication::translate("main", "Use a specific songbird.json file."),
         QStringLiteral("path"));
-    const QCommandLineOption autoStartOption(
-        QStringList{QStringLiteral("auto-start")},
-        QCoreApplication::translate("main", "Start the selected core after the UI is initialized."));
     const QCommandLineOption startHiddenOption(
         QStringList{QStringLiteral("start-hidden")},
         QCoreApplication::translate("main", "Hide to tray or minimize after startup."));
@@ -243,9 +229,6 @@ int main(int argc, char* argv[])
         QString(),
         QStringLiteral("pid"));
     restartWaitPidOption.setFlags(QCommandLineOption::HiddenFromHelp);
-    const QCommandLineOption disableGlobalHotkeysOption(
-        QStringList{QStringLiteral("disable-global-hotkeys")},
-        QCoreApplication::translate("main", "Do not register Windows global hotkeys on startup."));
     const QCommandLineOption skipCoreOption(
         QStringList{QStringLiteral("skip-core")},
         QCoreApplication::translate("main", "Skip startup core detection and auto-start for testing."));
@@ -258,12 +241,10 @@ int main(int argc, char* argv[])
         QStringLiteral("milliseconds"));
 
     parser.addOption(configOption);
-    parser.addOption(autoStartOption);
     parser.addOption(startHiddenOption);
     parser.addOption(disableSingleInstanceOption);
     parser.addOption(adminRelaunchOption);
     parser.addOption(restartWaitPidOption);
-    parser.addOption(disableGlobalHotkeysOption);
     parser.addOption(skipCoreOption);
     parser.addOption(nonInteractiveOption);
     parser.addOption(quitAfterMsOption);
@@ -326,9 +307,7 @@ int main(int argc, char* argv[])
 
     AppBootstrap bootstrap(
         requestedConfigPath,
-        parser.isSet(autoStartOption),
         parser.isSet(startHiddenOption),
-        !parser.isSet(disableGlobalHotkeysOption),
         parser.isSet(skipCoreOption));
     if (!bootstrap.run()) {
         return 1;

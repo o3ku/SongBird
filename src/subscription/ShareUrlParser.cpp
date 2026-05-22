@@ -351,19 +351,20 @@ VmessItem ShareUrlParser::parseSocks(const QString& shareUrl, bool* ok)
     item.remarks = url.fragment(QUrl::FullyDecoded);
     item.address = url.host();
     item.port = url.port();
-    item.id = url.userName();
-    item.security = url.password();
+    item.id = QUrl::fromPercentEncoding(url.userName().toUtf8());
+    item.security = QUrl::fromPercentEncoding(url.password().toUtf8());
 
-    if ((item.address.trimmed().isEmpty() || item.port <= 0)
-        || (!url.userName().isEmpty() && url.password().isEmpty())) {
+    if (item.address.trimmed().isEmpty() || item.port <= 0) {
         item = parseLegacySocks(shareUrl);
-    } else if (item.id.isEmpty() && item.security.isEmpty()) {
+    } else if (!url.userName().isEmpty() && url.password().isEmpty()) {
         const QString encodedUserInfo = url.userName();
         QString first;
         QString second;
-        if (tryAssignUserInfo(encodedUserInfo, first, second)) {
+        if (tryAssignUserInfo(encodedUserInfo, first, second, true)) {
             item.id = first;
             item.security = second;
+        } else {
+            item = parseLegacySocks(shareUrl);
         }
     }
 
@@ -691,7 +692,7 @@ VmessItem ShareUrlParser::parseLegacySocks(const QString& shareUrl)
 
     QString first;
     QString second;
-    if (!tryAssignUserInfo(payload.left(atIndex), first, second)) {
+    if (!tryAssignUserInfo(payload.left(atIndex), first, second, true)) {
         return {};
     }
 
@@ -702,7 +703,7 @@ VmessItem ShareUrlParser::parseLegacySocks(const QString& shareUrl)
     return item;
 }
 
-bool ShareUrlParser::tryAssignUserInfo(QString credentials, QString& first, QString& second)
+bool ShareUrlParser::tryAssignUserInfo(QString credentials, QString& first, QString& second, bool allowEmpty)
 {
     credentials = credentials.trimmed();
     if (credentials.isEmpty()) {
@@ -721,7 +722,7 @@ bool ShareUrlParser::tryAssignUserInfo(QString credentials, QString& first, QStr
 
     first = credentials.left(separatorIndex);
     second = credentials.mid(separatorIndex + 1);
-    return !first.isEmpty() || !second.isEmpty();
+    return allowEmpty || !first.isEmpty() || !second.isEmpty();
 }
 
 bool ShareUrlParser::tryParseAddressAndPort(const QString& endpoint, QString& address, int& port)

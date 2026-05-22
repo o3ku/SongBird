@@ -93,7 +93,6 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     config.dns().directExpectedIps = QStringLiteral("geoip:private");
     config.collection().servers = {VmessItem{}};
     config.collection().subscriptions = {SubItem{}};
-    config.collection().globalHotkeys = {GlobalHotkeyItem{}};
     config.policy().coreTypeItems = {CoreTypeItem{}};
 
     const Config runtimeConfig = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(config);
@@ -121,7 +120,6 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     QCOMPARE(runtimeConfig.dns().directExpectedIps, QStringLiteral("geoip:private"));
     QVERIFY(runtimeConfig.collection().servers.isEmpty());
     QVERIFY(runtimeConfig.collection().subscriptions.isEmpty());
-    QVERIFY(runtimeConfig.collection().globalHotkeys.isEmpty());
     QVERIFY(runtimeConfig.policy().coreTypeItems.isEmpty());
 }
 
