@@ -327,152 +327,59 @@ QJsonArray toServerArray(const QList<VmessItem>& items)
     QJsonArray array;
     for (const VmessItem& item : items) {
         QJsonObject object;
-        if (!item.indexId.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("indexId"), item.indexId);
-        }
+        writeIfNotEmpty(object, QStringLiteral("indexId"), item.indexId);
         if (item.configType != ConfigType::VMess) {
             object.insert(QStringLiteral("configType"), toConfigTypeValue(item.configType));
         }
         if (item.coreType != CoreType::SingBox) {
             object.insert(QStringLiteral("coreType"), toCoreTypeValue(item.coreType));
         }
-        if (!item.address.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("address"), item.address);
-        }
-        if (item.port != 0) {
-            object.insert(QStringLiteral("port"), item.port);
-        }
-        if (!item.id.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("id"), item.id);
-        }
-        if (item.alterId != 0) {
-            object.insert(QStringLiteral("alterId"), item.alterId);
-        }
-        if (!item.security.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("security"), item.security);
-        }
-        if (!item.network.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("network"), item.network);
-        }
-        if (!item.remarks.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("remarks"), item.remarks);
-        }
-        if (!item.headerType.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("headerType"), item.headerType);
-        }
-        if (!item.requestHost.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("requestHost"), item.requestHost);
-        }
-        if (!item.path.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("path"), item.path);
-        }
-        if (!item.streamSecurity.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("streamSecurity"), item.streamSecurity);
-        }
-        if (!item.allowInsecure.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("allowInsecure"), item.allowInsecure);
-        }
-        if (!item.flow.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("flow"), item.flow);
-        }
-        if (!item.sni.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("sni"), item.sni);
-        }
-        if (item.preSocksPort != 0) {
-            object.insert(QStringLiteral("preSocksPort"), item.preSocksPort);
-        }
-        if (!item.fingerprint.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("fingerprint"), item.fingerprint);
-        }
-        if (!item.publicKey.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("publicKey"), item.publicKey);
-        }
-        if (!item.shortId.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("shortId"), item.shortId);
-        }
-        if (!item.spiderX.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("spiderX"), item.spiderX);
-        }
-        if (!item.mldsa65Verify.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("mldsa65Verify"), item.mldsa65Verify);
-        }
-        if (!item.echConfigList.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("echConfigList"), item.echConfigList);
-        }
-        if (!item.echForceQuery.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("echForceQuery"), item.echForceQuery);
-        }
-        if (!item.cert.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("cert"), item.cert);
-        }
-        if (!item.certSha.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("certSha"), item.certSha);
-        }
+        writeIfNotEmpty(object, QStringLiteral("address"), item.address);
+        writeIfNotDefault(object, QStringLiteral("port"), item.port, 0);
+        writeIfNotEmpty(object, QStringLiteral("id"), item.id);
+        writeIfNotDefault(object, QStringLiteral("alterId"), item.alterId, 0);
+        writeIfNotEmpty(object, QStringLiteral("security"), item.security);
+        writeIfNotEmpty(object, QStringLiteral("network"), item.network);
+        writeIfNotEmpty(object, QStringLiteral("remarks"), item.remarks);
+        writeIfNotEmpty(object, QStringLiteral("headerType"), item.headerType);
+        writeIfNotEmpty(object, QStringLiteral("requestHost"), item.requestHost);
+        writeIfNotEmpty(object, QStringLiteral("path"), item.path);
+        writeIfNotEmpty(object, QStringLiteral("streamSecurity"), item.streamSecurity);
+        writeIfNotEmpty(object, QStringLiteral("allowInsecure"), item.allowInsecure);
+        writeIfNotEmpty(object, QStringLiteral("flow"), item.flow);
+        writeIfNotEmpty(object, QStringLiteral("sni"), item.sni);
+        writeIfNotDefault(object, QStringLiteral("preSocksPort"), item.preSocksPort, 0);
+        writeIfNotEmpty(object, QStringLiteral("fingerprint"), item.fingerprint);
+        writeIfNotEmpty(object, QStringLiteral("publicKey"), item.publicKey);
+        writeIfNotEmpty(object, QStringLiteral("shortId"), item.shortId);
+        writeIfNotEmpty(object, QStringLiteral("spiderX"), item.spiderX);
+        writeIfNotEmpty(object, QStringLiteral("mldsa65Verify"), item.mldsa65Verify);
+        writeIfNotEmpty(object, QStringLiteral("echConfigList"), item.echConfigList);
+        writeIfNotEmpty(object, QStringLiteral("echForceQuery"), item.echForceQuery);
+        writeIfNotEmpty(object, QStringLiteral("cert"), item.cert);
+        writeIfNotEmpty(object, QStringLiteral("certSha"), item.certSha);
         if (item.muxEnabled.has_value()) {
             object.insert(QStringLiteral("muxEnabled"), item.muxEnabled.value());
         }
-        if (!item.extra.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("extra"), item.extra);
-        }
-        if (!item.userAgent.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("userAgent"), item.userAgent);
-        }
-        if (!item.finalmask.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("finalmask"), item.finalmask);
-        }
-        if (!item.obfsPassword.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("obfsPassword"), item.obfsPassword);
-        }
-        if (!item.upMbps.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("upMbps"), item.upMbps);
-        }
-        if (!item.downMbps.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("downMbps"), item.downMbps);
-        }
-        if (!item.congestionControl.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("congestionControl"), item.congestionControl);
-        }
-        if (!item.udpRelayMode.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("udpRelayMode"), item.udpRelayMode);
-        }
-        if (item.zeroRttHandshake) {
-            object.insert(QStringLiteral("zeroRttHandshake"), true);
-        }
-        if (!item.privateKey.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("privateKey"), item.privateKey);
-        }
-        if (!item.peerPublicKey.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("peerPublicKey"), item.peerPublicKey);
-        }
-        if (!item.localAddress.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("localAddress"), item.localAddress);
-        }
-        if (item.wireguardMtu != 0) {
-            object.insert(QStringLiteral("wireguardMtu"), item.wireguardMtu);
-        }
-        if (!item.reserved.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("reserved"), item.reserved);
-        }
-        if (!item.username.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("username"), item.username);
-        }
-        if (item.naiveQuic) {
-            object.insert(QStringLiteral("naiveQuic"), true);
-        }
-        if (item.insecureConcurrency != 0) {
-            object.insert(QStringLiteral("insecureConcurrency"), item.insecureConcurrency);
-        }
-        if (!item.subId.trimmed().isEmpty()) {
-            object.insert(QStringLiteral("subscriptionId"), item.subId);
-        }
-
-        QJsonArray alpnArray;
-        for (const QString& value : item.alpn) {
-            alpnArray.append(value);
-        }
-        if (!alpnArray.isEmpty()) {
-            object.insert(QStringLiteral("alpn"), alpnArray);
-        }
+        writeIfNotEmpty(object, QStringLiteral("extra"), item.extra);
+        writeIfNotEmpty(object, QStringLiteral("userAgent"), item.userAgent);
+        writeIfNotEmpty(object, QStringLiteral("finalmask"), item.finalmask);
+        writeIfNotEmpty(object, QStringLiteral("obfsPassword"), item.obfsPassword);
+        writeIfNotEmpty(object, QStringLiteral("upMbps"), item.upMbps);
+        writeIfNotEmpty(object, QStringLiteral("downMbps"), item.downMbps);
+        writeIfNotEmpty(object, QStringLiteral("congestionControl"), item.congestionControl);
+        writeIfNotEmpty(object, QStringLiteral("udpRelayMode"), item.udpRelayMode);
+        writeIfTrue(object, QStringLiteral("zeroRttHandshake"), item.zeroRttHandshake);
+        writeIfNotEmpty(object, QStringLiteral("privateKey"), item.privateKey);
+        writeIfNotEmpty(object, QStringLiteral("peerPublicKey"), item.peerPublicKey);
+        writeIfNotEmpty(object, QStringLiteral("localAddress"), item.localAddress);
+        writeIfNotDefault(object, QStringLiteral("wireguardMtu"), item.wireguardMtu, 0);
+        writeIfNotEmpty(object, QStringLiteral("reserved"), item.reserved);
+        writeIfNotEmpty(object, QStringLiteral("username"), item.username);
+        writeIfTrue(object, QStringLiteral("naiveQuic"), item.naiveQuic);
+        writeIfNotDefault(object, QStringLiteral("insecureConcurrency"), item.insecureConcurrency, 0);
+        writeIfNotEmpty(object, QStringLiteral("subscriptionId"), item.subId);
+        writeStringListIfNotEmpty(object, QStringLiteral("alpn"), item.alpn);
 
         array.append(object);
     }
