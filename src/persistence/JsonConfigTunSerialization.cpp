@@ -32,9 +32,7 @@ QJsonObject toTunModeItem(const TunModeItem& item)
     writeIfNotDefault(object, QStringLiteral("mtu"), item.mtu, 9000);
     writeIfTrue(object, QStringLiteral("enableIPv6Address"), item.enableIPv6Address);
     writeIfTrue(object, QStringLiteral("enableLegacyProtect"), item.enableLegacyProtect);
-    if (item.stack != QStringLiteral("system")) {
-        object.insert(QStringLiteral("stack"), item.stack);
-    }
+    writeIfNotDefault(object, QStringLiteral("stack"), item.stack, QStringLiteral("system"));
     if (item.icmpRouting.trimmed() != QStringLiteral("rule")) {
         object.insert(QStringLiteral("icmpRouting"), item.icmpRouting);
     }

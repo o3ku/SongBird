@@ -111,9 +111,7 @@ void write(QJsonObject& root, const RootConfigState& config)
 
     QJsonObject inbound;
     writeIfNotDefault(inbound, QStringLiteral("localPort"), config.localPort, 10808);
-    if (config.localProtocol != QStringLiteral("socks")) {
-        inbound.insert(QStringLiteral("protocol"), config.localProtocol);
-    }
+    writeIfNotDefault(inbound, QStringLiteral("protocol"), config.localProtocol, QStringLiteral("socks"));
     writeIfNotDefault(inbound, QStringLiteral("udpEnabled"), config.udpEnabled, true);
     writeIfNotDefault(inbound, QStringLiteral("sniffingEnabled"), config.sniffingEnabled, true);
     writeIfNotDefault(inbound, QStringLiteral("routeOnly"), config.routeOnly, false);
@@ -132,9 +130,11 @@ void write(QJsonObject& root, const RootConfigState& config)
     }
 
     writeIfNotDefault(root, QStringLiteral("muxEnabled"), config.muxEnabled, false);
-    if (config.mux4SboxProtocol != QStringLiteral("h2mux")) {
-        root.insert(QStringLiteral("mux4SboxProtocol"), config.mux4SboxProtocol);
-    }
+    writeIfNotDefault(
+        root,
+        QStringLiteral("mux4SboxProtocol"),
+        config.mux4SboxProtocol,
+        QStringLiteral("h2mux"));
     writeIfNotDefault(
         root,
         QStringLiteral("mux4SboxMaxConnections"),
@@ -146,15 +146,21 @@ void write(QJsonObject& root, const RootConfigState& config)
     writeIfNotDefault(root, QStringLiteral("sysProxyType"), config.sysProxyType, 0);
     writeIfNotDefault(root, QStringLiteral("enableFragment"), config.dns().enableFragment, false);
     writeIfNotDefault(root, QStringLiteral("enableCacheFile4Sbox"), config.dns().enableCacheFile4Sbox, true);
-    if (config.dns().directDns != QStringLiteral("https://dns.alidns.com/dns-query")) {
-        root.insert(QStringLiteral("directDns"), config.dns().directDns);
-    }
-    if (config.dns().remoteDns != QStringLiteral("https://cloudflare-dns.com/dns-query")) {
-        root.insert(QStringLiteral("remoteDns"), config.dns().remoteDns);
-    }
-    if (config.dns().bootstrapDns != QStringLiteral("223.5.5.5")) {
-        root.insert(QStringLiteral("bootstrapDns"), config.dns().bootstrapDns);
-    }
+    writeIfNotDefault(
+        root,
+        QStringLiteral("directDns"),
+        config.dns().directDns,
+        QStringLiteral("https://dns.alidns.com/dns-query"));
+    writeIfNotDefault(
+        root,
+        QStringLiteral("remoteDns"),
+        config.dns().remoteDns,
+        QStringLiteral("https://cloudflare-dns.com/dns-query"));
+    writeIfNotDefault(
+        root,
+        QStringLiteral("bootstrapDns"),
+        config.dns().bootstrapDns,
+        QStringLiteral("223.5.5.5"));
     writeIfNotDefault(root, QStringLiteral("fakeIp"), config.dns().fakeIp, false);
     writeIfNotDefault(root, QStringLiteral("globalFakeIp"), config.dns().globalFakeIp, true);
     writeIfNotDefault(root, QStringLiteral("serveStale"), config.dns().serveStale, false);

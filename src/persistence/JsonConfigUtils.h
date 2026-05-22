@@ -78,6 +78,17 @@ inline void writeIfNotDefault(QJsonObject& object, const QString& key, int value
     }
 }
 
+inline void writeIfNotDefault(
+    QJsonObject& object,
+    const QString& key,
+    const QString& value,
+    const QString& defaultValue)
+{
+    if (value != defaultValue) {
+        object.insert(key, value);
+    }
+}
+
 inline void writeStringListIfNotEmpty(QJsonObject& object, const QString& key, const QStringList& values)
 {
     const QJsonArray array = toStringArray(values);
