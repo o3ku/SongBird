@@ -399,11 +399,11 @@ QList<SubItem> parseSubscriptions(const QJsonArray& array)
 
         const QJsonObject object = value.toObject();
         SubItem item;
-        item.id = object.value(QStringLiteral("id")).toString();
-        item.remarks = object.value(QStringLiteral("remarks")).toString();
-        item.url = object.value(QStringLiteral("url")).toString();
-        item.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-        item.userAgent = object.value(QStringLiteral("userAgent")).toString();
+        item.id = readString(object, QStringLiteral("id"));
+        item.remarks = readString(object, QStringLiteral("remarks"));
+        item.url = readString(object, QStringLiteral("url"));
+        item.enabled = readBool(object, QStringLiteral("enabled"), true);
+        item.userAgent = readString(object, QStringLiteral("userAgent"));
         items.append(item);
     }
 
@@ -438,12 +438,12 @@ QList<RoutingItem> parseRoutingItems(const QJsonArray& array)
 
         const QJsonObject object = value.toObject();
         RoutingItem item;
-        item.remarks = object.value(QStringLiteral("remarks")).toString();
-        item.url = object.value(QStringLiteral("url")).toString();
-        item.enabled = object.value(QStringLiteral("enabled")).toBool(true);
-        item.locked = object.value(QStringLiteral("locked")).toBool(false);
-        item.customIcon = object.value(QStringLiteral("customIcon")).toString();
-        item.domainStrategy4Singbox = object.value(QStringLiteral("domainStrategyForSingbox")).toString();
+        item.remarks = readString(object, QStringLiteral("remarks"));
+        item.url = readString(object, QStringLiteral("url"));
+        item.enabled = readBool(object, QStringLiteral("enabled"), true);
+        item.locked = readBool(object, QStringLiteral("locked"));
+        item.customIcon = readString(object, QStringLiteral("customIcon"));
+        item.domainStrategy4Singbox = readString(object, QStringLiteral("domainStrategyForSingbox"));
         item.rules = parseRoutingRules(object.value(QStringLiteral("rules")).toArray());
         items.append(item);
     }
@@ -480,8 +480,8 @@ void read(const QJsonObject& root, CollectionConfigState& config)
 {
     config.servers = parseServers(root.value(QStringLiteral("servers")).toArray());
     config.subscriptions = parseSubscriptions(root.value(QStringLiteral("subscriptions")).toArray());
-    config.routingIndex = root.value(QStringLiteral("routingIndex")).toInt(0);
-    config.enableRoutingAdvanced = root.value(QStringLiteral("enableRoutingAdvanced")).toBool(false);
+    config.routingIndex = readInt(root, QStringLiteral("routingIndex"));
+    config.enableRoutingAdvanced = readBool(root, QStringLiteral("enableRoutingAdvanced"));
     config.routingItems = parseRoutingItems(root.value(QStringLiteral("routingItems")).toArray());
     config.routingCustomRules = parseRoutingRules(root.value(QStringLiteral("routingCustomRules")).toArray());
     ensureBuiltinRoutingItems(config);
