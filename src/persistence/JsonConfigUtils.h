@@ -57,6 +57,13 @@ inline void writeIfTrue(QJsonObject& object, const QString& key, bool value)
     }
 }
 
+inline void writeIfFalse(QJsonObject& object, const QString& key, bool value)
+{
+    if (!value) {
+        object.insert(key, false);
+    }
+}
+
 inline void writeIfNotDefault(QJsonObject& object, const QString& key, bool value, bool defaultValue)
 {
     if (value != defaultValue) {
