@@ -392,6 +392,18 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ClientConfigWriterTests.cpp
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/singbox/SingBoxConfigFragments.h
+    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/xray/XrayConfigFragments.h
+    ../src/runtime/core/xray/XrayConfigFragments.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -972,6 +984,18 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/persistence/JsonConfigUiSerialization.cpp
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/singbox/SingBoxConfigFragments.h
+    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/xray/XrayConfigFragments.h
+    ../src/runtime/core/xray/XrayConfigFragments.cpp
     ../src/runtime/CoreLifecycleService.h
     ../src/runtime/CoreLifecycleService.cpp
     ../src/runtime/ICoreProcessHost.h

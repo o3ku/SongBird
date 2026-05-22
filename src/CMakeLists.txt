@@ -38,6 +38,18 @@ set(SONGBIRD_SOURCES
     runtime/CoreConfigPreflight.cpp
     runtime/ClientConfigWriter.h
     runtime/ClientConfigWriter.cpp
+    runtime/DnsConfigFragments.h
+    runtime/DnsConfigFragments.cpp
+    runtime/ProtocolConfigMapper.h
+    runtime/ProtocolConfigMapper.cpp
+    runtime/RoutingConfigFragments.h
+    runtime/RoutingConfigFragments.cpp
+    runtime/RoutingRuleJsonMapper.h
+    runtime/RoutingRuleJsonMapper.cpp
+    runtime/core/singbox/SingBoxConfigFragments.h
+    runtime/core/singbox/SingBoxConfigFragments.cpp
+    runtime/core/xray/XrayConfigFragments.h
+    runtime/core/xray/XrayConfigFragments.cpp
     runtime/ServerConfigWriter.h
     runtime/ServerConfigWriter.cpp
     runtime/ICoreProcessHost.h
