@@ -16,6 +16,7 @@ set(SONGBIRD_SOURCES
     common/OperationResult.h
     common/DataSizeFormatter.h
     common/GitHubMirrorHelper.h
+    common/PortValidator.h
     common/ServerDisplayName.h
     common/SystemProxyMode.h
     common/UserAgent.h
