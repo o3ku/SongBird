@@ -137,6 +137,7 @@ signals:
 private slots:
     void updateActionState();
     void showServerContextMenu(const QPoint& position);
+    void refreshThemeAssets();
 
 private:
     struct ConfigSnapshot {

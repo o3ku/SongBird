@@ -7,6 +7,7 @@
 #include <QFont>
 #include <QIcon>
 #include <QIODevice>
+#include <QMetaObject>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
@@ -34,69 +35,171 @@ constexpr auto kThemeDark = "Dark";
 struct ThemePalette {
     const char* background;
     const char* surface;
+    const char* toolbarSurface;
+    const char* surfaceRaised;
     const char* surfaceMuted;
     const char* surfaceSubtle;
+    const char* control;
+    const char* controlHover;
+    const char* controlDisabled;
+    const char* dialogButtonDisabled;
     const char* border;
     const char* borderMuted;
     const char* borderStrong;
+    const char* buttonBorder;
+    const char* buttonBorderHover;
+    const char* toolbarButtonBorder;
+    const char* runtimeDisabledBorder;
+    const char* inputBorderHover;
+    const char* subtleButtonBorder;
+    const char* disabledBorder;
+    const char* dialogButtonDisabledBorder;
+    const char* panelBorder;
+    const char* toolbarBorder;
+    const char* focus;
     const char* text;
     const char* textMuted;
     const char* textSubtle;
     const char* accent;
     const char* accentSoft;
     const char* accentHover;
+    const char* accentPressed;
+    const char* activeBackground;
+    const char* qrPressedBackground;
     const char* hover;
+    const char* selection;
     const char* success;
     const char* warning;
     const char* error;
     const char* neutral;
     const char* validationError;
     const char* overlay;
+    const char* loadingContent;
+    const char* link;
+    const char* scrollbar;
+    const char* scrollbarHover;
+    const char* menuSeparator;
+    const char* splitter;
+    const char* splitterHover;
+    const char* serverSelectedBackground;
+    const char* serverCurrentBackground;
+    const char* selectionText;
+    const char* tabSelectedText;
+    const char* downArrowImage;
+    const char* upArrowImage;
 };
 
 constexpr ThemePalette kLightPalette{
-    "#f3f5f8",
-    "#ffffff",
-    "#eef2f6",
-    "#f8fafc",
-    "#c5ced8",
-    "#dde3ea",
-    "#8b98a8",
-    "#1f2328",
-    "#667085",
-    "#8a94a6",
-    "#2f6d56",
-    "#e5f0eb",
-    "#d8e8df",
-    "#eef4f1",
-    "#2f6d45",
-    "#8a6a20",
-    "#a33a3a",
-    "#4d5f73",
-    "#a33a3a",
-    "rgba(255, 255, 255, 224)"};
+    .background = "#f3f5f8",
+    .surface = "#ffffff",
+    .toolbarSurface = "#ffffff",
+    .surfaceRaised = "#ffffff",
+    .surfaceMuted = "#eef2f6",
+    .surfaceSubtle = "#f8fafc",
+    .control = "#f8fafc",
+    .controlHover = "#eef2f6",
+    .controlDisabled = "#eef2f6",
+    .dialogButtonDisabled = "#eef2f6",
+    .border = "#c5ced8",
+    .borderMuted = "#dde3ea",
+    .borderStrong = "#8b98a8",
+    .buttonBorder = "#c5ced8",
+    .buttonBorderHover = "#8b98a8",
+    .toolbarButtonBorder = "#dde3ea",
+    .runtimeDisabledBorder = "#c5ced8",
+    .inputBorderHover = "#8b98a8",
+    .subtleButtonBorder = "#c5ced8",
+    .disabledBorder = "#dde3ea",
+    .dialogButtonDisabledBorder = "#dde3ea",
+    .panelBorder = "#d8dee7",
+    .toolbarBorder = "#d8dee7",
+    .focus = "#2f6d56",
+    .text = "#1f2328",
+    .textMuted = "#667085",
+    .textSubtle = "#8a94a6",
+    .accent = "#2f6d56",
+    .accentSoft = "#e5f0eb",
+    .accentHover = "#d8e8df",
+    .accentPressed = "#e5f0eb",
+    .activeBackground = "#2f6d56",
+    .qrPressedBackground = "#e5f0eb",
+    .hover = "#f2f6f3",
+    .selection = "#e6f0eb",
+    .success = "#2f6d45",
+    .warning = "#8a6a20",
+    .error = "#a33a3a",
+    .neutral = "#4d5f73",
+    .validationError = "#a33a3a",
+    .overlay = "rgba(255, 255, 255, 224)",
+    .loadingContent = "rgba(255, 255, 255, 216)",
+    .link = "#0969da",
+    .scrollbar = "#8b98a8",
+    .scrollbarHover = "#667085",
+    .menuSeparator = "#e4e7ec",
+    .splitter = "#d8dee7",
+    .splitterHover = "#8b98a8",
+    .serverSelectedBackground = "#b7dec9",
+    .serverCurrentBackground = "#e1f3e9",
+    .selectionText = "#1f2328",
+    .tabSelectedText = "#ffffff",
+    .downArrowImage = ":/app/down.svg",
+    .upArrowImage = ":/app/up.svg"};
 
 constexpr ThemePalette kDarkPalette{
-    "#1a1f25",
-    "#20262d",
-    "#252d35",
-    "#1d232a",
-    "#414b56",
-    "#36404a",
-    "#657384",
-    "#e6eaf0",
-    "#aab4c1",
-    "#778392",
-    "#58a07e",
-    "#20372d",
-    "#2d4c3f",
-    "#202b25",
-    "#77c58d",
-    "#d1a94d",
-    "#e06f6f",
-    "#b8c4d2",
-    "#e06f6f",
-    "rgba(26, 31, 37, 224)"};
+    .background = "#1a1f25",
+    .surface = "#20262d",
+    .toolbarSurface = "#1a1f25",
+    .surfaceRaised = "#20262d",
+    .surfaceMuted = "#252d35",
+    .surfaceSubtle = "#1d232a",
+    .control = "#252d35",
+    .controlHover = "#2d3741",
+    .controlDisabled = "#252d35",
+    .dialogButtonDisabled = "#20262c",
+    .border = "#414b56",
+    .borderMuted = "#36404a",
+    .borderStrong = "#697583",
+    .buttonBorder = "#4c5967",
+    .buttonBorderHover = "#7b8796",
+    .toolbarButtonBorder = "#4c5967",
+    .runtimeDisabledBorder = "#36404a",
+    .inputBorderHover = "#697583",
+    .subtleButtonBorder = "#36404a",
+    .disabledBorder = "#3a4550",
+    .dialogButtonDisabledBorder = "#2f3843",
+    .panelBorder = "#323b45",
+    .toolbarBorder = "#3a4550",
+    .focus = "#77c58d",
+    .text = "#e6eaf0",
+    .textMuted = "#aab4c1",
+    .textSubtle = "#778392",
+    .accent = "#58a07e",
+    .accentSoft = "#20372d",
+    .accentHover = "#2d4c3f",
+    .accentPressed = "#20372d",
+    .activeBackground = "#2d4c3f",
+    .qrPressedBackground = "#252d35",
+    .hover = "#202b25",
+    .selection = "#20372d",
+    .success = "#77c58d",
+    .warning = "#d1a94d",
+    .error = "#e06f6f",
+    .neutral = "#b8c4d2",
+    .validationError = "#e06f6f",
+    .overlay = "rgba(26, 31, 37, 224)",
+    .loadingContent = "rgba(32, 38, 45, 208)",
+    .link = "#7ed8ff",
+    .scrollbar = "#566170",
+    .scrollbarHover = "#aab4c1",
+    .menuSeparator = "#2f3843",
+    .splitter = "#414b56",
+    .splitterHover = "#697583",
+    .serverSelectedBackground = "#3b765d",
+    .serverCurrentBackground = "#253d33",
+    .selectionText = "#e6eaf0",
+    .tabSelectedText = "#e6eaf0",
+    .downArrowImage = ":/app/down-dark.svg",
+    .upArrowImage = ":/app/up-dark.svg"};
 
 const ThemePalette& paletteForName(QStringView themeName)
 {
@@ -117,15 +220,102 @@ QString color(const char* value)
     return QString::fromLatin1(value);
 }
 
-QString loadThemeStyleSheet(const QString& themeName)
+void replaceToken(QString& styleSheet, const char* tokenName, const char* value)
 {
-    QFile file(QStringLiteral(":/themes/%1.qss").arg(themeName));
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return QString::fromUtf8(file.readAll());
-    }
+    styleSheet.replace(
+        QStringLiteral("@%1@").arg(QString::fromLatin1(tokenName)),
+        QString::fromLatin1(value));
+}
 
-    if (themeName != QString::fromLatin1(kThemeLight)) {
-        return loadThemeStyleSheet(QString::fromLatin1(kThemeLight));
+void applyThemeTokens(QString& styleSheet, const ThemePalette& palette)
+{
+    replaceToken(styleSheet, "background", palette.background);
+    replaceToken(styleSheet, "surface", palette.surface);
+    replaceToken(styleSheet, "toolbarSurface", palette.toolbarSurface);
+    replaceToken(styleSheet, "surfaceRaised", palette.surfaceRaised);
+    replaceToken(styleSheet, "surfaceMuted", palette.surfaceMuted);
+    replaceToken(styleSheet, "surfaceSubtle", palette.surfaceSubtle);
+    replaceToken(styleSheet, "control", palette.control);
+    replaceToken(styleSheet, "controlHover", palette.controlHover);
+    replaceToken(styleSheet, "controlDisabled", palette.controlDisabled);
+    replaceToken(styleSheet, "dialogButtonDisabled", palette.dialogButtonDisabled);
+    replaceToken(styleSheet, "border", palette.border);
+    replaceToken(styleSheet, "borderMuted", palette.borderMuted);
+    replaceToken(styleSheet, "borderStrong", palette.borderStrong);
+    replaceToken(styleSheet, "buttonBorder", palette.buttonBorder);
+    replaceToken(styleSheet, "buttonBorderHover", palette.buttonBorderHover);
+    replaceToken(styleSheet, "toolbarButtonBorder", palette.toolbarButtonBorder);
+    replaceToken(styleSheet, "runtimeDisabledBorder", palette.runtimeDisabledBorder);
+    replaceToken(styleSheet, "inputBorderHover", palette.inputBorderHover);
+    replaceToken(styleSheet, "subtleButtonBorder", palette.subtleButtonBorder);
+    replaceToken(styleSheet, "disabledBorder", palette.disabledBorder);
+    replaceToken(styleSheet, "dialogButtonDisabledBorder", palette.dialogButtonDisabledBorder);
+    replaceToken(styleSheet, "panelBorder", palette.panelBorder);
+    replaceToken(styleSheet, "toolbarBorder", palette.toolbarBorder);
+    replaceToken(styleSheet, "focus", palette.focus);
+    replaceToken(styleSheet, "text", palette.text);
+    replaceToken(styleSheet, "textMuted", palette.textMuted);
+    replaceToken(styleSheet, "textSubtle", palette.textSubtle);
+    replaceToken(styleSheet, "accent", palette.accent);
+    replaceToken(styleSheet, "accentSoft", palette.accentSoft);
+    replaceToken(styleSheet, "accentHover", palette.accentHover);
+    replaceToken(styleSheet, "accentPressed", palette.accentPressed);
+    replaceToken(styleSheet, "activeBackground", palette.activeBackground);
+    replaceToken(styleSheet, "qrPressedBackground", palette.qrPressedBackground);
+    replaceToken(styleSheet, "hover", palette.hover);
+    replaceToken(styleSheet, "selection", palette.selection);
+    replaceToken(styleSheet, "success", palette.success);
+    replaceToken(styleSheet, "warning", palette.warning);
+    replaceToken(styleSheet, "error", palette.error);
+    replaceToken(styleSheet, "neutral", palette.neutral);
+    replaceToken(styleSheet, "validationError", palette.validationError);
+    replaceToken(styleSheet, "overlay", palette.overlay);
+    replaceToken(styleSheet, "loadingContent", palette.loadingContent);
+    replaceToken(styleSheet, "link", palette.link);
+    replaceToken(styleSheet, "scrollbar", palette.scrollbar);
+    replaceToken(styleSheet, "scrollbarHover", palette.scrollbarHover);
+    replaceToken(styleSheet, "menuSeparator", palette.menuSeparator);
+    replaceToken(styleSheet, "splitter", palette.splitter);
+    replaceToken(styleSheet, "splitterHover", palette.splitterHover);
+    replaceToken(styleSheet, "serverSelectedBackground", palette.serverSelectedBackground);
+    replaceToken(styleSheet, "serverCurrentBackground", palette.serverCurrentBackground);
+    replaceToken(styleSheet, "selectionText", palette.selectionText);
+    replaceToken(styleSheet, "tabSelectedText", palette.tabSelectedText);
+    replaceToken(styleSheet, "downArrowImage", palette.downArrowImage);
+    replaceToken(styleSheet, "upArrowImage", palette.upArrowImage);
+}
+
+void applyApplicationPalette(QApplication& app, const ThemePalette& palette)
+{
+    QPalette appPalette;
+    appPalette.setColor(QPalette::Window, QColor(color(palette.background)));
+    appPalette.setColor(QPalette::WindowText, QColor(color(palette.text)));
+    appPalette.setColor(QPalette::Base, QColor(color(palette.surface)));
+    appPalette.setColor(QPalette::AlternateBase, QColor(color(palette.surfaceSubtle)));
+    appPalette.setColor(QPalette::ToolTipBase, QColor(color(palette.surfaceRaised)));
+    appPalette.setColor(QPalette::ToolTipText, QColor(color(palette.text)));
+    appPalette.setColor(QPalette::Text, QColor(color(palette.text)));
+    appPalette.setColor(QPalette::Button, QColor(color(palette.control)));
+    appPalette.setColor(QPalette::ButtonText, QColor(color(palette.text)));
+    appPalette.setColor(QPalette::BrightText, QColor(color(palette.error)));
+    appPalette.setColor(QPalette::Highlight, QColor(color(palette.selection)));
+    appPalette.setColor(QPalette::HighlightedText, QColor(color(palette.selectionText)));
+    appPalette.setColor(QPalette::Link, QColor(color(palette.link)));
+    appPalette.setColor(QPalette::Disabled, QPalette::WindowText, QColor(color(palette.textSubtle)));
+    appPalette.setColor(QPalette::Disabled, QPalette::Text, QColor(color(palette.textSubtle)));
+    appPalette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(color(palette.textSubtle)));
+    appPalette.setColor(QPalette::Disabled, QPalette::Button, QColor(color(palette.controlDisabled)));
+    app.setPalette(appPalette);
+}
+
+QString loadThemeStyleSheet(QStringView themeName)
+{
+    const ThemePalette& palette = paletteForName(themeName);
+    QFile file(QStringLiteral(":/themes/AppTheme.qss.in"));
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QString styleSheet = QString::fromUtf8(file.readAll());
+        applyThemeTokens(styleSheet, palette);
+        return styleSheet;
     }
 
     return QString();
@@ -155,12 +345,8 @@ public:
         const QColor hoveredDividerColor(color(palette.border));
         const QColor selectedDividerColor(color(palette.accent));
         const QColor currentDividerColor(color(palette.success));
-        const QColor selectedBackgroundColor = currentThemeName == QString::fromLatin1(kThemeDark)
-            ? QColor(QStringLiteral("#3b765d"))
-            : QColor(QStringLiteral("#b7dec9"));
-        const QColor currentBackgroundColor = currentThemeName == QString::fromLatin1(kThemeDark)
-            ? QColor(QStringLiteral("#253d33"))
-            : QColor(QStringLiteral("#e1f3e9"));
+        const QColor selectedBackgroundColor(color(palette.serverSelectedBackground));
+        const QColor currentBackgroundColor(color(palette.serverCurrentBackground));
         const bool currentServer = index.data(Qt::UserRole + 1).toBool();
         const bool currentServerMarkerCell = currentServer && index.column() == 0;
         const QIcon currentServerIcon = currentServerMarkerCell
@@ -312,14 +498,20 @@ void AppTheme::applyApplicationTheme(QApplication& app)
 void AppTheme::applyApplicationTheme(QApplication& app, QStringView themeName)
 {
     currentThemeName = normalizeThemeName(themeName);
+    applyApplicationPalette(app, currentPalette());
     app.setStyleSheet(loadThemeStyleSheet(currentThemeName));
+    polishThemedWidgets(app);
+}
 
+void AppTheme::polishThemedWidgets(QApplication& app)
+{
     const auto tables = app.allWidgets();
     for (QWidget* widget : tables) {
         auto* tableView = qobject_cast<QTableView*>(widget);
         if (tableView != nullptr && tableView->property(kServerTableStyleProperty).toBool()) {
             applyServerTableStyle(tableView);
         }
+        QMetaObject::invokeMethod(widget, "refreshThemeAssets", Qt::DirectConnection);
     }
 }
 
@@ -412,7 +604,7 @@ QString AppTheme::hoverBackgroundColor()
 
 QString AppTheme::selectionBackgroundColor()
 {
-    return color(currentPalette().accentSoft);
+    return color(currentPalette().selection);
 }
 
 QString AppTheme::tableAlternateBaseColor()
@@ -466,24 +658,4 @@ QString AppTheme::iconColor(bool enabled)
 {
     const ThemePalette& palette = currentPalette();
     return enabled ? color(palette.text) : color(palette.textSubtle);
-}
-
-QString AppTheme::semanticStatusProperty(QStringView colorHex)
-{
-    return colorHex.toString();
-}
-
-QString AppTheme::successStatusColor()
-{
-    return color(currentPalette().success);
-}
-
-QString AppTheme::warningStatusColor()
-{
-    return color(currentPalette().warning);
-}
-
-QString AppTheme::errorStatusColor()
-{
-    return color(currentPalette().error);
 }

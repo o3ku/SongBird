@@ -6,7 +6,6 @@
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QElapsedTimer>
-#include <QFile>
 #include <QFontMetrics>
 #include <QLabel>
 #include <QLayout>
@@ -34,6 +33,7 @@
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/models/LogListModel.h"
 #include "ui/qr/QrCodeRenderer.h"
+#include "ui/theme/AppTheme.h"
 
 class MainWindowTests : public QObject {
     Q_OBJECT
@@ -587,9 +587,8 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
 
 void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
 {
-    QFile darkTheme(QStringLiteral(":/themes/Dark.qss"));
-    QVERIFY(darkTheme.open(QIODevice::ReadOnly));
-    const QString darkStyle = QString::fromUtf8(darkTheme.readAll());
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::darkThemeName());
+    const QString darkStyle = qApp->styleSheet();
     QVERIFY(darkStyle.contains(QStringLiteral(
         "QToolBar#mainToolBar QComboBox#routingModeCombo { background: #252d35; border: 1px solid #4c5967;")));
     QVERIFY(darkStyle.contains(QStringLiteral(
@@ -597,9 +596,8 @@ void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
     QVERIFY(darkStyle.contains(QStringLiteral(
         "QToolBar#mainToolBar QToolButton#qrCodeButton { background: #252d35; border: 1px solid #4c5967;")));
 
-    QFile lightTheme(QStringLiteral(":/themes/Light.qss"));
-    QVERIFY(lightTheme.open(QIODevice::ReadOnly));
-    const QString lightStyle = QString::fromUtf8(lightTheme.readAll());
+    AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
+    const QString lightStyle = qApp->styleSheet();
     QVERIFY(lightStyle.contains(QStringLiteral(
         "QToolBar#mainToolBar QComboBox#routingModeCombo { background: #f8fafc; border: 1px solid #c5ced8;")));
     QVERIFY(lightStyle.contains(QStringLiteral(

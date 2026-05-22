@@ -823,6 +823,12 @@ void MainWindow::refreshToolbarIcons()
     }
 }
 
+void MainWindow::refreshThemeAssets()
+{
+    refreshToolbarIcons();
+    applySemanticState(selectServerHintLabel_, QStringLiteral("error"));
+}
+
 void MainWindow::updateQrPreview()
 {
     if (sharePanel_ == nullptr) {
@@ -1277,9 +1283,7 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
     selectServerHintLabel_->setFixedWidth(
         selectServerHintLabel_->fontMetrics().horizontalAdvance(tr("Add a server first")) + 18);
     selectServerHintLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
-    selectServerHintLabel_->setStyleSheet(QStringLiteral(
-        "QLabel#selectServerHintLabel { color: %1; padding: 0 8px; }")
-        .arg(AppTheme::errorStatusColor()));
+    applySemanticState(selectServerHintLabel_, QStringLiteral("error"));
     selectServerHintLabel_->clear();
     toolBar->addWidget(selectServerHintLabel_);
     toolBar->addWidget(createToolbarSpacing(toolBar, ToolbarControlSpacing));
