@@ -2,7 +2,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -25,6 +25,33 @@ QStringList singBoxMuxProtocolOptions()
         QString()};
 }
 
+QStringList xrayUserAgentOptions()
+{
+    return {
+        QString(),
+        QStringLiteral("chrome"),
+        QStringLiteral("firefox"),
+        QStringLiteral("edge"),
+        QStringLiteral("golang")};
+}
+
+QList<CoreType> settingsCoreDisplayOrder(const QList<CoreType>& cores)
+{
+    QList<CoreType> ordered;
+    if (cores.contains(CoreType::SingBox)) {
+        ordered.append(CoreType::SingBox);
+    }
+    if (cores.contains(CoreType::Xray)) {
+        ordered.append(CoreType::Xray);
+    }
+    for (const CoreType core : cores) {
+        if (!ordered.contains(core)) {
+            ordered.append(core);
+        }
+    }
+    return ordered;
+}
+
 }
 
 CoreSettingsPageWidget::CoreSettingsPageWidget(QWidget* parent)
@@ -39,6 +66,8 @@ void CoreSettingsPageWidget::setConfig(const Config& config)
     enableCacheFile4SboxCheck_->setChecked(config.dns().enableCacheFile4Sbox);
     const int muxProtocolIndex = mux4SboxProtocolCombo_->findText(config.mux4SboxProtocol);
     mux4SboxProtocolCombo_->setCurrentIndex(muxProtocolIndex >= 0 ? muxProtocolIndex : 0);
+    xrayEnableFragmentCheck_->setChecked(config.dns().enableFragment);
+    xrayDefaultUserAgentCombo_->setCurrentText(config.dns().defaultUserAgent);
     tunEnableLegacyProtectCheck_->setChecked(config.tun().tunModeItem.enableLegacyProtect);
     coreTypeItems_ = config.policy().coreTypeItems;
     reloadCoreTypeTable();
@@ -92,6 +121,16 @@ bool CoreSettingsPageWidget::enableCacheFile4Sbox() const
 QString CoreSettingsPageWidget::mux4SboxProtocol() const
 {
     return mux4SboxProtocolCombo_ == nullptr ? QString() : mux4SboxProtocolCombo_->currentText();
+}
+
+bool CoreSettingsPageWidget::xrayFragmentEnabled() const
+{
+    return xrayEnableFragmentCheck_ != nullptr && xrayEnableFragmentCheck_->isChecked();
+}
+
+QString CoreSettingsPageWidget::xrayDefaultUserAgent() const
+{
+    return xrayDefaultUserAgentCombo_ == nullptr ? QString() : xrayDefaultUserAgentCombo_->currentText().trimmed();
 }
 
 bool CoreSettingsPageWidget::legacyProtectEnabled() const
@@ -155,6 +194,14 @@ void CoreSettingsPageWidget::setupUi()
     mux4SboxProtocolCombo_->setObjectName(QStringLiteral("settingsMux4SboxProtocolCombo"));
     mux4SboxProtocolCombo_->addItems(singBoxMuxProtocolOptions());
 
+    xrayEnableFragmentCheck_ = new QCheckBox(tr("Enable fragmentation for TLS outbounds"), this);
+    xrayEnableFragmentCheck_->setObjectName(QStringLiteral("settingsEnableFragmentCheck"));
+
+    xrayDefaultUserAgentCombo_ = new QComboBox(this);
+    xrayDefaultUserAgentCombo_->setObjectName(QStringLiteral("settingsDefaultUserAgentCombo"));
+    xrayDefaultUserAgentCombo_->setEditable(true);
+    xrayDefaultUserAgentCombo_->addItems(xrayUserAgentOptions());
+
     tunEnableLegacyProtectCheck_ =
         new QCheckBox(tr("Enable legacy protection (pre-socks relay for Xray)"), this);
     tunEnableLegacyProtectCheck_->setObjectName(QStringLiteral("settingsTunEnableLegacyProtectCheck"));
@@ -162,18 +209,21 @@ void CoreSettingsPageWidget::setupUi()
     AppTheme::applyCompactFont({
         enableCacheFile4SboxCheck_,
         mux4SboxProtocolCombo_,
+        xrayEnableFragmentCheck_,
+        xrayDefaultUserAgentCombo_,
         tunEnableLegacyProtectCheck_});
 
     coreProtocolEntries_ = {
         {QStringLiteral("VMess"), ConfigType::VMess},
-        {QStringLiteral("Custom"), ConfigType::Custom},
+        {QStringLiteral("VLESS"), ConfigType::VLESS},
         {QStringLiteral("Shadowsocks"), ConfigType::Shadowsocks},
         {QStringLiteral("Socks"), ConfigType::Socks},
-        {QStringLiteral("VLESS"), ConfigType::VLESS},
+        {QStringLiteral("Hysteria2"), ConfigType::Hysteria2},
         {QStringLiteral("Trojan"), ConfigType::Trojan},
-        {QStringLiteral("HTTP"), ConfigType::HTTP}
+        {QStringLiteral("HTTP"), ConfigType::HTTP},
+        {QStringLiteral("Custom"), ConfigType::Custom}
     };
-    const QList<CoreType> allCores = availableCoreTypes();
+    const QList<CoreType> allCores = settingsCoreDisplayOrder(availableCoreTypes());
     const QFontMetrics coreLabelMetrics(font());
     int protocolLabelWidth = 0;
     for (const CoreProtocolEntry& entry : coreProtocolEntries_) {
@@ -190,11 +240,22 @@ void CoreSettingsPageWidget::setupUi()
     coreLayout->addWidget(coreTypeTitle);
 
     auto* coreTypeWidget = new QWidget(this);
-    auto* coreTypeForm = new QFormLayout(coreTypeWidget);
-    coreTypeForm->setContentsMargins(0, 0, 0, 0);
+    auto* coreTypeGrid = new QGridLayout(coreTypeWidget);
+    coreTypeGrid->setContentsMargins(0, 0, 0, 0);
+    coreTypeGrid->setHorizontalSpacing(10);
+    coreTypeGrid->setVerticalSpacing(6);
+    coreTypeGrid->setColumnStretch(1, 1);
+    coreTypeGrid->setColumnMinimumWidth(2, 14);
+    coreTypeGrid->setColumnStretch(4, 1);
 
-    for (const CoreProtocolEntry& entry : coreProtocolEntries_) {
-        const QList<CoreType> cores = supportedCoreTypes(entry.configType);
+    for (int i = 0; i < coreProtocolEntries_.size(); ++i) {
+        const CoreProtocolEntry& entry = coreProtocolEntries_.at(i);
+        const QList<CoreType> cores = settingsCoreDisplayOrder(supportedCoreTypes(entry.configType));
+        const int row = i / 2;
+        const int column = (i % 2) == 0 ? 0 : 3;
+        auto* protocolLabel = new QLabel(entry.name, coreTypeWidget);
+        protocolLabel->setMinimumWidth(protocolLabelWidth);
+        AppTheme::applyCompactFont(protocolLabel);
         if (cores.size() > 1) {
             auto* coreCombo = new QComboBox(coreTypeWidget);
             for (const CoreType core : cores) {
@@ -202,13 +263,15 @@ void CoreSettingsPageWidget::setupUi()
             }
             coreCombo->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(entry.configType)));
             AppTheme::applyCompactFont(coreCombo);
-            coreTypeForm->addRow(entry.name, coreCombo);
+            coreTypeGrid->addWidget(protocolLabel, row, column);
+            coreTypeGrid->addWidget(coreCombo, row, column + 1);
             coreTypeCombos_.append(coreCombo);
         } else if (cores.size() == 1) {
             auto* fixedLabel = new QLabel(coreTypeDisplayName(cores.first()), coreTypeWidget);
             fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(entry.configType)));
             AppTheme::applyCompactFont(fixedLabel);
-            coreTypeForm->addRow(entry.name, fixedLabel);
+            coreTypeGrid->addWidget(protocolLabel, row, column);
+            coreTypeGrid->addWidget(fixedLabel, row, column + 1);
             coreTypeCombos_.append(nullptr);
         }
     }
@@ -310,6 +373,17 @@ void CoreSettingsPageWidget::setupUi()
             break;
         }
         case CoreType::Xray:
+            row.optionsLayout->addWidget(xrayEnableFragmentCheck_);
+            {
+                auto* userAgentRow = new QWidget(optionsWidget);
+                auto* userAgentLayout = new QHBoxLayout(userAgentRow);
+                userAgentLayout->setContentsMargins(0, 0, 0, 0);
+                userAgentLayout->setSpacing(8);
+                auto* userAgentLabel = new QLabel(tr("Default User-Agent"), userAgentRow);
+                userAgentLayout->addWidget(userAgentLabel);
+                userAgentLayout->addWidget(xrayDefaultUserAgentCombo_, 1);
+                row.optionsLayout->addWidget(userAgentRow);
+            }
             row.optionsLayout->addWidget(tunEnableLegacyProtectCheck_);
             break;
         default:

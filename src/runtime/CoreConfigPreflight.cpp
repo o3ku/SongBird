@@ -5,16 +5,14 @@
 #include <QProcess>
 #include <QRegularExpression>
 
+#include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/ICoreBackend.h"
+
 namespace {
 
 constexpr int kStartTimeoutMs = 3000;
 constexpr int kStopTimeoutMs = 1500;
 constexpr int kMaxOutputLength = 2400;
-
-QString normalizedCoreFileName(const CoreInfo& coreInfo)
-{
-    return QFileInfo(coreInfo.program).fileName().toLower();
-}
 
 QString normalizeProcessOutput(QString output)
 {
@@ -42,32 +40,21 @@ QString processOutput(QProcess& process)
 
 QStringList buildCoreConfigPreflightArguments(const CoreInfo& coreInfo, const QString& configFilePath)
 {
-    const QString configPath = QDir::toNativeSeparators(configFilePath);
-    const QString fileName = normalizedCoreFileName(coreInfo);
-
-    if (fileName.contains(QStringLiteral("sing-box"))) {
-        return {
-            QStringLiteral("check"),
-            QStringLiteral("-c"),
-            configPath
-        };
-    }
-
-    if (fileName.contains(QStringLiteral("xray"))) {
-        return {
-            QStringLiteral("run"),
-            QStringLiteral("-test"),
-            QStringLiteral("-config"),
-            configPath
-        };
-    }
-
+    const QString fileName = QFileInfo(coreInfo.program).fileName().toLower();
     if (fileName.contains(QStringLiteral("v2ray"))) {
         return {
             QStringLiteral("-test"),
             QStringLiteral("-config"),
-            configPath
+            QDir::toNativeSeparators(configFilePath)
         };
+    }
+
+    const ICoreBackend* backend = coreBackend(coreInfo.type);
+    if (backend == nullptr) {
+        backend = coreBackendForExecutableName(coreInfo.program);
+    }
+    if (backend != nullptr) {
+        return backend->configPreflightArguments(configFilePath);
     }
 
     return {};

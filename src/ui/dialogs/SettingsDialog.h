@@ -1,26 +1,23 @@
 #pragma once
 
-#include <QComboBox>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QLineEdit>
 #include <QList>
 
 #include "domain/models/Config.h"
-#include "domain/models/CoreTypeItem.h"
 
 class QCheckBox;
+class QDialogButtonBox;
 class QStackedLayout;
 class QTabBar;
 class QPushButton;
 class QWidget;
-
-#include "ui/dialogs/CoreSettingsPageWidget.h"
-#include "ui/dialogs/DnsSettingsPageWidget.h"
-#include "ui/dialogs/GeneralSettingsPageWidget.h"
-#include "ui/dialogs/RoutingSettingsPageWidget.h"
-#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
-#include "ui/dialogs/TunSettingsPageWidget.h"
+class CoreSettingsPageWidget;
+class DnsSettingsPageWidget;
+class GeneralSettingsPageWidget;
+class RoutingSettingsPageWidget;
+class SubscriptionSettingsPageWidget;
+class TunSettingsPageWidget;
 
 class SettingsDialog final : public QDialog {
     Q_OBJECT
@@ -35,7 +32,6 @@ public:
     bool wasCoreDownloadRequested() const { return coreDownloadRequested_; }
     CoreType requestedCoreDownload() const { return requestedCoreDownload_; }
     QList<int> selectedSubRows() const;
-    void clearUpdateSubRequested() { updateSubRequested_ = false; }
     void selectTab(int index) { requestedTabIndex_ = index; }
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void setCoreVersion(CoreType coreType, const QString& version);
@@ -48,6 +44,7 @@ signals:
 
 private:
     void setupUi();
+    int coreSettingsTabIndex() const;
 
     Config config_;
     GeneralSettingsPageWidget* generalSettingsPage_ = nullptr;
@@ -58,7 +55,6 @@ private:
     bool updateSubRequested_ = false;
     bool coreDownloadRequested_ = false;
     CoreType requestedCoreDownload_ = CoreType::Unknown;
-    CoreType updatingCoreType_ = CoreType::Unknown;
     QTabBar* settingsTabBar_ = nullptr;
     QStackedLayout* settingsStackLayout_ = nullptr;
     int requestedTabIndex_ = 0;

@@ -7,16 +7,30 @@
 #include <atomic>
 #include <thread>
 
+#include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/CoreCatalog.h"
+#include "runtime/core/ICoreBackend.h"
 #include "services/CoreUpdateService.h"
 
 class CoreUpdateServiceTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void backendMetadataMatchesCatalog();
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
     void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
 };
+
+void CoreUpdateServiceTests::backendMetadataMatchesCatalog()
+{
+    for (const CoreType coreType : catalogCoreTypes()) {
+        const ICoreBackend* backend = coreBackend(coreType);
+        QVERIFY2(backend != nullptr, qPrintable(QStringLiteral("Missing backend for %1").arg(coreTypeDisplayName(coreType))));
+        QCOMPARE(backend->displayName(), catalogCoreDisplayName(coreType));
+        QCOMPARE(backend->executableNames(), catalogCoreExecutableNames(coreType));
+    }
+}
 
 void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDuringDownload()
 {

@@ -18,16 +18,26 @@ public:
         GeoUpdate
     };
 
+    struct Token {
+        Kind kind = Kind::None;
+        quint64 generation = 0;
+
+        bool isValid() const;
+    };
+
     explicit BackgroundTaskCoordinator(QObject* parent = nullptr);
 
     void setBlockingPredicate(std::function<bool()> predicate);
 
-    bool tryBegin(Kind kind);
-    void finish(Kind kind);
+    Token tryBeginUserTask(Kind kind);
+    Token tryBeginStartupTask(Kind kind);
+    bool finish(const Token& token);
+    void cancelActive();
 
     Kind active() const;
     bool isActive() const;
     bool isKindActive(Kind kind) const;
+    bool isCurrent(const Token& token) const;
 
     void resetSpeedTestProgress();
     void setSpeedTestTotalCount(int total);
@@ -41,10 +51,18 @@ signals:
     void blockedByCoreStartup();
 
 private:
+    enum class StartScope {
+        UserTask,
+        StartupTask
+    };
+
+    Token tryBegin(Kind kind, StartScope scope);
     QString describe(Kind kind) const;
     void emitCurrent();
 
     Kind activeKind_ = Kind::None;
+    quint64 generation_ = 0;
+    quint64 activeGeneration_ = 0;
     int speedTestTotalCount_ = 0;
     int speedTestCompletedCount_ = 0;
     QString speedTestProgressServerName_;

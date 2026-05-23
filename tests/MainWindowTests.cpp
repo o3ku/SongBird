@@ -75,6 +75,7 @@ private slots:
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears();
     void coreStartupChecklistOverlayCoversMainWindowUntilCleared();
+    void coreStartupChecklistOverlayUpdatesExistingRows();
     void coreStartupChecklistOverlayShowsCoreDownloadProgress();
     void coreStartupChecklistOverlayShowsGeoDownloadProgress();
     void subscriptionUpdateOverlayCentersTextWithoutActionArea();
@@ -1197,7 +1198,7 @@ void MainWindowTests::speedTestRunningSuspendsDynamicSortingUntilBatchFinishes()
     QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
     QCOMPARE(serverView->model()->index(2, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
 
-    window.setSpeedTestRunning(true);
+    window.setBackgroundTaskRunning(true);
     window.updateServerTestResult(QStringLiteral("server-2"), QStringLiteral("5 ms"));
     QCoreApplication::processEvents();
 
@@ -1205,7 +1206,7 @@ void MainWindowTests::speedTestRunningSuspendsDynamicSortingUntilBatchFinishes()
     QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
     QCOMPARE(serverView->model()->index(2, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
 
-    window.setSpeedTestRunning(false);
+    window.setBackgroundTaskRunning(false);
     QCoreApplication::processEvents();
 
     QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
@@ -1531,6 +1532,45 @@ void MainWindowTests::coreStartupChecklistOverlayCoversMainWindowUntilCleared()
     QVERIFY(overlay->isHidden());
 }
 
+void MainWindowTests::coreStartupChecklistOverlayUpdatesExistingRows()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* overlay = window.findChild<QWidget*>(QStringLiteral("loadingOverlay"));
+    QVERIFY(overlay != nullptr);
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x26AA, QStringLiteral("Environment cleanup")),
+        checklistItem(0x23F3, QStringLiteral("Generate runtime config"))
+    });
+    QCoreApplication::processEvents();
+
+    const QList<QWidget*> rows = overlay->findChildren<QWidget*>(QStringLiteral("loadingChecklistRow"));
+    const QList<QLabel*> labels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(rows.size(), 2);
+    QCOMPARE(labels.size(), 2);
+
+    window.setCoreStartupChecklist({
+        checklistItem(0x2705, QStringLiteral("Environment cleanup")),
+        checklistItem(0x23F3, QStringLiteral("Generate runtime config"))
+    });
+    QCoreApplication::processEvents();
+
+    const QList<QWidget*> updatedRows = overlay->findChildren<QWidget*>(QStringLiteral("loadingChecklistRow"));
+    const QList<QLabel*> updatedLabels = overlay->findChildren<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    QCOMPARE(updatedRows.size(), 2);
+    QCOMPARE(updatedLabels.size(), 2);
+    QCOMPARE(updatedRows.at(0), rows.at(0));
+    QCOMPARE(updatedRows.at(1), rows.at(1));
+    QCOMPARE(updatedLabels.at(0), labels.at(0));
+    QCOMPARE(updatedLabels.at(1), labels.at(1));
+    QCOMPARE(updatedLabels.at(0)->text(), checklistItem(0x2705, QStringLiteral("Environment cleanup")));
+}
+
 void MainWindowTests::coreStartupChecklistOverlayShowsGeoDownloadProgress()
 {
     MainWindow window;
@@ -1549,7 +1589,7 @@ void MainWindowTests::coreStartupChecklistOverlayShowsGeoDownloadProgress()
     window.setCoreStartupChecklist({
         checklistItem(0x2705, QStringLiteral("Environment cleanup")),
         checklistItem(0x2705, QStringLiteral("Generate runtime config")),
-        checklistItem(0x23F3, QStringLiteral("Validate geo files"))
+        checklistItem(0x23F3, QStringLiteral("Validate runtime resources"))
     });
     QCoreApplication::processEvents();
 
@@ -1563,7 +1603,7 @@ void MainWindowTests::coreStartupChecklistOverlayShowsGeoDownloadProgress()
     QCOMPARE(labels.size(), 3);
     QCOMPARE(
         labels.at(2)->text(),
-        checklistItem(0x23F3, QStringLiteral("Validate geo files")));
+        checklistItem(0x23F3, QStringLiteral("Validate runtime resources")));
     QCOMPARE(
         overlay->findChild<QLabel*>(QStringLiteral("loadingTitleLabel"))->text(),
         QStringLiteral("Starting system proxy..."));

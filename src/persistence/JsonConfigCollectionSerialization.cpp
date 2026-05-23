@@ -170,7 +170,7 @@ CoreType parseCoreType(const QJsonValue& value)
     }
 
     if (!value.isDouble()) {
-        return CoreType::Unknown;
+        return CoreType::SingBox;
     }
 
     switch (value.toInt()) {
@@ -186,7 +186,7 @@ CoreType parseCoreType(const QJsonValue& value)
     case 24:
         return CoreType::SingBox;
     default:
-        return CoreType::Unknown;
+        return CoreType::SingBox;
     }
 }
 

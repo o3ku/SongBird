@@ -1,5 +1,7 @@
 #include "services/ConfigBackupService.h"
 
+#include <algorithm>
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -14,6 +16,8 @@
 #include "persistence/JsonConfigRepository.h"
 
 namespace {
+
+constexpr int kMaxBackupFileCount = 10;
 
 QString stateConfigPathFor(const QString& configPath)
 {
@@ -170,6 +174,32 @@ QJsonObject extractStateFromMergedRoot(QJsonObject& primaryRoot)
     return stateRoot;
 }
 
+OperationResult pruneBackupDirectory(const QString& directoryPath)
+{
+    QDir directory(directoryPath);
+    QFileInfoList backupFiles = directory.entryInfoList(
+        QStringList{QStringLiteral("songbird_*.json")},
+        QDir::Files | QDir::NoDotAndDotDot);
+    if (backupFiles.size() <= kMaxBackupFileCount) {
+        return OperationResult::ok(QString());
+    }
+
+    std::sort(backupFiles.begin(), backupFiles.end(), [](const QFileInfo& left, const QFileInfo& right) {
+        if (left.lastModified() == right.lastModified()) {
+            return left.fileName() > right.fileName();
+        }
+        return left.lastModified() > right.lastModified();
+    });
+
+    for (int i = kMaxBackupFileCount; i < backupFiles.size(); ++i) {
+        if (!QFile::remove(backupFiles.at(i).absoluteFilePath())) {
+            return OperationResult::fail(QStringLiteral("Failed to remove an old backup file."));
+        }
+    }
+
+    return OperationResult::ok(QString());
+}
+
 } // namespace
 
 ConfigBackupService::ConfigBackupService(QString configPath)
@@ -188,7 +218,7 @@ QString ConfigBackupService::backupDirectoryPath() const
         return {};
     }
 
-    return QFileInfo(configPath_).dir().filePath(QStringLiteral("songbirdBackups"));
+    return QFileInfo(configPath_).dir().filePath(QStringLiteral("backups"));
 }
 
 OperationResult ConfigBackupService::backupCurrentConfig(const Config& fallbackConfig) const
@@ -198,7 +228,17 @@ OperationResult ConfigBackupService::backupCurrentConfig(const Config& fallbackC
         return OperationResult::fail(QStringLiteral("Backup directory is unavailable."));
     }
 
-    return backupToPath(QDir(directoryPath).filePath(buildBackupFileName()), fallbackConfig);
+    OperationResult result = backupToPath(QDir(directoryPath).filePath(buildBackupFileName()), fallbackConfig);
+    if (!result.success) {
+        return result;
+    }
+
+    const OperationResult pruneResult = pruneBackupDirectory(directoryPath);
+    if (!pruneResult.success) {
+        return pruneResult;
+    }
+
+    return result;
 }
 
 OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) const

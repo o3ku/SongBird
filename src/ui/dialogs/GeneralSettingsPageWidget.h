@@ -28,10 +28,8 @@ private:
     QCheckBox* sniffingEnabledCheck_ = nullptr;
     QCheckBox* routeOnlyCheck_ = nullptr;
     QSpinBox* localPortSpin_ = nullptr;
-    QCheckBox* enableFragmentCheck_ = nullptr;
     QCheckBox* defaultAllowInsecureCheck_ = nullptr;
     QComboBox* defaultFingerprintCombo_ = nullptr;
-    QComboBox* defaultUserAgentCombo_ = nullptr;
     QComboBox* languageCombo_ = nullptr;
     QComboBox* themeCombo_ = nullptr;
 };

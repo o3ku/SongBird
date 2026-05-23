@@ -71,6 +71,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     logHeaderRow_ = new QWidget(this);
     logHeaderRow_->setObjectName(QStringLiteral("logHeaderRow"));
     logHeaderRow_->setAttribute(Qt::WA_StyledBackground, true);
+    logHeaderRow_->setProperty("sectionHeader", true);
     logHeaderRow_->setCursor(Qt::PointingHandCursor);
     logHeaderRow_->setToolTip(tr("Collapse information"));
     logHeaderRow_->installEventFilter(this);
@@ -117,6 +118,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
 
     logView_ = new QListView(this);
     logView_->setObjectName(QStringLiteral("logView"));
+    logView_->setProperty("sectionBody", true);
     logView_->setMinimumHeight(0);
     logView_->setContextMenuPolicy(Qt::CustomContextMenu);
     logView_->setWordWrap(false);

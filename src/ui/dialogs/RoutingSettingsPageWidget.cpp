@@ -180,6 +180,41 @@ QStringList routingRuleMatches(const RoutingRule& rule)
     return matches;
 }
 
+bool containsNonEmptyValue(const QStringList& values)
+{
+    for (const QString& value : values) {
+        if (!value.trimmed().isEmpty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hasEditableCustomRoutingFields(const RoutingRule& rule)
+{
+    return !rule.protocol.isEmpty()
+        || !rule.port.trimmed().isEmpty()
+        || !rule.ip.isEmpty()
+        || !rule.domain.isEmpty();
+}
+
+bool isEditableCustomRoutingRule(const RoutingRule& rule, bool supportedAction)
+{
+    if (!supportedAction || !rule.enabled) {
+        return false;
+    }
+
+    const QString type = rule.type.trimmed();
+    if (!type.isEmpty() && type.compare(QStringLiteral("field"), Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+
+    return hasEditableCustomRoutingFields(rule)
+        && rule.network.trimmed().isEmpty()
+        && !containsNonEmptyValue(rule.inboundTag)
+        && !containsNonEmptyValue(rule.process);
+}
+
 QString routingRuleActionLabel(const RoutingRule& rule)
 {
     const QString outbound = rule.outboundTag.trimmed().toLower();
@@ -477,6 +512,8 @@ void RoutingSettingsPageWidget::updateBaseRouteCardGeometry()
 
 void RoutingSettingsPageWidget::loadRoutingCustomRules(const QList<RoutingRule>& rules)
 {
+    preservedCustomRules_.clear();
+
     for (auto it = customRuleEditors_.begin(); it != customRuleEditors_.end(); ++it) {
         if (it.value().protocolEdit != nullptr) {
             it.value().protocolEdit->clear();
@@ -510,7 +547,9 @@ void RoutingSettingsPageWidget::loadRoutingCustomRules(const QList<RoutingRule>&
 
     for (const RoutingRule& rule : rules) {
         const QString action = rule.outboundTag.trimmed().toLower();
-        if (!customRuleEditors_.contains(action)) {
+        const bool supportedAction = customRuleEditors_.contains(action);
+        if (!isEditableCustomRoutingRule(rule, supportedAction)) {
+            preservedCustomRules_.append(rule);
             continue;
         }
 
@@ -560,7 +599,7 @@ QList<RoutingItem> RoutingSettingsPageWidget::collectRoutingItems() const
 
 QList<RoutingRule> RoutingSettingsPageWidget::collectRoutingCustomRules() const
 {
-    QList<RoutingRule> rules;
+    QList<RoutingRule> rules = preservedCustomRules_;
     const QStringList actionOrder{
         QStringLiteral("block"),
         QStringLiteral("direct"),

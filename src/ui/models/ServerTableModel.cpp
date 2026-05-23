@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "common/ServerDisplayName.h"
+#include "ui/theme/AppTheme.h"
 
 namespace {
 
@@ -183,7 +184,7 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole && isDefault) {
-        return QBrush(QColor(QStringLiteral("#007A1F")));
+        return QBrush(QColor(AppTheme::successColor()));
     }
 
     if (role == IsCurrentServerRole) {

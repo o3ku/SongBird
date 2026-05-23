@@ -180,7 +180,7 @@ void ServerTableView::setAttentionHighlighted(bool highlighted)
 {
     setProperty("serverTableAttention", highlighted);
     setStyleSheet(highlighted
-        ? QStringLiteral("ServerTableView { border: 1px solid #c47f17; border-radius: 4px; }")
+        ? QStringLiteral("ServerTableView { border: 1px solid %1; border-radius: 4px; }").arg(AppTheme::attentionBorderColor())
         : QString());
     viewport()->update();
 }

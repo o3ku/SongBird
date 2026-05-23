@@ -24,6 +24,10 @@ QString hoverBackgroundColor();
 QString selectionBackgroundColor();
 QString tableAlternateBaseColor();
 QString tableAlternateBaseColor(QStringView themeName);
+QString linkColor();
+QString mutedTextColor();
+QString successColor();
+QString attentionBorderColor();
 QIcon themedSvgIcon(const QString& resourcePath);
 QString iconColor(bool enabled);
 

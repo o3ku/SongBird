@@ -2109,7 +2109,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyDirectExpectedIpsFo
             continue;
         }
 
-        const QJsonArray expectedIps = serverObject.value(QStringLiteral("expectedIPs")).toArray();
+        const QJsonArray expectedIps = serverObject.value(QStringLiteral("expectIPs")).toArray();
         QVERIFY(jsonArrayContainsString(expectedIps, QStringLiteral("geoip:cn")));
         QVERIFY(jsonArrayContainsString(expectedIps, QStringLiteral("1.2.3.0/24")));
         foundExpectedIpServer = true;

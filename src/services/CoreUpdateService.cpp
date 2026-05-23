@@ -13,7 +13,6 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include <QThread>
@@ -24,7 +23,8 @@
 
 #include "common/GitHubMirrorHelper.h"
 #include "common/UserAgent.h"
-#include "runtime/ProtocolCoreCompat.h"
+#include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/ICoreBackend.h"
 
 #if defined(Q_OS_WIN)
 #include <windows.h>
@@ -48,72 +48,30 @@ struct GitHubRelease {
 };
 
 struct CoreUpdateDefinition {
-    CoreType type = CoreType::Unknown;
-    QString displayName;
-    QUrl releasesApiUrl;
-    QStringList executablePatterns;
+    const ICoreBackend* backend = nullptr;
 };
 
-struct BuiltInFallbackReleaseDefinition {
-    QString tagName;
-    QString assetName64;
-    QString assetName32;
-    QString repositoryPath;
-};
-
-QString xrayLatestAssetName(bool prefer64Bit)
+GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, bool prefer64Bit)
 {
-    return prefer64Bit
-        ? QStringLiteral("Xray-windows-64.zip")
-        : QStringLiteral("Xray-windows-32.zip");
-}
-
-QUrl xrayLatestDownloadUrl(bool prefer64Bit)
-{
-    return QUrl(QStringLiteral("https://github.com/XTLS/Xray-core/releases/latest/download/%1")
-                    .arg(xrayLatestAssetName(prefer64Bit)));
-}
-
-BuiltInFallbackReleaseDefinition resolveBuiltInFallbackReleaseDefinition(CoreType coreType)
-{
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Xray:
-        return BuiltInFallbackReleaseDefinition{
-            QStringLiteral("v26.3.27"),
-            QStringLiteral("Xray-windows-64.zip"),
-            QStringLiteral("Xray-windows-32.zip"),
-            QStringLiteral("XTLS/Xray-core")};
-    case CoreType::SingBox:
-        return BuiltInFallbackReleaseDefinition{
-            QStringLiteral("v1.13.11"),
-            QStringLiteral("sing-box-1.13.11-windows-amd64.zip"),
-            QStringLiteral("sing-box-1.13.11-windows-386.zip"),
-            QStringLiteral("SagerNet/sing-box")};
-    case CoreType::Unknown:
-    default:
-        return {};
-    }
-}
-
-GitHubRelease buildBuiltInFallbackRelease(CoreType coreType, bool prefer64Bit)
-{
-    const BuiltInFallbackReleaseDefinition definition = resolveBuiltInFallbackReleaseDefinition(coreType);
-    if (definition.tagName.isEmpty() || definition.repositoryPath.isEmpty()) {
+    const CoreUpdateAssetPolicy policy = backend.updateAssetPolicy();
+    if (policy.builtInFallbackTagName.isEmpty() || policy.builtInFallbackRepositoryPath.isEmpty()) {
         return {};
     }
 
-    const QString assetName = prefer64Bit ? definition.assetName64 : definition.assetName32;
+    const QString assetName = prefer64Bit
+        ? policy.builtInFallbackAssetName64
+        : policy.builtInFallbackAssetName32;
     if (assetName.isEmpty()) {
         return {};
     }
 
     GitHubRelease release;
-    release.tagName = definition.tagName;
+    release.tagName = policy.builtInFallbackTagName;
     release.assets.append(GitHubReleaseAsset{
         assetName,
         QUrl(QStringLiteral("https://github.com/%1/releases/download/%2/%3")
-                 .arg(definition.repositoryPath)
-                 .arg(definition.tagName)
+                 .arg(policy.builtInFallbackRepositoryPath)
+                 .arg(policy.builtInFallbackTagName)
                  .arg(assetName))});
     return release;
 }
@@ -247,37 +205,17 @@ QString findFirstExistingFile(const QString& directoryPath, const QStringList& p
 
 CoreUpdateDefinition resolveDefinition(CoreType coreType)
 {
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Xray:
-        return CoreUpdateDefinition{
-            CoreType::Xray,
-            QStringLiteral("Xray"),
-            QUrl(QStringLiteral("https://api.github.com/repos/XTLS/Xray-core/releases?per_page=20")),
-            QStringList{
-                QStringLiteral("xray.exe")}};
-    case CoreType::SingBox:
-        return CoreUpdateDefinition{
-            CoreType::SingBox,
-            QStringLiteral("sing-box"),
-            QUrl(QStringLiteral("https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20")),
-            QStringList{
-                QStringLiteral("sing-box-client.exe"),
-                QStringLiteral("sing-box.exe")}};
-    case CoreType::Unknown:
-    default:
-        return {};
-    }
+    return CoreUpdateDefinition{coreBackend(coreType)};
 }
 
 bool hasAnyInstalledCore(const QString& targetDirectory)
 {
-    for (const CoreType coreType : availableCoreTypes()) {
-        const CoreUpdateDefinition definition = resolveDefinition(coreType);
-        if (definition.executablePatterns.isEmpty()) {
+    for (const ICoreBackend* backend : coreBackends()) {
+        if (backend == nullptr || backend->executableNames().isEmpty()) {
             continue;
         }
 
-        if (!findFirstExistingFile(targetDirectory, definition.executablePatterns).isEmpty()) {
+        if (!findFirstExistingFile(targetDirectory, backend->executableNames()).isEmpty()) {
             return true;
         }
     }
@@ -291,46 +229,8 @@ bool isGeoDataFile(const QString& fileName)
     return normalized.startsWith(QStringLiteral("geo")) && normalized.endsWith(QStringLiteral(".dat"));
 }
 
-int scoreAssetName(CoreType coreType, const QString& assetName, bool prefer64Bit)
-{
-    const QString normalized = assetName.trimmed().toLower();
-    if (!normalized.endsWith(QStringLiteral(".zip")) && !normalized.endsWith(QStringLiteral(".exe"))) {
-        return -1;
-    }
-
-    if (normalized.contains(QStringLiteral("arm64")) || normalized.contains(QStringLiteral("armv"))) {
-        return -1;
-    }
-
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Xray:
-        if (prefer64Bit && normalized == QStringLiteral("xray-windows-64.zip")) {
-            return 400;
-        }
-        if (!prefer64Bit && normalized == QStringLiteral("xray-windows-32.zip")) {
-            return 400;
-        }
-        return -1;
-    case CoreType::SingBox:
-        if (!normalized.startsWith(QStringLiteral("sing-box-"))
-            || !normalized.contains(QStringLiteral("windows-"))
-            || normalized.contains(QStringLiteral("legacy-windows-7"))) {
-            return -1;
-        }
-
-        if (prefer64Bit) {
-            return normalized.contains(QStringLiteral("windows-amd64.zip")) ? 350 : -1;
-        }
-
-        return normalized.contains(QStringLiteral("windows-386.zip")) ? 350 : -1;
-    case CoreType::Unknown:
-    default:
-        return -1;
-    }
-}
-
 const GitHubReleaseAsset* selectBestAsset(
-    CoreType coreType,
+    const ICoreBackend& backend,
     const QList<GitHubReleaseAsset>& assets,
     bool prefer64Bit)
 {
@@ -338,7 +238,7 @@ const GitHubReleaseAsset* selectBestAsset(
     int bestScore = -1;
 
     for (const GitHubReleaseAsset& asset : assets) {
-        const int score = scoreAssetName(coreType, asset.name, prefer64Bit);
+        const int score = backend.scoreReleaseAssetName(asset.name, prefer64Bit);
         if (score > bestScore) {
             bestScore = score;
             bestAsset = &asset;
@@ -515,47 +415,6 @@ OperationResult runVersionCommandWithProcess(
 
     *output = QString::fromUtf8(process.readAll()).trimmed();
     return OperationResult::ok();
-}
-
-QString extractVersionFromOutput(CoreType coreType, const QString& output)
-{
-    if (output.trimmed().isEmpty()) {
-        return {};
-    }
-
-    const QString normalizedOutput = output.trimmed();
-    QRegularExpressionMatch match;
-
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Xray:
-        match = QRegularExpression(QStringLiteral("\\bXray\\s+([0-9A-Za-z._-]+)"))
-                    .match(normalizedOutput);
-        break;
-    case CoreType::SingBox:
-        match = QRegularExpression(QStringLiteral("\\bsing-box\\s+version\\s+([0-9A-Za-z._-]+)"))
-                    .match(normalizedOutput);
-        break;
-    case CoreType::Unknown:
-    default:
-        return {};
-    }
-
-    return match.hasMatch()
-        ? normalizeVersionTag(match.captured(1))
-        : QString();
-}
-
-QStringList versionCommandArguments(CoreType coreType)
-{
-    switch (resolveRuntimeCoreType(coreType)) {
-    case CoreType::Xray:
-        return QStringList{QStringLiteral("-version")};
-    case CoreType::SingBox:
-        return QStringList{QStringLiteral("version")};
-    case CoreType::Unknown:
-    default:
-        return {};
-    }
 }
 
 QString quotePowerShellLiteral(QString value)
@@ -826,17 +685,19 @@ OperationResult CoreUpdateService::update(
     }
 
     const CoreUpdateDefinition definition = resolveDefinition(coreType);
-    if (definition.type == CoreType::Unknown || !definition.releasesApiUrl.isValid()) {
+    if (definition.backend == nullptr || !definition.backend->releasesApiUrl().isValid()) {
         return OperationResult::fail(
             QCoreApplication::translate("CoreUpdateService", "Unsupported core update target: %1.")
                 .arg(coreTypeDisplayName(coreType)));
     }
+    const ICoreBackend& backend = *definition.backend;
+    const QString displayName = backend.displayName();
 
     const QString normalizedTargetDirectory = targetDirectory.trimmed();
     if (normalizedTargetDirectory.isEmpty()) {
         return OperationResult::fail(
             QCoreApplication::translate("CoreUpdateService", "%1 target directory is unavailable.")
-                .arg(definition.displayName));
+                .arg(displayName));
     }
 
     if (!QDir().mkpath(normalizedTargetDirectory)) {
@@ -850,37 +711,43 @@ OperationResult CoreUpdateService::update(
     const bool prefer64Bit = is64BitOperatingSystem();
     const bool noInstalledCore = !hasAnyInstalledCore(normalizedTargetDirectory);
     const GitHubRelease builtInFallbackRelease = noInstalledCore
-        ? buildBuiltInFallbackRelease(definition.type, prefer64Bit)
+        ? buildBuiltInFallbackRelease(backend, prefer64Bit)
         : GitHubRelease{};
+    const CoreUpdateAssetPolicy assetPolicy = backend.updateAssetPolicy();
+    const QString directLatestAssetName = prefer64Bit
+        ? assetPolicy.directLatestAssetName64
+        : assetPolicy.directLatestAssetName32;
+    const QUrl directLatestDownloadUrl = prefer64Bit
+        ? assetPolicy.directLatestDownloadUrl64
+        : assetPolicy.directLatestDownloadUrl32;
 
-    if (definition.type == CoreType::Xray && !builtInFallbackRelease.tagName.trimmed().isEmpty()) {
+    if (directLatestDownloadUrl.isValid() && !builtInFallbackRelease.tagName.trimmed().isEmpty()) {
         release = builtInFallbackRelease;
         reportProgress(
             progressHandler,
             QCoreApplication::translate(
                 "CoreUpdateService",
                 "No local core installation was found. Using built-in bootstrap %1 package: %2 (%3).")
-                .arg(definition.displayName)
+                .arg(displayName)
                 .arg(release.assets.constFirst().name)
                 .arg(release.tagName));
-    } else if (definition.type == CoreType::Xray) {
-        const QString assetName = xrayLatestAssetName(prefer64Bit);
+    } else if (directLatestDownloadUrl.isValid() && !directLatestAssetName.isEmpty()) {
         release.tagName = QStringLiteral("latest");
         release.assets.append(GitHubReleaseAsset{
-            assetName,
-            xrayLatestDownloadUrl(prefer64Bit)});
+            directLatestAssetName,
+            directLatestDownloadUrl});
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Using direct latest %1 package: %2")
-                .arg(definition.displayName)
-                .arg(assetName));
+                .arg(displayName)
+                .arg(directLatestAssetName));
     } else {
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Checking the latest %1 release...")
-                .arg(definition.displayName));
+                .arg(displayName));
 
-        const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(definition.releasesApiUrl);
+        const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(backend.releasesApiUrl());
         for (const QUrl& candidateUrl : releaseUrls) {
             if (isCancellationRequested(cancelCheck)) {
                 return cancelledResult();
@@ -939,7 +806,7 @@ OperationResult CoreUpdateService::update(
                     QCoreApplication::translate(
                         "CoreUpdateService",
                         "GitHub release metadata was unavailable and no local core installation was found. Falling back to built-in %1 package: %2 (%3).")
-                        .arg(definition.displayName)
+                        .arg(displayName)
                         .arg(release.assets.constFirst().name)
                         .arg(release.tagName));
             }
@@ -948,25 +815,25 @@ OperationResult CoreUpdateService::update(
         if (release.tagName.trimmed().isEmpty()) {
             return OperationResult::fail(
                 QCoreApplication::translate("CoreUpdateService", "Failed to resolve the latest %1 release: %2")
-                    .arg(definition.displayName)
+                    .arg(displayName)
                     .arg(lastError.isEmpty()
                         ? QCoreApplication::translate("CoreUpdateService", "Unknown error")
                         : lastError));
         }
     }
 
-    const GitHubReleaseAsset* asset = selectBestAsset(definition.type, release.assets, prefer64Bit);
+    const GitHubReleaseAsset* asset = selectBestAsset(backend, release.assets, prefer64Bit);
     if (asset == nullptr) {
         return OperationResult::fail(
             QCoreApplication::translate("CoreUpdateService", "No suitable %1 asset was found in release %2.")
-                .arg(definition.displayName)
+                .arg(displayName)
                 .arg(release.tagName));
     }
 
     reportProgress(
         progressHandler,
         QCoreApplication::translate("CoreUpdateService", "Selected %1 package: %2")
-            .arg(definition.displayName)
+            .arg(displayName)
             .arg(asset->name));
 
     if (isCancellationRequested(cancelCheck)) {
@@ -974,31 +841,32 @@ OperationResult CoreUpdateService::update(
     }
 
     QString currentVersion;
-    const QString executablePath = findFirstExistingFile(normalizedTargetDirectory, definition.executablePatterns);
+    const QString executablePath = findFirstExistingFile(normalizedTargetDirectory, backend.executableNames());
     if (!skipLocalVersionCheck && !executablePath.isEmpty()) {
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Checking the current %1 version...")
-                .arg(definition.displayName));
+                .arg(displayName));
 
         QString versionOutput;
+        const QStringList versionArguments = backend.versionCommandArguments();
         const OperationResult versionResult = versionCommandHandler_
-            ? versionCommandHandler_(executablePath, versionCommandArguments(definition.type), &versionOutput)
+            ? versionCommandHandler_(executablePath, versionArguments, &versionOutput)
             : runVersionCommandWithProcess(
                 executablePath,
-                versionCommandArguments(definition.type),
+                versionArguments,
                 &versionOutput,
                 cancelCheck);
         if (isCancelledResult(versionResult)) {
             return versionResult;
         }
         if (versionResult.success) {
-            currentVersion = extractVersionFromOutput(definition.type, versionOutput);
+            currentVersion = backend.extractVersionFromOutput(versionOutput);
             if (!currentVersion.isEmpty()) {
                 reportProgress(
                     progressHandler,
                     QCoreApplication::translate("CoreUpdateService", "Current %1 version: %2")
-                        .arg(definition.displayName)
+                        .arg(displayName)
                         .arg(currentVersion));
             }
         }
@@ -1010,19 +878,19 @@ OperationResult CoreUpdateService::update(
         && !isVersionNewerThan(normalizedReleaseTag, currentVersion)) {
         return OperationResult::ok(
             QCoreApplication::translate("CoreUpdateService", "%1 is already up to date: %2.")
-                .arg(definition.displayName)
+                .arg(displayName)
                 .arg(release.tagName));
     }
 
     if (confirmDownload) {
         const QString prompt = QCoreApplication::translate("CoreUpdateService", "Download %1 %2?\n%3")
-                                   .arg(definition.displayName)
+                                   .arg(displayName)
                                    .arg(release.tagName)
                                    .arg(asset->name);
         if (!confirmDownload(prompt)) {
             return OperationResult::ok(
                 QCoreApplication::translate("CoreUpdateService", "%1 update was canceled.")
-                    .arg(definition.displayName));
+                    .arg(displayName));
         }
     }
 
@@ -1033,7 +901,7 @@ OperationResult CoreUpdateService::update(
     reportProgress(
         progressHandler,
         QCoreApplication::translate("CoreUpdateService", "Downloading %1 %2...")
-            .arg(definition.displayName)
+            .arg(displayName)
             .arg(asset->name));
 
     QByteArray packageBytes;
@@ -1097,7 +965,7 @@ OperationResult CoreUpdateService::update(
         reportProgress(
             progressHandler,
             QCoreApplication::translate("CoreUpdateService", "Preparing to install %1...")
-                .arg(definition.displayName));
+                .arg(displayName));
         const OperationResult prepareResult = beforeInstall();
         if (!prepareResult.success) {
             return prepareResult;
@@ -1169,11 +1037,11 @@ OperationResult CoreUpdateService::update(
     reportProgress(
         progressHandler,
         QCoreApplication::translate("CoreUpdateService", "%1 update completed successfully.")
-            .arg(definition.displayName));
+            .arg(displayName));
 
     return OperationResult::ok(
         QCoreApplication::translate("CoreUpdateService", "Updated %1 to %2 in %3.")
-            .arg(definition.displayName)
+            .arg(displayName)
             .arg(release.tagName)
             .arg(QDir::toNativeSeparators(normalizedTargetDirectory)),
         true);

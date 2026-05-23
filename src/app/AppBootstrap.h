@@ -12,6 +12,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "app/BackgroundTaskCoordinator.h"
 #include "app/CoreStartupCheckpoint.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
@@ -22,7 +23,7 @@ struct SettingsDialogApplyPlan;
 
 class CoreLifecycleService;
 class CoreStartupChecklistController;
-class BackgroundTaskCoordinator;
+class RuntimeState;
 class ClientConfigWriter;
 class ServerConfigWriter;
 class MainWindow;
@@ -59,11 +60,34 @@ public:
     bool run();
 
 private:
+    enum class RuntimePhase {
+        Stopped,
+        EnvironmentCleanup,
+        ValidateCoreApplication,
+        ValidateRuntimeResources,
+        ValidateCoreConfig,
+        StartTunRuntime,
+        StartCoreProcess,
+        CheckOutboundLocation,
+        ApplySystemProxy,
+        Proxying,
+        Stopping
+    };
+
     void wireMainWindow();
     void syncWindow();
     void syncStatusIndicators();
+    void setRuntimePhase(RuntimePhase phase);
+    bool isRuntimePhaseActive(RuntimePhase phase) const;
+    bool isCoreStartPending() const;
+    bool isCoreStopPending() const;
+    void setTunCleanupState(bool active, bool resumeCoreStartAfterCleanup);
+    void setTunCleanupActive(bool active);
+    void setResumeCoreStartAfterTunCleanup(bool resume);
+    void setCurrentServerLocation(QString location);
+    void setCurrentServerWarning(QString warning);
     bool reloadConfig();
-    void startCoreOnStartup();
+    void applyStartupSystemProxyPreference();
     void appendStartupResourceCheckResults();
     void appendResult(const OperationResult& result);
     void prepareCoreStartupChecklist(bool showOverlay);
@@ -96,9 +120,13 @@ private:
         QWidget* parent = nullptr,
         bool showDialog = true);
     void persistUiState();
-    void startCore(bool showStartupOverlay = false);
-    void startCore(bool skipTunCleanup, bool showStartupOverlay);
-    void startCoreInternal(
+    bool isProxyActivationInProgress() const;
+    bool isRuntimeTransitionPending() const;
+    void beginManagedProxyActivation();
+    void finishManagedProxyActivation();
+    void cancelManagedProxyActivation();
+    void cancelBackgroundTasksForProxyStartup();
+    void startManagedProxyCoreInternal(
         bool skipTunCleanup,
         std::optional<bool> startupProxyEnabled,
         bool environmentAlreadyChecked = false,
@@ -118,14 +146,14 @@ private:
     void handleCoreStartFailed(const QString& message);
     void disconnectPendingCoreStartConnection();
     void restartCoreIfRunning(const QString& reason, bool showStartupOverlay = false);
-    void scheduleCoreStartAfterCoreStopped(bool showStartupOverlay);
+    void scheduleManagedProxyCoreStartAfterStop(bool showStartupOverlay);
     void clearCurrentServerLocation();
     void queryCurrentServerLocation(
         const QString& serverIndexId,
         CoreType runtimeCore,
         std::optional<bool> startupProxyEnabled);
     bool applySystemProxyAfterOutboundLocation(std::optional<bool> startupProxyEnabled);
-    void clearCoreStartupChecklistAfterStableRun(const QString& serverIndexId, qint64 coreStartTime);
+    void clearCoreStartupChecklistAfterCompletionDelay(const QString& serverIndexId, qint64 coreStartTime);
     bool saveSystemProxyMode(SystemProxyMode mode);
     void setSystemProxyMode(
         SystemProxyMode mode,
@@ -163,6 +191,7 @@ private:
         const std::function<void(const QString&)>& progressObserver,
         const std::function<void(const OperationResult&)>& completionObserver);
     void runCoreUpdateTask(
+        BackgroundTaskCoordinator::Token token,
         CoreType coreType,
         CoreUpdateConfig workerConfig,
         QString installDirectory,
@@ -171,6 +200,7 @@ private:
         std::function<void(const QString&)> progressObserver,
         std::function<void(const OperationResult&)> completionObserver);
     void finalizeCoreUpdate(
+        BackgroundTaskCoordinator::Token token,
         const QString& title,
         const OperationResult& result,
         bool stoppedForInstall,
@@ -228,7 +258,6 @@ private:
     QString buildListenSummaryText() const;
     QString buildSystemProxyExceptions() const;
     bool updateSystemProxyMode(SystemProxyMode mode) const;
-    bool isCoreStartupBlockingBackgroundTask() const;
     void trackBackgroundThread(QThread* thread);
     void waitForBackgroundThreads();
     void stopAuxiliaryCore(bool immediate = false);
@@ -259,6 +288,7 @@ private:
     std::unique_ptr<CoreLifecycleService> coreLifecycleService_;
     std::unique_ptr<CoreStartupChecklistController> coreStartupChecklist_;
     std::unique_ptr<BackgroundTaskCoordinator> backgroundTasks_;
+    std::unique_ptr<RuntimeState> runtimeState_;
     std::unique_ptr<QtCoreProcessHost> auxiliaryCoreProcessHost_;
     std::unique_ptr<CoreLifecycleService> auxiliaryCoreLifecycleService_;
     std::unique_ptr<WindowsAutoRunService> autoRunService_;
@@ -273,15 +303,13 @@ private:
     bool exitProxyStateApplied_ = false;
     bool windowsShutdownRequested_ = false;
     bool speedTestResultsDirty_ = false;
-    bool coreStartPending_ = false;
-    bool coreStopPending_ = false;
-    bool coreReady_ = false;
+    RuntimePhase runtimePhase_ = RuntimePhase::Stopped;
     QString currentServerLocation_;
-    bool cancelCoreStartAfterGeoUpdate_ = false;
+    QString currentServerWarning_;
     bool coreTunEnabledAtStart_ = false;
     bool managedSystemProxyActive_ = false;
-    bool tunCleanupActive_ = false;
     bool skipTunCleanupOnNextCoreExit_ = false;
+    bool tunCleanupActive_ = false;
     bool resumeCoreStartAfterTunCleanup_ = false;
     bool restartAfterStopPending_ = false;
     bool restartAfterStopShowStartupOverlay_ = false;
@@ -297,6 +325,8 @@ private:
     QPointer<QWidget> pendingCoreUpdateDialogParent_;
     std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;
     std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
+    BackgroundTaskCoordinator::Token speedTestTaskToken_;
+    BackgroundTaskCoordinator::Token pendingCoreUpdateTaskToken_;
     QMetaObject::Connection coreStartedConnection_;
     QList<QPointer<QThread>> backgroundThreads_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();

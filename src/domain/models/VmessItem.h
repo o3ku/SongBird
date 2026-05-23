@@ -33,7 +33,7 @@ inline CoreType resolveRuntimeCoreType(CoreType type)
     case CoreType::Unknown:
         return CoreType::Unknown;
     default:
-        return CoreType::Xray;
+        return CoreType::SingBox;
     }
 }
 

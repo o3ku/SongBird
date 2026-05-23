@@ -12,30 +12,7 @@
 #include <QSvgWidget>
 #include <QVBoxLayout>
 
-namespace {
-
-QString readableLinkColor(const QWidget* widget)
-{
-    const QColor windowColor = widget == nullptr
-        ? QColor(Qt::white)
-        : widget->palette().color(QPalette::Window);
-    return windowColor.lightness() < 128
-        ? QStringLiteral("#7ed8ff")
-        : QStringLiteral("#0969da");
-}
-
-QColor mutedTextColor(const QWidget* widget)
-{
-    const QPalette palette = widget == nullptr ? QPalette() : widget->palette();
-    const QColor base = palette.color(QPalette::WindowText);
-    const QColor bg = palette.color(QPalette::Window);
-    return QColor::fromRgbF(
-        base.redF() * 0.55 + bg.redF() * 0.45,
-        base.greenF() * 0.55 + bg.greenF() * 0.45,
-        base.blueF() * 0.55 + bg.blueF() * 0.45);
-}
-
-} // namespace
+#include "ui/theme/AppTheme.h"
 
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
@@ -49,7 +26,7 @@ void AboutDialog::setRepoUrl(const QString& repoUrl)
         if (repoUrl.trimmed().isEmpty()) {
             repoUrlValueLabel_->setText(tr("Unavailable"));
         } else {
-            const QString linkColor = readableLinkColor(repoUrlValueLabel_);
+            const QString linkColor = AppTheme::linkColor();
             repoUrlValueLabel_->setText(
                 QStringLiteral("<a style=\"color:%1;\" href=\"%2\">%2</a>").arg(linkColor, repoUrl.trimmed()));
         }
@@ -104,7 +81,7 @@ void AboutDialog::setupUi()
 
     logoLabel_ = new QSvgWidget(QStringLiteral(":/app/logo.svg"), this);
     logoLabel_->setObjectName(QStringLiteral("aboutLogo"));
-    logoLabel_->setFixedSize(48, 48);
+    logoLabel_->setFixedSize(72, 72);
 
     titleLabel_ = new QLabel(tr("SongBird"), this);
     titleLabel_->setObjectName(QStringLiteral("aboutTitleLabel"));
@@ -116,28 +93,30 @@ void AboutDialog::setupUi()
     subtitleLabel_ = new QLabel(this);
     subtitleLabel_->setObjectName(QStringLiteral("aboutSubtitleLabel"));
     QPalette subtitlePalette = subtitleLabel_->palette();
-    subtitlePalette.setColor(QPalette::WindowText, mutedTextColor(this));
+    subtitlePalette.setColor(QPalette::WindowText, QColor(AppTheme::mutedTextColor()));
     subtitleLabel_->setPalette(subtitlePalette);
     subtitleLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     refreshSubtitle();
 
     auto* heroText = new QVBoxLayout();
     heroText->setContentsMargins(0, 0, 0, 0);
-    heroText->setSpacing(2);
+    heroText->setSpacing(4);
     heroText->addWidget(titleLabel_);
     heroText->addWidget(subtitleLabel_);
-
-    auto* heroRow = new QHBoxLayout();
-    heroRow->setContentsMargins(0, 0, 0, 0);
-    heroRow->setSpacing(14);
-    heroRow->addWidget(logoLabel_, 0, Qt::AlignTop);
-    heroRow->addLayout(heroText, 1);
 
     auto* summaryLabel = new QLabel(
         tr("A Qt/C++ rewrite and improvement of v2rayN."),
         this);
     summaryLabel->setObjectName(QStringLiteral("aboutSummaryLabel"));
     summaryLabel->setWordWrap(true);
+    heroText->addWidget(summaryLabel);
+    heroText->addStretch(1);
+
+    auto* heroRow = new QHBoxLayout();
+    heroRow->setContentsMargins(0, 0, 0, 0);
+    heroRow->setSpacing(16);
+    heroRow->addWidget(logoLabel_, 0, Qt::AlignTop);
+    heroRow->addLayout(heroText, 1);
 
     auto* separator = new QFrame(this);
     separator->setFrameShape(QFrame::HLine);
@@ -158,7 +137,7 @@ void AboutDialog::setupUi()
     formLayout->setHorizontalSpacing(16);
     formLayout->setVerticalSpacing(6);
 
-    const QColor labelColor = mutedTextColor(this);
+    const QColor labelColor(AppTheme::mutedTextColor());
     const auto buildFieldLabel = [&](const QString& text) {
         auto* label = new QLabel(text, this);
         QFont font = label->font();
@@ -180,7 +159,6 @@ void AboutDialog::setupUi()
     rootLayout->setContentsMargins(20, 18, 20, 16);
     rootLayout->setSpacing(12);
     rootLayout->addLayout(heroRow);
-    rootLayout->addWidget(summaryLabel);
     rootLayout->addWidget(separator);
     rootLayout->addLayout(formLayout);
     rootLayout->addStretch(1);

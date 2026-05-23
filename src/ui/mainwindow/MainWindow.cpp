@@ -637,13 +637,6 @@ void MainWindow::setRoutingSummary(const QString& routingText, const QString& li
     updateStatusPresentation();
 }
 
-void MainWindow::setSpeedTestRunning(bool running)
-{
-    speedTestRunning_ = running;
-    setServerTableDynamicSortEnabled(!running, !running);
-    updateActionState();
-}
-
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
     setLoadingOverlayVisible(
@@ -680,7 +673,12 @@ void MainWindow::clearCoreStartupChecklist()
 
 void MainWindow::setBackgroundTaskRunning(bool running)
 {
+    if (backgroundTaskRunning_ == running) {
+        return;
+    }
+
     backgroundTaskRunning_ = running;
+    setServerTableDynamicSortEnabled(!running, !running);
     updateActionState();
     updateStatusPresentation();
 }
@@ -947,7 +945,7 @@ void MainWindow::scheduleInitialCurrentServerReveal()
 bool MainWindow::canStartBackgroundTask() const
 {
     return !backgroundTaskRunning_
-        && !speedTestRunning_
+        && !coreTransitionPending_
         && (!coreStartupChecklistVisible_ || coreStartupChecklistFailed_);
 }
 
@@ -958,7 +956,7 @@ bool MainWindow::ensureCanStartBackgroundTask()
     }
 
     showTransientStatus(
-        coreStartupChecklistVisible_ && !coreStartupChecklistFailed_
+        coreTransitionPending_ || (coreStartupChecklistVisible_ && !coreStartupChecklistFailed_)
             ? tr("Proxy startup is in progress.")
             : tr("A background task is already running."),
         4000);
@@ -2106,7 +2104,7 @@ void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, co
         }
     }
 
-    clearLoadingOverlayItems();
+    updateLoadingOverlayItems(items);
 
     if (loadingTitleLabel_ != nullptr) {
         loadingTitleLabel_->setText(hasFailure ? tr("Proxy startup failed") : title);
@@ -2119,48 +2117,6 @@ void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, co
     if (loadingItemsWidget_ != nullptr) {
         loadingItemsWidget_->setVisible(!items.isEmpty());
     }
-    if (loadingItemsLayout_ != nullptr) {
-        for (const QString& item : items) {
-            const auto parts = splitCoreStartupChecklistItem(item);
-            auto* row = new QWidget(loadingItemsWidget_);
-            row->setObjectName(QStringLiteral("loadingChecklistRow"));
-            row->setAttribute(Qt::WA_StyledBackground, true);
-            auto* rowLayout = new QHBoxLayout(row);
-            rowLayout->setContentsMargins(0, 0, 0, 0);
-            rowLayout->setSpacing(12);
-
-            auto* label = new QLabel(parts.first, row);
-            label->setObjectName(QStringLiteral("loadingChecklistItem"));
-            label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-            label->setWordWrap(false);
-            label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-            rowLayout->addWidget(label, 0, Qt::AlignLeft | Qt::AlignVCenter);
-
-            if (!parts.second.isEmpty()) {
-                auto* detailLabel = new QLabel(row);
-                detailLabel->setObjectName(QStringLiteral("loadingChecklistDetail"));
-                detailLabel->setText(elideTextWithThreeDots(
-                    detailLabel->fontMetrics(),
-                    parts.second,
-                    LoadingChecklistDetailMaximumWidth));
-                detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-                detailLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-                detailLabel->setWordWrap(false);
-                detailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-                detailLabel->setMinimumWidth(140);
-                detailLabel->setMaximumWidth(LoadingChecklistDetailMaximumWidth);
-                detailLabel->setFixedHeight(detailLabel->fontMetrics().height() + 2);
-                detailLabel->setToolTip(parts.second);
-                rowLayout->addWidget(detailLabel, 1, Qt::AlignRight | Qt::AlignVCenter);
-            } else {
-                rowLayout->addStretch(1);
-            }
-
-            loadingItemsLayout_->addWidget(row);
-        }
-    }
-
     if (loadingDismissButton_ != nullptr) {
         loadingDismissButton_->setVisible(visible && hasFailure);
     }
@@ -2168,11 +2124,16 @@ void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, co
         loadingActionWidget_->setVisible(!items.isEmpty() || hasFailure);
     }
 
+    const bool wasVisible = loadingOverlay_->isVisible();
     if (visible) {
-        updateLoadingOverlayGeometry();
-        loadingOverlay_->raise();
-        loadingOverlay_->show();
-        loadingOverlay_->setFocus(Qt::OtherFocusReason);
+        if (!wasVisible || loadingOverlay_->geometry() != rect()) {
+            updateLoadingOverlayGeometry();
+        }
+        if (!wasVisible) {
+            loadingOverlay_->raise();
+            loadingOverlay_->show();
+            loadingOverlay_->setFocus(Qt::OtherFocusReason);
+        }
     } else {
         loadingOverlay_->hide();
     }
@@ -2181,6 +2142,7 @@ void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, co
 void MainWindow::clearLoadingOverlayItems()
 {
     if (loadingItemsLayout_ == nullptr) {
+        loadingChecklistItems_.clear();
         return;
     }
 
@@ -2190,6 +2152,101 @@ void MainWindow::clearLoadingOverlayItems()
         }
         delete item;
     }
+    loadingChecklistItems_.clear();
+}
+
+void MainWindow::rebuildLoadingOverlayItems(const QStringList& items)
+{
+    if (loadingItemsLayout_ == nullptr) {
+        loadingChecklistItems_.clear();
+        return;
+    }
+
+    clearLoadingOverlayItems();
+    for (const QString& item : items) {
+        auto* row = new QWidget(loadingItemsWidget_);
+        row->setObjectName(QStringLiteral("loadingChecklistRow"));
+        row->setAttribute(Qt::WA_StyledBackground, true);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(12);
+
+        auto* label = new QLabel(row);
+        label->setObjectName(QStringLiteral("loadingChecklistItem"));
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        label->setWordWrap(false);
+        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        rowLayout->addWidget(label, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+        auto* detailLabel = new QLabel(row);
+        detailLabel->setObjectName(QStringLiteral("loadingChecklistDetail"));
+        detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        detailLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        detailLabel->setWordWrap(false);
+        detailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        detailLabel->setMinimumWidth(140);
+        detailLabel->setMaximumWidth(LoadingChecklistDetailMaximumWidth);
+        detailLabel->setFixedHeight(detailLabel->fontMetrics().height() + 2);
+        rowLayout->addWidget(detailLabel, 1, Qt::AlignRight | Qt::AlignVCenter);
+
+        updateLoadingChecklistRow(row, item);
+        loadingItemsLayout_->addWidget(row);
+    }
+    loadingChecklistItems_ = items;
+}
+
+void MainWindow::updateLoadingOverlayItems(const QStringList& items)
+{
+    if (loadingItemsLayout_ == nullptr) {
+        loadingChecklistItems_.clear();
+        return;
+    }
+
+    if (loadingChecklistItems_.size() != items.size()
+        || loadingItemsLayout_->count() != items.size()) {
+        rebuildLoadingOverlayItems(items);
+        return;
+    }
+
+    for (int index = 0; index < items.size(); ++index) {
+        if (loadingChecklistItems_.at(index) == items.at(index)) {
+            continue;
+        }
+
+        QLayoutItem* layoutItem = loadingItemsLayout_->itemAt(index);
+        QWidget* row = layoutItem == nullptr ? nullptr : layoutItem->widget();
+        updateLoadingChecklistRow(row, items.at(index));
+    }
+    loadingChecklistItems_ = items;
+}
+
+void MainWindow::updateLoadingChecklistRow(QWidget* row, const QString& item)
+{
+    if (row == nullptr) {
+        return;
+    }
+
+    const auto parts = splitCoreStartupChecklistItem(item);
+    auto* label = row->findChild<QLabel*>(QStringLiteral("loadingChecklistItem"));
+    if (label != nullptr) {
+        label->setText(parts.first);
+    }
+
+    auto* detailLabel = row->findChild<QLabel*>(QStringLiteral("loadingChecklistDetail"));
+    if (detailLabel == nullptr) {
+        return;
+    }
+
+    const bool hasDetail = !parts.second.isEmpty();
+    detailLabel->setVisible(hasDetail);
+    detailLabel->setText(hasDetail
+        ? elideTextWithThreeDots(
+            detailLabel->fontMetrics(),
+            parts.second,
+            LoadingChecklistDetailMaximumWidth)
+        : QString());
+    detailLabel->setToolTip(hasDetail ? parts.second : QString());
 }
 
 void MainWindow::updateLoadingOverlayGeometry()

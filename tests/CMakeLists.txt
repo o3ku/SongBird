@@ -237,6 +237,26 @@ set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     ../src/app/CoreStartupCheckpoint.h
     ../src/runtime/CoreConfigPreflight.h
     ../src/runtime/CoreConfigPreflight.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/runtime/core/CoreBackendRegistry.cpp
+    ../src/runtime/core/singbox/SingBoxConfigFragments.h
+    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/singbox/SingBoxCoreBackend.h
+    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
+    ../src/runtime/core/xray/XrayConfigFragments.h
+    ../src/runtime/core/xray/XrayConfigFragments.cpp
+    ../src/runtime/core/xray/XrayCoreBackend.h
+    ../src/runtime/core/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -301,6 +321,41 @@ set_tests_properties(app-bootstrap-ui-command-plan PROPERTIES
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_app_bootstrap_ui_command_plan_tests)
+endif()
+
+set(SONGBIRD_RUNTIME_STATE_TEST_SOURCES
+    RuntimeStateTests.cpp
+    ../src/app/RuntimeState.h
+    ../src/app/RuntimeState.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_runtime_state_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_RUNTIME_STATE_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_runtime_state_tests ${SONGBIRD_RUNTIME_STATE_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_runtime_state_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_runtime_state_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME runtime-state COMMAND songbird_runtime_state_tests)
+set_tests_properties(runtime-state PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_runtime_state_tests)
 endif()
 
 set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
@@ -400,10 +455,18 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ../src/runtime/RoutingConfigFragments.cpp
     ../src/runtime/RoutingRuleJsonMapper.h
     ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/runtime/core/CoreBackendRegistry.cpp
     ../src/runtime/core/singbox/SingBoxConfigFragments.h
     ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/singbox/SingBoxCoreBackend.h
+    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
     ../src/runtime/core/xray/XrayConfigFragments.h
     ../src/runtime/core/xray/XrayConfigFragments.cpp
+    ../src/runtime/core/xray/XrayCoreBackend.h
+    ../src/runtime/core/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -777,6 +840,26 @@ set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     CoreUpdateServiceTests.cpp
     ../src/services/CoreUpdateService.h
     ../src/services/CoreUpdateService.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/runtime/core/CoreBackendRegistry.cpp
+    ../src/runtime/core/singbox/SingBoxConfigFragments.h
+    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/singbox/SingBoxCoreBackend.h
+    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
+    ../src/runtime/core/xray/XrayConfigFragments.h
+    ../src/runtime/core/xray/XrayConfigFragments.cpp
+    ../src/runtime/core/xray/XrayCoreBackend.h
+    ../src/runtime/core/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -992,10 +1075,18 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/runtime/RoutingConfigFragments.cpp
     ../src/runtime/RoutingRuleJsonMapper.h
     ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/runtime/core/CoreBackendRegistry.cpp
     ../src/runtime/core/singbox/SingBoxConfigFragments.h
     ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
+    ../src/runtime/core/singbox/SingBoxCoreBackend.h
+    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
     ../src/runtime/core/xray/XrayConfigFragments.h
     ../src/runtime/core/xray/XrayConfigFragments.cpp
+    ../src/runtime/core/xray/XrayCoreBackend.h
+    ../src/runtime/core/xray/XrayCoreBackend.cpp
     ../src/runtime/CoreLifecycleService.h
     ../src/runtime/CoreLifecycleService.cpp
     ../src/runtime/ICoreProcessHost.h

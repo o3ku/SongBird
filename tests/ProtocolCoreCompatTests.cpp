@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "runtime/ProtocolCoreCompat.h"
+#include "runtime/core/CoreCatalog.h"
 
 class ProtocolCoreCompatTests : public QObject {
     Q_OBJECT
@@ -8,10 +9,13 @@ class ProtocolCoreCompatTests : public QObject {
 private slots:
     void dualProtocolSupportsBothCores();
     void httpSupportsOnlyXray();
-    void singBoxOnlyProtocolsSupportBothCoresForSelection();
+    void hysteria2SupportsOnlySingBox();
+    void singBoxFirstProtocolsSupportBothCoresForSelection();
     void unknownSupportsNeitherCore();
     void protocolSupportsCoreQuery();
     void availableCoreTypesList();
+    void catalogExposesRegisteredCores();
+    void catalogKeepsSingBoxClientExecutableFirst();
     void resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent();
     void resolveExistingCoreTypeForProtocolFallsBackToXrayWhenOnlyXrayExists();
     void resolveExistingCoreTypeForProtocolUsesSingBoxAsDownloadTargetWhenNothingExists();
@@ -42,10 +46,17 @@ void ProtocolCoreCompatTests::httpSupportsOnlyXray()
     QVERIFY(cores.contains(CoreType::SingBox));
 }
 
-void ProtocolCoreCompatTests::singBoxOnlyProtocolsSupportBothCoresForSelection()
+void ProtocolCoreCompatTests::hysteria2SupportsOnlySingBox()
+{
+    const auto cores = supportedCoreTypes(ConfigType::Hysteria2);
+    QCOMPARE(cores.size(), 1);
+    QVERIFY(!cores.contains(CoreType::Xray));
+    QVERIFY(cores.contains(CoreType::SingBox));
+}
+
+void ProtocolCoreCompatTests::singBoxFirstProtocolsSupportBothCoresForSelection()
 {
     const QList<ConfigType> protocols = {
-        ConfigType::Hysteria2,
         ConfigType::TUIC,
         ConfigType::WireGuard,
         ConfigType::AnyTLS,
@@ -72,6 +83,8 @@ void ProtocolCoreCompatTests::protocolSupportsCoreQuery()
     QVERIFY(protocolSupportsCore(ConfigType::VMess, CoreType::SingBox));
     QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::Xray));
     QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::SingBox));
+    QVERIFY(!protocolSupportsCore(ConfigType::Hysteria2, CoreType::Xray));
+    QVERIFY(protocolSupportsCore(ConfigType::Hysteria2, CoreType::SingBox));
     QVERIFY(!protocolSupportsCore(ConfigType::Unknown, CoreType::Xray));
 }
 
@@ -81,6 +94,21 @@ void ProtocolCoreCompatTests::availableCoreTypesList()
     QVERIFY(cores.contains(CoreType::Xray));
     QVERIFY(cores.contains(CoreType::SingBox));
     QVERIFY(cores.size() >= 2);
+}
+
+void ProtocolCoreCompatTests::catalogExposesRegisteredCores()
+{
+    const QList<CoreType> cores = catalogCoreTypes();
+    QCOMPARE(cores, QList<CoreType>({CoreType::Xray, CoreType::SingBox}));
+    QCOMPARE(availableCoreTypes(), cores);
+}
+
+void ProtocolCoreCompatTests::catalogKeepsSingBoxClientExecutableFirst()
+{
+    const QStringList executableNames = catalogCoreExecutableNames(CoreType::SingBox);
+    QCOMPARE(executableNames.size(), 2);
+    QCOMPARE(executableNames.constFirst(), QStringLiteral("sing-box-client.exe"));
+    QCOMPARE(executableNames.at(1), QStringLiteral("sing-box.exe"));
 }
 
 void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent()

@@ -406,6 +406,11 @@ Restart as administrator now?</source>
     <message><source>Failed to save global hotkey settings.</source><translation>保存全局热键设置失败。</translation></message>
     <message><source>Global hotkey settings saved.</source><translation>全局热键设置已保存。</translation></message>
     <message><source>Failed to reapply system proxy settings.</source><translation>重新应用系统代理设置失败。</translation></message>
+    <message><source>Environment cleanup</source><translation>清理启动环境</translation></message>
+    <message><source>Validate core application</source><translation>验证核心程序</translation></message>
+    <message><source>Validate runtime resources</source><translation>验证运行资源</translation></message>
+    <message><source>Validate core config</source><translation>验证核心配置</translation></message>
+    <message><source>Start TUN runtime</source><translation>启动 TUN 运行时</translation></message>
     <message><source>Reloading core after applying settings changes.</source><translation>正在重载核心以应用设置变更。</translation></message>
     <message><source>TUN mode requires administrator privileges on Windows. The settings were saved and will take effect after restarting SongBird as administrator.</source><translation>TUN 模式在 Windows 上需要管理员权限。设置已保存，重启 SongBird 并以管理员权限运行后生效。</translation></message>
     <message><source>TUN mode requires administrator privileges on Windows.

@@ -119,6 +119,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
 
     auto* serverPanel = new QWidget(this);
     serverPanel->setMinimumHeight(0);
+    serverPanel->setProperty("sectionBody", true);
     auto* serverPanelLayout = new QVBoxLayout(serverPanel);
     serverPanelLayout->setContentsMargins(0, 0, 0, 0);
     serverPanelLayout->setSpacing(0);
@@ -126,6 +127,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     auto* serverHeaderRow = new QWidget(serverPanel);
     serverHeaderRow->setObjectName(QStringLiteral("serverHeaderRow"));
     serverHeaderRow->setAttribute(Qt::WA_StyledBackground, true);
+    serverHeaderRow->setProperty("sectionHeader", true);
     auto* serverHeaderLayout = new QHBoxLayout(serverHeaderRow);
     serverHeaderLayout->setContentsMargins(0, 0, 0, 0);
     serverHeaderLayout->setSpacing(0);

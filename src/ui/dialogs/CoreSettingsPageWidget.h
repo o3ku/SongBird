@@ -27,6 +27,8 @@ public:
     QList<CoreTypeItem> collectCoreTypeItems() const;
     bool enableCacheFile4Sbox() const;
     QString mux4SboxProtocol() const;
+    bool xrayFragmentEnabled() const;
+    QString xrayDefaultUserAgent() const;
     bool legacyProtectEnabled() const;
     void setCoreVersion(CoreType coreType, const QString& version);
     void beginCoreUpdate(CoreType coreType);
@@ -60,6 +62,8 @@ private:
     Config config_;
     QCheckBox* enableCacheFile4SboxCheck_ = nullptr;
     QComboBox* mux4SboxProtocolCombo_ = nullptr;
+    QCheckBox* xrayEnableFragmentCheck_ = nullptr;
+    QComboBox* xrayDefaultUserAgentCombo_ = nullptr;
     QCheckBox* tunEnableLegacyProtectCheck_ = nullptr;
     QList<CoreTypeItem> coreTypeItems_;
     QList<QComboBox*> coreTypeCombos_;

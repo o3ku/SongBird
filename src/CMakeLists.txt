@@ -8,6 +8,8 @@ set(SONGBIRD_SOURCES
     app/CoreStartupChecklistController.cpp
     app/BackgroundTaskCoordinator.h
     app/BackgroundTaskCoordinator.cpp
+    app/RuntimeState.h
+    app/RuntimeState.cpp
     app/SettingsDialogSession.h
     app/SettingsDialogSession.cpp
     app/SingleInstanceBootstrap.h
@@ -46,10 +48,18 @@ set(SONGBIRD_SOURCES
     runtime/RoutingConfigFragments.cpp
     runtime/RoutingRuleJsonMapper.h
     runtime/RoutingRuleJsonMapper.cpp
+    runtime/core/ICoreBackend.h
+    runtime/core/CoreCatalog.h
+    runtime/core/CoreBackendRegistry.h
+    runtime/core/CoreBackendRegistry.cpp
     runtime/core/singbox/SingBoxConfigFragments.h
     runtime/core/singbox/SingBoxConfigFragments.cpp
+    runtime/core/singbox/SingBoxCoreBackend.h
+    runtime/core/singbox/SingBoxCoreBackend.cpp
     runtime/core/xray/XrayConfigFragments.h
     runtime/core/xray/XrayConfigFragments.cpp
+    runtime/core/xray/XrayCoreBackend.h
+    runtime/core/xray/XrayCoreBackend.cpp
     runtime/ServerConfigWriter.h
     runtime/ServerConfigWriter.cpp
     runtime/ICoreProcessHost.h

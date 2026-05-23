@@ -9,38 +9,68 @@ BackgroundTaskCoordinator::BackgroundTaskCoordinator(QObject* parent)
 {
 }
 
+bool BackgroundTaskCoordinator::Token::isValid() const
+{
+    return kind != Kind::None && generation != 0;
+}
+
 void BackgroundTaskCoordinator::setBlockingPredicate(std::function<bool()> predicate)
 {
     blockingPredicate_ = std::move(predicate);
 }
 
-bool BackgroundTaskCoordinator::tryBegin(Kind kind)
+BackgroundTaskCoordinator::Token BackgroundTaskCoordinator::tryBeginUserTask(Kind kind)
+{
+    return tryBegin(kind, StartScope::UserTask);
+}
+
+BackgroundTaskCoordinator::Token BackgroundTaskCoordinator::tryBeginStartupTask(Kind kind)
+{
+    return tryBegin(kind, StartScope::StartupTask);
+}
+
+BackgroundTaskCoordinator::Token BackgroundTaskCoordinator::tryBegin(Kind kind, StartScope scope)
 {
     if (kind == Kind::None) {
-        return false;
+        return {};
     }
 
-    if (blockingPredicate_ && blockingPredicate_()) {
+    if (scope == StartScope::UserTask && blockingPredicate_ && blockingPredicate_()) {
         emit blockedByCoreStartup();
-        return false;
+        return {};
     }
 
     if (activeKind_ != Kind::None) {
-        return false;
+        return {};
     }
 
     activeKind_ = kind;
+    activeGeneration_ = ++generation_;
+    emitCurrent();
+    return Token{kind, activeGeneration_};
+}
+
+bool BackgroundTaskCoordinator::finish(const Token& token)
+{
+    if (!isCurrent(token)) {
+        return false;
+    }
+
+    activeKind_ = Kind::None;
+    activeGeneration_ = 0;
     emitCurrent();
     return true;
 }
 
-void BackgroundTaskCoordinator::finish(Kind kind)
+void BackgroundTaskCoordinator::cancelActive()
 {
-    if (activeKind_ != kind) {
+    if (activeKind_ == Kind::None) {
         return;
     }
 
     activeKind_ = Kind::None;
+    activeGeneration_ = 0;
+    ++generation_;
     emitCurrent();
 }
 
@@ -57,6 +87,13 @@ bool BackgroundTaskCoordinator::isActive() const
 bool BackgroundTaskCoordinator::isKindActive(Kind kind) const
 {
     return activeKind_ == kind;
+}
+
+bool BackgroundTaskCoordinator::isCurrent(const Token& token) const
+{
+    return token.isValid()
+        && activeKind_ == token.kind
+        && activeGeneration_ == token.generation;
 }
 
 void BackgroundTaskCoordinator::resetSpeedTestProgress()

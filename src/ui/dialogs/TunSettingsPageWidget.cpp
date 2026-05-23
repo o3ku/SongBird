@@ -30,7 +30,7 @@ void TunSettingsPageWidget::setConfig(const Config& config)
 
 void TunSettingsPageWidget::applyToConfig(Config& config) const
 {
-    TunModeItem tun;
+    TunModeItem& tun = config.tun().tunModeItem;
     tun.enableTun = tunEnableCheck_->isChecked();
     tun.autoRoute = tunAutoRouteCheck_->isChecked();
     tun.strictRoute = tunStrictRouteCheck_->isChecked();
@@ -38,7 +38,6 @@ void TunSettingsPageWidget::applyToConfig(Config& config) const
     tun.stack = tunStackCombo_->currentText().trimmed();
     tun.enableIPv6Address = tunEnableIPv6AddressCheck_->isChecked();
     tun.icmpRouting = tunIcmpRoutingEdit_->text().trimmed();
-    config.tun().tunModeItem = tun;
 }
 
 bool TunSettingsPageWidget::tunEnabled() const

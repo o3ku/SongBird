@@ -56,5 +56,6 @@ private:
     QHBoxLayout* baseRouteLayout_ = nullptr;
     QTabWidget* customRuleTabs_ = nullptr;
     QMap<QString, CustomRuleEditors> customRuleEditors_;
+    QList<RoutingRule> preservedCustomRules_;
     Config config_;
 };

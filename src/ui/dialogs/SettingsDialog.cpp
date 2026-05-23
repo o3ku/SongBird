@@ -18,6 +18,12 @@
 
 #include <QWidget>
 
+#include "ui/dialogs/CoreSettingsPageWidget.h"
+#include "ui/dialogs/DnsSettingsPageWidget.h"
+#include "ui/dialogs/GeneralSettingsPageWidget.h"
+#include "ui/dialogs/RoutingSettingsPageWidget.h"
+#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
+#include "ui/dialogs/TunSettingsPageWidget.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
@@ -47,15 +53,6 @@ public:
         return hint;
     }
 };
-
-QStringList singBoxMuxProtocolOptions()
-{
-    return {
-        QStringLiteral("h2mux"),
-        QStringLiteral("smux"),
-        QStringLiteral("yamux"),
-        QString()};
-}
 
 } // namespace
 
@@ -140,6 +137,8 @@ Config SettingsDialog::config() const
     if (coreSettingsPage_ != nullptr) {
         updated.dns().enableCacheFile4Sbox = coreSettingsPage_->enableCacheFile4Sbox();
         updated.mux4SboxProtocol = coreSettingsPage_->mux4SboxProtocol();
+        updated.dns().enableFragment = coreSettingsPage_->xrayFragmentEnabled();
+        updated.dns().defaultUserAgent = coreSettingsPage_->xrayDefaultUserAgent();
         updated.policy().coreTypeItems = coreSettingsPage_->collectCoreTypeItems();
     }
     if (tunSettingsPage_ != nullptr) {
@@ -225,6 +224,7 @@ void SettingsDialog::setupUi()
     AppTheme::applyCompactFont(restoreBackupButton_);
     connect(restoreBackupButton_, &QPushButton::clicked, this, [this]() {
         restoreBackupRequested_ = true;
+        accept();
     });
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -272,11 +272,12 @@ void SettingsDialog::setCoreVersion(CoreType coreType, const QString& version)
 
 void SettingsDialog::beginCoreUpdate(CoreType coreType)
 {
+    const int coreIndex = coreSettingsTabIndex();
     if (settingsTabBar_ != nullptr) {
-        settingsTabBar_->setCurrentIndex(3);
+        settingsTabBar_->setCurrentIndex(coreIndex);
     }
     if (settingsStackLayout_ != nullptr) {
-        settingsStackLayout_->setCurrentIndex(3);
+        settingsStackLayout_->setCurrentIndex(coreIndex);
     }
     if (coreSettingsPage_ != nullptr) {
         coreSettingsPage_->beginCoreUpdate(coreType);
@@ -295,4 +296,14 @@ void SettingsDialog::finishCoreUpdate(CoreType coreType, bool success, const QSt
     if (coreSettingsPage_ != nullptr) {
         coreSettingsPage_->finishCoreUpdate(coreType, success, message);
     }
+}
+
+int SettingsDialog::coreSettingsTabIndex() const
+{
+    if (settingsStackLayout_ == nullptr || coreSettingsPage_ == nullptr) {
+        return 0;
+    }
+
+    const int index = settingsStackLayout_->indexOf(coreSettingsPage_);
+    return index >= 0 ? index : 0;
 }

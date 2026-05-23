@@ -39,6 +39,8 @@ struct ThemePalette {
     const char* surfaceRaised;
     const char* surfaceMuted;
     const char* surfaceSubtle;
+    const char* sectionHeader;
+    const char* sectionBody;
     const char* control;
     const char* controlHover;
     const char* controlDisabled;
@@ -96,6 +98,8 @@ constexpr ThemePalette kLightPalette{
     .surfaceRaised = "#ffffff",
     .surfaceMuted = "#eef2f6",
     .surfaceSubtle = "#f8fafc",
+    .sectionHeader = "#eef2f6",
+    .sectionBody = "#ffffff",
     .control = "#f8fafc",
     .controlHover = "#eef2f6",
     .controlDisabled = "#eef2f6",
@@ -152,6 +156,8 @@ constexpr ThemePalette kDarkPalette{
     .surfaceRaised = "#2a323b",
     .surfaceMuted = "#303944",
     .surfaceSubtle = "#222932",
+    .sectionHeader = "#20262d",
+    .sectionBody = "#303944",
     .control = "#303944",
     .controlHover = "#394451",
     .controlDisabled = "#29313a",
@@ -235,6 +241,8 @@ void applyThemeTokens(QString& styleSheet, const ThemePalette& palette)
     replaceToken(styleSheet, "surfaceRaised", palette.surfaceRaised);
     replaceToken(styleSheet, "surfaceMuted", palette.surfaceMuted);
     replaceToken(styleSheet, "surfaceSubtle", palette.surfaceSubtle);
+    replaceToken(styleSheet, "sectionHeader", palette.sectionHeader);
+    replaceToken(styleSheet, "sectionBody", palette.sectionBody);
     replaceToken(styleSheet, "control", palette.control);
     replaceToken(styleSheet, "controlHover", palette.controlHover);
     replaceToken(styleSheet, "controlDisabled", palette.controlDisabled);
@@ -615,6 +623,26 @@ QString AppTheme::tableAlternateBaseColor()
 QString AppTheme::tableAlternateBaseColor(QStringView themeName)
 {
     return color(paletteForName(normalizeThemeName(themeName)).surfaceSubtle);
+}
+
+QString AppTheme::linkColor()
+{
+    return color(currentPalette().link);
+}
+
+QString AppTheme::mutedTextColor()
+{
+    return color(currentPalette().textMuted);
+}
+
+QString AppTheme::successColor()
+{
+    return color(currentPalette().success);
+}
+
+QString AppTheme::attentionBorderColor()
+{
+    return color(currentPalette().warning);
 }
 
 QIcon AppTheme::themedSvgIcon(const QString& resourcePath)

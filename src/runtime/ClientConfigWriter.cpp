@@ -1,74 +1,23 @@
 #include "runtime/ClientConfigWriter.h"
 
 #include <QDir>
-#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
-#include <QSet>
 
 #include <utility>
 
-#include "runtime/DnsConfigFragments.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/ProtocolCoreCompat.h"
-#include "runtime/RoutingConfigFragments.h"
 #include "runtime/TunCompatCoreRequirement.h"
-#include "runtime/core/singbox/SingBoxConfigFragments.h"
-#include "runtime/core/xray/XrayConfigFragments.h"
+#include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/ICoreBackend.h"
+#include "runtime/core/singbox/SingBoxCoreBackend.h"
 
 namespace {
-
-const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
-const QString kDefaultAccessLogFileName = QStringLiteral("Vaccess.log");
-const QString kDefaultErrorLogFileName = QStringLiteral("Verror.log");
-
-bool isSupportedSingBoxNetwork(const QString& network)
-{
-    static const QSet<QString> supportedNetworks{
-        QStringLiteral("tcp"),
-        QStringLiteral("ws"),
-        QStringLiteral("grpc"),
-        QStringLiteral("h2"),
-        QStringLiteral("httpupgrade"),
-        QStringLiteral("quic")};
-    return supportedNetworks.contains(network);
-}
-
-bool isSupportedSingBoxNonTcpTransport(ConfigType type)
-{
-    switch (type) {
-    case ConfigType::VMess:
-    case ConfigType::VLESS:
-    case ConfigType::Trojan:
-    case ConfigType::Shadowsocks:
-    case ConfigType::Hysteria2:
-    case ConfigType::TUIC:
-    case ConfigType::AnyTLS:
-    case ConfigType::Naive:
-        return true;
-    case ConfigType::WireGuard:
-    case ConfigType::Socks:
-    case ConfigType::HTTP:
-    case ConfigType::Custom:
-    case ConfigType::Unknown:
-    default:
-        return false;
-    }
-}
-
-bool isSupportedSingBoxShadowsocksTransport(const QString& network)
-{
-    static const QSet<QString> supportedNetworks{
-        QStringLiteral("tcp"),
-        QStringLiteral("ws"),
-        QStringLiteral("quic")};
-    return supportedNetworks.contains(network);
-}
 
 bool isValidJsonObjectText(const QString& value)
 {
@@ -123,7 +72,7 @@ OperationResult ClientConfigWriter::writeClientConfigs(
         return OperationResult::fail(QStringLiteral("Runtime config path is empty."));
     }
 
-    const OperationResult validationResult = validateServer(server);
+    const OperationResult validationResult = validateServer(config, server);
     if (!validationResult.success) {
         return validationResult;
     }
@@ -203,16 +152,16 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
         // can still be created instead of silently starting Xray alone with no TUN inbound.
         GeneratedConfig compat;
         compat.fileName = QStringLiteral("tun-singbox-compat.json");
-        compat.root = buildTunCompatSingBoxRoot(config);
+        compat.root = SingBoxCoreBackend::buildTunCompatClientRoot(config);
         generated.auxiliary.append(compat);
     }
 
     return generated;
 }
 
-OperationResult ClientConfigWriter::validateServer(const VmessItem& server) const
+OperationResult ClientConfigWriter::validateServer(const Config& config, const VmessItem& server) const
 {
-    const CoreType runtimeCore = resolvePreferredCoreType(Config{}, server);
+    const CoreType runtimeCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
     const QString transportSecurity = server.streamSecurity.trimmed();
     const bool realityTransport = ProtocolConfigMapper::isRealityTransport(transportSecurity);
 
@@ -238,36 +187,10 @@ OperationResult ClientConfigWriter::validateServer(const VmessItem& server) cons
         return OperationResult::fail(QStringLiteral("Finalmask must be a valid JSON object."));
     }
 
-    if (runtimeCore != CoreType::SingBox) {
-        return OperationResult::ok();
-    }
-
-    if (ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType).isEmpty()) {
-        return OperationResult::fail(QStringLiteral("The selected server type is not supported by the current sing-box generator."));
-    }
-
-    const QString network = server.network.trimmed().isEmpty()
-        ? QStringLiteral("tcp")
-        : server.network.trimmed().toLower();
-    if (!isSupportedSingBoxNetwork(network)) {
-        return OperationResult::fail(
-            QStringLiteral("sing-box config generation does not support network %1 yet.").arg(network));
-    }
-
-    if (network != QStringLiteral("tcp") && !isSupportedSingBoxNonTcpTransport(server.configType)) {
-        return OperationResult::fail(
-            QStringLiteral("sing-box does not support %1 transport for %2 nodes.")
-                .arg(network, configTypeDisplayName(server.configType)));
-    }
-
-    if (server.configType == ConfigType::Shadowsocks
-        && !isSupportedSingBoxShadowsocksTransport(network)) {
-        return OperationResult::fail(
-            QStringLiteral("sing-box does not support %1 transport for %2 nodes.")
-                .arg(network, configTypeDisplayName(server.configType)));
-    }
-
-    return OperationResult::ok();
+    const ICoreBackend* backend = coreBackend(runtimeCore);
+    return backend != nullptr
+        ? backend->validateServer(server)
+        : OperationResult::fail(QStringLiteral("Unsupported core type: %1.").arg(coreTypeDisplayName(runtimeCore)));
 }
 
 OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& generatedConfig, const QString& filePath) const
@@ -294,181 +217,9 @@ QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem&
     const bool requiresSingBox = server.configType == ConfigType::AnyTLS
         || server.configType == ConfigType::Naive;
     const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
-    const bool useSingBox = requiresSingBox || effectiveCore == CoreType::SingBox;
-    return useSingBox
-        ? buildSingBoxRoot(config, server)
-        : buildLegacyRoot(config, server);
-}
-
-QJsonObject ClientConfigWriter::buildLegacyRoot(const Config& config, const VmessItem& server) const
-{
-    QJsonObject root;
-    root.insert(QStringLiteral("log"), buildLog(config));
-    root.insert(QStringLiteral("inbounds"), buildInbounds(config));
-    root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
-
-    const RoutingItem* selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    const QJsonObject routing = RoutingConfigFragments::buildLegacyRouting(config, selectedRouting);
-    if (!routing.isEmpty()) {
-        root.insert(QStringLiteral("routing"), routing);
-    }
-
-    const QJsonObject dns = DnsConfigFragments::buildLegacyDns(config, selectedRouting);
-    if (!dns.isEmpty()) {
-        root.insert(QStringLiteral("dns"), dns);
-    }
-
-    return root;
-}
-
-QJsonObject ClientConfigWriter::buildSingBoxRoot(const Config& config, const VmessItem& server) const
-{
-    QJsonObject root;
-    root.insert(QStringLiteral("log"), buildSingBoxLog(config));
-    root.insert(QStringLiteral("inbounds"), buildSingBoxInbounds(config));
-    root.insert(QStringLiteral("outbounds"), buildSingBoxOutbounds(config, server));
-    const RoutingItem* selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    root.insert(QStringLiteral("route"), RoutingConfigFragments::buildSingBoxRoute(config, selectedRouting));
-
-    const QJsonObject dns = DnsConfigFragments::buildSingBoxDns(config, selectedRouting);
-    if (!dns.isEmpty()) {
-        root.insert(QStringLiteral("dns"), dns);
-    }
-
-    const QJsonObject experimental = buildSingBoxExperimental(config);
-    if (!experimental.isEmpty()) {
-        root.insert(QStringLiteral("experimental"), experimental);
-    }
-
-    RoutingConfigFragments::migrateGeoToRuleSet(root);
-    return root;
-}
-
-QJsonObject ClientConfigWriter::buildTunCompatSingBoxRoot(const Config& config) const
-{
-    QJsonObject root;
-    root.insert(QStringLiteral("log"), buildSingBoxLog(config));
-
-    QJsonArray inbounds;
-    inbounds.append(SingBoxConfigFragments::buildTunInbound(config));
-    root.insert(QStringLiteral("inbounds"), inbounds);
-
-    root.insert(QStringLiteral("outbounds"), SingBoxConfigFragments::buildTunCompatOutbounds(config));
-    root.insert(QStringLiteral("route"), SingBoxConfigFragments::buildTunCompatRoute(config));
-
-    const QJsonObject dns = SingBoxConfigFragments::buildTunCompatDns();
-    if (!dns.isEmpty()) {
-        root.insert(QStringLiteral("dns"), dns);
-    }
-
-    return root;
-}
-
-QJsonObject ClientConfigWriter::buildSingBoxExperimental(const Config& config) const
-{
-    QJsonObject experimental;
-
-    if (config.dns().enableCacheFile4Sbox) {
-        QJsonObject cacheFile;
-        cacheFile.insert(QStringLiteral("enabled"), true);
-        cacheFile.insert(
-            QStringLiteral("path"),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("cache.db")));
-        cacheFile.insert(QStringLiteral("store_fakeip"), config.dns().fakeIp);
-        experimental.insert(QStringLiteral("cache_file"), cacheFile);
-    }
-
-    return experimental;
-}
-
-QJsonObject ClientConfigWriter::buildLog(const Config& config) const
-{
-    QJsonObject log;
-    log.insert(QStringLiteral("loglevel"), config.logLevel.trimmed().isEmpty() ? QStringLiteral("warning") : config.logLevel);
-    // Match WinForms behavior: empty paths keep access/error on the captured console output,
-    // which allows the Information panel to display proxy/direct hit lines in real time.
-    log.insert(QStringLiteral("access"), config.logEnabled ? kDefaultAccessLogFileName : QString());
-    log.insert(QStringLiteral("error"), config.logEnabled ? kDefaultErrorLogFileName : QString());
-    return log;
-}
-
-QJsonObject ClientConfigWriter::buildSingBoxLog(const Config& config) const
-{
-    QJsonObject log;
-    log.insert(QStringLiteral("disabled"), false);
-    log.insert(QStringLiteral("level"), ProtocolConfigMapper::normalizeSingBoxLogLevel(config.logLevel));
-    return log;
-}
-
-QJsonArray ClientConfigWriter::buildInbounds(const Config& config) const
-{
-    QJsonArray inbounds;
-    inbounds.append(XrayConfigFragments::buildSocksInbound(config, false, 0));
-    inbounds.append(XrayConfigFragments::buildHttpInbound(config, false, 1));
-    inbounds.append(XrayConfigFragments::buildHttpInboundWithTag(
-        config,
-        RoutingConfigFragments::locationProbeTag(),
-        RoutingConfigFragments::locationProbePortOffset()));
-
-    if (config.allowLanConnection) {
-        inbounds.append(XrayConfigFragments::buildSocksInbound(config, true, 2));
-        inbounds.append(XrayConfigFragments::buildHttpInbound(config, true, 3));
-    }
-
-    return inbounds;
-}
-
-QJsonArray ClientConfigWriter::buildSingBoxInbounds(const Config& config) const
-{
-    QJsonArray inbounds;
-    if (config.tun().tunModeItem.enableTun) {
-        inbounds.append(SingBoxConfigFragments::buildTunInbound(config));
-    }
-    inbounds.append(SingBoxConfigFragments::buildSocksInbound(config, false, 0));
-    inbounds.append(SingBoxConfigFragments::buildHttpInbound(config, false, 1));
-    inbounds.append(SingBoxConfigFragments::buildHttpInboundWithTag(
-        config,
-        RoutingConfigFragments::locationProbeTag(),
-        RoutingConfigFragments::locationProbePortOffset()));
-
-    if (config.allowLanConnection) {
-        inbounds.append(SingBoxConfigFragments::buildSocksInbound(config, true, 2));
-        inbounds.append(SingBoxConfigFragments::buildHttpInbound(config, true, 3));
-    }
-
-    return inbounds;
-}
-
-QJsonArray ClientConfigWriter::buildOutbounds(const Config& config, const VmessItem& server) const
-{
-    QJsonArray outbounds;
-    QJsonObject primaryOutbound = XrayConfigFragments::buildPrimaryOutbound(config, server);
-    if (config.dns().enableFragment) {
-        const QJsonObject streamSettings = primaryOutbound.value(QStringLiteral("streamSettings")).toObject();
-        if (!streamSettings.value(QStringLiteral("security")).toString().trimmed().isEmpty()) {
-            QJsonObject updatedStreamSettings = streamSettings;
-            QJsonObject sockopt = updatedStreamSettings.value(QStringLiteral("sockopt")).toObject();
-            if (sockopt.value(QStringLiteral("dialerProxy")).toString().trimmed().isEmpty()) {
-                sockopt.insert(QStringLiteral("dialerProxy"), QStringLiteral("frag-proxy"));
-                updatedStreamSettings.insert(QStringLiteral("sockopt"), sockopt);
-                primaryOutbound.insert(QStringLiteral("streamSettings"), updatedStreamSettings);
-                outbounds.append(XrayConfigFragments::buildFragmentOutbound());
-            }
-        }
-    }
-    outbounds.append(primaryOutbound);
-    outbounds.append(XrayConfigFragments::buildDirectOutbound(config));
-    outbounds.append(XrayConfigFragments::buildBlackholeOutbound());
-    return outbounds;
-}
-
-QJsonArray ClientConfigWriter::buildSingBoxOutbounds(const Config& config, const VmessItem& server) const
-{
-    QJsonArray outbounds;
-    outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, server));
-    outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
-    outbounds.append(SingBoxConfigFragments::buildBlockOutbound());
-    return outbounds;
+    const CoreType rootCore = requiresSingBox ? CoreType::SingBox : effectiveCore;
+    const ICoreBackend* backend = coreBackend(rootCore);
+    return backend != nullptr ? backend->buildClientRoot(config, server) : QJsonObject{};
 }
 
 QString ClientConfigWriter::resolveCustomConfigPath(const QString& address) const

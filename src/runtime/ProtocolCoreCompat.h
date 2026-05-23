@@ -3,51 +3,37 @@
 #include <QList>
 #include <QString>
 
+#include <algorithm>
+
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/core/CoreCatalog.h"
 
 inline QList<CoreType> supportedCoreTypes(ConfigType configType)
 {
-    switch (configType) {
-    case ConfigType::VMess:
-    case ConfigType::Custom:
-    case ConfigType::Shadowsocks:
-    case ConfigType::Socks:
-    case ConfigType::VLESS:
-    case ConfigType::Trojan:
-    case ConfigType::HTTP:
-    case ConfigType::Hysteria2:
-    case ConfigType::TUIC:
-    case ConfigType::WireGuard:
-    case ConfigType::AnyTLS:
-    case ConfigType::Naive:
-        return { CoreType::Xray, CoreType::SingBox };
-    default:
-        return {};
+    QList<CoreType> coreTypes;
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        if (descriptor.supportedConfigTypes.contains(configType)) {
+            coreTypes.append(descriptor.type);
+        }
     }
+    return coreTypes;
 }
 
 inline QList<CoreType> availableCoreTypes()
 {
-    return { CoreType::Xray, CoreType::SingBox };
+    return catalogCoreTypes();
 }
 
 inline QList<ConfigType> configurableCoreProtocols()
 {
-    return {
-        ConfigType::VMess,
-        ConfigType::Custom,
-        ConfigType::Shadowsocks,
-        ConfigType::Socks,
-        ConfigType::VLESS,
-        ConfigType::Trojan,
-        ConfigType::HTTP,
-        ConfigType::Hysteria2,
-        ConfigType::TUIC,
-        ConfigType::WireGuard,
-        ConfigType::AnyTLS,
-        ConfigType::Naive
-    };
+    QList<ConfigType> protocols;
+    for (const ConfigType configType : coreCatalogSupportedConfigTypes()) {
+        if (!supportedCoreTypes(configType).isEmpty()) {
+            protocols.append(configType);
+        }
+    }
+    return protocols;
 }
 
 inline bool protocolSupportsCore(ConfigType configType, CoreType coreType)
@@ -85,18 +71,24 @@ inline CoreType defaultCoreTypeForProtocol(ConfigType configType)
 
 inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
 {
-    QList<CoreType> prioritized;
-    const QList<CoreType> supported = supportedCoreTypes(configType);
-    if (supported.contains(CoreType::SingBox)) {
-        prioritized.append(CoreType::SingBox);
-    }
-    if (supported.contains(CoreType::Xray)) {
-        prioritized.append(CoreType::Xray);
-    }
-    for (const CoreType coreType : supported) {
-        if (!prioritized.contains(coreType)) {
-            prioritized.append(coreType);
+    QList<CoreDescriptor> matchingDescriptors;
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        if (descriptor.supportedConfigTypes.contains(configType)) {
+            matchingDescriptors.append(descriptor);
         }
+    }
+
+    std::sort(
+        matchingDescriptors.begin(),
+        matchingDescriptors.end(),
+        [](const CoreDescriptor& left, const CoreDescriptor& right) {
+            return left.protocolPriority < right.protocolPriority;
+        });
+
+    QList<CoreType> prioritized;
+    prioritized.reserve(matchingDescriptors.size());
+    for (const CoreDescriptor& descriptor : matchingDescriptors) {
+        prioritized.append(descriptor.type);
     }
     return prioritized;
 }

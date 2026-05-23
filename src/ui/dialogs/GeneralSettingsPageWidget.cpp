@@ -9,16 +9,6 @@
 
 namespace {
 
-QStringList defaultUserAgentOptions()
-{
-    return {
-        QString(),
-        QStringLiteral("chrome"),
-        QStringLiteral("firefox"),
-        QStringLiteral("edge"),
-        QStringLiteral("golang")};
-}
-
 QStringList defaultFingerprintOptions()
 {
     return {
@@ -52,10 +42,8 @@ void GeneralSettingsPageWidget::setConfig(const Config& config)
     sniffingEnabledCheck_->setChecked(config.sniffingEnabled);
     routeOnlyCheck_->setChecked(config.routeOnly);
     localPortSpin_->setValue(config.localPort > 0 ? config.localPort : 10808);
-    enableFragmentCheck_->setChecked(config.dns().enableFragment);
     defaultAllowInsecureCheck_->setChecked(config.dns().defaultAllowInsecure);
     defaultFingerprintCombo_->setCurrentText(config.dns().defaultFingerprint);
-    defaultUserAgentCombo_->setCurrentText(config.dns().defaultUserAgent);
 
     const QString normalizedLanguage = config.ui().languageCode.trimmed();
     const int languageIndex = languageCombo_->findData(normalizedLanguage);
@@ -76,10 +64,8 @@ void GeneralSettingsPageWidget::applyToConfig(Config& config) const
     config.sniffingEnabled = sniffingEnabledCheck_->isChecked();
     config.routeOnly = routeOnlyCheck_->isChecked();
     config.localPort = localPortSpin_->value();
-    config.dns().enableFragment = enableFragmentCheck_->isChecked();
     config.dns().defaultAllowInsecure = defaultAllowInsecureCheck_->isChecked();
     config.dns().defaultFingerprint = defaultFingerprintCombo_->currentText().trimmed();
-    config.dns().defaultUserAgent = defaultUserAgentCombo_->currentText().trimmed();
     config.ui().languageCode = languageCombo_->currentData().toString().trimmed();
     config.ui().themeName = AppTheme::normalizeThemeName(themeCombo_->currentData().toString());
 }
@@ -100,9 +86,6 @@ void GeneralSettingsPageWidget::setupUi()
     localPortSpin_->setObjectName(QStringLiteral("settingsLocalPortSpin"));
     localPortSpin_->setRange(1, 65535);
 
-    enableFragmentCheck_ = new QCheckBox(tr("Enable fragmentation for TLS outbounds"), this);
-    enableFragmentCheck_->setObjectName(QStringLiteral("settingsEnableFragmentCheck"));
-
     defaultAllowInsecureCheck_ = new QCheckBox(tr("Allow insecure TLS by default"), this);
     defaultAllowInsecureCheck_->setObjectName(QStringLiteral("settingsDefaultAllowInsecureCheck"));
 
@@ -110,11 +93,6 @@ void GeneralSettingsPageWidget::setupUi()
     defaultFingerprintCombo_->setObjectName(QStringLiteral("settingsDefaultFingerprintCombo"));
     defaultFingerprintCombo_->setEditable(true);
     defaultFingerprintCombo_->addItems(defaultFingerprintOptions());
-
-    defaultUserAgentCombo_ = new QComboBox(this);
-    defaultUserAgentCombo_->setObjectName(QStringLiteral("settingsDefaultUserAgentCombo"));
-    defaultUserAgentCombo_->setEditable(true);
-    defaultUserAgentCombo_->addItems(defaultUserAgentOptions());
 
     languageCombo_ = new QComboBox(this);
     languageCombo_->setObjectName(QStringLiteral("settingsLanguageCombo"));
@@ -134,10 +112,8 @@ void GeneralSettingsPageWidget::setupUi()
         sniffingEnabledCheck_,
         routeOnlyCheck_,
         localPortSpin_,
-        enableFragmentCheck_,
         defaultAllowInsecureCheck_,
         defaultFingerprintCombo_,
-        defaultUserAgentCombo_,
         languageCombo_,
         themeCombo_});
 
@@ -149,10 +125,8 @@ void GeneralSettingsPageWidget::setupUi()
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, allowLanConnectionCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, sniffingEnabledCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, routeOnlyCheck_);
-    generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, enableFragmentCheck_);
     generalLayout->setWidget(generalLayout->rowCount(), QFormLayout::SpanningRole, defaultAllowInsecureCheck_);
     generalLayout->addRow(tr("Default Fingerprint"), defaultFingerprintCombo_);
-    generalLayout->addRow(tr("Default User-Agent"), defaultUserAgentCombo_);
 
     connect(sniffingEnabledCheck_, &QCheckBox::toggled, this, [this](bool) {
         updateFieldState();

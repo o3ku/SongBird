@@ -11,6 +11,7 @@
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "common/UserAgent.h"
@@ -20,6 +21,10 @@ namespace {
 
 const QString kUaNekobox = QStringLiteral("Nekobox");
 const QString kUaClashVerge = QStringLiteral("ClashVerge");
+constexpr int kEnabledColumn = 0;
+constexpr int kUrlColumn = 1;
+constexpr int kRemarksColumn = 2;
+constexpr int kUserAgentColumn = 3;
 
 void enableCustomUserAgentInput(QComboBox* combo, const QString& text = QString())
 {
@@ -67,6 +72,21 @@ QComboBox* createUserAgentCombo(QWidget* parent, const QString& storedValue)
     return combo;
 }
 
+QString subscriptionDomainFromUrl(const QString& value)
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty()) {
+        return {};
+    }
+
+    QUrl url(trimmed);
+    if (url.host().trimmed().isEmpty() && !trimmed.contains(QStringLiteral("://"))) {
+        url = QUrl(QStringLiteral("https://") + trimmed);
+    }
+
+    return url.host().trimmed();
+}
+
 } // namespace
 
 SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
@@ -78,17 +98,17 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_->setColumnCount(4);
     table_->setHorizontalHeaderLabels({
         QStringLiteral("Enabled"),
-        QStringLiteral("Remarks"),
         QStringLiteral("URL"),
+        QStringLiteral("Remarks"),
         QStringLiteral("User Agent")
     });
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     table_->verticalHeader()->setVisible(false);
-    table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    table_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(kEnabledColumn, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(kUrlColumn, QHeaderView::Stretch);
+    table_->horizontalHeader()->setSectionResizeMode(kRemarksColumn, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(kUserAgentColumn, QHeaderView::ResizeToContents);
     AppTheme::applyServerTableStyle(table_);
     AppTheme::applyCompactFont(table_);
     AppTheme::applyCompactFont(table_->horizontalHeader());
@@ -110,7 +130,7 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     connect(addButton_, &QPushButton::clicked, this, [this]() {
         appendRow(SubItem{
             QString(),
-            QStringLiteral("Subscription"),
+            QString(),
             QStringLiteral("https://"),
             true,
             QString()});
@@ -157,9 +177,9 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
     QList<SubItem> items;
     const int rowCount = table_ == nullptr ? 0 : table_->rowCount();
     for (int row = 0; row < rowCount; ++row) {
-        auto* enabledItem = table_->item(row, 0);
-        auto* remarksItem = table_->item(row, 1);
-        auto* urlItem = table_->item(row, 2);
+        auto* enabledItem = table_->item(row, kEnabledColumn);
+        auto* urlItem = table_->item(row, kUrlColumn);
+        auto* remarksItem = table_->item(row, kRemarksColumn);
 
         SubItem item;
         if (remarksItem != nullptr) {
@@ -168,11 +188,16 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
         }
         item.enabled = enabledItem == nullptr || enabledItem->checkState() == Qt::Checked;
         item.url = urlItem == nullptr ? QString() : urlItem->text().trimmed();
+        const QString subscriptionDomain = subscriptionDomainFromUrl(item.url);
+        if (subscriptionDomain.isEmpty()) {
+            continue;
+        }
+        if (item.remarks.isEmpty()) {
+            item.remarks = subscriptionDomain;
+        }
         item.userAgent = userAgentAtRow(row);
 
-        if (!item.remarks.isEmpty() || !item.url.isEmpty()) {
-            items.append(item);
-        }
+        items.append(item);
     }
 
     return items;
@@ -221,11 +246,11 @@ void SubscriptionSettingsPageWidget::appendRow(const SubItem& item)
     auto* urlItem = new QTableWidgetItem(item.url);
     auto* userAgentItem = new QTableWidgetItem();
 
-    table_->setItem(row, 0, enabledItem);
-    table_->setItem(row, 1, remarksItem);
-    table_->setItem(row, 2, urlItem);
-    table_->setItem(row, 3, userAgentItem);
-    table_->setCellWidget(row, 3, createUserAgentCombo(table_, item.userAgent));
+    table_->setItem(row, kEnabledColumn, enabledItem);
+    table_->setItem(row, kUrlColumn, urlItem);
+    table_->setItem(row, kRemarksColumn, remarksItem);
+    table_->setItem(row, kUserAgentColumn, userAgentItem);
+    table_->setCellWidget(row, kUserAgentColumn, createUserAgentCombo(table_, item.userAgent));
 }
 
 QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const
@@ -234,16 +259,16 @@ QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const
         return {};
     }
 
-    if (auto* combo = qobject_cast<QComboBox*>(table_->cellWidget(row, 3))) {
+    if (auto* combo = qobject_cast<QComboBox*>(table_->cellWidget(row, kUserAgentColumn))) {
         return combo->currentText().trimmed();
     }
-    if (auto* wrapper = table_->cellWidget(row, 3)) {
+    if (auto* wrapper = table_->cellWidget(row, kUserAgentColumn)) {
         if (auto* combo = wrapper->findChild<QComboBox*>(QStringLiteral("uaCombo"))) {
             return combo->currentText().trimmed();
         }
     }
 
-    auto* userAgentItem = table_->item(row, 3);
+    auto* userAgentItem = table_->item(row, kUserAgentColumn);
     return userAgentItem == nullptr ? QString() : userAgentItem->text().trimmed();
 }
 

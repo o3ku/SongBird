@@ -227,6 +227,17 @@ QString readProcessOutput(QProcess& process)
     return QString::fromUtf8(process.readAll()).trimmed();
 }
 
+bool shouldRetryUrlProbe(const SpeedTestServiceInternal::UrlProbeResult& result)
+{
+    if (result.status == SpeedTestServiceInternal::UrlProbeStatus::Timeout) {
+        return true;
+    }
+
+    return result.status == SpeedTestServiceInternal::UrlProbeStatus::Failed
+        && result.latencyMs >= 0
+        && result.latencyMs < kProbeRetryThresholdMs;
+}
+
 SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
     QNetworkProxy::ProxyType proxyType,
     int proxyPort,
@@ -415,14 +426,9 @@ QString runUrlTest(
         urlTestUrl,
         kRuntimeRequestTimeoutMs);
 
-    // A connect-reset that happens within the first ~hundreds of ms usually
-    // means the outbound was still warming up (TLS handshake to the upstream
-    // not yet established). One retry catches that without doubling the cost
-    // for healthy servers.
-    if (probeResult.status == SpeedTestServiceInternal::UrlProbeStatus::Failed
-        && probeResult.latencyMs >= 0
-        && probeResult.latencyMs < kProbeRetryThresholdMs
-        && !cancelled.load()) {
+    // A connect-reset during warm-up or one timed-out request can be transient.
+    // Retry once without increasing the cost for healthy first-attempt results.
+    if (shouldRetryUrlProbe(probeResult) && !cancelled.load()) {
         probeResult = probeProxiedUrl(
             readyProxy->type,
             readyProxy->port,
@@ -808,10 +814,7 @@ bool runBatchedGroup(
                 probeEntry.url,
                 kBatchProbeTimeoutMs);
 
-            if (probeResult.status == SpeedTestServiceInternal::UrlProbeStatus::Failed
-                && probeResult.latencyMs >= 0
-                && probeResult.latencyMs < kProbeRetryThresholdMs
-                && !cancelled.load()) {
+            if (shouldRetryUrlProbe(probeResult) && !cancelled.load()) {
                 probeResult = probeProxiedUrl(
                     QNetworkProxy::Socks5Proxy,
                     probeEntry.socksPort,

@@ -75,7 +75,6 @@ public:
     void setCurrentServerLocation(const QString& location);
     void setCurrentServerWarning(const QString& warning);
     void setRoutingSummary(const QString& routingText, const QString& listenText);
-    void setSpeedTestRunning(bool running);
     void setSubscriptionUpdateRunning(bool running);
     void setCoreStartupChecklist(const QStringList& items);
     void clearCoreStartupChecklist();
@@ -220,6 +219,9 @@ private:
     void syncProxyToolbarController();
     void setLoadingOverlayVisible(bool visible, const QString& title, const QStringList& items);
     void clearLoadingOverlayItems();
+    void rebuildLoadingOverlayItems(const QStringList& items);
+    void updateLoadingOverlayItems(const QStringList& items);
+    void updateLoadingChecklistRow(QWidget* row, const QString& item);
     void updateLoadingOverlayGeometry();
 
     ServerTableModel* serverModel_ = nullptr;
@@ -297,6 +299,7 @@ private:
     QWidget* loadingActionWidget_ = nullptr;
     QVBoxLayout* loadingItemsLayout_ = nullptr;
     QPushButton* loadingDismissButton_ = nullptr;
+    QStringList loadingChecklistItems_;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;
@@ -306,7 +309,6 @@ private:
     bool coreTransitionPending_ = false;
     bool qrPreviewVisible_ = false;
     QString currentServerLocation_;
-    bool speedTestRunning_ = false;
     QString currentServerWarning_;
     bool backgroundTaskRunning_ = false;
     bool coreStartupChecklistVisible_ = false;
