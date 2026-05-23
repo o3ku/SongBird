@@ -6,8 +6,6 @@
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "D:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
         "CMAKE_PREFIX_PATH": "$env{QT5_PREFIX_PATH}",
         "SONGBIRD_FORCE_MAJOR_VERSION": "5"
       },
