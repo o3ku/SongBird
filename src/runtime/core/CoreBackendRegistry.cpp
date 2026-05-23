@@ -22,11 +22,6 @@ QList<const ICoreBackend*> coreBackends()
     };
 }
 
-QList<CoreType> registeredCoreTypes()
-{
-    return catalogCoreTypes();
-}
-
 const ICoreBackend* coreBackend(CoreType coreType)
 {
     const CoreType runtimeCoreType = resolveRuntimeCoreType(coreType);

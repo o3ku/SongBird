@@ -1116,12 +1116,15 @@ void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsC
 
     QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(userAgentCombo->currentText()),
              QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+    auto* urlItem = subTable->item(0, 1);
+    QVERIFY(urlItem != nullptr);
+    urlItem->setText(QStringLiteral("https://example.com/sub"));
     userAgentCombo->setEditText(QStringLiteral("CustomUA/9.9"));
 
     const Config updated = dialog.config();
     QCOMPARE(updated.collection().subscriptions.size(), 1);
     QCOMPARE(updated.collection().subscriptions.at(0).userAgent, QStringLiteral("CustomUA/9.9"));
-    QCOMPARE(updated.collection().subscriptions.at(0).url, QStringLiteral("https://"));
+    QCOMPARE(updated.collection().subscriptions.at(0).url, QStringLiteral("https://example.com/sub"));
 }
 
 void SettingsDialogTests::settingsDialogTabBarUsesImageReferenceStyleHooks()

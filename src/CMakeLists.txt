@@ -63,8 +63,6 @@ set(SONGBIRD_SOURCES
     runtime/core/xray/XrayConfigFragments.cpp
     runtime/core/xray/XrayCoreBackend.h
     runtime/core/xray/XrayCoreBackend.cpp
-    runtime/ServerConfigWriter.h
-    runtime/ServerConfigWriter.cpp
     runtime/ICoreProcessHost.h
     runtime/QtCoreProcessHost.h
     runtime/QtCoreProcessHost.cpp
@@ -91,8 +89,6 @@ set(SONGBIRD_SOURCES
     services/ServerService.cpp
     services/ConfigBackupService.h
     services/ConfigBackupService.cpp
-    services/PolicyGroupService.h
-    services/PolicyGroupService.cpp
     services/AppUpdateService.h
     services/AppUpdateService.cpp
     services/CoreUpdateService.h
@@ -111,8 +107,6 @@ set(SONGBIRD_SOURCES
     services/SubscriptionUpdateService.cpp
     subscription/CustomConfigTextParser.h
     subscription/CustomConfigTextParser.cpp
-    subscription/ConfigFileImportParser.h
-    subscription/ConfigFileImportParser.cpp
     subscription/ShareUrlBuilder.h
     subscription/ShareUrlBuilder.cpp
     subscription/ShareUrlParser.h

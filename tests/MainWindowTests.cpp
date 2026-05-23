@@ -1239,17 +1239,14 @@ void MainWindowTests::serverTableDisablesDragReorderingAndKeepsMultiSelection()
     QVERIFY(serverFilterEdit != nullptr);
     QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
     QCOMPARE(serverView->model()->rowCount(), 2);
-    QVERIFY(!serverView->rowsReorderEnabled());
     QVERIFY(serverView->toolTip().isEmpty());
 
     selectServerRowsByDisplayName(serverView, {QStringLiteral("First"), QStringLiteral("Second")});
     QCOMPARE(selectedServerDisplayNames(serverView), QStringList({QStringLiteral("First"), QStringLiteral("Second")}));
     QCOMPARE(serverView->selectionModel()->selectedRows().size(), 2);
-    QVERIFY(!serverView->moveSelectedRowsTo(2));
 
     serverFilterEdit->setText(QStringLiteral("First"));
     QCoreApplication::processEvents();
-    QVERIFY(!serverView->rowsReorderEnabled());
     QVERIFY(serverView->toolTip().isEmpty());
 }
 

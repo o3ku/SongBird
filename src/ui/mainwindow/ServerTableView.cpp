@@ -33,19 +33,9 @@ void ServerTableView::setRowsReorderEnabled(bool enabled)
     setAcceptDrops(enabled);
 }
 
-bool ServerTableView::rowsReorderEnabled() const
-{
-    return rowsReorderEnabled_;
-}
-
 void ServerTableView::setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler)
 {
     rowsMoveHandler_ = std::move(handler);
-}
-
-bool ServerTableView::moveSelectedRowsTo(int targetRow)
-{
-    return requestMoveSelectedRows(targetRow);
 }
 
 void ServerTableView::flashAttention(int durationMs)

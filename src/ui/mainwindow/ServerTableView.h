@@ -16,9 +16,7 @@ public:
     explicit ServerTableView(QWidget* parent = nullptr);
 
     void setRowsReorderEnabled(bool enabled);
-    bool rowsReorderEnabled() const;
     void setRowsMoveHandler(std::function<void(const QList<int>& rows, int targetRow)> handler);
-    bool moveSelectedRowsTo(int targetRow);
     void flashAttention(int durationMs = 1600);
 
 protected:

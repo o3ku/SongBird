@@ -129,11 +129,6 @@ bool CoreStartupChecklistController::overlayRequested() const
     return overlayRequested_;
 }
 
-bool CoreStartupChecklistController::overlayShown() const
-{
-    return overlayShown_;
-}
-
 bool CoreStartupChecklistController::overlayActive() const
 {
     return overlayShown_ || overlayRequested_;

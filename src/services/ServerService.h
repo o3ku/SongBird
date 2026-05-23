@@ -23,7 +23,6 @@ public:
     QList<VmessItem> list(const Config& config) const;
     OperationResult addServer(Config& config, const VmessItem& item);
     OperationResult updateServer(Config& config, const QString& indexId, const VmessItem& item);
-    OperationResult duplicateServer(Config& config, const QString& indexId);
     OperationResult removeServers(Config& config, const QList<QString>& indexIds);
     OperationResult moveServers(Config& config, const QList<QString>& indexIds, ServerMoveOperation operation);
     OperationResult reorderServers(Config& config, const QList<QString>& orderedIndexIds);

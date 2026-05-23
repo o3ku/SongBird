@@ -105,50 +105,6 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
     return OperationResult::ok(QStringLiteral("Server updated."));
 }
 
-OperationResult ServerService::duplicateServer(Config& config, const QString& indexId)
-{
-    if (indexId.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No server selected for duplication."));
-    }
-
-    auto it = std::find_if(
-        config.collection().servers.begin(),
-        config.collection().servers.end(),
-        [&indexId](const VmessItem& existing) {
-            return existing.indexId == indexId;
-        });
-    if (it == config.collection().servers.end()) {
-        return OperationResult::fail(QStringLiteral("The selected server does not exist."));
-    }
-
-    VmessItem duplicated = *it;
-    duplicated.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    duplicated.subId.clear();
-    duplicated.testResult.clear();
-
-    const QString baseRemarks = duplicated.remarks.trimmed();
-    duplicated.remarks = baseRemarks.isEmpty()
-        ? QStringLiteral("Server copy")
-        : QStringLiteral("%1 copy").arg(baseRemarks);
-
-    if (duplicated.configType == ConfigType::Custom) {
-        duplicated.address = resolveCustomConfigPath(it->address);
-        const OperationResult customResult = prepareCustomServer(duplicated, nullptr);
-        if (!customResult.success) {
-            return customResult;
-        }
-    }
-
-    const int insertIndex = static_cast<int>(std::distance(config.collection().servers.begin(), it)) + 1;
-    config.collection().servers.insert(insertIndex, duplicated);
-
-    if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after duplicating the server."));
-    }
-
-    return OperationResult::ok(QStringLiteral("Server duplicated."));
-}
-
 OperationResult ServerService::removeServers(Config& config, const QList<QString>& indexIds)
 {
     if (indexIds.isEmpty()) {

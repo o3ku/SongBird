@@ -2,7 +2,7 @@
 
 SongBird is a lightweight native Windows proxy client written in Qt/C++. It started as a rewrite and simplification of [v2rayN](https://github.com/2dust/v2rayN), with a smaller runtime footprint and a single JSON configuration file.
 
-Current version: **2.0.0**
+Current version: **2.1.0**
 
 SongBird uses `songbird.json` for user configuration. It does not require the .NET runtime, NuGet packages, or external UI assets at runtime; the application is built as a native `SongBird.exe`.
 

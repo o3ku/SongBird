@@ -27,7 +27,6 @@ public:
 
     bool hasSteps() const;
     bool overlayRequested() const;
-    bool overlayShown() const;
     bool overlayActive() const;
     CoreStartupCheckpointStatus statusOf(const QString& step) const;
 

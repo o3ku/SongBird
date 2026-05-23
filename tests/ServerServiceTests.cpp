@@ -71,16 +71,6 @@ private slots:
     void updateServerRejectsInvalidPort();
     void updateServerReturnsFailureWhenSaveFails();
 
-    // duplicateServer
-    void duplicateServerCreatesCopyWithNewIndexId();
-    void duplicateServerClearsSubId();
-    void duplicateServerClearsTestResult();
-    void duplicateServerAppendsCopySuffix();
-    void duplicateServerInsertsAfterOriginal();
-    void duplicateServerRejectsEmptyIndexId();
-    void duplicateServerRejectsMissingServer();
-    void duplicateServerReturnsFailureWhenSaveFails();
-
     // removeServers
     void removeServerRemovesByIndexId();
     void removeServersRemovesMultiple();
@@ -419,101 +409,6 @@ void ServerServiceTests::updateServerReturnsFailureWhenSaveFails()
     updated.port = 200;
 
     const OperationResult result = service_->updateServer(config, kId1, updated);
-    QVERIFY(!result.success);
-}
-
-// ---------------------------------------------------------------------------
-// duplicateServer
-// ---------------------------------------------------------------------------
-
-void ServerServiceTests::duplicateServerCreatesCopyWithNewIndexId()
-{
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100),
-    });
-
-    const OperationResult result = service_->duplicateServer(config, kId1);
-    QVERIFY(result.success);
-    QCOMPARE(config.collection().servers.size(), 2);
-
-    const VmessItem& original = config.collection().servers.first();
-    const VmessItem& dup = config.collection().servers.last();
-    QVERIFY(original.indexId != dup.indexId);
-    QVERIFY(!dup.indexId.isEmpty());
-}
-
-void ServerServiceTests::duplicateServerClearsSubId()
-{
-    VmessItem original = makeServer(kId1, kAddr1, 100);
-    original.subId = QStringLiteral("sub-abc");
-    Config config = makeConfigWithServers({original});
-
-    service_->duplicateServer(config, kId1);
-    QVERIFY(config.collection().servers.last().subId.isEmpty());
-}
-
-void ServerServiceTests::duplicateServerClearsTestResult()
-{
-    VmessItem original = makeServer(kId1, kAddr1, 100);
-    original.testResult = QStringLiteral("99ms");
-    Config config = makeConfigWithServers({original});
-
-    service_->duplicateServer(config, kId1);
-    QVERIFY(config.collection().servers.last().testResult.isEmpty());
-}
-
-void ServerServiceTests::duplicateServerAppendsCopySuffix()
-{
-    VmessItem original = makeServer(kId1, kAddr1, 100);
-    original.remarks = QStringLiteral("my-server");
-    Config config = makeConfigWithServers({original});
-
-    service_->duplicateServer(config, kId1);
-    QCOMPARE(config.collection().servers.last().remarks, QStringLiteral("my-server copy"));
-}
-
-void ServerServiceTests::duplicateServerInsertsAfterOriginal()
-{
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100),
-        makeServer(kId2, kAddr2, 200),
-        makeServer(kId3, kAddr3, 300),
-    });
-
-    service_->duplicateServer(config, kId2);
-    // Original order: 0=id1, 1=id2, 2=id3
-    // After duplicate of id2: 0=id1, 1=id2, 2=dup(id2), 3=id3
-    QCOMPARE(config.collection().servers.size(), 4);
-    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
-    QCOMPARE(config.collection().servers.at(1).indexId, kId2);
-    QVERIFY(config.collection().servers.at(2).indexId != kId2);
-    QCOMPARE(config.collection().servers.at(2).address, kAddr2); // same address as original
-    QCOMPARE(config.collection().servers.at(3).indexId, kId3);
-}
-
-void ServerServiceTests::duplicateServerRejectsEmptyIndexId()
-{
-    Config config;
-    const OperationResult result = service_->duplicateServer(config, QString());
-    QVERIFY(!result.success);
-}
-
-void ServerServiceTests::duplicateServerRejectsMissingServer()
-{
-    Config config;
-    const OperationResult result = service_->duplicateServer(config, kId1);
-    QVERIFY(!result.success);
-    QVERIFY(result.message.contains(QStringLiteral("does not exist")));
-}
-
-void ServerServiceTests::duplicateServerReturnsFailureWhenSaveFails()
-{
-    mock_->saveSucceeds_ = false;
-    Config config = makeConfigWithServers({
-        makeServer(kId1, kAddr1, 100),
-    });
-
-    const OperationResult result = service_->duplicateServer(config, kId1);
     QVERIFY(!result.success);
 }
 

@@ -8,7 +8,6 @@
 class ICoreBackend;
 
 QList<const ICoreBackend*> coreBackends();
-QList<CoreType> registeredCoreTypes();
 const ICoreBackend* coreBackend(CoreType coreType);
 const ICoreBackend* coreBackendForExecutableName(const QString& fileName);
 QString normalizeCoreVersionTag(QString value);
