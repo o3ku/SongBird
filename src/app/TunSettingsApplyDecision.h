@@ -2,6 +2,50 @@
 
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
+#include "runtime/ProtocolCoreCompat.h"
+
+inline QList<CoreTypeItem> normalizedCoreTypeItemsForComparison(const Config& config)
+{
+    QList<CoreTypeItem> items;
+    const QList<ConfigType> protocols = configurableCoreProtocols();
+    items.reserve(protocols.size());
+
+    for (const ConfigType configType : protocols) {
+        const CoreType configuredCore = configuredCoreTypeForProtocol(config, configType);
+        const CoreType effectiveCore = configuredCore == CoreType::Unknown
+            ? defaultCoreTypeForProtocol(configType)
+            : configuredCore;
+        items.append(CoreTypeItem{
+            static_cast<int>(configType),
+            static_cast<int>(effectiveCore)});
+    }
+
+    return items;
+}
+
+inline TunModeItem normalizedTunModeItem(TunModeItem item)
+{
+    item.stack = item.stack.trimmed();
+    if (item.stack.isEmpty()) {
+        item.stack = QStringLiteral("system");
+    }
+
+    if (item.mtu <= 0) {
+        item.mtu = 9000;
+    }
+
+    item.icmpRouting = item.icmpRouting.trimmed();
+    if (item.icmpRouting.isEmpty()) {
+        item.icmpRouting = QStringLiteral("rule");
+    }
+
+    item.udpRouting = item.udpRouting.trimmed();
+    if (item.udpRouting.isEmpty()) {
+        item.udpRouting = QStringLiteral("direct");
+    }
+
+    return item;
+}
 
 struct TunSettingsApplyDecision {
     bool tunSettingsChanged = false;
@@ -18,14 +62,17 @@ struct TunSettingsSaveBehavior {
 
 inline bool areTunModeItemsEqual(const TunModeItem& lhs, const TunModeItem& rhs)
 {
-    return lhs.enableTun == rhs.enableTun
-        && lhs.autoRoute == rhs.autoRoute
-        && lhs.strictRoute == rhs.strictRoute
-        && lhs.stack == rhs.stack
-        && lhs.mtu == rhs.mtu
-        && lhs.enableIPv6Address == rhs.enableIPv6Address
-        && lhs.icmpRouting == rhs.icmpRouting
-        && lhs.enableLegacyProtect == rhs.enableLegacyProtect;
+    const TunModeItem normalizedLhs = normalizedTunModeItem(lhs);
+    const TunModeItem normalizedRhs = normalizedTunModeItem(rhs);
+    return normalizedLhs.enableTun == normalizedRhs.enableTun
+        && normalizedLhs.autoRoute == normalizedRhs.autoRoute
+        && normalizedLhs.strictRoute == normalizedRhs.strictRoute
+        && normalizedLhs.stack == normalizedRhs.stack
+        && normalizedLhs.mtu == normalizedRhs.mtu
+        && normalizedLhs.enableIPv6Address == normalizedRhs.enableIPv6Address
+        && normalizedLhs.icmpRouting == normalizedRhs.icmpRouting
+        && normalizedLhs.udpRouting == normalizedRhs.udpRouting
+        && normalizedLhs.enableLegacyProtect == normalizedRhs.enableLegacyProtect;
 }
 
 inline TunSettingsApplyDecision evaluateTunSettingsApply(
@@ -89,10 +136,14 @@ inline bool shouldHotApplyRuntimeSettings(
     const Config& updated,
     const TunSettingsApplyDecision& tunDecision)
 {
+    const int previousLocalPort = previous.localPort > 0 ? previous.localPort : 10808;
+    const int updatedLocalPort = updated.localPort > 0 ? updated.localPort : 10808;
+    const QList<CoreTypeItem> previousCoreTypeItems = normalizedCoreTypeItemsForComparison(previous);
+    const QList<CoreTypeItem> updatedCoreTypeItems = normalizedCoreTypeItemsForComparison(updated);
     return !tunDecision.requiresAdminForConfiguredTun
-        && (previous.localPort != updated.localPort
+        && (previousLocalPort != updatedLocalPort
             || previous.allowLanConnection != updated.allowLanConnection
-            || previous.policy().coreTypeItems != updated.policy().coreTypeItems
+            || previousCoreTypeItems != updatedCoreTypeItems
             || previous.collection().enableRoutingAdvanced != updated.collection().enableRoutingAdvanced
             || previous.collection().routingIndex != updated.collection().routingIndex
             || previous.collection().routingItems != updated.collection().routingItems

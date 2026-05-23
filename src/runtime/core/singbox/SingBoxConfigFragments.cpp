@@ -627,6 +627,7 @@ QJsonObject SingBoxConfigFragments::buildTunCompatRoute(const Config& config)
     appendTunCompatProcessRules(rules);
     appendTunIcmpRouteRule(rules, config.tun().tunModeItem);
     appendSniffRules(rules, config);
+    appendTunUdpRouteRule(rules, config.tun().tunModeItem);
 
     route.insert(QStringLiteral("rules"), rules);
     return route;
@@ -703,6 +704,41 @@ void SingBoxConfigFragments::appendTunIcmpRouteRule(QJsonArray& rules, const Tun
 
     QJsonObject rule;
     rule.insert(QStringLiteral("network"), QJsonArray{QStringLiteral("icmp")});
+
+    if (policy == QStringLiteral("direct")) {
+        rule.insert(QStringLiteral("outbound"), QStringLiteral("direct"));
+        rules.append(rule);
+        return;
+    }
+
+    rule.insert(QStringLiteral("action"), QStringLiteral("reject"));
+    rule.insert(
+        QStringLiteral("method"),
+        policy == QStringLiteral("drop")
+            ? QStringLiteral("drop")
+            : policy == QStringLiteral("unreachable")
+                ? QStringLiteral("default")
+                : QStringLiteral("reply"));
+    rules.append(rule);
+}
+
+void SingBoxConfigFragments::appendTunUdpRouteRule(QJsonArray& rules, const TunModeItem& tun)
+{
+    const QString policy = tun.udpRouting.trimmed().toLower();
+    const QStringList supportedPolicies{
+        QStringLiteral("rule"),
+        QStringLiteral("direct"),
+        QStringLiteral("unreachable"),
+        QStringLiteral("drop"),
+        QStringLiteral("reply")};
+    if (policy.isEmpty()
+        || !supportedPolicies.contains(policy)
+        || policy == QStringLiteral("rule")) {
+        return;
+    }
+
+    QJsonObject rule;
+    rule.insert(QStringLiteral("network"), QJsonArray{QStringLiteral("udp")});
 
     if (policy == QStringLiteral("direct")) {
         rule.insert(QStringLiteral("outbound"), QStringLiteral("direct"));

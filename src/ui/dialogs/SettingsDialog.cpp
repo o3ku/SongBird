@@ -25,6 +25,7 @@
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "ui/dialogs/TunSettingsPageWidget.h"
 #include "ui/theme/AppTheme.h"
+#include "runtime/ProtocolCoreCompat.h"
 
 namespace {
 
@@ -53,6 +54,29 @@ public:
         return hint;
     }
 };
+
+QList<CoreTypeItem> mergeCoreTypeItems(
+    const QList<CoreTypeItem>& previousItems,
+    const QList<CoreTypeItem>& visibleItems)
+{
+    QList<CoreTypeItem> merged = previousItems.isEmpty() ? defaultCoreTypeItems() : previousItems;
+
+    for (const CoreTypeItem& visibleItem : visibleItems) {
+        bool replaced = false;
+        for (CoreTypeItem& item : merged) {
+            if (item.configType == visibleItem.configType) {
+                item = visibleItem;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            merged.append(visibleItem);
+        }
+    }
+
+    return merged;
+}
 
 } // namespace
 
@@ -139,7 +163,9 @@ Config SettingsDialog::config() const
         updated.mux4SboxProtocol = coreSettingsPage_->mux4SboxProtocol();
         updated.dns().enableFragment = coreSettingsPage_->xrayFragmentEnabled();
         updated.dns().defaultUserAgent = coreSettingsPage_->xrayDefaultUserAgent();
-        updated.policy().coreTypeItems = coreSettingsPage_->collectCoreTypeItems();
+        updated.policy().coreTypeItems = mergeCoreTypeItems(
+            updated.policy().coreTypeItems,
+            coreSettingsPage_->collectCoreTypeItems());
     }
     if (tunSettingsPage_ != nullptr) {
         tunSettingsPage_->applyToConfig(updated);

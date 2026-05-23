@@ -835,6 +835,48 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
 endif()
 
 
+set(SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES
+    AppUpdateServiceTests.cpp
+    ../src/services/AppUpdateService.h
+    ../src/services/AppUpdateService.cpp
+    ../src/common/GitHubMirrorHelper.h
+    ../src/common/GitHubUrls.h
+    ../src/common/OperationResult.h
+    ../src/common/UserAgent.h
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_app_update_service_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_app_update_service_tests ${SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_app_update_service_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_app_update_service_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME app-update-service COMMAND songbird_app_update_service_tests)
+set_tests_properties(app-update-service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_app_update_service_tests)
+endif()
+
+
 
 set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     CoreUpdateServiceTests.cpp
@@ -1047,6 +1089,7 @@ endif()
 set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     EndToEndSmokeTests.cpp
     ../src/common/GitHubMirrorHelper.h
+    ../src/common/GitHubUrls.h
     ../src/common/SystemProxyMode.h
     ../src/persistence/IConfigRepository.h
     ../src/persistence/JsonConfigRepository.h

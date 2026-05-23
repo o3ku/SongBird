@@ -18,6 +18,7 @@ set(SONGBIRD_SOURCES
     common/OperationResult.h
     common/DataSizeFormatter.h
     common/GitHubMirrorHelper.h
+    common/GitHubUrls.h
     common/PortValidator.h
     common/ServerDisplayName.h
     common/SystemProxyMode.h
@@ -34,6 +35,8 @@ set(SONGBIRD_SOURCES
     platform/windows/WindowsAutoRunService.cpp
     platform/windows/WindowsSystemProxyService.h
     platform/windows/WindowsSystemProxyService.cpp
+    platform/windows/WindowsUwpLoopbackService.h
+    platform/windows/WindowsUwpLoopbackService.cpp
     runtime/CoreInfo.h
     runtime/ProtocolCoreCompat.h
     runtime/CoreConfigPreflight.h
@@ -90,6 +93,8 @@ set(SONGBIRD_SOURCES
     services/ConfigBackupService.cpp
     services/PolicyGroupService.h
     services/PolicyGroupService.cpp
+    services/AppUpdateService.h
+    services/AppUpdateService.cpp
     services/CoreUpdateService.h
     services/CoreUpdateService.cpp
     services/RoutingService.h
@@ -138,6 +143,8 @@ set(SONGBIRD_SOURCES
     ui/dialogs/SettingsDialog.cpp
     ui/dialogs/TunSettingsPageWidget.h
     ui/dialogs/TunSettingsPageWidget.cpp
+    ui/dialogs/UwpLoopbackDialog.h
+    ui/dialogs/UwpLoopbackDialog.cpp
     ui/theme/AppTheme.h
     ui/theme/AppTheme.cpp
     ui/mainwindow/MainWindow.h

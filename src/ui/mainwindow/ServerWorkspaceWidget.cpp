@@ -69,6 +69,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     serverView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     serverView_->verticalHeader()->setVisible(false);
     const int rowHeight = serverView_->fontMetrics().height() + 8;
+    serverView_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
     serverView_->verticalHeader()->setDefaultSectionSize(rowHeight);
     serverView_->verticalHeader()->setMinimumSectionSize(rowHeight);
     serverView_->horizontalHeader()->setStretchLastSection(true);

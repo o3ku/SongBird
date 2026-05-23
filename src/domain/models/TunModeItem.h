@@ -8,5 +8,6 @@ struct TunModeItem {
     int mtu = 9000;
     bool enableIPv6Address = false;
     QString icmpRouting = QStringLiteral("rule");
+    QString udpRouting = QStringLiteral("direct");
     bool enableLegacyProtect = false;
 };

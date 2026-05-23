@@ -18,13 +18,8 @@ public:
         QTableView* serverView = nullptr;
         QAction* addServerAction = nullptr;
         QAction* editServerAction = nullptr;
-        QAction* duplicateServerAction = nullptr;
-        QAction* exportClientConfigAction = nullptr;
-        QAction* exportServerConfigAction = nullptr;
         QAction* copyUrlAction = nullptr;
         QAction* copyShareLinkAction = nullptr;
-        QAction* copySubscriptionContentAction = nullptr;
-        QAction* openCustomConfigAction = nullptr;
         QAction* importClipboardAction = nullptr;
         QAction* removeServerAction = nullptr;
         QAction* moveServerTopAction = nullptr;
@@ -39,8 +34,6 @@ public:
     struct ActionState {
         bool hasSelection = false;
         bool hasSingleSelection = false;
-        bool hasCustomSelection = false;
-        bool hasServerConfigSelection = false;
         bool hasShareExports = false;
         bool canReorder = false;
         bool canSpeedTest = false;
@@ -62,8 +55,7 @@ public:
         std::function<void()> updateActionState,
         std::function<void(const QString&)> appendLog,
         std::function<void(const QString&, int, int)> showTransientStatus,
-        std::function<QStringList()> selectedShareLinks,
-        std::function<QStringList()> selectedSubscriptionContent);
+        std::function<QStringList()> selectedShareLinks);
 
     void setup();
     ActionState buildActionState(const SelectionSnapshot& snapshot) const;
@@ -81,5 +73,4 @@ private:
     std::function<void(const QString&)> appendLog_;
     std::function<void(const QString&, int, int)> showTransientStatus_;
     std::function<QStringList()> selectedShareLinks_;
-    std::function<QStringList()> selectedSubscriptionContent_;
 };

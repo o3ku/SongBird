@@ -25,6 +25,7 @@ void TunSettingsPageWidget::setConfig(const Config& config)
     tunStackCombo_->setCurrentText(tun.stack.isEmpty() ? QStringLiteral("system") : tun.stack);
     tunEnableIPv6AddressCheck_->setChecked(tun.enableIPv6Address);
     tunIcmpRoutingEdit_->setText(tun.icmpRouting);
+    tunUdpRoutingEdit_->setText(tun.udpRouting);
     updateFieldState();
 }
 
@@ -38,6 +39,7 @@ void TunSettingsPageWidget::applyToConfig(Config& config) const
     tun.stack = tunStackCombo_->currentText().trimmed();
     tun.enableIPv6Address = tunEnableIPv6AddressCheck_->isChecked();
     tun.icmpRouting = tunIcmpRoutingEdit_->text().trimmed();
+    tun.udpRouting = tunUdpRoutingEdit_->text().trimmed();
 }
 
 bool TunSettingsPageWidget::tunEnabled() const
@@ -74,6 +76,9 @@ void TunSettingsPageWidget::setupUi()
     tunIcmpRoutingEdit_ = new QLineEdit(this);
     tunIcmpRoutingEdit_->setObjectName(QStringLiteral("settingsTunIcmpRoutingEdit"));
     tunIcmpRoutingEdit_->setPlaceholderText(tr("Optional ICMP routing preference"));
+    tunUdpRoutingEdit_ = new QLineEdit(this);
+    tunUdpRoutingEdit_->setObjectName(QStringLiteral("settingsTunUdpRoutingEdit"));
+    tunUdpRoutingEdit_->setPlaceholderText(tr("UDP routing preference"));
 
     AppTheme::applyCompactFont({
         tunEnableCheck_,
@@ -82,7 +87,8 @@ void TunSettingsPageWidget::setupUi()
         tunMtuSpin_,
         tunStackCombo_,
         tunEnableIPv6AddressCheck_,
-        tunIcmpRoutingEdit_});
+        tunIcmpRoutingEdit_,
+        tunUdpRoutingEdit_});
 
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableCheck_);
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunAutoRouteCheck_);
@@ -91,6 +97,7 @@ void TunSettingsPageWidget::setupUi()
     tunLayout->addRow(tr("MTU"), tunMtuSpin_);
     tunLayout->addRow(tr("Stack"), tunStackCombo_);
     tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
+    tunLayout->addRow(tr("UDP Routing"), tunUdpRoutingEdit_);
 
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
         updateFieldState();
@@ -118,5 +125,8 @@ void TunSettingsPageWidget::updateFieldState()
     }
     if (tunIcmpRoutingEdit_ != nullptr) {
         tunIcmpRoutingEdit_->setEnabled(tunEnabled);
+    }
+    if (tunUdpRoutingEdit_ != nullptr) {
+        tunUdpRoutingEdit_->setEnabled(tunEnabled);
     }
 }

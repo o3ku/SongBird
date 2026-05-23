@@ -17,6 +17,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyleOptionViewItem>
@@ -46,6 +47,7 @@ private slots:
     void informationHeaderClickTogglesLogCollapse();
     void logContextMenuUsesViewportCoordinates();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
+    void helpMenuCheckForUpdatesEmitsSignal();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void runtimeToolbarButtonsUseRoutingComboDefaultBorder();
@@ -79,7 +81,6 @@ private slots:
     void coreStartupChecklistOverlayShowsCoreDownloadProgress();
     void coreStartupChecklistOverlayShowsGeoDownloadProgress();
     void subscriptionUpdateOverlayCentersTextWithoutActionArea();
-    void copySubscriptionUrlActionCopiesCurrentSubscriptionUrl();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
     void currentServerStatusAppendsLocation();
     void currentServerStatusAppendsManualVerificationWarning();
@@ -534,6 +535,20 @@ void MainWindowTests::toolbarOrdersSettingsSubscriptionsAndRoutingButtons()
     QCOMPARE(routingButton->text(), QStringLiteral("Routing"));
 }
 
+void MainWindowTests::helpMenuCheckForUpdatesEmitsSignal()
+{
+    MainWindow window;
+    QSignalSpy spy(&window, SIGNAL(checkAppUpdateRequested()));
+    QVERIFY(spy.isValid());
+
+    auto* action = window.findChild<QAction*>(QStringLiteral("checkAppUpdateAction"));
+    QVERIFY(action != nullptr);
+    QCOMPARE(action->text(), QStringLiteral("Check for Updates"));
+    action->trigger();
+
+    QCOMPARE(spy.count(), 1);
+}
+
 void MainWindowTests::routingToolbarButtonEmitsRoutingSettingsSignal()
 {
     MainWindow window;
@@ -755,14 +770,14 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(enableSpy.count(), 1);
 
     window.setProxyEnabled(true);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
+    window.setProxyUiState(ProxyUiState::Inconsistent);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 
     window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    window.setProxyUiState(ProxyUiState::Active);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("STOP"));
     QVERIFY(proxyButton->isChecked());
@@ -773,8 +788,7 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(disableSpy.count(), 1);
 
     window.setProxyEnabled(false);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
+    window.setProxyUiState(ProxyUiState::Inconsistent);
     window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("START"));
@@ -789,8 +803,7 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
     window.setProxyEnabled(true);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
+    window.setProxyUiState(ProxyUiState::Active);
     window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
     QCoreApplication::processEvents();
 
@@ -879,8 +892,7 @@ void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff()
     config.tun().tunModeItem.enableTun = false;
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
-    window.setCoreProcessRunning(false);
-    window.setCoreRunning(false, false);
+    window.setProxyUiState(ProxyUiState::Idle);
     window.setProxyEnabled(false);
     QCoreApplication::processEvents();
 
@@ -908,8 +920,7 @@ void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxySta
     config.tun().tunModeItem.enableTun = false;
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
-    window.setCoreProcessRunning(false);
-    window.setCoreRunning(false, false);
+    window.setProxyUiState(ProxyUiState::Idle);
     window.setProxyEnabled(true);
     QCoreApplication::processEvents();
 
@@ -1681,35 +1692,6 @@ void MainWindowTests::subscriptionUpdateOverlayCentersTextWithoutActionArea()
     QVERIFY(overlay->isHidden());
 }
 
-void MainWindowTests::copySubscriptionUrlActionCopiesCurrentSubscriptionUrl()
-{
-    MainWindow window;
-    Config config = createServerSelectionConfig();
-    config.collection().subscriptions = {SubItem{
-        QStringLiteral("sub-1"),
-        QStringLiteral("Test Sub"),
-        QStringLiteral("https://example.com/subscription"),
-        true,
-        QStringLiteral("test-agent")}};
-    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
-    window.restoreUiState(config);
-    window.setConfig(config);
-    window.show();
-    QCoreApplication::processEvents();
-
-    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
-
-    auto* action = window.findChild<QAction*>(QStringLiteral("copySubscriptionUrlAction"));
-    QVERIFY(action != nullptr);
-    QVERIFY(QApplication::clipboard() != nullptr);
-
-    QApplication::clipboard()->clear();
-    action->trigger();
-    QCoreApplication::processEvents();
-
-    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://example.com/subscription"));
-}
-
 void MainWindowTests::currentServerStatusUsesNoServerPlaceholderWhenEmpty()
 {
     MainWindow window;
@@ -1776,11 +1758,10 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     QVERIFY(proxyButton != nullptr);
 
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(false, false);
+    window.setProxyUiState(ProxyUiState::Inconsistent);
     QCoreApplication::processEvents();
 
-    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is synchronizing. Wait until the core and system proxy reach the target state."));
+    QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is inconsistent. Check logs."));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 }
@@ -2037,11 +2018,10 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(routingCombo->minimumWidth() >= QFontMetrics(routingCombo->font()).horizontalAdvance(routingCombo->currentText()));
 
     const int routingComboWidth = routingCombo->width();
-    window.setCoreRunning(false, true);
+    window.setProxyUiState(ProxyUiState::Transitioning);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);
-    window.setCoreProcessRunning(true);
-    window.setCoreRunning(true, false);
+    window.setProxyUiState(ProxyUiState::Active);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);
 }

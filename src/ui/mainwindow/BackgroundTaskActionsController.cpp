@@ -9,10 +9,6 @@ BackgroundTaskActionsController::BackgroundTaskActionsController(const Context& 
 
 void BackgroundTaskActionsController::sync(const State& state)
 {
-    if (context_.copySubscriptionUrlAction != nullptr) {
-        context_.copySubscriptionUrlAction->setEnabled(state.hasSubscriptionUrl);
-    }
-
     if (context_.importClipboardAction != nullptr) {
         context_.importClipboardAction->setEnabled(state.canStartTask);
     }
@@ -23,10 +19,6 @@ void BackgroundTaskActionsController::sync(const State& state)
 
     if (context_.updateCurrentSubscriptionAction != nullptr) {
         context_.updateCurrentSubscriptionAction->setEnabled(state.canStartTask);
-    }
-
-    if (context_.testMeAction != nullptr) {
-        context_.testMeAction->setEnabled(state.canStartTask);
     }
 
     if (context_.updateXrayCoreAction != nullptr) {

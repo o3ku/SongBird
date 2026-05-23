@@ -26,6 +26,11 @@ constexpr int kUrlColumn = 1;
 constexpr int kRemarksColumn = 2;
 constexpr int kUserAgentColumn = 3;
 
+int tableRowHeight(const QWidget* widget)
+{
+    return widget == nullptr ? 0 : widget->fontMetrics().height() + 8;
+}
+
 void enableCustomUserAgentInput(QComboBox* combo, const QString& text = QString())
 {
     if (combo == nullptr) {
@@ -105,13 +110,20 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     table_->verticalHeader()->setVisible(false);
+    AppTheme::applyCompactFont(table_);
+    AppTheme::applyCompactFont(table_->horizontalHeader());
+    const int rowHeight = tableRowHeight(table_);
+    table_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    table_->verticalHeader()->setDefaultSectionSize(rowHeight);
+    table_->verticalHeader()->setMinimumSectionSize(rowHeight);
     table_->horizontalHeader()->setSectionResizeMode(kEnabledColumn, QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setSectionResizeMode(kUrlColumn, QHeaderView::Stretch);
     table_->horizontalHeader()->setSectionResizeMode(kRemarksColumn, QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setSectionResizeMode(kUserAgentColumn, QHeaderView::ResizeToContents);
+    const int headerHeight = table_->horizontalHeader()->fontMetrics().height() + 8;
+    table_->horizontalHeader()->setDefaultSectionSize(headerHeight);
+    table_->horizontalHeader()->setMinimumSectionSize(headerHeight);
     AppTheme::applyServerTableStyle(table_);
-    AppTheme::applyCompactFont(table_);
-    AppTheme::applyCompactFont(table_->horizontalHeader());
 
     addButton_ = new QPushButton(QStringLiteral("Add"), this);
     removeButton_ = new QPushButton(QStringLiteral("Remove"), this);

@@ -143,8 +143,8 @@ QString BackgroundTaskCoordinator::describe(Kind kind) const
         return QCoreApplication::translate("AppBootstrap", "Running URL Test");
     case Kind::SubscriptionUpdate:
         return QCoreApplication::translate("AppBootstrap", "Updating subscriptions");
-    case Kind::ProxyAvailabilityCheck:
-        return QCoreApplication::translate("AppBootstrap", "Checking proxy availability");
+    case Kind::AppUpdate:
+        return QCoreApplication::translate("AppBootstrap", "Downloading SongBird update");
     case Kind::CoreUpdate:
         return QCoreApplication::translate("AppBootstrap", "Updating core");
     case Kind::GeoUpdate:

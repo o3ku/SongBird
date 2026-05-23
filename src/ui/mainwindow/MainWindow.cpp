@@ -1,6 +1,7 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
+#include "app/RuntimeState.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -572,17 +573,6 @@ bool MainWindow::requestExit()
     return true;
 }
 
-void MainWindow::setAutoRunEnabled(bool enabled)
-{
-    autoRunEnabled_ = enabled;
-    if (toggleAutoRunAction_ != nullptr) {
-        toggleAutoRunAction_->setText(enabled
-            ? tr("Disable Auto Run")
-            : tr("Enable Auto Run"));
-    }
-    updateStatusPresentation();
-}
-
 void MainWindow::setSystemProxyState(int mode, bool enabled)
 {
     Q_UNUSED(mode);
@@ -598,16 +588,9 @@ void MainWindow::setProxyEnabled(bool enabled)
         enabled);
 }
 
-void MainWindow::setCoreProcessRunning(bool running)
+void MainWindow::setProxyUiState(ProxyUiState state)
 {
-    coreProcessRunning_ = running;
-    updateRuntimeUiState();
-}
-
-void MainWindow::setCoreRunning(bool enabled, bool pending)
-{
-    coreRunning_ = enabled;
-    coreTransitionPending_ = pending;
+    proxyUiState_ = state;
     updateRuntimeUiState();
 }
 
@@ -689,6 +672,20 @@ void MainWindow::setBackgroundTaskDescription(const QString& description)
     updateStatusPresentation();
 }
 
+void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
+{
+    currentServerName_ = snapshot.currentServerName.trimmed();
+    currentServerLocation_ = snapshot.currentServerLocation.trimmed();
+    currentServerWarning_ = snapshot.currentServerWarning.trimmed();
+    routingSummary_ = snapshot.routingSummary.trimmed();
+    listenSummary_ = snapshot.listenSummary.trimmed();
+    proxyUiState_ = snapshot.proxyUiState;
+    systemProxyApplied_ = snapshot.systemProxyApplied;
+
+    updateActionState();
+    updateStatusPresentation(true);
+}
+
 void MainWindow::setTunEnabled(bool enabled)
 {
     tunEnabled_ = enabled;
@@ -709,9 +706,7 @@ void MainWindow::restoreUiState(const Config& config)
     if (sharePanel_ != nullptr) {
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
-    coreProcessRunning_ = false;
-    coreRunning_ = false;
-    coreTransitionPending_ = false;
+    proxyUiState_ = ProxyUiState::Idle;
     systemProxyApplied_ = false;
     tunEnabled_ = config.tun().tunModeItem.enableTun;
     updateRuntimeUiState();
@@ -945,7 +940,8 @@ void MainWindow::scheduleInitialCurrentServerReveal()
 bool MainWindow::canStartBackgroundTask() const
 {
     return !backgroundTaskRunning_
-        && !coreTransitionPending_
+        && proxyUiState_ != ProxyUiState::Transitioning
+        && proxyUiState_ != ProxyUiState::Inconsistent
         && (!coreStartupChecklistVisible_ || coreStartupChecklistFailed_);
 }
 
@@ -956,7 +952,7 @@ bool MainWindow::ensureCanStartBackgroundTask()
     }
 
     showTransientStatus(
-        coreTransitionPending_ || (coreStartupChecklistVisible_ && !coreStartupChecklistFailed_)
+        proxyUiState_ == ProxyUiState::Transitioning || (coreStartupChecklistVisible_ && !coreStartupChecklistFailed_)
             ? tr("Proxy startup is in progress.")
             : tr("A background task is already running."),
         4000);
@@ -1014,6 +1010,13 @@ void MainWindow::setupLoadingOverlay()
     loadingActionWidget_ = new QWidget(loadingContentWidget_);
     loadingActionWidget_->setObjectName(QStringLiteral("loadingActionWidget"));
 
+    loadingRetryButton_ = new QPushButton(tr("Retry"), loadingActionWidget_);
+    loadingRetryButton_->setObjectName(QStringLiteral("loadingRetryButton"));
+    loadingRetryButton_->setVisible(false);
+    connect(loadingRetryButton_, &QPushButton::clicked, this, [this]() {
+        emit retryCoreStartupRequested();
+    });
+
     loadingDismissButton_ = new QPushButton(tr("Close"), loadingActionWidget_);
     loadingDismissButton_->setObjectName(QStringLiteral("loadingDismissButton"));
     loadingDismissButton_->setVisible(false);
@@ -1028,6 +1031,8 @@ void MainWindow::setupLoadingOverlay()
     actionLayout->setContentsMargins(0, 0, 0, 0);
     actionLayout->setSpacing(0);
     actionLayout->addStretch(1);
+    actionLayout->addWidget(loadingRetryButton_);
+    actionLayout->addSpacing(8);
     actionLayout->addWidget(loadingDismissButton_);
     actionLayout->addStretch(1);
 
@@ -1098,22 +1103,11 @@ void MainWindow::createServerToolbarActions()
 {
     addServerAction_ = new QAction(tr("Add Server"), this);
     addServerAction_->setObjectName(QStringLiteral("addServerAction"));
-    addCustomServerAction_ = new QAction(tr("Import Custom"), this);
     editServerAction_ = new QAction(tr("Edit Server"), this);
-    duplicateServerAction_ = new QAction(tr("Duplicate Server"), this);
-    exportClientConfigAction_ = new QAction(tr("Export Client Config"), this);
-    exportClientConfigAction_->setObjectName(QStringLiteral("exportClientConfigAction"));
-    exportServerConfigAction_ = new QAction(tr("Export Server Config"), this);
-    exportServerConfigAction_->setObjectName(QStringLiteral("exportServerConfigAction"));
     copyUrlAction_ = new QAction(tr("Copy Url"), this);
     copyUrlAction_->setObjectName(QStringLiteral("copyUrlAction"));
     copyShareLinkAction_ = new QAction(tr("Copy Share Link"), this);
     copyShareLinkAction_->setObjectName(QStringLiteral("copyShareLinkAction"));
-    copySubscriptionContentAction_ = new QAction(tr("Copy Subscription Content"), this);
-    copySubscriptionContentAction_->setObjectName(QStringLiteral("copySubscriptionContentAction"));
-    copySubscriptionUrlAction_ = new QAction(tr("Copy Subscription Url"), this);
-    copySubscriptionUrlAction_->setObjectName(QStringLiteral("copySubscriptionUrlAction"));
-    openCustomConfigAction_ = new QAction(tr("Open Config"), this);
     removeServerAction_ = new QAction(tr("Remove"), this);
     removeServerAction_->setObjectName(QStringLiteral("removeServerAction"));
     moveServerTopAction_ = new QAction(tr("Move To Top"), this);
@@ -1138,8 +1132,6 @@ void MainWindow::createSubscriptionToolbarActions()
 {
     importClipboardAction_ = new QAction(tr("Import Clipboard"), this);
     importClipboardAction_->setObjectName(QStringLiteral("importClipboardAction"));
-    importClientConfigAction_ = new QAction(tr("Import Client Config"), this);
-    importServerConfigAction_ = new QAction(tr("Import Server Config"), this);
     subAction_ = new QAction(tr("Subscriptions"), this);
     toolbarIconFiles_.insert(subAction_, QStringLiteral("subscription.svg"));
     subAction_->setIcon(loadToolbarIcon(toolbarIconFiles_.value(subAction_)));
@@ -1155,8 +1147,6 @@ void MainWindow::createUpdateToolbarActions()
     connect(routingSettingsAction_, &QAction::triggered, this, &MainWindow::openSettingsAtRoutingTabRequested);
     updateSubscriptionsAction_ = new QAction(tr("Update Subscriptions"), this);
     updateSubscriptionsAction_->setObjectName(QStringLiteral("updateSubscriptionsAction"));
-    testMeAction_ = new QAction(tr("TestMe"), this);
-    testMeAction_->setObjectName(QStringLiteral("testMeAction"));
     updateXrayCoreAction_ = new QAction(tr("Update Xray Core"), this);
     updateXrayCoreAction_->setObjectName(QStringLiteral("updateXrayCoreAction"));
     updateSingBoxCoreAction_ = new QAction(tr("Update sing-box Core"), this);
@@ -1167,10 +1157,6 @@ void MainWindow::createUpdateToolbarActions()
 
 void MainWindow::createSystemToolbarActions()
 {
-    toggleAutoRunAction_ = new QAction(tr("Enable Auto Run"), this);
-    reloadConfigAction_ = new QAction(tr("Reload Config"), this);
-    restoreBackupAction_ = new QAction(tr("Restore Backup"), this);
-    restoreBackupAction_->setObjectName(QStringLiteral("restoreBackupAction"));
     settingsAction_ = new QAction(tr("Settings"), this);
     settingsAction_->setObjectName(QStringLiteral("settingsAction"));
     toolbarIconFiles_.insert(settingsAction_, QStringLiteral("option.svg"));
@@ -1181,24 +1167,10 @@ void MainWindow::createHelpToolbarActions()
 {
     aboutAction_ = new QAction(tr("About"), this);
     aboutAction_->setObjectName(QStringLiteral("aboutAction"));
-    openProjectPageAction_ = new QAction(tr("Project Page"), this);
-    openProjectPageAction_->setObjectName(QStringLiteral("openProjectPageAction"));
-    openReleasePageAction_ = new QAction(tr("Release Page"), this);
-    openReleasePageAction_->setObjectName(QStringLiteral("openReleasePageAction"));
-    openDocumentationAction_ = new QAction(tr("Documentation"), this);
-    openDocumentationAction_->setObjectName(QStringLiteral("openDocumentationAction"));
-    openDnsObjectDocumentationAction_ = new QAction(tr("DNSObject"), this);
-    openDnsObjectDocumentationAction_->setObjectName(QStringLiteral("openDnsObjectDocumentationAction"));
-    openRuleObjectDocumentationAction_ = new QAction(tr("RuleObject"), this);
-    openRuleObjectDocumentationAction_->setObjectName(QStringLiteral("openRuleObjectDocumentationAction"));
-    openLoopbackToolAction_ = new QAction(tr("Loopback"), this);
-    openLoopbackToolAction_->setObjectName(QStringLiteral("openLoopbackToolAction"));
-    openXrayReleasePageAction_ = new QAction(tr("Open Xray Releases"), this);
-    openXrayReleasePageAction_->setObjectName(QStringLiteral("openXrayReleasePageAction"));
-    openSingBoxReleasePageAction_ = new QAction(tr("Open sing-box Releases"), this);
-    openSingBoxReleasePageAction_->setObjectName(QStringLiteral("openSingBoxReleasePageAction"));
-    openGeoReleasePageAction_ = new QAction(tr("Open Geo Releases"), this);
-    openGeoReleasePageAction_->setObjectName(QStringLiteral("openGeoReleasePageAction"));
+    checkAppUpdateAction_ = new QAction(tr("Check for Updates"), this);
+    checkAppUpdateAction_->setObjectName(QStringLiteral("checkAppUpdateAction"));
+    uwpLoopbackAction_ = new QAction(tr("UWP Loopback"), this);
+    uwpLoopbackAction_->setObjectName(QStringLiteral("uwpLoopbackAction"));
 }
 
 void MainWindow::createRuntimeToolbarActions()
@@ -1228,7 +1200,9 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
     helpMenu = new QMenu(tr("Help"), toolBar);
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
     helpMenu->addAction(aboutAction_);
-    helpMenu->addAction(openProjectPageAction_);
+    helpMenu->addAction(checkAppUpdateAction_);
+    helpMenu->addSeparator();
+    helpMenu->addAction(uwpLoopbackAction_);
     helpMenu->addSeparator();
     helpMenu->addAction(updateCurrentSubscriptionAction_);
     helpMenu->addAction(updateSubscriptionsAction_);
@@ -1324,11 +1298,9 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
 void MainWindow::initializeToolbarControllers()
 {
     backgroundTaskActionsController_ = new BackgroundTaskActionsController({
-        copySubscriptionUrlAction_,
         importClipboardAction_,
         updateSubscriptionsAction_,
         updateCurrentSubscriptionAction_,
-        testMeAction_,
         updateXrayCoreAction_,
         updateSingBoxCoreAction_,
         updateGeoResourcesAction_,
@@ -1473,13 +1445,8 @@ void MainWindow::setupServerActionsController()
             serverView_,
             addServerAction_,
             editServerAction_,
-            duplicateServerAction_,
-            exportClientConfigAction_,
-            exportServerConfigAction_,
             copyUrlAction_,
             copyShareLinkAction_,
-            copySubscriptionContentAction_,
-            openCustomConfigAction_,
             importClipboardAction_,
             removeServerAction_,
             moveServerTopAction_,
@@ -1505,11 +1472,6 @@ void MainWindow::setupServerActionsController()
             return serverSelectionController_ == nullptr
                 ? QStringList()
                 : serverSelectionController_->selectedShareLinks(shareUrlByIndexId_);
-        },
-        [this]() {
-            return serverSelectionController_ == nullptr
-                ? QStringList()
-                : serverSelectionController_->selectedShareLinks(shareUrlByIndexId_);
         });
     serverActionsController_->setup();
 }
@@ -1525,8 +1487,6 @@ void MainWindow::setupConnections()
 void MainWindow::setupGeneralActionConnections()
 {
     connect(addServerAction_, &QAction::triggered, this, &MainWindow::addServerRequested);
-    connect(addCustomServerAction_, &QAction::triggered, this, &MainWindow::addCustomServerRequested);
-    connect(copySubscriptionUrlAction_, &QAction::triggered, this, &MainWindow::copyCurrentSubscriptionUrlToClipboard);
     setupImportActionConnections();
     setupUpdateActionConnections();
     setupSettingsActionConnections();
@@ -1536,8 +1496,6 @@ void MainWindow::setupGeneralActionConnections()
 void MainWindow::setupImportActionConnections()
 {
     connect(importClipboardAction_, &QAction::triggered, this, &MainWindow::importFromClipboardRequested);
-    connect(importClientConfigAction_, &QAction::triggered, this, &MainWindow::importClientConfigRequested);
-    connect(importServerConfigAction_, &QAction::triggered, this, &MainWindow::importServerConfigRequested);
 }
 
 void MainWindow::setupUpdateActionConnections()
@@ -1545,11 +1503,6 @@ void MainWindow::setupUpdateActionConnections()
     connect(updateSubscriptionsAction_, &QAction::triggered, this, [this]() {
         if (ensureCanStartBackgroundTask()) {
             emit updateSubscriptionsRequested();
-        }
-    });
-    connect(testMeAction_, &QAction::triggered, this, [this]() {
-        if (ensureCanStartBackgroundTask()) {
-            emit testMeRequested();
         }
     });
     connect(updateXrayCoreAction_, &QAction::triggered, this, [this]() {
@@ -1563,36 +1516,14 @@ void MainWindow::setupUpdateActionConnections()
 
 void MainWindow::setupSettingsActionConnections()
 {
-    connect(toggleAutoRunAction_, &QAction::triggered, this, &MainWindow::toggleAutoRunRequested);
-    connect(reloadConfigAction_, &QAction::triggered, this, &MainWindow::reloadConfigRequested);
-    connect(restoreBackupAction_, &QAction::triggered, this, &MainWindow::restoreBackupRequested);
     connect(settingsAction_, &QAction::triggered, this, &MainWindow::settingsRequested);
 }
 
 void MainWindow::setupHelpActionConnections()
 {
     connect(aboutAction_, &QAction::triggered, this, &MainWindow::aboutRequested);
-    connect(openProjectPageAction_, &QAction::triggered, this, &MainWindow::openProjectPageRequested);
-    connect(openReleasePageAction_, &QAction::triggered, this, &MainWindow::openReleasePageRequested);
-    connect(openDocumentationAction_, &QAction::triggered, this, &MainWindow::openDocumentationRequested);
-    connect(
-        openDnsObjectDocumentationAction_,
-        &QAction::triggered,
-        this,
-        &MainWindow::openDnsObjectDocumentationRequested);
-    connect(
-        openRuleObjectDocumentationAction_,
-        &QAction::triggered,
-        this,
-        &MainWindow::openRuleObjectDocumentationRequested);
-    connect(openLoopbackToolAction_, &QAction::triggered, this, &MainWindow::openLoopbackToolRequested);
-    connect(openXrayReleasePageAction_, &QAction::triggered, this, &MainWindow::openXrayReleasePageRequested);
-    connect(
-        openSingBoxReleasePageAction_,
-        &QAction::triggered,
-        this,
-        &MainWindow::openSingBoxReleasePageRequested);
-    connect(openGeoReleasePageAction_, &QAction::triggered, this, &MainWindow::openGeoReleasePageRequested);
+    connect(checkAppUpdateAction_, &QAction::triggered, this, &MainWindow::checkAppUpdateRequested);
+    connect(uwpLoopbackAction_, &QAction::triggered, this, &MainWindow::uwpLoopbackRequested);
 }
 
 void MainWindow::setupToggleConnections()
@@ -1603,10 +1534,7 @@ void MainWindow::setupToggleConnections()
         }
 
         ProxyToolbarController::Snapshot snapshot;
-        snapshot.coreProcessRunning = coreProcessRunning_;
-        snapshot.coreRunning = coreRunning_;
-        snapshot.coreTransitionPending = coreTransitionPending_;
-        snapshot.systemProxyApplied = systemProxyApplied_;
+        snapshot.uiState = proxyUiState_;
         snapshot.outboundLocationAvailable = !currentServerLocation_.trimmed().isEmpty();
         snapshot.tunEnabled = tunEnabled_;
         snapshot.existingCoreTypes = existingCoreTypes_;
@@ -1638,7 +1566,7 @@ void MainWindow::setupToggleConnections()
         }
     });
     connect(tunToggleAction_, &QAction::triggered, this, [this](bool checked) {
-        if (coreTransitionPending_) {
+        if (proxyUiState_ == ProxyUiState::Transitioning || proxyUiState_ == ProxyUiState::Inconsistent) {
             updateActionState();
             return;
         }
@@ -1882,7 +1810,7 @@ void MainWindow::updateWindowTitle()
             fontMetrics(),
             currentServerName_.trimmed(),
             WindowTitleServerNameMaximumWidth);
-    const QString proxyState = coreRunning_ && systemProxyApplied_ ? tr("Proxy ON") : tr("Proxy OFF");
+    const QString proxyState = proxyUiState_ == ProxyUiState::Active ? tr("Proxy ON") : tr("Proxy OFF");
     const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
 
     setWindowTitle(tr("SongBird [%1] [%2] [%3] [%4]")
@@ -2079,10 +2007,7 @@ void MainWindow::syncProxyToolbarController()
     }
 
     proxyToolbarController_->refresh(
-        coreProcessRunning_,
-        coreRunning_,
-        coreTransitionPending_,
-        systemProxyApplied_,
+        proxyUiState_,
         !currentServerLocation_.trimmed().isEmpty(),
         tunEnabled_,
         existingCoreTypes_,
@@ -2119,6 +2044,9 @@ void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, co
     }
     if (loadingDismissButton_ != nullptr) {
         loadingDismissButton_->setVisible(visible && hasFailure);
+    }
+    if (loadingRetryButton_ != nullptr) {
+        loadingRetryButton_->setVisible(visible && hasFailure);
     }
     if (loadingActionWidget_ != nullptr) {
         loadingActionWidget_->setVisible(!items.isEmpty() || hasFailure);

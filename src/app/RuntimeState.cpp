@@ -15,9 +15,7 @@ void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
     const bool currentServerChanged = snapshot_.currentServerName != snapshot.currentServerName
         || snapshot_.currentServerLocation != snapshot.currentServerLocation
         || snapshot_.currentServerWarning != snapshot.currentServerWarning;
-    const bool coreStateChanged = snapshot_.coreProcessRunning != snapshot.coreProcessRunning
-        || snapshot_.coreRunning != snapshot.coreRunning
-        || snapshot_.coreTransitionPending != snapshot.coreTransitionPending;
+    const bool proxyUiStateChanged = snapshot_.proxyUiState != snapshot.proxyUiState;
     const bool systemProxyStateChanged = snapshot_.systemProxyMode != snapshot.systemProxyMode
         || snapshot_.systemProxyApplied != snapshot.systemProxyApplied;
     const bool autoRunChanged = snapshot_.autoRunEnabled != snapshot.autoRunEnabled;
@@ -27,17 +25,16 @@ void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
 
     snapshot_ = snapshot;
 
+    emit this->snapshotApplied(snapshot_);
+
     if (currentServerChanged) {
         emit this->currentServerChanged(
             snapshot_.currentServerName,
             snapshot_.currentServerLocation,
             snapshot_.currentServerWarning);
     }
-    if (coreStateChanged) {
-        emit this->coreStateChanged(
-            snapshot_.coreProcessRunning,
-            snapshot_.coreRunning,
-            snapshot_.coreTransitionPending);
+    if (proxyUiStateChanged) {
+        emit this->proxyUiStateChanged(snapshot_.proxyUiState);
     }
     if (systemProxyStateChanged) {
         emit this->systemProxyStateChanged(

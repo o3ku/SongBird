@@ -202,24 +202,13 @@ void TrayController::setCurrentServerName(const QString& name)
     updateMenuText();
 }
 
-void TrayController::setCoreProcessRunning(bool running)
+void TrayController::setProxyUiState(ProxyUiState state)
 {
-    if (coreProcessRunning_ == running) {
+    if (proxyUiState_ == state) {
         return;
     }
 
-    coreProcessRunning_ = running;
-    updateMenuText();
-}
-
-void TrayController::setCoreRunning(bool enabled, bool pending)
-{
-    if (coreRunning_ == enabled && coreTransitionPending_ == pending) {
-        return;
-    }
-
-    coreRunning_ = enabled;
-    coreTransitionPending_ = pending;
+    proxyUiState_ = state;
     updateMenuText();
 }
 
@@ -398,7 +387,8 @@ void TrayController::updateToolTip()
         return;
     }
 
-    const QString proxyText = coreRunning_ && systemProxyApplied_ ? trayText("On") : trayText("Off");
+    const bool active = proxyUiState_ == ProxyUiState::Active;
+    const QString proxyText = active && systemProxyApplied_ ? trayText("On") : trayText("Off");
     const QString currentServerText = currentServerName_.isEmpty()
         ? trayText("No default server")
         : currentServerName_;
@@ -407,12 +397,23 @@ void TrayController::updateToolTip()
         currentServerText,
         TrayCurrentServerNameTextMaxWidth);
 
+    const QString coreStatusText = [this]() {
+        switch (proxyUiState_) {
+        case ProxyUiState::Active:
+            return trayText("Running");
+        case ProxyUiState::Transitioning:
+            return trayText("Starting");
+        case ProxyUiState::Inconsistent:
+            return trayText("Starting");
+        case ProxyUiState::Idle:
+            break;
+        }
+        return trayText("Stopped");
+    }();
+
     QString tooltip = QStringLiteral("SongBird | %1 | %2 | %3 | %4")
                           .arg(currentServerDisplayText)
-                          .arg(trayText("Core %1").arg(
-                              coreRunning_ ? trayText("Running")
-                                           : coreProcessRunning_ ? trayText("Starting")
-                                                                 : trayText("Stopped")))
+                          .arg(trayText("Core %1").arg(coreStatusText))
                           .arg(trayText("Proxy %1").arg(proxyText))
                           .arg(trayText("Auto Run %1").arg(autoRunEnabled_ ? trayText("Enabled") : trayText("Disabled")));
     if (!routingSummary_.isEmpty()) {
@@ -430,7 +431,7 @@ void TrayController::updateTrayIcon()
         return;
     }
 
-    const QIcon icon = coreRunning_ && systemProxyApplied_
+    const QIcon icon = proxyUiState_ == ProxyUiState::Active && systemProxyApplied_
         ? loadFireTrayIcon()
         : loadDefaultTrayIcon();
 

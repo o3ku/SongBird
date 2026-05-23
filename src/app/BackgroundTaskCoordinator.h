@@ -13,7 +13,7 @@ public:
         None,
         SpeedTest,
         SubscriptionUpdate,
-        ProxyAvailabilityCheck,
+        AppUpdate,
         CoreUpdate,
         GeoUpdate
     };

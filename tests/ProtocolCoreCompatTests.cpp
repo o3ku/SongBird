@@ -9,7 +9,7 @@ class ProtocolCoreCompatTests : public QObject {
 private slots:
     void dualProtocolSupportsBothCores();
     void httpSupportsOnlyXray();
-    void hysteria2SupportsOnlySingBox();
+    void hysteria2SupportsBothCores();
     void singBoxFirstProtocolsSupportBothCoresForSelection();
     void unknownSupportsNeitherCore();
     void protocolSupportsCoreQuery();
@@ -46,11 +46,11 @@ void ProtocolCoreCompatTests::httpSupportsOnlyXray()
     QVERIFY(cores.contains(CoreType::SingBox));
 }
 
-void ProtocolCoreCompatTests::hysteria2SupportsOnlySingBox()
+void ProtocolCoreCompatTests::hysteria2SupportsBothCores()
 {
     const auto cores = supportedCoreTypes(ConfigType::Hysteria2);
-    QCOMPARE(cores.size(), 1);
-    QVERIFY(!cores.contains(CoreType::Xray));
+    QCOMPARE(cores.size(), 2);
+    QVERIFY(cores.contains(CoreType::Xray));
     QVERIFY(cores.contains(CoreType::SingBox));
 }
 
@@ -83,7 +83,7 @@ void ProtocolCoreCompatTests::protocolSupportsCoreQuery()
     QVERIFY(protocolSupportsCore(ConfigType::VMess, CoreType::SingBox));
     QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::Xray));
     QVERIFY(protocolSupportsCore(ConfigType::HTTP, CoreType::SingBox));
-    QVERIFY(!protocolSupportsCore(ConfigType::Hysteria2, CoreType::Xray));
+    QVERIFY(protocolSupportsCore(ConfigType::Hysteria2, CoreType::Xray));
     QVERIFY(protocolSupportsCore(ConfigType::Hysteria2, CoreType::SingBox));
     QVERIFY(!protocolSupportsCore(ConfigType::Unknown, CoreType::Xray));
 }

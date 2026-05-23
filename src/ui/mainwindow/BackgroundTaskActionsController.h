@@ -5,11 +5,9 @@ class QAction;
 class BackgroundTaskActionsController final {
 public:
     struct Context {
-        QAction* copySubscriptionUrlAction = nullptr;
         QAction* importClipboardAction = nullptr;
         QAction* updateSubscriptionsAction = nullptr;
         QAction* updateCurrentSubscriptionAction = nullptr;
-        QAction* testMeAction = nullptr;
         QAction* updateXrayCoreAction = nullptr;
         QAction* updateSingBoxCoreAction = nullptr;
         QAction* updateGeoResourcesAction = nullptr;

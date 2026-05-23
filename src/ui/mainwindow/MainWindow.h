@@ -8,6 +8,7 @@
 
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
+#include "app/RuntimeState.h"
 class QAction;
 class QComboBox;
 class QEvent;
@@ -65,12 +66,10 @@ public:
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();
-    void setAutoRunEnabled(bool enabled);
     void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
     void setTunEnabled(bool enabled);
-    void setCoreProcessRunning(bool running);
-    void setCoreRunning(bool enabled, bool pending = false);
+    void setProxyUiState(ProxyUiState state);
     void setCurrentServerName(const QString& name);
     void setCurrentServerLocation(const QString& location);
     void setCurrentServerWarning(const QString& warning);
@@ -80,6 +79,7 @@ public:
     void clearCoreStartupChecklist();
     void setBackgroundTaskRunning(bool running);
     void setBackgroundTaskDescription(const QString& description);
+    void applyRuntimeState(const RuntimeStateSnapshot& snapshot);
     void restoreUiState(const Config& config);
     void captureUiState(Config& config) const;
     bool selectSubscriptionTab(const QString& selectionId);
@@ -90,23 +90,15 @@ signals:
     void openSettingsAtSubscriptionsTabRequested();
     void openSettingsAtRoutingTabRequested();
     void addServerRequested();
-    void addCustomServerRequested();
     void editServerRequested(const QString& indexId);
-    void duplicateServerRequested(const QString& indexId);
-    void exportClientConfigRequested(const QString& indexId);
-    void exportServerConfigRequested(const QString& indexId);
     void importFromClipboardRequested();
-    void importClientConfigRequested();
-    void importServerConfigRequested();
     void updateSubscriptionsRequested();
     void updateCurrentSubscriptionRequested(const QString& subscriptionId);
     void updateCurrentSubscriptionViaProxyRequested(const QString& subscriptionId);
     void hideSubscriptionRequested(const QString& subscriptionId);
     void deleteSubscriptionRequested(const QString& subscriptionId);
-    void testMeRequested();
     void updateCoreRequested(int coreType);
     void updateGeoResourcesRequested();
-    void openCustomConfigRequested(const QString& indexId);
     void removeServersRequested(const QStringList& indexIds);
     void moveServersRequested(const QStringList& indexIds, int operation);
     void reorderServersRequested(const QStringList& orderedIndexIds);
@@ -117,20 +109,11 @@ signals:
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
     void tunEnabledChanged(bool enabled);
-    void toggleAutoRunRequested();
-    void reloadConfigRequested();
-    void restoreBackupRequested();
     void settingsRequested();
     void aboutRequested();
-    void openProjectPageRequested();
-    void openReleasePageRequested();
-    void openDocumentationRequested();
-    void openDnsObjectDocumentationRequested();
-    void openRuleObjectDocumentationRequested();
-    void openLoopbackToolRequested();
-    void openXrayReleasePageRequested();
-    void openSingBoxReleasePageRequested();
-    void openGeoReleasePageRequested();
+    void checkAppUpdateRequested();
+    void uwpLoopbackRequested();
+    void retryCoreStartupRequested();
     void hiddenToTray();
 
 private slots:
@@ -240,23 +223,13 @@ private:
     QTabBar* subscriptionTabBar_ = nullptr;
     SharePanelWidget* sharePanel_ = nullptr;
     QAction* addServerAction_ = nullptr;
-    QAction* addCustomServerAction_ = nullptr;
     QAction* editServerAction_ = nullptr;
-    QAction* duplicateServerAction_ = nullptr;
-    QAction* exportClientConfigAction_ = nullptr;
-    QAction* exportServerConfigAction_ = nullptr;
     QAction* copyUrlAction_ = nullptr;
     QAction* copyShareLinkAction_ = nullptr;
-    QAction* copySubscriptionContentAction_ = nullptr;
-    QAction* copySubscriptionUrlAction_ = nullptr;
-    QAction* openCustomConfigAction_ = nullptr;
     QAction* importClipboardAction_ = nullptr;
-    QAction* importClientConfigAction_ = nullptr;
-    QAction* importServerConfigAction_ = nullptr;
     QAction* subAction_ = nullptr;
     QAction* routingSettingsAction_ = nullptr;
     QAction* updateSubscriptionsAction_ = nullptr;
-    QAction* testMeAction_ = nullptr;
     QAction* updateXrayCoreAction_ = nullptr;
     QAction* updateSingBoxCoreAction_ = nullptr;
     QAction* updateGeoResourcesAction_ = nullptr;
@@ -270,20 +243,10 @@ private:
     QAction* setDefaultServerWithTunAction_ = nullptr;
     QAction* updateCurrentSubscriptionAction_ = nullptr;
     QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
-    QAction* toggleAutoRunAction_ = nullptr;
-    QAction* reloadConfigAction_ = nullptr;
-    QAction* restoreBackupAction_ = nullptr;
     QAction* settingsAction_ = nullptr;
     QAction* aboutAction_ = nullptr;
-    QAction* openProjectPageAction_ = nullptr;
-    QAction* openReleasePageAction_ = nullptr;
-    QAction* openDocumentationAction_ = nullptr;
-    QAction* openDnsObjectDocumentationAction_ = nullptr;
-    QAction* openRuleObjectDocumentationAction_ = nullptr;
-    QAction* openLoopbackToolAction_ = nullptr;
-    QAction* openXrayReleasePageAction_ = nullptr;
-    QAction* openSingBoxReleasePageAction_ = nullptr;
-    QAction* openGeoReleasePageAction_ = nullptr;
+    QAction* checkAppUpdateAction_ = nullptr;
+    QAction* uwpLoopbackAction_ = nullptr;
     QAction* proxyToggleAction_ = nullptr;
     QAction* tunToggleAction_ = nullptr;
     QAction* toggleQrPanelAction_ = nullptr;
@@ -298,15 +261,13 @@ private:
     QWidget* loadingItemsWidget_ = nullptr;
     QWidget* loadingActionWidget_ = nullptr;
     QVBoxLayout* loadingItemsLayout_ = nullptr;
+    QPushButton* loadingRetryButton_ = nullptr;
     QPushButton* loadingDismissButton_ = nullptr;
     QStringList loadingChecklistItems_;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;
-    bool autoRunEnabled_ = false;
-    bool coreProcessRunning_ = false;
-    bool coreRunning_ = false;
-    bool coreTransitionPending_ = false;
+    ProxyUiState proxyUiState_ = ProxyUiState::Idle;
     bool qrPreviewVisible_ = false;
     QString currentServerLocation_;
     QString currentServerWarning_;

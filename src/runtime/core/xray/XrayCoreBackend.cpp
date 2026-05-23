@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 
+#include "common/GitHubUrls.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
@@ -100,7 +101,7 @@ QJsonObject XrayCoreBackend::buildClientRoot(const Config& config, const VmessIt
 
 QUrl XrayCoreBackend::releasesApiUrl() const
 {
-    return QUrl(QStringLiteral("https://api.github.com/repos/XTLS/Xray-core/releases?per_page=20"));
+    return githubReleasesApiUrl(xrayRepositoryPath(), 20);
 }
 
 CoreUpdateAssetPolicy XrayCoreBackend::updateAssetPolicy() const
@@ -112,8 +113,8 @@ CoreUpdateAssetPolicy XrayCoreBackend::updateAssetPolicy() const
         QStringLiteral("XTLS/Xray-core"),
         QStringLiteral("Xray-windows-64.zip"),
         QStringLiteral("Xray-windows-32.zip"),
-        QUrl(QStringLiteral("https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip")),
-        QUrl(QStringLiteral("https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-32.zip"))
+        githubLatestReleaseDownloadUrl(xrayRepositoryPath(), QStringLiteral("Xray-windows-64.zip")),
+        githubLatestReleaseDownloadUrl(xrayRepositoryPath(), QStringLiteral("Xray-windows-32.zip"))
     };
 }
 

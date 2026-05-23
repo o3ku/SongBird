@@ -35,8 +35,7 @@ ServerActionsController::ServerActionsController(
     std::function<void()> updateActionState,
     std::function<void(const QString&)> appendLog,
     std::function<void(const QString&, int, int)> showTransientStatus,
-    std::function<QStringList()> selectedShareLinks,
-    std::function<QStringList()> selectedSubscriptionContent)
+    std::function<QStringList()> selectedShareLinks)
     : context_(context)
     , selectedServerId_(std::move(selectedServerId))
     , selectedServerIds_(std::move(selectedServerIds))
@@ -46,7 +45,6 @@ ServerActionsController::ServerActionsController(
     , appendLog_(std::move(appendLog))
     , showTransientStatus_(std::move(showTransientStatus))
     , selectedShareLinks_(std::move(selectedShareLinks))
-    , selectedSubscriptionContent_(std::move(selectedSubscriptionContent))
 {
 }
 
@@ -58,50 +56,11 @@ void ServerActionsController::setup()
             emit context_.window->editServerRequested(indexId);
         }
     });
-    QObject::connect(context_.duplicateServerAction, &QAction::triggered, context_.window, [this]() {
-        const QString indexId = selectedServerId_();
-        if (!indexId.isEmpty()) {
-            emit context_.window->duplicateServerRequested(indexId);
-        }
-    });
-    QObject::connect(context_.exportClientConfigAction, &QAction::triggered, context_.window, [this]() {
-        const QString indexId = selectedServerId_();
-        if (!indexId.isEmpty()) {
-            emit context_.window->exportClientConfigRequested(indexId);
-        }
-    });
-    QObject::connect(context_.exportServerConfigAction, &QAction::triggered, context_.window, [this]() {
-        const QString indexId = selectedServerId_();
-        if (!indexId.isEmpty()) {
-            emit context_.window->exportServerConfigRequested(indexId);
-        }
-    });
     QObject::connect(context_.copyUrlAction, &QAction::triggered, context_.window, [this]() {
         copySelectedServerUrlsToClipboard(context_.copyUrlAction);
     });
     QObject::connect(context_.copyShareLinkAction, &QAction::triggered, context_.window, [this]() {
         copySelectedServerUrlsToClipboard(context_.copyShareLinkAction);
-    });
-    QObject::connect(context_.copySubscriptionContentAction, &QAction::triggered, context_.window, [this]() {
-        const QStringList shareLinks = selectedSubscriptionContent_();
-        if (shareLinks.isEmpty()) {
-            showTransientStatus_(QObject::tr("Subscription content unavailable for the selected server."), 4000, 0);
-            return;
-        }
-
-        if (QApplication::clipboard() != nullptr) {
-            QApplication::clipboard()->setText(QString::fromLatin1(shareLinks.join(QChar('\n')).toUtf8().toBase64()));
-        }
-        const QString message =
-            QObject::tr("Copied subscription content for %1 server(s) to the clipboard.").arg(shareLinks.size());
-        appendLog_(message);
-        showTransientStatus_(message, 3000, 1);
-    });
-    QObject::connect(context_.openCustomConfigAction, &QAction::triggered, context_.window, [this]() {
-        const QString indexId = selectedServerId_();
-        if (!indexId.isEmpty()) {
-            emit context_.window->openCustomConfigRequested(indexId);
-        }
     });
     QObject::connect(context_.removeServerAction, &QAction::triggered, context_.window, [this]() {
         const QStringList indexIds = selectedServerIds_();
@@ -239,10 +198,6 @@ ServerActionsController::buildActionState(const SelectionSnapshot& snapshot) con
         : snapshot.selectedItems.constFirst();
     const bool hasSelection = selectedItem != nullptr;
     const bool hasSingleSelection = snapshot.selectedItems.size() == 1;
-    const bool hasCustomSelection = hasSingleSelection && selectedItem->configType == ConfigType::Custom;
-    const bool hasServerConfigSelection = hasSingleSelection
-        && (selectedItem->configType == ConfigType::VMess || selectedItem->configType == ConfigType::VLESS)
-        && selectedItem->streamSecurity.trimmed().compare(QStringLiteral("reality"), Qt::CaseInsensitive) != 0;
     const bool hasShareExports = !snapshot.selectedShareLinks.isEmpty();
     const bool canReorder = hasSelection && snapshot.hasServers;
     const bool canSpeedTest = hasSelection && snapshot.canStartTask;
@@ -250,8 +205,6 @@ ServerActionsController::buildActionState(const SelectionSnapshot& snapshot) con
     return {
         hasSelection,
         hasSingleSelection,
-        hasCustomSelection,
-        hasServerConfigSelection,
         hasShareExports,
         canReorder,
         canSpeedTest
@@ -264,32 +217,12 @@ void ServerActionsController::syncActionState(const ActionState& state)
         context_.editServerAction->setEnabled(state.hasSelection);
     }
 
-    if (context_.duplicateServerAction != nullptr) {
-        context_.duplicateServerAction->setEnabled(state.hasSelection);
-    }
-
-    if (context_.exportClientConfigAction != nullptr) {
-        context_.exportClientConfigAction->setEnabled(state.hasSingleSelection);
-    }
-
-    if (context_.exportServerConfigAction != nullptr) {
-        context_.exportServerConfigAction->setEnabled(state.hasServerConfigSelection);
-    }
-
     if (context_.copyUrlAction != nullptr) {
         context_.copyUrlAction->setEnabled(state.hasShareExports);
     }
 
     if (context_.copyShareLinkAction != nullptr) {
         context_.copyShareLinkAction->setEnabled(state.hasShareExports);
-    }
-
-    if (context_.copySubscriptionContentAction != nullptr) {
-        context_.copySubscriptionContentAction->setEnabled(state.hasShareExports);
-    }
-
-    if (context_.openCustomConfigAction != nullptr) {
-        context_.openCustomConfigAction->setEnabled(state.hasCustomSelection);
     }
 
     if (context_.removeServerAction != nullptr) {

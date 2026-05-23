@@ -178,6 +178,7 @@ QJsonObject makeCanonicalRoot()
     tunModeItem.insert(QStringLiteral("mtu"), 1400);
     tunModeItem.insert(QStringLiteral("enableIPv6Address"), true);
     tunModeItem.insert(QStringLiteral("icmpRouting"), QStringLiteral("direct"));
+    tunModeItem.insert(QStringLiteral("udpRouting"), QStringLiteral("rule"));
     tunModeItem.insert(QStringLiteral("enableLegacyProtect"), true);
 
     QJsonObject serverObject;
@@ -326,6 +327,7 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     QVERIFY(config.dns().enableCacheFile4Sbox);
     QVERIFY(!config.ui().mainProxyEnabled);
     QCOMPARE(config.tun().tunModeItem.icmpRouting, QStringLiteral("rule"));
+    QCOMPARE(config.tun().tunModeItem.udpRouting, QStringLiteral("direct"));
     QVERIFY(!config.tun().tunModeItem.enableIPv6Address);
     QVERIFY(config.policy().coreTypeItems.size() > 0);
     QVERIFY(config.collection().routingItems.size() >= 3);
@@ -411,6 +413,7 @@ void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
     QCOMPARE(config.tun().tunModeItem.mtu, 1400);
     QVERIFY(config.tun().tunModeItem.enableIPv6Address);
     QCOMPARE(config.tun().tunModeItem.icmpRouting, QStringLiteral("direct"));
+    QCOMPARE(config.tun().tunModeItem.udpRouting, QStringLiteral("rule"));
     QVERIFY(config.tun().tunModeItem.enableLegacyProtect);
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers.constFirst().configType, ConfigType::Trojan);
@@ -633,6 +636,7 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     config.tun().tunModeItem.mtu = 1500;
     config.tun().tunModeItem.enableIPv6Address = true;
     config.tun().tunModeItem.icmpRouting = QStringLiteral("direct");
+    config.tun().tunModeItem.udpRouting = QStringLiteral("rule");
     config.tun().tunModeItem.enableLegacyProtect = true;
     config.collection().servers = {makeServer()};
     config.collection().servers[0].testResult = QStringLiteral("123 ms");
@@ -700,6 +704,9 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
 
     const QJsonObject savedDefaults = savedRoot.value(QStringLiteral("defaults")).toObject();
     QCOMPARE(savedDefaults.value(QStringLiteral("ieProxyExceptions")).toString(), QStringLiteral("localhost;127.*"));
+
+    const QJsonObject savedTunModeItem = savedRoot.value(QStringLiteral("tunModeItem")).toObject();
+    QCOMPARE(savedTunModeItem.value(QStringLiteral("udpRouting")).toString(), QStringLiteral("rule"));
 
     const QJsonObject savedServer = savedRoot.value(QStringLiteral("servers")).toArray().at(0).toObject();
     QCOMPARE(savedServer.value(QStringLiteral("configType")).toInt(), static_cast<int>(ConfigType::Trojan));

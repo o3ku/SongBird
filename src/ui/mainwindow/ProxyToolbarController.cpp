@@ -17,38 +17,46 @@ void ProxyToolbarController::sync(
     const ServerTableRow* activeServer)
 {
     if (proxyToggleAction_ != nullptr) {
-        proxyToggleAction_->setText(isProxyCheckedState(snapshot) ? QObject::tr("STOP") : QObject::tr("START"));
+        const bool isActive = snapshot.uiState == ProxyUiState::Active;
+        proxyToggleAction_->setText(isActive ? QObject::tr("STOP") : QObject::tr("START"));
         proxyToggleAction_->setCheckable(true);
-        proxyToggleAction_->setChecked(isProxyCheckedState(snapshot));
+        proxyToggleAction_->setChecked(isActive);
 
-        QString toolTip = QObject::tr("Start proxy.");
-        if (snapshot.coreTransitionPending) {
+        QString toolTip;
+        switch (snapshot.uiState) {
+        case ProxyUiState::Transitioning:
             toolTip = QObject::tr("Proxy state transition is in progress.");
-        } else if (isProxyCheckedState(snapshot)) {
+            break;
+        case ProxyUiState::Inconsistent:
+            toolTip = QObject::tr("Proxy state is inconsistent. Check logs.");
+            break;
+        case ProxyUiState::Active:
             toolTip = QObject::tr("Stop the running core and clear system proxy.");
-        } else if (!isProxyUncheckedState(snapshot)) {
-            toolTip = QObject::tr("Proxy state is synchronizing. Wait until the core and system proxy reach the target state.");
-        } else if (activeServer == nullptr) {
-            toolTip = QObject::tr("Select a server, then start proxy.");
-        } else {
-            toolTip = QObject::tr("Start the core with the active server and enable system proxy.");
+            break;
+        case ProxyUiState::Idle:
+            toolTip = activeServer == nullptr
+                ? QObject::tr("Select a server, then start proxy.")
+                : QObject::tr("Start the core with the active server and enable system proxy.");
+            break;
         }
 
         proxyToggleAction_->setToolTip(toolTip);
         proxyToggleAction_->setEnabled(
-            isProxyCheckedState(snapshot)
-            || isProxyUncheckedState(snapshot));
+            snapshot.uiState == ProxyUiState::Idle
+            || snapshot.uiState == ProxyUiState::Active);
     }
 
     if (tunToggleAction_ != nullptr) {
         tunToggleAction_->setText(QObject::tr("TUN"));
         tunToggleAction_->setCheckable(true);
         tunToggleAction_->setChecked(snapshot.tunEnabled);
-        bool canToggleTun = true;
+        const bool canToggleTun = snapshot.uiState != ProxyUiState::Transitioning
+            && snapshot.uiState != ProxyUiState::Inconsistent;
         QString toolTip = QObject::tr("Enable or disable TUN mode.");
-        if (snapshot.coreTransitionPending) {
-            canToggleTun = false;
+        if (snapshot.uiState == ProxyUiState::Transitioning) {
             toolTip = QObject::tr("Proxy state transition is in progress.");
+        } else if (snapshot.uiState == ProxyUiState::Inconsistent) {
+            toolTip = QObject::tr("Proxy state is inconsistent. Check logs.");
         }
 
         tunToggleAction_->setToolTip(toolTip);
@@ -57,10 +65,7 @@ void ProxyToolbarController::sync(
 }
 
 void ProxyToolbarController::refresh(
-    bool coreProcessRunning,
-    bool coreRunning,
-    bool coreTransitionPending,
-    bool systemProxyApplied,
+    ProxyUiState uiState,
     bool outboundLocationAvailable,
     bool tunEnabled,
     const QList<CoreType>& existingCoreTypes,
@@ -68,10 +73,7 @@ void ProxyToolbarController::refresh(
     const ServerTableRow* activeServer)
 {
     Snapshot snapshot;
-    snapshot.coreProcessRunning = coreProcessRunning;
-    snapshot.coreRunning = coreRunning;
-    snapshot.coreTransitionPending = coreTransitionPending;
-    snapshot.systemProxyApplied = systemProxyApplied;
+    snapshot.uiState = uiState;
     snapshot.outboundLocationAvailable = outboundLocationAvailable;
     snapshot.tunEnabled = tunEnabled;
     snapshot.existingCoreTypes = existingCoreTypes;
@@ -81,31 +83,12 @@ void ProxyToolbarController::refresh(
 
 bool ProxyToolbarController::shouldDisableProxy(const Snapshot& snapshot) const
 {
-    return isProxyCheckedState(snapshot);
+    return snapshot.uiState == ProxyUiState::Active;
 }
 
 bool ProxyToolbarController::shouldEnableProxy(
     const Snapshot& snapshot,
     const ServerTableRow* activeServer) const
 {
-    if (!isProxyUncheckedState(snapshot) || activeServer == nullptr) {
-        return false;
-    }
-
-    return true;
-}
-
-bool ProxyToolbarController::isProxyCheckedState(const Snapshot& snapshot)
-{
-    return snapshot.coreRunning
-        && snapshot.systemProxyApplied
-        && snapshot.outboundLocationAvailable
-        && !snapshot.coreTransitionPending;
-}
-
-bool ProxyToolbarController::isProxyUncheckedState(const Snapshot& snapshot)
-{
-    return !snapshot.coreProcessRunning
-        && !snapshot.coreRunning
-        && !snapshot.coreTransitionPending;
+    return snapshot.uiState == ProxyUiState::Idle && activeServer != nullptr;
 }

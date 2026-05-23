@@ -73,6 +73,7 @@ QWidget[sectionBody="true"] { background: @sectionBody@; }
 QTableView[serverTableStyle="true"], QTableWidget[serverTableStyle="true"] { background: @sectionBody@; alternate-background-color: @surfaceSubtle@; color: @text@; border: 1px solid @border@; font-size: 9pt; }
 QTableView[serverTableStyle="true"] QHeaderView::section, QTableWidget[serverTableStyle="true"] QHeaderView::section { background: @surface@; }
 QTableView#serverTableView[serverTableStyle="true"] { border: none; }
+QTableWidget#uwpLoopbackTable[serverTableStyle="true"] { border: 1px solid @border@; }
 QSplitter#rootSplitter { background: @surface@; }
 QWidget#settingsStackContainer { background: @surface@; border: none; }
 QWidget#settingsTabBarContainer { background: transparent; border: none; border-bottom: 1px solid @panelBorder@; }
@@ -101,6 +102,7 @@ QTabWidget#routingCustomRuleTabs QTabBar::tab:hover:!selected { color: @text@; b
 QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 2px 8px; }
 QLineEdit#serverFilterEdit:hover, QLineEdit#logFilterEdit:hover { background: @surface@; border: 1px solid @inputBorderHover@; }
 QLineEdit#serverFilterEdit:focus, QLineEdit#logFilterEdit:focus { background: @surface@; border: 1px solid @focus@; }
+QLineEdit#uwpLoopbackFilterEdit { padding: 4px 8px; }
 #logHeaderRow { background: @sectionHeader@; border: none; border-bottom: 1px solid @border@; }
 QWidget#loadingOverlay { background: @overlay@; border: none; }
 QWidget#loadingContentWidget { background: @loadingContent@; border: 1px solid @border@; }

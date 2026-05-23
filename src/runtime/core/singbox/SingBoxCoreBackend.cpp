@@ -6,6 +6,7 @@
 #include <QRegularExpression>
 #include <QSet>
 
+#include "common/GitHubUrls.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
@@ -170,7 +171,7 @@ QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const Vmes
 
 QUrl SingBoxCoreBackend::releasesApiUrl() const
 {
-    return QUrl(QStringLiteral("https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20"));
+    return githubReleasesApiUrl(singBoxRepositoryPath(), 20);
 }
 
 CoreUpdateAssetPolicy SingBoxCoreBackend::updateAssetPolicy() const

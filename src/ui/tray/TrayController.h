@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QString>
 
+#include "app/RuntimeState.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/VmessItem.h"
@@ -35,8 +36,7 @@ public:
     bool initialize();
     bool isAvailable() const;
     void setCurrentServerName(const QString& name);
-    void setCoreProcessRunning(bool running);
-    void setCoreRunning(bool enabled, bool pending = false);
+    void setProxyUiState(ProxyUiState state);
     void setSystemProxyState(int mode, bool enabled);
     void setAutoRunEnabled(bool enabled);
     void setRoutingSummary(const QString& value, bool advancedEnabled);
@@ -77,9 +77,7 @@ private:
     QList<TrayRoutingEntry> routings_;
     QString currentServerId_;
     int currentRoutingIndex_ = -1;
-    bool coreProcessRunning_ = false;
-    bool coreRunning_ = false;
-    bool coreTransitionPending_ = false;
+    ProxyUiState proxyUiState_ = ProxyUiState::Idle;
     bool backgroundTaskRunning_ = false;
     QString backgroundTaskDescription_;
     bool systemProxyApplied_ = false;

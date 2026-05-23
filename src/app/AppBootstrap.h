@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include <QHash>
 #include <QList>
@@ -16,18 +17,19 @@
 #include "app/CoreStartupCheckpoint.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
+#include "app/RuntimeState.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
+#include "services/AppUpdateService.h"
 
 struct SettingsDialogApplyPlan;
 
 class CoreLifecycleService;
 class CoreStartupChecklistController;
-class RuntimeState;
 class ClientConfigWriter;
-class ServerConfigWriter;
 class MainWindow;
 class SettingsDialog;
+class UwpLoopbackDialog;
 class JsonConfigRepository;
 class QNetworkAccessManager;
 class QObject;
@@ -48,6 +50,19 @@ class SubscriptionUpdateService;
 class TrayController;
 class WindowsAutoRunService;
 class WindowsSystemProxyService;
+
+namespace PostStop {
+struct Restart {
+    bool showStartupOverlay = false;
+};
+struct SwitchDefaultServer {
+    QString indexId;
+    bool enableTun = false;
+    bool showStartupOverlay = false;
+};
+struct CoreUpdate {};
+}
+using PostStopAction = std::variant<std::monostate, PostStop::Restart, PostStop::SwitchDefaultServer, PostStop::CoreUpdate>;
 
 class AppBootstrap {
 public:
@@ -77,13 +92,19 @@ private:
     void wireMainWindow();
     void syncWindow();
     void syncStatusIndicators();
+    void logProxySyncDiagnostic(const RuntimeStateSnapshot& snapshot);
+    ProxyUiState computeProxyUiState() const;
     void setRuntimePhase(RuntimePhase phase);
     bool isRuntimePhaseActive(RuntimePhase phase) const;
     bool isCoreStartPending() const;
     bool isCoreStopPending() const;
-    void setTunCleanupState(bool active, bool resumeCoreStartAfterCleanup);
-    void setTunCleanupActive(bool active);
-    void setResumeCoreStartAfterTunCleanup(bool resume);
+    enum class TunCleanupState
+    {
+        Idle,
+        Cleaning,
+        CleaningThenResume
+    };
+    void setTunCleanupState(TunCleanupState state);
     void setCurrentServerLocation(QString location);
     void setCurrentServerWarning(QString warning);
     bool reloadConfig();
@@ -165,20 +186,15 @@ private:
     void applySystemProxyModeOnExit(bool windowsShutdown);
     void cleanupRuntimeForExit(bool windowsShutdown);
     void enableSystemProxy(bool showStartupOverlay = false);
+    void retryCoreStartup(bool showStartupOverlay = true);
     void disableSystemProxy();
     void setTunEnabled(bool enabled);
-    void toggleAutoRun();
     void importFromClipboard();
     void importClipboardTextAsync(const QString& text);
     void importSubscriptionUrlsFromTextAsync(const QString& text);
-    void exportClientConfig(const QString& indexId);
-    void exportServerConfig(const QString& indexId);
-    void importClientConfigFromFile();
-    void importServerConfigFromFile();
     void updateAllSubscriptions();
     void updateCurrentSubscription(const QString& subscriptionId);
     void updateCurrentSubscriptionViaProxy(const QString& subscriptionId);
-    void runProxyAvailabilityCheck();
     void updateCore(int coreTypeValue);
     void updateCore(int coreTypeValue, bool startAfterSuccess);
     void updateCore(
@@ -213,7 +229,6 @@ private:
     void updateSubscriptionsByIds(const QStringList& subscriptionIds, bool useProxy, const QString& startupMessage);
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);
-    void openCustomConfigFile(const QString& indexId);
     void handleRoutingSelectionResult(
         const OperationResult& result,
         bool previousAdvancedEnabled,
@@ -225,14 +240,18 @@ private:
     void setDefaultServerWithTun(const QString& indexId);
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
+    void checkAppUpdates(bool manual);
+    void downloadAppUpdate(const AppUpdateCheckResult& updateResult, QPointer<QWidget> dialogParent);
     void openSettingsDialog(int initialTab = 0);
     void applySettingsDialogResult(const Config& updatedConfig);
     void openAboutDialog();
+    void openUwpLoopbackDialog();
     void openExternalUrl(const QString& url);
-    void openLoopbackTool();
     bool askRestartAsAdministratorForTun() const;
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
+    bool promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent);
+    bool launchAppUpdateScript(const QString& newExecutablePath);
     bool restartApplication(bool requireAdministrator);
     void startSpeedTest(const QStringList& indexIds);
     bool isCoreRunning() const;
@@ -283,7 +302,6 @@ private:
     std::unique_ptr<SubscriptionService> subscriptionService_;
     std::unique_ptr<GeoResourceUpdateService> geoResourceUpdateService_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
-    std::unique_ptr<ServerConfigWriter> serverConfigWriter_;
     std::unique_ptr<QtCoreProcessHost> coreProcessHost_;
     std::unique_ptr<CoreLifecycleService> coreLifecycleService_;
     std::unique_ptr<CoreStartupChecklistController> coreStartupChecklist_;
@@ -304,20 +322,17 @@ private:
     bool windowsShutdownRequested_ = false;
     bool speedTestResultsDirty_ = false;
     RuntimePhase runtimePhase_ = RuntimePhase::Stopped;
+    QString lastProxySyncDiagnostic_;
+    std::optional<ProxyUiState> lastProxyUiStateLogged_;
     QString currentServerLocation_;
     QString currentServerWarning_;
     bool coreTunEnabledAtStart_ = false;
     bool managedSystemProxyActive_ = false;
     bool skipTunCleanupOnNextCoreExit_ = false;
-    bool tunCleanupActive_ = false;
-    bool resumeCoreStartAfterTunCleanup_ = false;
-    bool restartAfterStopPending_ = false;
-    bool restartAfterStopShowStartupOverlay_ = false;
-    QString pendingDefaultServerAfterStopId_;
-    bool pendingDefaultServerAfterStopEnableTun_ = false;
-    bool pendingDefaultServerAfterStopShowStartupOverlay_ = false;
+    TunCleanupState tunCleanupState_ = TunCleanupState::Idle;
+    PostStopAction postStopAction_;
     bool setCurrentActivationPending_ = false;
-    bool coreUpdatePendingAfterStop_ = false;
+    bool appUpdateCheckRunning_ = false;
     CoreType pendingCoreUpdateType_ = CoreType::Unknown;
     bool pendingCoreUpdateStartAfterSuccess_ = false;
     bool pendingCoreUpdateSkipLocalVersionCheck_ = false;
@@ -329,6 +344,7 @@ private:
     BackgroundTaskCoordinator::Token pendingCoreUpdateTaskToken_;
     QMetaObject::Connection coreStartedConnection_;
     QList<QPointer<QThread>> backgroundThreads_;
+    QPointer<UwpLoopbackDialog> uwpLoopbackDialog_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();
     std::atomic_bool shuttingDown_{false};
     QTimer* coreRestartTimer_ = nullptr;

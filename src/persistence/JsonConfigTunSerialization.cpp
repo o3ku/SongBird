@@ -19,6 +19,10 @@ TunModeItem parseTunModeItem(const QJsonObject& object)
     if (item.icmpRouting.isEmpty()) {
         item.icmpRouting = QStringLiteral("rule");
     }
+    item.udpRouting = readString(object, QStringLiteral("udpRouting"), QStringLiteral("direct")).trimmed();
+    if (item.udpRouting.isEmpty()) {
+        item.udpRouting = QStringLiteral("direct");
+    }
     item.enableLegacyProtect = readBool(object, QStringLiteral("enableLegacyProtect"), false);
     return item;
 }
@@ -35,6 +39,9 @@ QJsonObject toTunModeItem(const TunModeItem& item)
     writeIfNotDefault(object, QStringLiteral("stack"), item.stack, QStringLiteral("system"));
     if (item.icmpRouting.trimmed() != QStringLiteral("rule")) {
         object.insert(QStringLiteral("icmpRouting"), item.icmpRouting);
+    }
+    if (item.udpRouting.trimmed() != QStringLiteral("direct")) {
+        object.insert(QStringLiteral("udpRouting"), item.udpRouting);
     }
     return object;
 }

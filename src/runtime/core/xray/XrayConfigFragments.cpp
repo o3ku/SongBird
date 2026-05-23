@@ -180,6 +180,15 @@ QJsonObject XrayConfigFragments::buildSniffing(const Config& config)
 QJsonObject XrayConfigFragments::buildStreamSettings(const Config& config, const VmessItem& server)
 {
     QJsonObject streamSettings;
+    if (server.configType == ConfigType::Hysteria2) {
+        streamSettings.insert(QStringLiteral("network"), QStringLiteral("hysteria"));
+        QJsonObject hysteriaSettings;
+        hysteriaSettings.insert(QStringLiteral("version"), 2);
+        hysteriaSettings.insert(QStringLiteral("auth"), server.id);
+        streamSettings.insert(QStringLiteral("hysteriaSettings"), hysteriaSettings);
+        return streamSettings;
+    }
+
     const QString network = server.network.trimmed().isEmpty() ? QStringLiteral("tcp") : server.network.trimmed();
     const QString transportSecurity = server.streamSecurity.trimmed();
     const QString userAgent = resolveLegacyUserAgent(config, server);
@@ -476,35 +485,11 @@ QJsonObject XrayConfigFragments::buildPrimaryOutbound(const Config& config, cons
     }
 
     if (server.configType == ConfigType::Hysteria2) {
-        outbound.insert(QStringLiteral("protocol"), QStringLiteral("hysteria2"));
+        outbound.insert(QStringLiteral("protocol"), QStringLiteral("hysteria"));
         QJsonObject settings;
-        QJsonArray servers;
-        QJsonObject item;
-        item.insert(QStringLiteral("address"), server.address);
-        item.insert(QStringLiteral("port"), server.port);
-        item.insert(QStringLiteral("password"), server.id);
-        if (!server.obfsPassword.trimmed().isEmpty()) {
-            QJsonObject obfs;
-            obfs.insert(QStringLiteral("type"), QStringLiteral("salamander"));
-            obfs.insert(QStringLiteral("password"), server.obfsPassword);
-            item.insert(QStringLiteral("obfs"), obfs);
-        }
-        if (!server.upMbps.trimmed().isEmpty()) {
-            bool okUp = false;
-            const int up = server.upMbps.toInt(&okUp);
-            if (okUp && up > 0) {
-                item.insert(QStringLiteral("up_mbps"), up);
-            }
-        }
-        if (!server.downMbps.trimmed().isEmpty()) {
-            bool okDown = false;
-            const int down = server.downMbps.toInt(&okDown);
-            if (okDown && down > 0) {
-                item.insert(QStringLiteral("down_mbps"), down);
-            }
-        }
-        servers.append(item);
-        settings.insert(QStringLiteral("servers"), servers);
+        settings.insert(QStringLiteral("version"), 2);
+        settings.insert(QStringLiteral("address"), server.address);
+        settings.insert(QStringLiteral("port"), server.port);
         outbound.insert(QStringLiteral("settings"), settings);
         return outbound;
     }

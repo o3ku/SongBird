@@ -35,13 +35,11 @@ inline QList<ConfigType> coreCatalogSupportedConfigTypes()
 inline QList<CoreDescriptor> coreDescriptors()
 {
     const QList<ConfigType> supportedConfigTypes = coreCatalogSupportedConfigTypes();
-    QList<ConfigType> xraySupportedConfigTypes = supportedConfigTypes;
-    xraySupportedConfigTypes.removeAll(ConfigType::Hysteria2);
     return {
         CoreDescriptor{
             CoreType::Xray,
             QStringLiteral("Xray"),
-            xraySupportedConfigTypes,
+            supportedConfigTypes,
             QStringList{QStringLiteral("xray.exe")},
             20},
         CoreDescriptor{

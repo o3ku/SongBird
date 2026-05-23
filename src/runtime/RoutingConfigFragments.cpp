@@ -10,6 +10,7 @@
 #include <QSet>
 #include <QStringList>
 
+#include "common/GitHubUrls.h"
 #include "domain/models/RoutingRule.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/RoutingRuleJsonMapper.h"
@@ -268,6 +269,10 @@ QJsonObject RoutingConfigFragments::buildSingBoxRoute(const Config& config, cons
         }
     }
 
+    if (config.tun().tunModeItem.enableTun) {
+        SingBoxConfigFragments::appendTunUdpRouteRule(rules, config.tun().tunModeItem);
+    }
+
     if (!rules.isEmpty()) {
         route.insert(QStringLiteral("rules"), rules);
     }
@@ -355,10 +360,10 @@ void RoutingConfigFragments::migrateGeoToRuleSet(QJsonObject& root)
                 def.insert(QStringLiteral("download_detour"), QStringLiteral("proxy"));
                 if (tag.startsWith(QStringLiteral("geosite-"))) {
                     def.insert(QStringLiteral("url"),
-                        QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%1.srs").arg(tag));
+                        singRuleSetDownloadUrl(singGeositeRepositoryPath(), tag).toString());
                 } else if (tag.startsWith(QStringLiteral("geoip-"))) {
                     def.insert(QStringLiteral("url"),
-                        QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%1.srs").arg(tag));
+                        singRuleSetDownloadUrl(singGeoipRepositoryPath(), tag).toString());
                 }
             }
             ruleSetDefinitions.append(def);

@@ -16,6 +16,7 @@
 
 #include "common/DataSizeFormatter.h"
 #include "common/GitHubMirrorHelper.h"
+#include "common/GitHubUrls.h"
 #include "common/UserAgent.h"
 
 namespace {
@@ -301,20 +302,19 @@ OperationResult GeoResourceUpdateService::downloadBytes(const QUrl& url, const Q
 
 QUrl GeoResourceUpdateService::buildDownloadUrl(const QString& geoName)
 {
-    return QUrl(QStringLiteral("https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/%1.dat")
-                    .arg(normalizeGeoName(geoName)));
+    return githubLatestReleaseDownloadUrl(
+        v2rayRulesDatRepositoryPath(),
+        QStringLiteral("%1.dat").arg(normalizeGeoName(geoName)));
 }
 
 QUrl GeoResourceUpdateService::buildSingBoxRuleSetDownloadUrl(const QString& tag)
 {
     const QString normalizedTag = normalizeRuleSetTag(tag);
     if (normalizedTag.startsWith(QStringLiteral("geosite-"))) {
-        return QUrl(QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%1.srs")
-                        .arg(normalizedTag));
+        return singRuleSetDownloadUrl(singGeositeRepositoryPath(), normalizedTag);
     }
     if (normalizedTag.startsWith(QStringLiteral("geoip-"))) {
-        return QUrl(QStringLiteral("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%1.srs")
-                        .arg(normalizedTag));
+        return singRuleSetDownloadUrl(singGeoipRepositoryPath(), normalizedTag);
     }
     return {};
 }

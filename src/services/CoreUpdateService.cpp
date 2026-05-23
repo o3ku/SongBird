@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "common/GitHubMirrorHelper.h"
+#include "common/GitHubUrls.h"
 #include "common/UserAgent.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
@@ -69,10 +70,7 @@ GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, bool pref
     release.tagName = policy.builtInFallbackTagName;
     release.assets.append(GitHubReleaseAsset{
         assetName,
-        QUrl(QStringLiteral("https://github.com/%1/releases/download/%2/%3")
-                 .arg(policy.builtInFallbackRepositoryPath)
-                 .arg(policy.builtInFallbackTagName)
-                 .arg(assetName))});
+        githubReleaseDownloadUrl(policy.builtInFallbackRepositoryPath, policy.builtInFallbackTagName, assetName)});
     return release;
 }
 

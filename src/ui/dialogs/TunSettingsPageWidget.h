@@ -34,4 +34,5 @@ private:
     QComboBox* tunStackCombo_ = nullptr;
     QCheckBox* tunEnableIPv6AddressCheck_ = nullptr;
     QLineEdit* tunIcmpRoutingEdit_ = nullptr;
+    QLineEdit* tunUdpRoutingEdit_ = nullptr;
 };

@@ -5,15 +5,20 @@
 
 #include "common/SystemProxyMode.h"
 
+enum class ProxyUiState {
+    Idle,
+    Transitioning,
+    Active,
+    Inconsistent
+};
+
 struct RuntimeStateSnapshot {
     QString currentServerName;
     QString currentServerLocation;
     QString currentServerWarning;
     QString routingSummary;
     QString listenSummary;
-    bool coreProcessRunning = false;
-    bool coreRunning = false;
-    bool coreTransitionPending = false;
+    ProxyUiState proxyUiState = ProxyUiState::Idle;
     SystemProxyMode systemProxyMode = SystemProxyMode::ForcedClear;
     bool systemProxyApplied = false;
     bool autoRunEnabled = false;
@@ -30,8 +35,9 @@ public:
     void applySnapshot(const RuntimeStateSnapshot& snapshot);
 
 signals:
+    void snapshotApplied(const RuntimeStateSnapshot& snapshot);
     void currentServerChanged(const QString& name, const QString& location, const QString& warning);
-    void coreStateChanged(bool processRunning, bool running, bool transitionPending);
+    void proxyUiStateChanged(ProxyUiState state);
     void systemProxyStateChanged(int mode, bool enabled);
     void autoRunChanged(bool enabled);
     void routingStatusChanged(const QString& routingText, const QString& listenText, bool advancedEnabled);

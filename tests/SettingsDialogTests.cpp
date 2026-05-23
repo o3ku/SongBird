@@ -11,6 +11,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QLabel>
+#include <QLineEdit>
 #include <QSpinBox>
 #include <QStackedLayout>
 #include <QTabBar>
@@ -363,6 +364,7 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     config.tun().tunModeItem.stack = QStringLiteral("gvisor");
     config.tun().tunModeItem.enableIPv6Address = true;
     config.tun().tunModeItem.icmpRouting = QStringLiteral("tcp");
+    config.tun().tunModeItem.udpRouting = QStringLiteral("direct");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -374,6 +376,7 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     auto* stackCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsTunStackCombo"));
     auto* ipv6Check = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableIPv6AddressCheck"));
     auto* icmpEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsTunIcmpRoutingEdit"));
+    auto* udpEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsTunUdpRoutingEdit"));
     QVERIFY(enableCheck != nullptr);
     QVERIFY(autoRouteCheck != nullptr);
     QVERIFY(strictRouteCheck != nullptr);
@@ -381,6 +384,7 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     QVERIFY(stackCombo != nullptr);
     QVERIFY(ipv6Check != nullptr);
     QVERIFY(icmpEdit != nullptr);
+    QVERIFY(udpEdit != nullptr);
     QVERIFY(enableCheck->isChecked());
     QVERIFY(autoRouteCheck->isEnabled());
     QCOMPARE(mtuSpin->value(), 1400);
@@ -389,6 +393,7 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     mtuSpin->setValue(1500);
     stackCombo->setCurrentText(QStringLiteral("mixed"));
     icmpEdit->setText(QStringLiteral("udp"));
+    udpEdit->setText(QStringLiteral("rule"));
     strictRouteCheck->setChecked(true);
     ipv6Check->setChecked(false);
 
@@ -400,6 +405,7 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     QCOMPARE(updated.tun().tunModeItem.stack, QStringLiteral("mixed"));
     QVERIFY(!updated.tun().tunModeItem.enableIPv6Address);
     QCOMPARE(updated.tun().tunModeItem.icmpRouting, QStringLiteral("udp"));
+    QCOMPARE(updated.tun().tunModeItem.udpRouting, QStringLiteral("rule"));
 }
 
 void SettingsDialogTests::tunToggleControlsDependentFields()
