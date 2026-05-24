@@ -113,54 +113,126 @@ private:
     ExitedCallback exitedCallback_;
 };
 
-struct ProxySessionHarness
+struct ProxySessionHarness final
+    : public IRuntimeProfileResolver
+    , public IRuntimeEnvironment
+    , public IProxyActivationCoordinator
 {
     ProxySessionHarness()
         : configWriter(tempDir.path())
     {
-        resolver.resolveActiveServer = []() { return std::optional<VmessItem>{}; };
-        resolver.resolveLaunchCoreType = [](const VmessItem& server) { return ::resolveRuntimeCoreType(server.coreType); };
-        resolver.resolveCoreInfo = [](const VmessItem&) { return CoreInfo{}; };
-        resolver.resolveRuntimeConfigPath = [this](const VmessItem&) {
-            return tempDir.filePath(QStringLiteral("runtime.json"));
-        };
-        resolver.resolveCoreCandidates = [](CoreType) { return QStringList{}; };
-        resolver.locateFirstExistingFile = [](const QStringList&) { return QString{}; };
-        resolver.cleanupPortProcesses = []() {};
-        resolver.removeStaleSingBoxCache = []() {};
-        resolver.refreshExistingCoreTypes = []() {};
-        resolver.removeStaleTunAdapter = [this]() {
-            ++tunCleanupCount;
-            if (tunCleanupDelayMs > 0) {
-                QThread::msleep(tunCleanupDelayMs);
-            }
-            return tunCleanupResult;
-        };
-        resolver.skipCoreChecks = []() { return true; };
-        resolver.isWindowsPlatform = []() { return false; };
-        resolver.isProcessElevated = []() { return true; };
-        resolver.isSystemProxyEnabled = [this]() { return systemProxyEnabled; };
-        resolver.cancelBackgroundTasksForStartup = [this]() { ++cancelBackgroundTaskCount; };
-        resolver.currentIndexId = []() { return QString{}; };
-        resolver.resolveRuntimeCoreType = [](CoreType type) { return ::resolveRuntimeCoreType(type); };
-        resolver.resolveCoreInstallDirectory = [this](CoreType) { return tempDir.path(); };
-        resolver.updateSystemProxyMode = [this](SystemProxyMode mode) {
-            ++proxyUpdateCount;
-            lastProxyMode = mode;
-            if (proxyUpdateSucceeds) {
-                systemProxyEnabled = expectedSystemProxyEnabled(mode);
-            }
-            return proxyUpdateSucceeds;
-        };
-
         session = std::make_unique<ProxySession>(ProxySession::Dependencies{
             mainCore,
             auxiliaryCore,
             configWriter,
             locationProbe,
             backgroundTasks,
-            resolver
+            *this,
+            *this,
+            *this
         });
+    }
+
+    std::optional<VmessItem> resolveActiveServer() const override
+    {
+        return activeServer;
+    }
+
+    CoreType resolveLaunchCoreType(const VmessItem& server) const override
+    {
+        return ::resolveRuntimeCoreType(server.coreType);
+    }
+
+    CoreInfo resolveCoreInfo(const VmessItem&) const override
+    {
+        return coreInfo;
+    }
+
+    QString resolveRuntimeConfigPath(const VmessItem&) const override
+    {
+        return tempDir.filePath(QStringLiteral("runtime.json"));
+    }
+
+    QStringList resolveCoreCandidates(CoreType) const override
+    {
+        return {};
+    }
+
+    QString locateFirstExistingFile(const QStringList&) const override
+    {
+        return {};
+    }
+
+    QString currentIndexId() const override
+    {
+        return currentServerIndexId;
+    }
+
+    CoreType resolveRuntimeCoreType(CoreType type) const override
+    {
+        return ::resolveRuntimeCoreType(type);
+    }
+
+    QString resolveCoreInstallDirectory(CoreType) const override
+    {
+        return tempDir.path();
+    }
+
+    void cleanupPortProcesses() override
+    {
+    }
+
+    void removeStaleSingBoxCache() override
+    {
+    }
+
+    OperationResult removeStaleTunAdapter() override
+    {
+        ++tunCleanupCount;
+        if (tunCleanupDelayMs > 0) {
+            QThread::msleep(tunCleanupDelayMs);
+        }
+        return tunCleanupResult;
+    }
+
+    bool skipCoreChecks() const override
+    {
+        return true;
+    }
+
+    bool isWindowsPlatform() const override
+    {
+        return false;
+    }
+
+    bool isProcessElevated() const override
+    {
+        return true;
+    }
+
+    void cancelBackgroundTasksForStartup() override
+    {
+        ++cancelBackgroundTaskCount;
+    }
+
+    void refreshExistingCoreTypes() override
+    {
+        ++refreshExistingCoreTypesCount;
+    }
+
+    bool isSystemProxyEnabled() const override
+    {
+        return systemProxyEnabled;
+    }
+
+    bool updateSystemProxyMode(SystemProxyMode mode) override
+    {
+        ++proxyUpdateCount;
+        lastProxyMode = mode;
+        if (proxyUpdateSucceeds) {
+            systemProxyEnabled = expectedSystemProxyEnabled(mode);
+        }
+        return proxyUpdateSucceeds;
     }
 
     QTemporaryDir tempDir;
@@ -169,12 +241,15 @@ struct ProxySessionHarness
     ClientConfigWriter configWriter;
     OutboundLocationProbeService locationProbe;
     BackgroundTaskCoordinator backgroundTasks;
-    ProxySession::RuntimeResolver resolver;
     std::unique_ptr<ProxySession> session;
+    std::optional<VmessItem> activeServer;
+    CoreInfo coreInfo;
+    QString currentServerIndexId;
     bool systemProxyEnabled = false;
     bool proxyUpdateSucceeds = true;
     int proxyUpdateCount = 0;
     int cancelBackgroundTaskCount = 0;
+    int refreshExistingCoreTypesCount = 0;
     std::atomic_int tunCleanupCount = 0;
     int tunCleanupDelayMs = 0;
     OperationResult tunCleanupResult = OperationResult::ok(QStringLiteral("tun cleanup skipped"));

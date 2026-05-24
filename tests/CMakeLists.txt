@@ -317,6 +317,7 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/app/PostStopAction.h
     ../src/app/ProxySession.h
     ../src/app/ProxySession.cpp
+    ../src/app/ProxyRuntimeInterfaces.h
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
     ../src/runtime/CoreConfigPreflight.h
@@ -383,6 +384,73 @@ set_tests_properties(proxy-session-state PROPERTIES
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_proxy_session_tests)
+endif()
+
+set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
+    CoreUpdateCoordinatorTests.cpp
+    ../src/app/BackgroundTaskCoordinator.h
+    ../src/app/BackgroundTaskCoordinator.cpp
+    ../src/app/CoreUpdateCoordinator.h
+    ../src/app/CoreUpdateCoordinator.cpp
+    ../src/services/CoreUpdateService.h
+    ../src/services/CoreUpdateService.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreDescriptor.h
+    ../src/runtime/core/CoreDescriptorRegistry.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxCoreDescriptor.h
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayCoreDescriptor.h
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_core_update_coordinator_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_core_update_coordinator_tests ${SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_core_update_coordinator_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_core_update_coordinator_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME core-update-coordinator COMMAND songbird_core_update_coordinator_tests)
+set_tests_properties(core-update-coordinator PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_core_update_coordinator_tests)
 endif()
 
 set(SONGBIRD_APP_BOOTSTRAP_UI_COMMAND_PLAN_TEST_SOURCES
@@ -791,6 +859,45 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_subscription_service_tests)
 endif()
 
+set(SONGBIRD_SUBSCRIPTION_URL_IMPORT_SERVICE_TEST_SOURCES
+    SubscriptionUrlImportServiceTests.cpp
+    ../src/services/SubscriptionService.h
+    ../src/services/SubscriptionService.cpp
+    ../src/subscription/SubscriptionImportTextParser.h
+    ../src/subscription/SubscriptionImportTextParser.cpp
+    ../src/subscription/SubscriptionUrlImportService.h
+    ../src/subscription/SubscriptionUrlImportService.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_subscription_url_import_service_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_SUBSCRIPTION_URL_IMPORT_SERVICE_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_subscription_url_import_service_tests ${SONGBIRD_SUBSCRIPTION_URL_IMPORT_SERVICE_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_subscription_url_import_service_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_subscription_url_import_service_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME subscription-url-import-service COMMAND songbird_subscription_url_import_service_tests)
+set_tests_properties(subscription-url-import-service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_subscription_url_import_service_tests)
+endif()
+
 set(SONGBIRD_ROUTING_SERVICE_TEST_SOURCES
     RoutingServiceTests.cpp
     ../src/services/RoutingService.h
@@ -902,6 +1009,52 @@ set_tests_properties(app-update-service PROPERTIES
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_app_update_service_tests)
+endif()
+
+set(SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES
+    AppUpdateCheckCoordinatorTests.cpp
+    ../src/app/AppUpdateCheckCoordinator.h
+    ../src/app/AppUpdateCheckCoordinator.cpp
+    ../src/app/BackgroundTaskCoordinator.h
+    ../src/app/BackgroundTaskCoordinator.cpp
+    ../src/app/IUserFeedback.h
+    ../src/services/AppUpdateService.h
+    ../src/services/AppUpdateService.cpp
+    ../src/common/GitHubMirrorHelper.h
+    ../src/common/GitHubUrls.h
+    ../src/common/OperationResult.h
+    ../src/common/UserAgent.h
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_app_update_check_coordinator_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_app_update_check_coordinator_tests ${SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_app_update_check_coordinator_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_app_update_check_coordinator_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME app-update-check-coordinator COMMAND songbird_app_update_check_coordinator_tests)
+set_tests_properties(app-update-check-coordinator PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_app_update_check_coordinator_tests)
 endif()
 
 

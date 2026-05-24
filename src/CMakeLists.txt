@@ -2,8 +2,13 @@ set(SONGBIRD_SOURCES
     app/main.cpp
     app/AppBootstrap.h
     app/AppBootstrap.cpp
+    app/AppBootstrapAdapters.h
+    app/AppBootstrapAdapters.cpp
+    app/AppUpdateCheckCoordinator.h
+    app/AppUpdateCheckCoordinator.cpp
     app/AppUpdateInstallService.h
     app/AppUpdateInstallService.cpp
+    app/IUserFeedback.h
     app/ConfigPathResolver.h
     app/CoreProcessCleanupService.h
     app/CoreProcessCleanupService.cpp
@@ -14,6 +19,13 @@ set(SONGBIRD_SOURCES
     app/OutboundLocationProbeService.cpp
     app/BackgroundTaskCoordinator.h
     app/BackgroundTaskCoordinator.cpp
+    app/ProxyRuntimeInterfaces.h
+    app/CoreUpdateCoordinator.h
+    app/CoreUpdateCoordinator.cpp
+    app/GeoResourceUpdateCoordinator.h
+    app/GeoResourceUpdateCoordinator.cpp
+    app/SubscriptionWorkflowCoordinator.h
+    app/SubscriptionWorkflowCoordinator.cpp
     app/PostStopAction.h
     app/RuntimeState.h
     app/RuntimeState.cpp
@@ -21,6 +33,10 @@ set(SONGBIRD_SOURCES
     app/ProxySession.cpp
     app/SettingsDialogSession.h
     app/SettingsDialogSession.cpp
+    app/SettingsWorkflowCoordinator.h
+    app/SettingsWorkflowCoordinator.cpp
+    app/SpeedTestCoordinator.h
+    app/SpeedTestCoordinator.cpp
     app/SingleInstanceBootstrap.h
     app/SingleInstanceBootstrap.cpp
     app/StartupAdminElevation.h
@@ -130,6 +146,8 @@ set(SONGBIRD_SOURCES
     subscription/SubscriptionContentParser.cpp
     subscription/SubscriptionImportTextParser.h
     subscription/SubscriptionImportTextParser.cpp
+    subscription/SubscriptionUrlImportService.h
+    subscription/SubscriptionUrlImportService.cpp
     third_party/qrcodegen/qrcodegen.hpp
     third_party/qrcodegen/qrcodegen.cpp
     ui/dialogs/AddServerDialog.h

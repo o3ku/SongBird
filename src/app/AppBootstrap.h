@@ -22,8 +22,18 @@ struct SettingsDialogApplyPlan;
 
 class ClientConfigWriter;
 class ProxySession;
+class AppUpdateCheckCoordinator;
+class CoreUpdateCoordinator;
+class GeoResourceUpdateCoordinator;
+class IUserFeedback;
+class IProxyActivationCoordinator;
+class IRuntimeEnvironment;
+class IRuntimeProfileResolver;
 class MainWindow;
 class SettingsDialog;
+class SettingsWorkflowCoordinator;
+class SpeedTestCoordinator;
+class SubscriptionWorkflowCoordinator;
 class UwpLoopbackDialog;
 class JsonConfigRepository;
 class QObject;
@@ -58,26 +68,16 @@ public:
     bool run();
 
 private:
-    enum class RuntimePhase {
-        Stopped,
-        EnvironmentCleanup,
-        ValidateCoreApplication,
-        ValidateRuntimeResources,
-        ValidateCoreConfig,
-        StartTunRuntime,
-        StartCoreProcess,
-        CheckOutboundLocation,
-        ApplySystemProxy,
-        Proxying,
-        Stopping
-    };
-
     void wireMainWindow();
+    void wireProxySessionSignals();
+    void wireRuntimeStateSignals();
+    void wireBackgroundTaskSignals();
+    void wireMainWindowCommands();
+    void wireTraySignals();
     void syncWindow();
     void syncStatusIndicators();
     void logProxySyncDiagnostic(const RuntimeStateSnapshot& snapshot);
     ProxyUiState computeProxyUiState() const;
-    void setRuntimePhase(RuntimePhase phase);
     bool reloadConfig();
     void applyStartupSystemProxyPreference();
     void appendStartupResourceCheckResults();
@@ -124,23 +124,6 @@ private:
         bool skipConfirmation,
         bool skipLocalVersionCheck,
         const std::function<void(const QString&)>& progressObserver,
-        const std::function<void(const OperationResult&)>& completionObserver);
-    void runCoreUpdateTask(
-        BackgroundTaskCoordinator::Token token,
-        CoreType coreType,
-        CoreUpdateConfig workerConfig,
-        QString installDirectory,
-        QPointer<QObject> progressContextGuard,
-        bool skipLocalVersionCheck,
-        std::function<void(const QString&)> progressObserver,
-        std::function<void(const OperationResult&)> completionObserver);
-    void finalizeCoreUpdate(
-        BackgroundTaskCoordinator::Token token,
-        const QString& title,
-        const OperationResult& result,
-        bool stoppedForInstall,
-        bool startAfterSuccess,
-        QPointer<QWidget> dialogParentGuard,
         const std::function<void(const OperationResult&)>& completionObserver);
     void continuePendingCoreUpdate();
     void updateGeoResources();
@@ -231,7 +214,17 @@ private:
     std::unique_ptr<WindowsAutoRunService> autoRunService_;
     std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
     std::unique_ptr<BackgroundTaskCoordinator> backgroundTasks_;
+    std::unique_ptr<IRuntimeProfileResolver> runtimeProfileResolver_;
+    std::unique_ptr<IRuntimeEnvironment> runtimeEnvironment_;
+    std::unique_ptr<IProxyActivationCoordinator> proxyActivationCoordinator_;
     std::unique_ptr<ProxySession> proxySession_;
+    std::unique_ptr<IUserFeedback> userFeedback_;
+    std::unique_ptr<AppUpdateCheckCoordinator> appUpdateCheckCoordinator_;
+    std::unique_ptr<CoreUpdateCoordinator> coreUpdateCoordinator_;
+    std::unique_ptr<GeoResourceUpdateCoordinator> geoResourceUpdateCoordinator_;
+    std::unique_ptr<SettingsWorkflowCoordinator> settingsWorkflowCoordinator_;
+    std::unique_ptr<SpeedTestCoordinator> speedTestCoordinator_;
+    std::unique_ptr<SubscriptionWorkflowCoordinator> subscriptionWorkflowCoordinator_;
     std::unique_ptr<TrayController> trayController_;
     std::unique_ptr<MainWindow> mainWindow_;
     QList<CoreType> existingCoreTypes_;
@@ -241,21 +234,9 @@ private:
     bool shutdownUiStatePersisted_ = false;
     bool exitProxyStateApplied_ = false;
     bool windowsShutdownRequested_ = false;
-    bool speedTestResultsDirty_ = false;
-    RuntimePhase runtimePhase_ = RuntimePhase::Stopped;
     QString lastProxySyncDiagnostic_;
     std::optional<ProxyUiState> lastProxyUiStateLogged_;
     bool setCurrentActivationPending_ = false;
-    bool appUpdateCheckRunning_ = false;
-    CoreType pendingCoreUpdateType_ = CoreType::Unknown;
-    bool pendingCoreUpdateStartAfterSuccess_ = false;
-    bool pendingCoreUpdateSkipLocalVersionCheck_ = false;
-    QPointer<QObject> pendingCoreUpdateProgressContext_;
-    QPointer<QWidget> pendingCoreUpdateDialogParent_;
-    std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;
-    std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
-    BackgroundTaskCoordinator::Token speedTestTaskToken_;
-    BackgroundTaskCoordinator::Token pendingCoreUpdateTaskToken_;
     QList<QPointer<QThread>> backgroundThreads_;
     QPointer<UwpLoopbackDialog> uwpLoopbackDialog_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();

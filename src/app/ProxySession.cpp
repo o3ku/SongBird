@@ -296,12 +296,12 @@ void ProxySession::startInternal(
     }
     cancelPendingCoreRestarts();
     clearServerLocation();
-    deps_.resolver.cleanupPortProcesses();
+    deps_.environment.cleanupPortProcesses();
 
     if (isTunRuntimeBlocked(
             currentRequest_.config,
-            deps_.resolver.isWindowsPlatform(),
-            deps_.resolver.isProcessElevated())) {
+            deps_.environment.isWindowsPlatform(),
+            deps_.environment.isProcessElevated())) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, environmentStep,
             QStringLiteral("Administrator permission is required for TUN."));
         failStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
@@ -358,7 +358,7 @@ void ProxySession::startInternal(
 
     // Validate core application
     setPhase(Phase::ValidateCoreApplication);
-    const std::optional<VmessItem> server = deps_.resolver.resolveActiveServer();
+    const std::optional<VmessItem> server = deps_.profileResolver.resolveActiveServer();
     if (!server.has_value()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep,
             QStringLiteral("No active server."));
@@ -367,10 +367,10 @@ void ProxySession::startInternal(
     }
     currentServer_ = *server;
 
-    const CoreType launchCore = deps_.resolver.resolveLaunchCoreType(*server);
-    const CoreInfo coreInfo = deps_.resolver.resolveCoreInfo(*server);
+    const CoreType launchCore = deps_.profileResolver.resolveLaunchCoreType(*server);
+    const CoreInfo coreInfo = deps_.profileResolver.resolveCoreInfo(*server);
     if (coreInfo.program.isEmpty()) {
-        const QStringList candidates = deps_.resolver.resolveCoreCandidates(launchCore);
+        const QStringList candidates = deps_.profileResolver.resolveCoreCandidates(launchCore);
         const OperationResult missingCoreResult = OperationResult::fail(
             tr("No compatible %1 core executable was found for the active server.")
                 .arg(coreTypeDisplayName(launchCore)));
@@ -384,7 +384,7 @@ void ProxySession::startInternal(
     }
 
     // Validate config
-    const QString coreConfigPath = deps_.resolver.resolveRuntimeConfigPath(*server);
+    const QString coreConfigPath = deps_.profileResolver.resolveRuntimeConfigPath(*server);
     if (coreConfigPath.isEmpty()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep,
             QStringLiteral("Runtime config path is empty."));
@@ -397,7 +397,7 @@ void ProxySession::startInternal(
         QStringLiteral("Generating runtime config."));
 
     QStringList auxiliaryConfigPaths;
-    deps_.resolver.removeStaleSingBoxCache();
+    deps_.environment.removeStaleSingBoxCache();
     deps_.configWriter.setExistingCoreTypes(currentRequest_.existingCoreTypes);
     const OperationResult writeResult = deps_.configWriter.writeClientConfigs(
         currentRequest_.config, *server, coreConfigPath, &auxiliaryConfigPaths);
@@ -432,7 +432,7 @@ void ProxySession::startInternal(
     setCheckpointStatus(CoreStartupCheckpointStatus::Passed, checkRuntimeResourcesStep,
         runtimeResourcesResult.message);
 
-    if (!deps_.resolver.skipCoreChecks()) {
+    if (!deps_.environment.skipCoreChecks()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Started, validateConfigStep,
             QFileInfo(coreInfo.program).fileName());
         const OperationResult preflightResult = validateCoreConfigBeforeStart(coreInfo, coreConfigPath);
@@ -456,8 +456,8 @@ void ProxySession::startInternal(
             : auxiliaryCoreTypes.constFirst();
         const ICoreBackend* auxiliaryBackend = coreBackend(auxiliaryCoreType);
         setPhase(Phase::StartTunRuntime);
-        const QString auxiliaryProgram = deps_.resolver.locateFirstExistingFile(
-            deps_.resolver.resolveCoreCandidates(auxiliaryCoreType));
+        const QString auxiliaryProgram = deps_.profileResolver.locateFirstExistingFile(
+            deps_.profileResolver.resolveCoreCandidates(auxiliaryCoreType));
         if (auxiliaryProgram.isEmpty()) {
             const OperationResult missingAuxiliaryResult = OperationResult::fail(
                 QStringLiteral("TUN compatibility mode requires %1, but no compatible %1 executable was found.")
@@ -476,7 +476,7 @@ void ProxySession::startInternal(
         }
         auxiliaryCoreInfo.workingDirectory = QFileInfo(auxiliaryProgram).absolutePath();
 
-        if (!deps_.resolver.skipCoreChecks()) {
+        if (!deps_.environment.skipCoreChecks()) {
             setCheckpointStatus(CoreStartupCheckpointStatus::Started, startTunRuntimeStep,
                 QStringLiteral("Validating TUN compatibility relay."));
             const OperationResult auxiliaryPreflightResult = validateCoreConfigBeforeStart(
@@ -568,8 +568,8 @@ void ProxySession::startInternal(
 void ProxySession::beginActivation()
 {
     const bool alreadyActivating = isActivationInProgress();
-    if (!alreadyActivating && deps_.resolver.cancelBackgroundTasksForStartup) {
-        deps_.resolver.cancelBackgroundTasksForStartup();
+    if (!alreadyActivating) {
+        deps_.activationCoordinator.cancelBackgroundTasksForStartup();
     }
     setPhase(Phase::EnvironmentCleanup);
 }
@@ -731,9 +731,7 @@ void ProxySession::cleanupAfterFailedStartup()
     const bool proxyConfigured =
         normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedClear
         || currentRequest_.config.ui().mainProxyEnabled;
-    const bool proxyApplied = deps_.resolver.isSystemProxyEnabled
-        ? deps_.resolver.isSystemProxyEnabled()
-        : false;
+    const bool proxyApplied = deps_.activationCoordinator.isSystemProxyEnabled();
     if (proxyConfigured || proxyApplied || managedSystemProxyActive_) {
         const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
         emit logMessage(proxyCleared
@@ -952,8 +950,8 @@ void ProxySession::downloadMissingCoreAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const CoreType runtimeCore = deps_.resolver.resolveRuntimeCoreType(coreType);
-    const QString installDirectory = deps_.resolver.resolveCoreInstallDirectory(runtimeCore);
+    const CoreType runtimeCore = deps_.profileResolver.resolveRuntimeCoreType(coreType);
+    const QString installDirectory = deps_.profileResolver.resolveCoreInstallDirectory(runtimeCore);
     if (runtimeCore == CoreType::Unknown || installDirectory.trimmed().isEmpty()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep, missingCoreResult.message);
         failStartup(missingCoreResult);
@@ -1048,7 +1046,7 @@ void ProxySession::downloadMissingCoreAndResume(
                 emit statusSyncRequested();
                 return;
             }
-            deps_.resolver.refreshExistingCoreTypes();
+            deps_.activationCoordinator.refreshExistingCoreTypes();
             setCheckpointStatus(CoreStartupCheckpointStatus::Passed, downloadCoreStep, result.message);
             startInternal(skipTunCleanup, true, showStartupOverlay);
         }, Qt::QueuedConnection);
@@ -1101,7 +1099,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
             if (guard.expired()) {
                 return;
             }
-            if (coreStartTime_ != startTime || deps_.resolver.currentIndexId() != activeServerId) {
+            if (coreStartTime_ != startTime || deps_.profileResolver.currentIndexId() != activeServerId) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Skipped, startCoreStep,
                     QStringLiteral("Core listening validation result is stale."));
                 if (coreStartTime_ == startTime && deps_.mainCore.isRunning() && phase_ != Phase::Stopping) {
@@ -1183,7 +1181,7 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
             }
             if (!deps_.mainCore.isRunning()
                 || coreStartTime_ != startTime
-                || deps_.resolver.currentIndexId() != activeServerId) {
+                || deps_.profileResolver.currentIndexId() != activeServerId) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep,
                     QStringLiteral("Outbound location detection result is stale."));
                 cancelActivation();
@@ -1272,7 +1270,7 @@ void ProxySession::stopInternal(bool immediate, bool clearPostStopAction)
     }
 
     skipTunCleanupOnNextCoreExit_ = immediate
-        && shouldCleanupTunAfterCoreStop(deps_.resolver.isWindowsPlatform(), coreTunEnabledAtStart_);
+        && shouldCleanupTunAfterCoreStop(deps_.environment.isWindowsPlatform(), coreTunEnabledAtStart_);
     const bool cleanupTunSynchronously = skipTunCleanupOnNextCoreExit_;
 
     deps_.mainCore.stop(immediate);
@@ -1299,7 +1297,7 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
     }
 
     const bool cleanupTunAfterStop = !auxiliary && shouldCleanupTunAfterCoreStop(
-        deps_.resolver.isWindowsPlatform(),
+        deps_.environment.isWindowsPlatform(),
         coreTunEnabledAtStart_);
     const bool tunEnabledAtCoreExit = !auxiliary && coreTunEnabledAtStart_;
     const bool tunAdapterConflictDetected = !auxiliary && coreTunAdapterConflictDetected_;
@@ -1390,7 +1388,7 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
     constexpr int kMaxTunAdapterConflictRestarts = 1;
     if (!auxiliary
         && shouldRetryAfterTunAdapterConflict(
-            deps_.resolver.isWindowsPlatform(),
+            deps_.environment.isWindowsPlatform(),
             tunEnabledAtCoreExit,
             tunAdapterConflictDetected,
             coreTunAdapterConflictRetryCount_,
@@ -1459,9 +1457,7 @@ void ProxySession::scheduleCoreStartAfterStop(bool showStartupOverlay)
 
 void ProxySession::clearAppliedProxyAfterStopped()
 {
-    const bool systemProxyEnabled = deps_.resolver.isSystemProxyEnabled
-        ? deps_.resolver.isSystemProxyEnabled()
-        : false;
+    const bool systemProxyEnabled = deps_.activationCoordinator.isSystemProxyEnabled();
     if (!shouldClearManagedSystemProxy(managedSystemProxyActive_, systemProxyEnabled)) {
         return;
     }
@@ -1493,9 +1489,7 @@ void ProxySession::removeStaleTunAdapterAsync(const std::function<void(const Ope
 {
     const std::weak_ptr<char> guard = lifetimeGuard_;
     QThread* thread = QThread::create([this, completion, guard]() {
-        const OperationResult result = deps_.resolver.removeStaleTunAdapter
-            ? deps_.resolver.removeStaleTunAdapter()
-            : OperationResult::fail(QStringLiteral("TUN runtime service is unavailable."));
+        const OperationResult result = deps_.environment.removeStaleTunAdapter();
         QMetaObject::invokeMethod(this, [completion, result, guard]() {
             if (guard.expired()) {
                 return;
@@ -1511,9 +1505,7 @@ void ProxySession::removeStaleTunAdapterAsync(const std::function<void(const Ope
 
 void ProxySession::removeStaleTunAdapter()
 {
-    const OperationResult result = deps_.resolver.removeStaleTunAdapter
-        ? deps_.resolver.removeStaleTunAdapter()
-        : OperationResult::fail(QStringLiteral("TUN runtime service is unavailable."));
+    const OperationResult result = deps_.environment.removeStaleTunAdapter();
     emit logMessage(result.message);
 }
 
@@ -1619,10 +1611,7 @@ void ProxySession::clearServerLocation()
 
 bool ProxySession::updateSystemProxyMode(SystemProxyMode mode) const
 {
-    if (deps_.resolver.updateSystemProxyMode) {
-        return deps_.resolver.updateSystemProxyMode(mode);
-    }
-    return false;
+    return deps_.activationCoordinator.updateSystemProxyMode(mode);
 }
 
 void ProxySession::trackBackgroundThread(QThread* thread)

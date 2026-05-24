@@ -3,7 +3,6 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <optional>
 
 #include <QHash>
 #include <QList>
@@ -16,6 +15,7 @@
 #include "app/BackgroundTaskCoordinator.h"
 #include "app/CoreStartupCheckpoint.h"
 #include "app/PostStopAction.h"
+#include "app/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
@@ -45,35 +45,15 @@ public:
         Stopping
     };
 
-    struct RuntimeResolver {
-        std::function<std::optional<VmessItem>()> resolveActiveServer;
-        std::function<CoreType(const VmessItem&)> resolveLaunchCoreType;
-        std::function<CoreInfo(const VmessItem&)> resolveCoreInfo;
-        std::function<QString(const VmessItem&)> resolveRuntimeConfigPath;
-        std::function<QStringList(CoreType)> resolveCoreCandidates;
-        std::function<QString(const QStringList&)> locateFirstExistingFile;
-        std::function<void()> cleanupPortProcesses;
-        std::function<void()> removeStaleSingBoxCache;
-        std::function<void()> refreshExistingCoreTypes;
-        std::function<OperationResult()> removeStaleTunAdapter;
-        std::function<bool()> skipCoreChecks;
-        std::function<bool()> isWindowsPlatform;
-        std::function<bool()> isProcessElevated;
-        std::function<bool()> isSystemProxyEnabled;
-        std::function<void()> cancelBackgroundTasksForStartup;
-        std::function<QString()> currentIndexId;
-        std::function<CoreType(CoreType)> resolveRuntimeCoreType;
-        std::function<QString(CoreType)> resolveCoreInstallDirectory;
-        std::function<bool(SystemProxyMode)> updateSystemProxyMode;
-    };
-
     struct Dependencies {
         ICoreProcessHost& mainCore;
         ICoreProcessHost& auxiliaryCore;
         ClientConfigWriter& configWriter;
         OutboundLocationProbeService& locationProbe;
         BackgroundTaskCoordinator& backgroundTasks;
-        RuntimeResolver resolver;
+        IRuntimeProfileResolver& profileResolver;
+        IRuntimeEnvironment& environment;
+        IProxyActivationCoordinator& activationCoordinator;
     };
 
     struct StartRequest {
