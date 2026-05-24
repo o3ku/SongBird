@@ -9,6 +9,7 @@
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/core/CoreDescriptor.h"
 
 struct CoreUpdateAssetPolicy {
     QString builtInFallbackTagName;
@@ -25,6 +26,7 @@ class ICoreBackend {
 public:
     virtual ~ICoreBackend() = default;
 
+    virtual CoreDescriptor descriptor() const = 0;
     virtual CoreType type() const = 0;
     virtual QString displayName() const = 0;
     virtual bool supportsConfigType(ConfigType configType) const = 0;
@@ -36,6 +38,11 @@ public:
     virtual QString extractVersionFromOutput(const QString& output) const = 0;
     virtual OperationResult validateServer(const VmessItem& server) const = 0;
     virtual QJsonObject buildClientRoot(const Config& config, const VmessItem& server) const = 0;
+    virtual QJsonObject buildAuxiliaryTunClientRoot(const Config& config) const
+    {
+        Q_UNUSED(config)
+        return {};
+    }
     virtual QUrl releasesApiUrl() const = 0;
     virtual CoreUpdateAssetPolicy updateAssetPolicy() const = 0;
     virtual int scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const = 0;

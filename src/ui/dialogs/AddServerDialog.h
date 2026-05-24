@@ -26,6 +26,7 @@ public:
 private:
     void updateFieldState();
     void refillSecurityOptions(ConfigType type);
+    void refillCoreOptions(ConfigType type, CoreType preferredCore);
     void setCoreType(CoreType type);
     void applyDefaultCoreTypeForCurrentProtocol();
 

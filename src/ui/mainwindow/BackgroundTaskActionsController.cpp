@@ -21,12 +21,10 @@ void BackgroundTaskActionsController::sync(const State& state)
         context_.updateCurrentSubscriptionAction->setEnabled(state.canStartTask);
     }
 
-    if (context_.updateXrayCoreAction != nullptr) {
-        context_.updateXrayCoreAction->setEnabled(state.canStartTask);
-    }
-
-    if (context_.updateSingBoxCoreAction != nullptr) {
-        context_.updateSingBoxCoreAction->setEnabled(state.canStartTask);
+    for (QAction* action : context_.updateCoreActions) {
+        if (action != nullptr) {
+            action->setEnabled(state.canStartTask);
+        }
     }
 
     if (context_.updateGeoResourcesAction != nullptr) {

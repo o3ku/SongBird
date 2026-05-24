@@ -30,6 +30,7 @@ class BackgroundTaskActionsController;
 class ProxyToolbarController;
 class RoutingModeController;
 class SharePanelWidget;
+class StartupOverlayWidget;
 class SubscriptionViewController;
 class ServerListController;
 class ServerWorkspaceWidget;
@@ -135,7 +136,6 @@ private:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void setupUi();
-    void setupLoadingOverlay();
     void setupToolbar();
     void createToolbarActions();
     void createServerToolbarActions();
@@ -200,12 +200,6 @@ private:
     void refreshServerSelectionUi();
     void syncStatusBarController();
     void syncProxyToolbarController();
-    void setLoadingOverlayVisible(bool visible, const QString& title, const QStringList& items);
-    void clearLoadingOverlayItems();
-    void rebuildLoadingOverlayItems(const QStringList& items);
-    void updateLoadingOverlayItems(const QStringList& items);
-    void updateLoadingChecklistRow(QWidget* row, const QString& item);
-    void updateLoadingOverlayGeometry();
 
     ServerTableModel* serverModel_ = nullptr;
     ServerFilterProxyModel* serverFilterModel_ = nullptr;
@@ -230,8 +224,7 @@ private:
     QAction* subAction_ = nullptr;
     QAction* routingSettingsAction_ = nullptr;
     QAction* updateSubscriptionsAction_ = nullptr;
-    QAction* updateXrayCoreAction_ = nullptr;
-    QAction* updateSingBoxCoreAction_ = nullptr;
+    QMap<int, QAction*> updateCoreActions_;
     QAction* updateGeoResourcesAction_ = nullptr;
     QAction* removeServerAction_ = nullptr;
     QAction* moveServerTopAction_ = nullptr;
@@ -255,15 +248,7 @@ private:
     QLineEdit* serverFilterEdit_ = nullptr;
     QWidget* mainContentWidget_ = nullptr;
     QVBoxLayout* mainContentLayout_ = nullptr;
-    QWidget* loadingOverlay_ = nullptr;
-    QWidget* loadingContentWidget_ = nullptr;
-    QLabel* loadingTitleLabel_ = nullptr;
-    QWidget* loadingItemsWidget_ = nullptr;
-    QWidget* loadingActionWidget_ = nullptr;
-    QVBoxLayout* loadingItemsLayout_ = nullptr;
-    QPushButton* loadingRetryButton_ = nullptr;
-    QPushButton* loadingDismissButton_ = nullptr;
-    QStringList loadingChecklistItems_;
+    StartupOverlayWidget* startupOverlay_ = nullptr;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
     bool systemProxyApplied_ = false;

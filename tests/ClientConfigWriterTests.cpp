@@ -65,7 +65,7 @@ private slots:
     void generateClientConfigsIgnoresInvalidIcmpRoutingForNativeSingBoxCore();
     void generateClientConfigsUsesDirectUdpRoutingForNativeSingBoxCore();
     void generateClientConfigsIgnoresRuleUdpRoutingForNativeSingBoxCore();
-    void generateClientConfigsKeepsUserUdpRulesBeforeDefaultTunUdpRule();
+    void generateClientConfigsKeepsDefaultTunUdpRuleBeforeUserRoutingRules();
     void generateClientConfigsDefaultsTunInboundToIpv4OnlyWhenIpv6AddressNotEnabled();
     void generateClientConfigsUsesServerMuxOverrideToDisableLegacyMux();
     void generateClientConfigsUsesServerMuxOverrideToEnableLegacyMux();
@@ -1570,18 +1570,17 @@ void ClientConfigWriterTests::generateClientConfigsIgnoresRuleUdpRoutingForNativ
     QVERIFY(!foundDirectUdpRule);
 }
 
-void ClientConfigWriterTests::generateClientConfigsKeepsUserUdpRulesBeforeDefaultTunUdpRule()
+void ClientConfigWriterTests::generateClientConfigsKeepsDefaultTunUdpRuleBeforeUserRoutingRules()
 {
     Config config = baseConfig();
     config.collection().routingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
-                QStringList{QStringLiteral("example.com")},
                 {},
                 {},
                 {},
-                QStringLiteral("udp"))})};
+                QStringLiteral("0-65535"))})};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
@@ -1590,23 +1589,22 @@ void ClientConfigWriterTests::generateClientConfigsKeepsUserUdpRulesBeforeDefaul
 
     const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
 
-    int userUdpRuleIndex = -1;
     int defaultUdpRuleIndex = -1;
+    int catchAllProxyRuleIndex = -1;
     for (int i = 0; i < rules.size(); ++i) {
         const QJsonObject rule = rules.at(i).toObject();
         if (rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("proxy")
-            && ruleHasNetwork(rule, QStringLiteral("udp"))
-            && jsonArrayContainsString(rule.value(QStringLiteral("domain_keyword")).toArray(), QStringLiteral("example.com"))) {
-            userUdpRuleIndex = i;
+            && jsonArrayContainsString(rule.value(QStringLiteral("port_range")).toArray(), QStringLiteral("0:65535"))) {
+            catchAllProxyRuleIndex = i;
         }
         if (isDefaultDirectUdpRule(rule)) {
             defaultUdpRuleIndex = i;
         }
     }
 
-    QVERIFY(userUdpRuleIndex >= 0);
     QVERIFY(defaultUdpRuleIndex >= 0);
-    QVERIFY(userUdpRuleIndex < defaultUdpRuleIndex);
+    QVERIFY(catchAllProxyRuleIndex >= 0);
+    QVERIFY(defaultUdpRuleIndex < catchAllProxyRuleIndex);
 }
 
 void ClientConfigWriterTests::generateClientConfigsDefaultsTunInboundToIpv4OnlyWhenIpv6AddressNotEnabled()

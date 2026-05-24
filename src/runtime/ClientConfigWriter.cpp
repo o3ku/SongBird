@@ -15,7 +15,6 @@
 #include "runtime/TunCompatCoreRequirement.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
-#include "runtime/core/singbox/SingBoxCoreBackend.h"
 
 namespace {
 
@@ -146,13 +145,22 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
     generated.primary.fileName = QStringLiteral("config.generated.json");
     generated.primary.root = buildRoot(config, server);
 
-    if (requiresTunCompatSingBoxCore(config, server, effectiveExistingCoreTypes())) {
+    const QList<CoreType> auxiliaryCoreTypes =
+        resolveAuxiliaryTunCompatCoreTypes(config, server, effectiveExistingCoreTypes());
+    for (const CoreType auxiliaryCoreType : auxiliaryCoreTypes) {
         // The local rewrite has not split upstream's non-legacy Xray TUN relay path yet.
         // Keep emitting the sing-box sidecar whenever Xray runs with TUN so `singbox_tun`
         // can still be created instead of silently starting Xray alone with no TUN inbound.
+        const ICoreBackend* backend = coreBackend(auxiliaryCoreType);
+        if (backend == nullptr) {
+            continue;
+        }
         GeneratedConfig compat;
         compat.fileName = QStringLiteral("tun-singbox-compat.json");
-        compat.root = SingBoxCoreBackend::buildTunCompatClientRoot(config);
+        compat.root = backend->buildAuxiliaryTunClientRoot(config);
+        if (compat.root.isEmpty()) {
+            continue;
+        }
         generated.auxiliary.append(compat);
     }
 

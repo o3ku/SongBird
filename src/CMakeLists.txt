@@ -2,19 +2,30 @@ set(SONGBIRD_SOURCES
     app/main.cpp
     app/AppBootstrap.h
     app/AppBootstrap.cpp
+    app/AppUpdateInstallService.h
+    app/AppUpdateInstallService.cpp
     app/ConfigPathResolver.h
+    app/CoreProcessCleanupService.h
+    app/CoreProcessCleanupService.cpp
+    app/CoreDiscoveryService.h
+    app/CoreDiscoveryService.cpp
     app/CoreStartupCheckpoint.h
-    app/CoreStartupChecklistController.h
-    app/CoreStartupChecklistController.cpp
+    app/OutboundLocationProbeService.h
+    app/OutboundLocationProbeService.cpp
     app/BackgroundTaskCoordinator.h
     app/BackgroundTaskCoordinator.cpp
+    app/PostStopAction.h
     app/RuntimeState.h
     app/RuntimeState.cpp
+    app/ProxySession.h
+    app/ProxySession.cpp
     app/SettingsDialogSession.h
     app/SettingsDialogSession.cpp
     app/SingleInstanceBootstrap.h
     app/SingleInstanceBootstrap.cpp
     app/StartupAdminElevation.h
+    app/TunRuntimeService.h
+    app/TunRuntimeService.cpp
     common/OperationResult.h
     common/DataSizeFormatter.h
     common/GitHubMirrorHelper.h
@@ -52,22 +63,26 @@ set(SONGBIRD_SOURCES
     runtime/RoutingRuleJsonMapper.h
     runtime/RoutingRuleJsonMapper.cpp
     runtime/core/ICoreBackend.h
+    runtime/core/CoreDescriptor.h
+    runtime/core/CoreDescriptorRegistry.h
     runtime/core/CoreCatalog.h
     runtime/core/CoreBackendRegistry.h
-    runtime/core/CoreBackendRegistry.cpp
-    runtime/core/singbox/SingBoxConfigFragments.h
-    runtime/core/singbox/SingBoxConfigFragments.cpp
-    runtime/core/singbox/SingBoxCoreBackend.h
-    runtime/core/singbox/SingBoxCoreBackend.cpp
-    runtime/core/xray/XrayConfigFragments.h
-    runtime/core/xray/XrayConfigFragments.cpp
-    runtime/core/xray/XrayCoreBackend.h
-    runtime/core/xray/XrayCoreBackend.cpp
+    backends/CoreBackendRegistry.cpp
+    backends/singbox/SingBoxCoreDescriptor.h
+    backends/singbox/SingBoxConfigFragments.h
+    backends/singbox/SingBoxConfigFragments.cpp
+    backends/singbox/SingBoxRoutingConfigFragments.h
+    backends/singbox/SingBoxRoutingConfigFragments.cpp
+    backends/singbox/SingBoxCoreBackend.h
+    backends/singbox/SingBoxCoreBackend.cpp
+    backends/xray/XrayCoreDescriptor.h
+    backends/xray/XrayConfigFragments.h
+    backends/xray/XrayConfigFragments.cpp
+    backends/xray/XrayCoreBackend.h
+    backends/xray/XrayCoreBackend.cpp
     runtime/ICoreProcessHost.h
     runtime/QtCoreProcessHost.h
     runtime/QtCoreProcessHost.cpp
-    runtime/CoreLifecycleService.h
-    runtime/CoreLifecycleService.cpp
     persistence/IConfigRepository.h
     persistence/JsonConfigRepository.h
     persistence/JsonConfigRepository.cpp
@@ -159,6 +174,8 @@ set(SONGBIRD_SOURCES
     ui/mainwindow/ServerListController.cpp
     ui/mainwindow/SharePanelWidget.h
     ui/mainwindow/SharePanelWidget.cpp
+    ui/mainwindow/StartupOverlayWidget.h
+    ui/mainwindow/StartupOverlayWidget.cpp
     ui/mainwindow/ProxyToolbarController.h
     ui/mainwindow/ProxyToolbarController.cpp
     ui/mainwindow/ServerSelectionController.h
@@ -259,6 +276,29 @@ if(SONGBIRD_HAS_LINGUISTTOOLS)
 endif()
 
 
+add_library(songbird_core_descriptors OBJECT
+    runtime/core/CoreDescriptor.h
+    runtime/core/CoreDescriptorRegistry.h
+    runtime/core/CoreDescriptorRegistry.cpp
+    backends/singbox/SingBoxCoreDescriptor.h
+    backends/singbox/SingBoxCoreDescriptor.cpp
+    backends/xray/XrayCoreDescriptor.h
+    backends/xray/XrayCoreDescriptor.cpp
+)
+
+target_include_directories(songbird_core_descriptors
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(songbird_core_descriptors
+    PUBLIC
+        Qt${QT_VERSION_MAJOR}::Core
+)
+
+if(MSVC)
+    target_compile_options(songbird_core_descriptors PRIVATE /Z7)
+endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(songbird
@@ -282,6 +322,7 @@ target_compile_definitions(songbird
 
 target_link_libraries(songbird
     PRIVATE
+        songbird_core_descriptors
         Qt${QT_VERSION_MAJOR}::Core
         Qt${QT_VERSION_MAJOR}::Gui
         Qt${QT_VERSION_MAJOR}::Widgets
@@ -351,5 +392,3 @@ install(FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE
     DESTINATION .
 )
-
-

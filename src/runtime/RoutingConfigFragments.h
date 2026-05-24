@@ -1,10 +1,12 @@
 #pragma once
 
+#include <QList>
 #include <QJsonObject>
 #include <QString>
 
 #include "domain/models/Config.h"
 #include "domain/models/RoutingItem.h"
+#include "domain/models/RoutingRule.h"
 
 class RoutingConfigFragments {
 public:
@@ -12,7 +14,6 @@ public:
     static int locationProbePortOffset();
 
     static const RoutingItem* resolveSelectedRouting(const Config& config);
+    static QList<RoutingRule> effectiveRoutingRules(const Config& config, const RoutingItem* selectedRouting);
     static QJsonObject buildLegacyRouting(const Config& config, const RoutingItem* selectedRouting);
-    static QJsonObject buildSingBoxRoute(const Config& config, const RoutingItem* selectedRouting);
-    static void migrateGeoToRuleSet(QJsonObject& root);
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QList>
+
 class QAction;
 
 class BackgroundTaskActionsController final {
@@ -8,8 +10,7 @@ public:
         QAction* importClipboardAction = nullptr;
         QAction* updateSubscriptionsAction = nullptr;
         QAction* updateCurrentSubscriptionAction = nullptr;
-        QAction* updateXrayCoreAction = nullptr;
-        QAction* updateSingBoxCoreAction = nullptr;
+        QList<QAction*> updateCoreActions;
         QAction* updateGeoResourcesAction = nullptr;
         QAction* updateCurrentSubscriptionShortcutAction = nullptr;
     };

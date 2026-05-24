@@ -12,6 +12,8 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 
+#include "runtime/ProtocolCoreCompat.h"
+
 CustomServerDialog::CustomServerDialog(QWidget* parent)
     : QDialog(parent)
 {
@@ -61,8 +63,13 @@ void CustomServerDialog::setupUi()
     fileRowLayout->addWidget(browseButton_);
 
     coreCombo_ = new QComboBox(this);
-    coreCombo_->addItem(QStringLiteral("Xray"), static_cast<int>(CoreType::Xray));
-    coreCombo_->addItem(QStringLiteral("sing-box"), static_cast<int>(CoreType::SingBox));
+    QList<CoreType> cores = prioritizedCoreTypesForProtocol(ConfigType::Custom);
+    if (cores.isEmpty()) {
+        cores = orderedCoreTypes();
+    }
+    for (const CoreType core : cores) {
+        coreCombo_->addItem(coreTypeDisplayName(core), static_cast<int>(core));
+    }
 
     preSocksPortSpin_ = new QSpinBox(this);
     preSocksPortSpin_->setRange(0, 65535);

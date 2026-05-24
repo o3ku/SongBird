@@ -1,4 +1,4 @@
-#include "runtime/core/xray/XrayConfigFragments.h"
+#include "backends/xray/XrayConfigFragments.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>

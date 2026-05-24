@@ -2,10 +2,9 @@
 
 #include <QFileInfo>
 
+#include "backends/singbox/SingBoxCoreBackend.h"
+#include "backends/xray/XrayCoreBackend.h"
 #include "runtime/core/ICoreBackend.h"
-#include "runtime/core/CoreCatalog.h"
-#include "runtime/core/singbox/SingBoxCoreBackend.h"
-#include "runtime/core/xray/XrayCoreBackend.h"
 
 namespace {
 

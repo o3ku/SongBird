@@ -19,7 +19,7 @@ inline bool requiresTunCompatSingBoxCore(
     // so we mirror that here instead of resolvePreferredCoreType, otherwise the
     // sidecar decision can disagree with the binary AppBootstrap spawns.
     const CoreType selectedCore = resolveSelectedCoreType(config, server, existingCoreTypes);
-    return selectedCore == CoreType::Xray;
+    return catalogAuxiliaryTunCoreTypes(selectedCore).contains(CoreType::SingBox);
 }
 
 inline bool requiresTunCompatSingBoxCore(const Config& config, const VmessItem& server)
@@ -33,8 +33,15 @@ inline QList<CoreType> resolveAuxiliaryTunCompatCoreTypes(
     const QList<CoreType>& existingCoreTypes)
 {
     QList<CoreType> required;
-    if (requiresTunCompatSingBoxCore(config, server, existingCoreTypes)) {
-        required.append(CoreType::SingBox);
+    if (!config.tun().tunModeItem.enableTun || server.configType == ConfigType::Custom) {
+        return required;
+    }
+
+    const CoreType selectedCore = resolveSelectedCoreType(config, server, existingCoreTypes);
+    for (const CoreType coreType : catalogAuxiliaryTunCoreTypes(selectedCore)) {
+        if (coreType != CoreType::Unknown && !required.contains(coreType)) {
+            required.append(coreType);
+        }
     }
     return required;
 }

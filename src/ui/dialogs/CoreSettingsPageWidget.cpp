@@ -38,11 +38,10 @@ QStringList xrayUserAgentOptions()
 QList<CoreType> settingsCoreDisplayOrder(const QList<CoreType>& cores)
 {
     QList<CoreType> ordered;
-    if (cores.contains(CoreType::SingBox)) {
-        ordered.append(CoreType::SingBox);
-    }
-    if (cores.contains(CoreType::Xray)) {
-        ordered.append(CoreType::Xray);
+    for (const CoreType core : orderedCoreTypes()) {
+        if (cores.contains(core)) {
+            ordered.append(core);
+        }
     }
     for (const CoreType core : cores) {
         if (!ordered.contains(core)) {
@@ -213,17 +212,11 @@ void CoreSettingsPageWidget::setupUi()
         xrayDefaultUserAgentCombo_,
         tunEnableLegacyProtectCheck_});
 
-    coreProtocolEntries_ = {
-        {QStringLiteral("VMess"), ConfigType::VMess},
-        {QStringLiteral("VLESS"), ConfigType::VLESS},
-        {QStringLiteral("Shadowsocks"), ConfigType::Shadowsocks},
-        {QStringLiteral("Socks"), ConfigType::Socks},
-        {QStringLiteral("Hysteria2"), ConfigType::Hysteria2},
-        {QStringLiteral("Trojan"), ConfigType::Trojan},
-        {QStringLiteral("HTTP"), ConfigType::HTTP},
-        {QStringLiteral("Custom"), ConfigType::Custom}
-    };
-    const QList<CoreType> allCores = settingsCoreDisplayOrder(availableCoreTypes());
+    coreProtocolEntries_.clear();
+    for (const ConfigType configType : configurableCoreProtocols()) {
+        coreProtocolEntries_.append(CoreProtocolEntry{configTypeDisplayName(configType), configType});
+    }
+    const QList<CoreType> allCores = orderedCoreTypes();
     const QFontMetrics coreLabelMetrics(font());
     int protocolLabelWidth = 0;
     for (const CoreProtocolEntry& entry : coreProtocolEntries_) {

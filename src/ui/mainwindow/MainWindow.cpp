@@ -59,7 +59,6 @@
 
 #include "domain/models/VmessItem.h"
 #include "runtime/ProtocolCoreCompat.h"
-#include "app/CoreStartupCheckpoint.h"
 #include "subscription/ShareUrlBuilder.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/LogItemDelegate.h"
@@ -75,6 +74,7 @@
 #include "ui/mainwindow/ServerActionsController.h"
 #include "ui/mainwindow/ServerSelectionController.h"
 #include "ui/mainwindow/ServerTableView.h"
+#include "ui/mainwindow/StartupOverlayWidget.h"
 #include "ui/mainwindow/StatusBarController.h"
 #include "ui/models/LogFilterProxyModel.h"
 #include "ui/models/LogListModel.h"
@@ -96,47 +96,7 @@ constexpr int ToolbarButtonBorderWidth = 1;
 constexpr int HeaderFilterMinimumCharacters = 14;
 constexpr int InitialRoutingComboMinimumCharacters = 12;
 constexpr int ServerTableNoColumn = 0;
-constexpr ushort CoreStartupFailedMark = 0x274C;
-constexpr int LoadingOverlayHorizontalMargin = 24;
-constexpr int LoadingContentHorizontalPadding = 18;
-constexpr int LoadingContentVerticalPadding = 14;
-constexpr int LoadingContentMinimumWidth = 360;
-constexpr int LoadingContentMaximumWidth = 720;
-constexpr int LoadingChecklistDetailMaximumWidth = 420;
 constexpr int WindowTitleServerNameMaximumWidth = 300;
-
-bool isCoreStartupFailureItem(const QString& item)
-{
-    const QString trimmedItem = item.trimmed();
-    return trimmedItem.startsWith(QString(QChar(CoreStartupFailedMark)))
-        || trimmedItem.startsWith(QStringLiteral("[!]"));
-}
-
-QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& text, int availableWidth)
-{
-    static const QString ellipsis = QStringLiteral("...");
-    if (availableWidth <= 0 || fontMetrics.horizontalAdvance(text) <= availableWidth) {
-        return text;
-    }
-
-    if (fontMetrics.horizontalAdvance(ellipsis) >= availableWidth) {
-        return ellipsis;
-    }
-
-    int low = 0;
-    int high = text.size();
-    while (low < high) {
-        const int mid = (low + high + 1) / 2;
-        const QString candidate = text.left(mid) + ellipsis;
-        if (fontMetrics.horizontalAdvance(candidate) <= availableWidth) {
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    return text.left(low) + ellipsis;
-}
 
 void applySemanticState(QLabel* label, const QString& state)
 {
@@ -149,7 +109,6 @@ void applySemanticState(QLabel* label, const QString& state)
     label->style()->polish(label);
     label->update();
 }
-
 void paintChevron(QPainter& painter, const QRect& rect, bool enabled)
 {
     if (!rect.isValid()) {
@@ -392,19 +351,6 @@ void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
     edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }
 
-QPair<QString, QString> splitCoreStartupChecklistItem(const QString& item)
-{
-    const int separatorIndex = item.indexOf(coreStartupChecklistDetailSeparator());
-    if (separatorIndex < 0) {
-        return {item, QString()};
-    }
-
-    return {
-        item.left(separatorIndex),
-        item.mid(separatorIndex + 1).trimmed()
-    };
-}
-
 void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
 {
     if (comboBox == nullptr) {
@@ -622,26 +568,23 @@ void MainWindow::setRoutingSummary(const QString& routingText, const QString& li
 
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
-    setLoadingOverlayVisible(
-        running,
-        running ? tr("Updating subscriptions...") : QString(),
-        {});
-
+    backgroundTaskRunning_ = running;
+    backgroundTaskDescription_ = running ? tr("Updating subscriptions...") : QString();
+    if (running) {
+        startupOverlay_->showChecklist(tr("Updating subscriptions..."), {});
+    } else {
+        startupOverlay_->hideOverlay();
+    }
+    setServerTableDynamicSortEnabled(!running, !running);
     updateActionState();
+    updateStatusPresentation();
 }
 
 void MainWindow::setCoreStartupChecklist(const QStringList& items)
 {
     coreStartupChecklistVisible_ = true;
-    coreStartupChecklistFailed_ = false;
-    for (const QString& item : items) {
-        if (isCoreStartupFailureItem(item)) {
-            coreStartupChecklistFailed_ = true;
-            break;
-        }
-    }
-    setLoadingOverlayVisible(true, tr("Starting system proxy..."), items);
-
+    startupOverlay_->showChecklist(tr("Starting system proxy..."), items);
+    coreStartupChecklistFailed_ = startupOverlay_->isChecklistFailed();
     updateActionState();
 }
 
@@ -649,8 +592,7 @@ void MainWindow::clearCoreStartupChecklist()
 {
     coreStartupChecklistVisible_ = false;
     coreStartupChecklistFailed_ = false;
-    setLoadingOverlayVisible(false, {}, {});
-
+    startupOverlay_->hideOverlay();
     updateActionState();
 }
 
@@ -981,81 +923,18 @@ void MainWindow::setupUi()
     setupToolbar();
     setupServerView();
     setupDiagnosticsPanel();
-    setupLoadingOverlay();
-    updateWindowTitle();
-}
 
-void MainWindow::setupLoadingOverlay()
-{
-    loadingOverlay_ = new QWidget(this);
-    loadingOverlay_->setObjectName(QStringLiteral("loadingOverlay"));
-    loadingOverlay_->setAttribute(Qt::WA_StyledBackground, true);
-    loadingOverlay_->setFocusPolicy(Qt::StrongFocus);
-
-    loadingContentWidget_ = new QWidget(loadingOverlay_);
-    loadingContentWidget_->setObjectName(QStringLiteral("loadingContentWidget"));
-    loadingContentWidget_->setAttribute(Qt::WA_StyledBackground, true);
-
-    loadingTitleLabel_ = new QLabel(loadingContentWidget_);
-    loadingTitleLabel_->setObjectName(QStringLiteral("loadingTitleLabel"));
-    loadingTitleLabel_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    loadingTitleLabel_->setWordWrap(true);
-
-    loadingItemsWidget_ = new QWidget(loadingContentWidget_);
-    loadingItemsWidget_->setObjectName(QStringLiteral("loadingItemsWidget"));
-    loadingItemsLayout_ = new QVBoxLayout(loadingItemsWidget_);
-    loadingItemsLayout_->setContentsMargins(0, 0, 0, 0);
-    loadingItemsLayout_->setSpacing(6);
-
-    loadingActionWidget_ = new QWidget(loadingContentWidget_);
-    loadingActionWidget_->setObjectName(QStringLiteral("loadingActionWidget"));
-
-    loadingRetryButton_ = new QPushButton(tr("Retry"), loadingActionWidget_);
-    loadingRetryButton_->setObjectName(QStringLiteral("loadingRetryButton"));
-    loadingRetryButton_->setVisible(false);
-    connect(loadingRetryButton_, &QPushButton::clicked, this, [this]() {
-        emit retryCoreStartupRequested();
-    });
-
-    loadingDismissButton_ = new QPushButton(tr("Close"), loadingActionWidget_);
-    loadingDismissButton_->setObjectName(QStringLiteral("loadingDismissButton"));
-    loadingDismissButton_->setVisible(false);
-    connect(loadingDismissButton_, &QPushButton::clicked, this, [this]() {
+    startupOverlay_ = new StartupOverlayWidget(this);
+    connect(startupOverlay_, &StartupOverlayWidget::retryRequested,
+            this, &MainWindow::retryCoreStartupRequested);
+    connect(startupOverlay_, &StartupOverlayWidget::dismissRequested, this, [this]() {
         coreStartupChecklistVisible_ = false;
         coreStartupChecklistFailed_ = false;
-        setLoadingOverlayVisible(false, {}, {});
+        startupOverlay_->hideOverlay();
         updateActionState();
     });
 
-    auto* actionLayout = new QHBoxLayout(loadingActionWidget_);
-    actionLayout->setContentsMargins(0, 0, 0, 0);
-    actionLayout->setSpacing(0);
-    actionLayout->addStretch(1);
-    actionLayout->addWidget(loadingRetryButton_);
-    actionLayout->addSpacing(8);
-    actionLayout->addWidget(loadingDismissButton_);
-    actionLayout->addStretch(1);
-
-    auto* contentLayout = new QVBoxLayout(loadingContentWidget_);
-    contentLayout->setContentsMargins(
-        LoadingContentHorizontalPadding,
-        LoadingContentVerticalPadding,
-        LoadingContentHorizontalPadding,
-        LoadingContentVerticalPadding);
-    contentLayout->setSpacing(12);
-    contentLayout->addWidget(loadingTitleLabel_);
-    contentLayout->addWidget(loadingItemsWidget_);
-    contentLayout->addWidget(loadingActionWidget_);
-
-    auto* loadingLayout = new QVBoxLayout(loadingOverlay_);
-    loadingLayout->setContentsMargins(24, 24, 24, 24);
-    loadingLayout->setSpacing(12);
-    loadingLayout->addStretch(1);
-    loadingLayout->addWidget(loadingContentWidget_, 0, Qt::AlignCenter);
-    loadingLayout->addStretch(1);
-
-    updateLoadingOverlayGeometry();
-    loadingOverlay_->hide();
+    updateWindowTitle();
 }
 
 void MainWindow::setupToolbar()
@@ -1147,10 +1026,12 @@ void MainWindow::createUpdateToolbarActions()
     connect(routingSettingsAction_, &QAction::triggered, this, &MainWindow::openSettingsAtRoutingTabRequested);
     updateSubscriptionsAction_ = new QAction(tr("Update Subscriptions"), this);
     updateSubscriptionsAction_->setObjectName(QStringLiteral("updateSubscriptionsAction"));
-    updateXrayCoreAction_ = new QAction(tr("Update Xray Core"), this);
-    updateXrayCoreAction_->setObjectName(QStringLiteral("updateXrayCoreAction"));
-    updateSingBoxCoreAction_ = new QAction(tr("Update sing-box Core"), this);
-    updateSingBoxCoreAction_->setObjectName(QStringLiteral("updateSingBoxCoreAction"));
+    updateCoreActions_.clear();
+    for (const CoreType coreType : orderedCoreTypes()) {
+        auto* action = new QAction(tr("Update %1 Core").arg(coreTypeDisplayName(coreType)), this);
+        action->setObjectName(QStringLiteral("updateCoreAction_%1").arg(static_cast<int>(coreType)));
+        updateCoreActions_.insert(static_cast<int>(coreType), action);
+    }
     updateGeoResourcesAction_ = new QAction(tr("Update Geo Files"), this);
     updateGeoResourcesAction_->setObjectName(QStringLiteral("updateGeoResourcesAction"));
 }
@@ -1208,8 +1089,9 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
     helpMenu->addAction(updateSubscriptionsAction_);
     helpMenu->addSeparator();
     helpMenu->addAction(updateGeoResourcesAction_);
-    helpMenu->addAction(updateXrayCoreAction_);
-    helpMenu->addAction(updateSingBoxCoreAction_);
+    for (QAction* action : updateCoreActions_.values()) {
+        helpMenu->addAction(action);
+    }
 }
 
 void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
@@ -1301,8 +1183,7 @@ void MainWindow::initializeToolbarControllers()
         importClipboardAction_,
         updateSubscriptionsAction_,
         updateCurrentSubscriptionAction_,
-        updateXrayCoreAction_,
-        updateSingBoxCoreAction_,
+        updateCoreActions_.values(),
         updateGeoResourcesAction_,
         updateCurrentSubscriptionShortcutAction_});
     proxyToolbarController_ = new ProxyToolbarController(proxyToggleAction_, tunToggleAction_);
@@ -1505,12 +1386,12 @@ void MainWindow::setupUpdateActionConnections()
             emit updateSubscriptionsRequested();
         }
     });
-    connect(updateXrayCoreAction_, &QAction::triggered, this, [this]() {
-        emit updateCoreRequested(static_cast<int>(CoreType::Xray));
-    });
-    connect(updateSingBoxCoreAction_, &QAction::triggered, this, [this]() {
-        emit updateCoreRequested(static_cast<int>(CoreType::SingBox));
-    });
+    for (auto it = updateCoreActions_.cbegin(); it != updateCoreActions_.cend(); ++it) {
+        const int coreType = it.key();
+        connect(it.value(), &QAction::triggered, this, [this, coreType]() {
+            emit updateCoreRequested(coreType);
+        });
+    }
     connect(updateGeoResourcesAction_, &QAction::triggered, this, &MainWindow::updateGeoResourcesRequested);
 }
 
@@ -1806,9 +1687,9 @@ void MainWindow::updateWindowTitle()
         : currentCoreName_.trimmed();
     const QString serverName = currentServerName_.trimmed().isEmpty()
         ? tr("None")
-        : elideTextWithThreeDots(
-            fontMetrics(),
+        : fontMetrics().elidedText(
             currentServerName_.trimmed(),
+            Qt::ElideRight,
             WindowTitleServerNameMaximumWidth);
     const QString proxyState = proxyUiState_ == ProxyUiState::Active ? tr("Proxy ON") : tr("Proxy OFF");
     const QString tunState = tunEnabled_ ? tr("TUN ON") : tr("TUN OFF");
@@ -1842,7 +1723,9 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
-    updateLoadingOverlayGeometry();
+    if (startupOverlay_ != nullptr) {
+        startupOverlay_->updateGeometry(rect());
+    }
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
@@ -2013,184 +1896,4 @@ void MainWindow::syncProxyToolbarController()
         existingCoreTypes_,
         configSnapshot_.coreTypeItems,
         activeServer());
-}
-
-void MainWindow::setLoadingOverlayVisible(bool visible, const QString& title, const QStringList& items)
-{
-    if (loadingOverlay_ == nullptr) {
-        return;
-    }
-
-    bool hasFailure = false;
-    for (const QString& item : items) {
-        if (isCoreStartupFailureItem(item)) {
-            hasFailure = true;
-            break;
-        }
-    }
-
-    updateLoadingOverlayItems(items);
-
-    if (loadingTitleLabel_ != nullptr) {
-        loadingTitleLabel_->setText(hasFailure ? tr("Proxy startup failed") : title);
-        loadingTitleLabel_->setAlignment(
-            items.isEmpty() && !hasFailure
-                ? Qt::AlignCenter
-                : (Qt::AlignLeft | Qt::AlignVCenter));
-    }
-
-    if (loadingItemsWidget_ != nullptr) {
-        loadingItemsWidget_->setVisible(!items.isEmpty());
-    }
-    if (loadingDismissButton_ != nullptr) {
-        loadingDismissButton_->setVisible(visible && hasFailure);
-    }
-    if (loadingRetryButton_ != nullptr) {
-        loadingRetryButton_->setVisible(visible && hasFailure);
-    }
-    if (loadingActionWidget_ != nullptr) {
-        loadingActionWidget_->setVisible(!items.isEmpty() || hasFailure);
-    }
-
-    const bool wasVisible = loadingOverlay_->isVisible();
-    if (visible) {
-        if (!wasVisible || loadingOverlay_->geometry() != rect()) {
-            updateLoadingOverlayGeometry();
-        }
-        if (!wasVisible) {
-            loadingOverlay_->raise();
-            loadingOverlay_->show();
-            loadingOverlay_->setFocus(Qt::OtherFocusReason);
-        }
-    } else {
-        loadingOverlay_->hide();
-    }
-}
-
-void MainWindow::clearLoadingOverlayItems()
-{
-    if (loadingItemsLayout_ == nullptr) {
-        loadingChecklistItems_.clear();
-        return;
-    }
-
-    while (QLayoutItem* item = loadingItemsLayout_->takeAt(0)) {
-        if (QWidget* widget = item->widget()) {
-            delete widget;
-        }
-        delete item;
-    }
-    loadingChecklistItems_.clear();
-}
-
-void MainWindow::rebuildLoadingOverlayItems(const QStringList& items)
-{
-    if (loadingItemsLayout_ == nullptr) {
-        loadingChecklistItems_.clear();
-        return;
-    }
-
-    clearLoadingOverlayItems();
-    for (const QString& item : items) {
-        auto* row = new QWidget(loadingItemsWidget_);
-        row->setObjectName(QStringLiteral("loadingChecklistRow"));
-        row->setAttribute(Qt::WA_StyledBackground, true);
-        auto* rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(0, 0, 0, 0);
-        rowLayout->setSpacing(12);
-
-        auto* label = new QLabel(row);
-        label->setObjectName(QStringLiteral("loadingChecklistItem"));
-        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        label->setWordWrap(false);
-        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-        rowLayout->addWidget(label, 0, Qt::AlignLeft | Qt::AlignVCenter);
-
-        auto* detailLabel = new QLabel(row);
-        detailLabel->setObjectName(QStringLiteral("loadingChecklistDetail"));
-        detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        detailLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        detailLabel->setWordWrap(false);
-        detailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        detailLabel->setMinimumWidth(140);
-        detailLabel->setMaximumWidth(LoadingChecklistDetailMaximumWidth);
-        detailLabel->setFixedHeight(detailLabel->fontMetrics().height() + 2);
-        rowLayout->addWidget(detailLabel, 1, Qt::AlignRight | Qt::AlignVCenter);
-
-        updateLoadingChecklistRow(row, item);
-        loadingItemsLayout_->addWidget(row);
-    }
-    loadingChecklistItems_ = items;
-}
-
-void MainWindow::updateLoadingOverlayItems(const QStringList& items)
-{
-    if (loadingItemsLayout_ == nullptr) {
-        loadingChecklistItems_.clear();
-        return;
-    }
-
-    if (loadingChecklistItems_.size() != items.size()
-        || loadingItemsLayout_->count() != items.size()) {
-        rebuildLoadingOverlayItems(items);
-        return;
-    }
-
-    for (int index = 0; index < items.size(); ++index) {
-        if (loadingChecklistItems_.at(index) == items.at(index)) {
-            continue;
-        }
-
-        QLayoutItem* layoutItem = loadingItemsLayout_->itemAt(index);
-        QWidget* row = layoutItem == nullptr ? nullptr : layoutItem->widget();
-        updateLoadingChecklistRow(row, items.at(index));
-    }
-    loadingChecklistItems_ = items;
-}
-
-void MainWindow::updateLoadingChecklistRow(QWidget* row, const QString& item)
-{
-    if (row == nullptr) {
-        return;
-    }
-
-    const auto parts = splitCoreStartupChecklistItem(item);
-    auto* label = row->findChild<QLabel*>(QStringLiteral("loadingChecklistItem"));
-    if (label != nullptr) {
-        label->setText(parts.first);
-    }
-
-    auto* detailLabel = row->findChild<QLabel*>(QStringLiteral("loadingChecklistDetail"));
-    if (detailLabel == nullptr) {
-        return;
-    }
-
-    const bool hasDetail = !parts.second.isEmpty();
-    detailLabel->setVisible(hasDetail);
-    detailLabel->setText(hasDetail
-        ? elideTextWithThreeDots(
-            detailLabel->fontMetrics(),
-            parts.second,
-            LoadingChecklistDetailMaximumWidth)
-        : QString());
-    detailLabel->setToolTip(hasDetail ? parts.second : QString());
-}
-
-void MainWindow::updateLoadingOverlayGeometry()
-{
-    if (loadingOverlay_ != nullptr) {
-        loadingOverlay_->setGeometry(rect());
-        if (loadingContentWidget_ != nullptr) {
-            const int availableWidth = qMax(1, loadingOverlay_->width() - (LoadingOverlayHorizontalMargin * 2));
-            const int contentWidth = qBound(
-                qMin(LoadingContentMinimumWidth, availableWidth),
-                qRound(loadingOverlay_->width() * 0.6),
-                qMin(LoadingContentMaximumWidth, availableWidth));
-            loadingContentWidget_->setFixedWidth(qMax(1, contentWidth));
-        }
-        if (loadingOverlay_->isVisible()) {
-            loadingOverlay_->raise();
-        }
-    }
 }

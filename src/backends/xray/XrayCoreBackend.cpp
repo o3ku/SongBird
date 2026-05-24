@@ -1,4 +1,4 @@
-#include "runtime/core/xray/XrayCoreBackend.h"
+#include "backends/xray/XrayCoreBackend.h"
 
 #include <QDir>
 #include <QJsonArray>
@@ -9,8 +9,8 @@
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "runtime/core/CoreBackendRegistry.h"
-#include "runtime/core/CoreCatalog.h"
-#include "runtime/core/xray/XrayConfigFragments.h"
+#include "backends/xray/XrayCoreDescriptor.h"
+#include "backends/xray/XrayConfigFragments.h"
 
 namespace {
 
@@ -19,24 +19,29 @@ const QString kDefaultErrorLogFileName = QStringLiteral("Verror.log");
 
 } // namespace
 
+CoreDescriptor XrayCoreBackend::descriptor() const
+{
+    return xrayCoreDescriptor();
+}
+
 CoreType XrayCoreBackend::type() const
 {
-    return CoreType::Xray;
+    return descriptor().type;
 }
 
 QString XrayCoreBackend::displayName() const
 {
-    return catalogCoreDisplayName(type());
+    return descriptor().displayName;
 }
 
 bool XrayCoreBackend::supportsConfigType(ConfigType configType) const
 {
-    return coreDescriptorSupportsConfigType(type(), configType);
+    return descriptor().supportedConfigTypes.contains(configType);
 }
 
 QStringList XrayCoreBackend::executableNames() const
 {
-    return catalogCoreExecutableNames(type());
+    return descriptor().executableNames;
 }
 
 QStringList XrayCoreBackend::launchArguments(const QString& configPlaceholder) const

@@ -1,4 +1,4 @@
-#include "runtime/core/singbox/SingBoxConfigFragments.h"
+#include "backends/singbox/SingBoxConfigFragments.h"
 
 #include <QJsonValue>
 #include <QSet>

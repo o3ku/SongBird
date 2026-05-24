@@ -1,5 +1,18 @@
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test Widgets Network Svg)
 
+link_libraries(songbird_core_descriptors)
+
+find_program(SONGBIRD_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
+if(SONGBIRD_POWERSHELL_EXECUTABLE)
+    add_test(
+        NAME backend-boundaries
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-backend-boundaries.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
+endif()
+
 set(SONGBIRD_SHARE_URL_TEST_SOURCES
     ShareUrlTests.cpp
     ../src/subscription/ShareUrlBuilder.h
@@ -246,17 +259,23 @@ set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     ../src/runtime/RoutingRuleJsonMapper.h
     ../src/runtime/RoutingRuleJsonMapper.cpp
     ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreDescriptor.h
+    ../src/runtime/core/CoreDescriptorRegistry.h
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
-    ../src/runtime/core/CoreBackendRegistry.cpp
-    ../src/runtime/core/singbox/SingBoxConfigFragments.h
-    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
-    ../src/runtime/core/singbox/SingBoxCoreBackend.h
-    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
-    ../src/runtime/core/xray/XrayConfigFragments.h
-    ../src/runtime/core/xray/XrayConfigFragments.cpp
-    ../src/runtime/core/xray/XrayCoreBackend.h
-    ../src/runtime/core/xray/XrayCoreBackend.cpp
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxCoreDescriptor.h
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayCoreDescriptor.h
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -287,6 +306,83 @@ set_tests_properties(app-bootstrap-tun-runtime PROPERTIES
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird_app_bootstrap_tun_runtime_tests)
+endif()
+
+set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
+    ProxySessionTests.cpp
+    ../src/app/BackgroundTaskCoordinator.h
+    ../src/app/BackgroundTaskCoordinator.cpp
+    ../src/app/OutboundLocationProbeService.h
+    ../src/app/OutboundLocationProbeService.cpp
+    ../src/app/PostStopAction.h
+    ../src/app/ProxySession.h
+    ../src/app/ProxySession.cpp
+    ../src/runtime/ClientConfigWriter.h
+    ../src/runtime/ClientConfigWriter.cpp
+    ../src/runtime/CoreConfigPreflight.h
+    ../src/runtime/CoreConfigPreflight.cpp
+    ../src/runtime/DnsConfigFragments.h
+    ../src/runtime/DnsConfigFragments.cpp
+    ../src/runtime/ICoreProcessHost.h
+    ../src/runtime/ProtocolConfigMapper.h
+    ../src/runtime/ProtocolConfigMapper.cpp
+    ../src/runtime/RoutingConfigFragments.h
+    ../src/runtime/RoutingConfigFragments.cpp
+    ../src/runtime/RoutingRuleJsonMapper.h
+    ../src/runtime/RoutingRuleJsonMapper.cpp
+    ../src/runtime/core/ICoreBackend.h
+    ../src/runtime/core/CoreDescriptor.h
+    ../src/runtime/core/CoreDescriptorRegistry.h
+    ../src/runtime/core/CoreCatalog.h
+    ../src/runtime/core/CoreBackendRegistry.h
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxCoreDescriptor.h
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayCoreDescriptor.h
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
+    ../src/services/CoreUpdateService.h
+    ../src/services/CoreUpdateService.cpp
+    ../src/services/GeoResourceUpdateService.h
+    ../src/services/GeoResourceUpdateService.cpp
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_proxy_session_tests
+        MANUAL_FINALIZATION
+        ${SONGBIRD_PROXY_SESSION_TEST_SOURCES}
+    )
+else()
+    add_executable(songbird_proxy_session_tests ${SONGBIRD_PROXY_SESSION_TEST_SOURCES})
+endif()
+
+target_include_directories(songbird_proxy_session_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(songbird_proxy_session_tests
+    PRIVATE
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+add_test(NAME proxy-session-state COMMAND songbird_proxy_session_tests)
+set_tests_properties(proxy-session-state PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=windows"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+)
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_finalize_executable(songbird_proxy_session_tests)
 endif()
 
 set(SONGBIRD_APP_BOOTSTRAP_UI_COMMAND_PLAN_TEST_SOURCES
@@ -382,6 +478,8 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/ServerListController.cpp
     ../src/ui/mainwindow/SharePanelWidget.h
     ../src/ui/mainwindow/SharePanelWidget.cpp
+    ../src/ui/mainwindow/StartupOverlayWidget.h
+    ../src/ui/mainwindow/StartupOverlayWidget.cpp
     ../src/ui/mainwindow/ProxyToolbarController.h
     ../src/ui/mainwindow/ProxyToolbarController.cpp
     ../src/ui/mainwindow/ServerSelectionController.h
@@ -458,15 +556,17 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ../src/runtime/core/ICoreBackend.h
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
-    ../src/runtime/core/CoreBackendRegistry.cpp
-    ../src/runtime/core/singbox/SingBoxConfigFragments.h
-    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
-    ../src/runtime/core/singbox/SingBoxCoreBackend.h
-    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
-    ../src/runtime/core/xray/XrayConfigFragments.h
-    ../src/runtime/core/xray/XrayConfigFragments.cpp
-    ../src/runtime/core/xray/XrayCoreBackend.h
-    ../src/runtime/core/xray/XrayCoreBackend.cpp
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -821,15 +921,17 @@ set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     ../src/runtime/core/ICoreBackend.h
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
-    ../src/runtime/core/CoreBackendRegistry.cpp
-    ../src/runtime/core/singbox/SingBoxConfigFragments.h
-    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
-    ../src/runtime/core/singbox/SingBoxCoreBackend.h
-    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
-    ../src/runtime/core/xray/XrayConfigFragments.h
-    ../src/runtime/core/xray/XrayConfigFragments.cpp
-    ../src/runtime/core/xray/XrayCoreBackend.h
-    ../src/runtime/core/xray/XrayCoreBackend.cpp
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
@@ -1049,15 +1151,17 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/runtime/core/ICoreBackend.h
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
-    ../src/runtime/core/CoreBackendRegistry.cpp
-    ../src/runtime/core/singbox/SingBoxConfigFragments.h
-    ../src/runtime/core/singbox/SingBoxConfigFragments.cpp
-    ../src/runtime/core/singbox/SingBoxCoreBackend.h
-    ../src/runtime/core/singbox/SingBoxCoreBackend.cpp
-    ../src/runtime/core/xray/XrayConfigFragments.h
-    ../src/runtime/core/xray/XrayConfigFragments.cpp
-    ../src/runtime/core/xray/XrayCoreBackend.h
-    ../src/runtime/core/xray/XrayCoreBackend.cpp
+    ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/singbox/SingBoxConfigFragments.h
+    ../src/backends/singbox/SingBoxConfigFragments.cpp
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
+    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
+    ../src/backends/singbox/SingBoxCoreBackend.h
+    ../src/backends/singbox/SingBoxCoreBackend.cpp
+    ../src/backends/xray/XrayConfigFragments.h
+    ../src/backends/xray/XrayConfigFragments.cpp
+    ../src/backends/xray/XrayCoreBackend.h
+    ../src/backends/xray/XrayCoreBackend.cpp
     ../src/runtime/CoreLifecycleService.h
     ../src/runtime/CoreLifecycleService.cpp
     ../src/runtime/ICoreProcessHost.h

@@ -18,6 +18,8 @@ private slots:
     void cleanupSkippedWhenCoreStartedWithoutTun();
     void startAfterTunCleanupRequiresSuccessfulCleanup();
     void postStopActionAfterTunCleanupRequiresSuccessfulCleanup();
+    void tunAdapterConflictOutputIsDetected();
+    void tunAdapterConflictRetryRequiresTunAndRemainingAttempts();
     void singBoxPreflightUsesCheckCommand();
     void xrayPreflightUsesRunTestCommand();
     void v2rayPreflightUsesRunTestCommand();
@@ -87,6 +89,25 @@ void AppBootstrapTunRuntimeTests::postStopActionAfterTunCleanupRequiresSuccessfu
     QVERIFY(!shouldRunPostStopActionAfterTunCleanup(false, true, false));
     QVERIFY(!shouldRunPostStopActionAfterTunCleanup(true, false, false));
     QVERIFY(!shouldRunPostStopActionAfterTunCleanup(true, true, true));
+}
+
+void AppBootstrapTunRuntimeTests::tunAdapterConflictOutputIsDetected()
+{
+    QVERIFY(isTunAdapterConflictOutput(QStringLiteral(
+        "FATAL[0015] start service: start inbound/tun[tun-in]: configure tun interface: Cannot create a file when that file already exists.")));
+    QVERIFY(!isTunAdapterConflictOutput(QStringLiteral(
+        "Core exit detected (code=1). Restarting in 3s...")));
+    QVERIFY(!isTunAdapterConflictOutput(QStringLiteral(
+        "configure tun interface: permission denied")));
+}
+
+void AppBootstrapTunRuntimeTests::tunAdapterConflictRetryRequiresTunAndRemainingAttempts()
+{
+    QVERIFY(shouldRetryAfterTunAdapterConflict(true, true, true, 0, 1));
+    QVERIFY(!shouldRetryAfterTunAdapterConflict(false, true, true, 0, 1));
+    QVERIFY(!shouldRetryAfterTunAdapterConflict(true, false, true, 0, 1));
+    QVERIFY(!shouldRetryAfterTunAdapterConflict(true, true, false, 0, 1));
+    QVERIFY(!shouldRetryAfterTunAdapterConflict(true, true, true, 1, 1));
 }
 
 void AppBootstrapTunRuntimeTests::singBoxPreflightUsesCheckCommand()

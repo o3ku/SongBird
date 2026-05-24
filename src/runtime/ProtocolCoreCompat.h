@@ -25,12 +25,19 @@ inline QList<CoreType> availableCoreTypes()
     return catalogCoreTypes();
 }
 
+inline QList<CoreType> orderedCoreTypes()
+{
+    return sortedCatalogCoreTypes();
+}
+
 inline QList<ConfigType> configurableCoreProtocols()
 {
     QList<ConfigType> protocols;
-    for (const ConfigType configType : coreCatalogSupportedConfigTypes()) {
-        if (!supportedCoreTypes(configType).isEmpty()) {
-            protocols.append(configType);
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        for (const ConfigType configType : descriptor.supportedConfigTypes) {
+            if (configType != ConfigType::Unknown && !protocols.contains(configType)) {
+                protocols.append(configType);
+            }
         }
     }
     return protocols;
@@ -63,12 +70,6 @@ inline bool prefersInstalledCoreForProtocol(ConfigType configType)
     }
 }
 
-inline CoreType defaultCoreTypeForProtocol(ConfigType configType)
-{
-    Q_UNUSED(configType)
-    return CoreType::SingBox;
-}
-
 inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
 {
     QList<CoreDescriptor> matchingDescriptors;
@@ -93,6 +94,12 @@ inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
     return prioritized;
 }
 
+inline CoreType defaultCoreTypeForProtocol(ConfigType configType)
+{
+    const QList<CoreType> prioritized = prioritizedCoreTypesForProtocol(configType);
+    return prioritized.isEmpty() ? CoreType::Unknown : prioritized.constFirst();
+}
+
 inline CoreType resolveExistingCoreTypeForProtocol(ConfigType configType, const QList<CoreType>& existingCoreTypes)
 {
     const QList<CoreType> prioritized = prioritizedCoreTypesForProtocol(configType);
@@ -100,9 +107,6 @@ inline CoreType resolveExistingCoreTypeForProtocol(ConfigType configType, const 
         if (existingCoreTypes.contains(coreType)) {
             return coreType;
         }
-    }
-    if (prioritized.contains(CoreType::SingBox)) {
-        return CoreType::SingBox;
     }
     return prioritized.isEmpty() ? defaultCoreTypeForProtocol(configType) : prioritized.constFirst();
 }

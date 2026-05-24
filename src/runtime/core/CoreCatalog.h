@@ -1,56 +1,25 @@
 #pragma once
 
 #include <QList>
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
 
-#include "domain/models/VmessItem.h"
+#include <algorithm>
 
-struct CoreDescriptor {
-    CoreType type = CoreType::Unknown;
-    QString displayName;
-    QList<ConfigType> supportedConfigTypes;
-    QStringList executableNames;
-    int protocolPriority = 0;
-};
-
-inline QList<ConfigType> coreCatalogSupportedConfigTypes()
-{
-    return {
-        ConfigType::VMess,
-        ConfigType::Custom,
-        ConfigType::Shadowsocks,
-        ConfigType::Socks,
-        ConfigType::VLESS,
-        ConfigType::Trojan,
-        ConfigType::HTTP,
-        ConfigType::Hysteria2,
-        ConfigType::TUIC,
-        ConfigType::WireGuard,
-        ConfigType::AnyTLS,
-        ConfigType::Naive
-    };
-}
+#include "runtime/core/CoreDescriptor.h"
+#include "runtime/core/CoreDescriptorRegistry.h"
 
 inline QList<CoreDescriptor> coreDescriptors()
 {
-    const QList<ConfigType> supportedConfigTypes = coreCatalogSupportedConfigTypes();
-    return {
-        CoreDescriptor{
-            CoreType::Xray,
-            QStringLiteral("Xray"),
-            supportedConfigTypes,
-            QStringList{QStringLiteral("xray.exe")},
-            20},
-        CoreDescriptor{
-            CoreType::SingBox,
-            QStringLiteral("sing-box"),
-            supportedConfigTypes,
-            QStringList{
-                QStringLiteral("sing-box-client.exe"),
-                QStringLiteral("sing-box.exe")},
-            10}
-    };
+    QList<CoreDescriptor> descriptors = registeredCoreDescriptors();
+    std::sort(
+        descriptors.begin(),
+        descriptors.end(),
+        [](const CoreDescriptor& left, const CoreDescriptor& right) {
+            return static_cast<int>(left.type) < static_cast<int>(right.type);
+        });
+    return descriptors;
 }
 
 inline const CoreDescriptor* coreDescriptor(CoreType coreType)
@@ -73,8 +42,8 @@ inline bool coreDescriptorSupportsConfigType(CoreType coreType, ConfigType confi
 
 inline QList<CoreType> catalogCoreTypes()
 {
-    QList<CoreType> coreTypes;
     const QList<CoreDescriptor> descriptors = coreDescriptors();
+    QList<CoreType> coreTypes;
     coreTypes.reserve(descriptors.size());
     for (const CoreDescriptor& descriptor : descriptors) {
         coreTypes.append(descriptor.type);
@@ -92,4 +61,49 @@ inline QString catalogCoreDisplayName(CoreType coreType)
 {
     const CoreDescriptor* descriptor = coreDescriptor(coreType);
     return descriptor != nullptr ? descriptor->displayName : QStringLiteral("Unknown");
+}
+
+inline QList<CoreType> sortedCatalogCoreTypes()
+{
+    QList<CoreDescriptor> descriptors = coreDescriptors();
+    std::sort(
+        descriptors.begin(),
+        descriptors.end(),
+        [](const CoreDescriptor& left, const CoreDescriptor& right) {
+            return left.protocolPriority < right.protocolPriority;
+        });
+
+    QList<CoreType> coreTypes;
+    coreTypes.reserve(descriptors.size());
+    for (const CoreDescriptor& descriptor : descriptors) {
+        coreTypes.append(descriptor.type);
+    }
+    return coreTypes;
+}
+
+inline CoreType catalogCoreTypeForExecutableName(const QString& fileName)
+{
+    const QString normalizedFileName = QFileInfo(fileName).fileName().toLower();
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        for (const QString& executableName : descriptor.executableNames) {
+            const QString normalizedExecutableName = QFileInfo(executableName).fileName().toLower();
+            if (normalizedFileName == normalizedExecutableName
+                || normalizedFileName.contains(normalizedExecutableName.section(QChar('.'), 0, 0))) {
+                return descriptor.type;
+            }
+        }
+    }
+    return CoreType::Unknown;
+}
+
+inline QList<CoreType> catalogAuxiliaryTunCoreTypes(CoreType coreType)
+{
+    const CoreDescriptor* descriptor = coreDescriptor(coreType);
+    return descriptor != nullptr ? descriptor->auxiliaryTunCoreTypes : QList<CoreType>{};
+}
+
+inline bool catalogCoreRequiresLegacyGeoFiles(CoreType coreType)
+{
+    const CoreDescriptor* descriptor = coreDescriptor(coreType);
+    return descriptor != nullptr && descriptor->requiresLegacyGeoFiles;
 }

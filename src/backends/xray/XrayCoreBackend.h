@@ -2,8 +2,9 @@
 
 #include "runtime/core/ICoreBackend.h"
 
-class SingBoxCoreBackend final : public ICoreBackend {
+class XrayCoreBackend final : public ICoreBackend {
 public:
+    CoreDescriptor descriptor() const override;
     CoreType type() const override;
     QString displayName() const override;
     bool supportsConfigType(ConfigType configType) const override;
@@ -19,11 +20,8 @@ public:
     CoreUpdateAssetPolicy updateAssetPolicy() const override;
     int scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const override;
 
-    static QJsonObject buildTunCompatClientRoot(const Config& config);
-
 private:
     static QJsonObject buildLog(const Config& config);
-    static QJsonObject buildExperimental(const Config& config);
     static QJsonArray buildInbounds(const Config& config);
     static QJsonArray buildOutbounds(const Config& config, const VmessItem& server);
 };

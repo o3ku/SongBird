@@ -79,6 +79,7 @@ AddServerDialog::AddServerDialog(QWidget* parent)
 void AddServerDialog::setServer(const VmessItem& server)
 {
     typeCombo_->setCurrentIndex(typeCombo_->findData(static_cast<int>(server.configType)));
+    refillCoreOptions(server.configType, server.coreType);
     setCoreType(server.coreType);
     remarksEdit_->setText(server.remarks);
     addressEdit_->setText(server.address);
@@ -195,6 +196,7 @@ void AddServerDialog::updateFieldState()
 {
     const ConfigType type = static_cast<ConfigType>(typeCombo_->currentData().toInt());
     refillSecurityOptions(type);
+    refillCoreOptions(type, static_cast<CoreType>(coreCombo_->currentData().toInt()));
 
     bool showAlterId = false;
     bool showFlow = false;
@@ -381,10 +383,39 @@ void AddServerDialog::applyDefaultCoreTypeForCurrentProtocol()
         return;
     }
 
-    const int singBoxIndex = coreCombo_->findData(static_cast<int>(CoreType::SingBox));
-    if (singBoxIndex >= 0) {
-        coreCombo_->setCurrentIndex(singBoxIndex);
+    const ConfigType type = static_cast<ConfigType>(typeCombo_->currentData().toInt());
+    refillCoreOptions(type, defaultCoreTypeForProtocol(type));
+}
+
+void AddServerDialog::refillCoreOptions(ConfigType type, CoreType preferredCore)
+{
+    if (coreCombo_ == nullptr) {
+        return;
     }
+
+    const CoreType resolvedPreferred = resolveRuntimeCoreType(preferredCore);
+    QList<CoreType> cores = prioritizedCoreTypesForProtocol(type);
+    if (cores.isEmpty()) {
+        cores = orderedCoreTypes();
+    }
+
+    coreCombo_->blockSignals(true);
+    coreCombo_->clear();
+    const CoreType defaultCore = defaultCoreTypeForProtocol(type);
+    for (const CoreType core : cores) {
+        QString label = coreTypeDisplayName(core);
+        if (core == defaultCore) {
+            label = tr("%1 (Default)").arg(label);
+        }
+        coreCombo_->addItem(label, static_cast<int>(core));
+    }
+
+    int selectedIndex = coreCombo_->findData(static_cast<int>(resolvedPreferred));
+    if (selectedIndex < 0) {
+        selectedIndex = coreCombo_->findData(static_cast<int>(defaultCore));
+    }
+    coreCombo_->setCurrentIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    coreCombo_->blockSignals(false);
 }
 
 void AddServerDialog::refillSecurityOptions(ConfigType type)
@@ -463,8 +494,6 @@ void AddServerDialog::setupUi()
 
     coreCombo_ = new QComboBox(this);
     coreCombo_->setObjectName(QStringLiteral("coreCombo"));
-    coreCombo_->addItem(tr("sing-box (Default)"), static_cast<int>(CoreType::SingBox));
-    coreCombo_->addItem(tr("Xray"), static_cast<int>(CoreType::Xray));
 
     remarksEdit_ = new QLineEdit(this);
     addressEdit_ = new QLineEdit(this);

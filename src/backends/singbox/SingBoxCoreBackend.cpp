@@ -1,4 +1,4 @@
-#include "runtime/core/singbox/SingBoxCoreBackend.h"
+#include "backends/singbox/SingBoxCoreBackend.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -11,8 +11,9 @@
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "runtime/core/CoreBackendRegistry.h"
-#include "runtime/core/CoreCatalog.h"
-#include "runtime/core/singbox/SingBoxConfigFragments.h"
+#include "backends/singbox/SingBoxCoreDescriptor.h"
+#include "backends/singbox/SingBoxConfigFragments.h"
+#include "backends/singbox/SingBoxRoutingConfigFragments.h"
 
 namespace {
 
@@ -61,24 +62,29 @@ bool isSupportedSingBoxShadowsocksTransport(const QString& network)
 
 } // namespace
 
+CoreDescriptor SingBoxCoreBackend::descriptor() const
+{
+    return singBoxCoreDescriptor();
+}
+
 CoreType SingBoxCoreBackend::type() const
 {
-    return CoreType::SingBox;
+    return descriptor().type;
 }
 
 QString SingBoxCoreBackend::displayName() const
 {
-    return catalogCoreDisplayName(type());
+    return descriptor().displayName;
 }
 
 bool SingBoxCoreBackend::supportsConfigType(ConfigType configType) const
 {
-    return coreDescriptorSupportsConfigType(type(), configType);
+    return descriptor().supportedConfigTypes.contains(configType);
 }
 
 QStringList SingBoxCoreBackend::executableNames() const
 {
-    return catalogCoreExecutableNames(type());
+    return descriptor().executableNames;
 }
 
 QStringList SingBoxCoreBackend::launchArguments(const QString& configPlaceholder) const
@@ -153,7 +159,7 @@ QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const Vmes
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
     root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
     const RoutingItem* selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    root.insert(QStringLiteral("route"), RoutingConfigFragments::buildSingBoxRoute(config, selectedRouting));
+    root.insert(QStringLiteral("route"), SingBoxRoutingConfigFragments::buildRoute(config, selectedRouting));
 
     const QJsonObject dns = DnsConfigFragments::buildSingBoxDns(config, selectedRouting);
     if (!dns.isEmpty()) {
@@ -165,8 +171,13 @@ QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const Vmes
         root.insert(QStringLiteral("experimental"), experimental);
     }
 
-    RoutingConfigFragments::migrateGeoToRuleSet(root);
+    SingBoxRoutingConfigFragments::migrateGeoToRuleSet(root);
     return root;
+}
+
+QJsonObject SingBoxCoreBackend::buildAuxiliaryTunClientRoot(const Config& config) const
+{
+    return buildTunCompatClientRoot(config);
 }
 
 QUrl SingBoxCoreBackend::releasesApiUrl() const

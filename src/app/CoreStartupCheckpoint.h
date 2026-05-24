@@ -7,6 +7,7 @@
 
 #include "common/OperationResult.h"
 #include "runtime/CoreInfo.h"
+#include "runtime/core/CoreCatalog.h"
 
 enum class CoreStartupCheckpointStatus {
     Pending,
@@ -98,9 +99,11 @@ inline OperationResult coreStartupCheckpoint(
 
 inline bool coreUsesLegacyGeoFiles(const CoreInfo& coreInfo)
 {
-    const QString fileName = QFileInfo(coreInfo.program).fileName().toLower();
-    return fileName.contains(QStringLiteral("xray"))
-        || fileName.contains(QStringLiteral("v2ray"));
+    CoreType coreType = coreInfo.type;
+    if (coreType == CoreType::Unknown) {
+        coreType = catalogCoreTypeForExecutableName(coreInfo.program);
+    }
+    return catalogCoreRequiresLegacyGeoFiles(coreType);
 }
 
 inline OperationResult validateCoreGeoFilesBeforeStart(const CoreInfo& coreInfo)
