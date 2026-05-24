@@ -28,6 +28,24 @@ Primary config data is serialized through `JsonConfigSerialization` and related 
 ## Testing Guidelines
 Tests use Qt Test through CTest. Add or update tests in `tests/` whenever logic changes in `runtime/`, `services/`, `subscription/`, `persistence/`, or UI behavior that already has coverage. Prefer descriptive test names that encode the behavior under test, following existing patterns such as `generateClientConfigsAdds...`. Reconfigure `msvc-debug` with `-DBUILD_TEST=ON` and run `ctest --test-dir build/msvc-debug --output-on-failure` before submitting changes, unless the current task explicitly says not to run tests.
 
+## SongBird Runtime Rules
+Treat proxy activation as a staged state machine owned by `AppBootstrap::RuntimePhase`: `EnvironmentCleanup`, `ValidateCoreApplication`, `ValidateRuntimeResources`, `ValidateCoreConfig`, `StartTunRuntime`, `StartCoreProcess`, `CheckOutboundLocation`, and `ApplySystemProxy` lead to `Proxying` or `Stopped`. Keep user-facing startup checklist wording and runtime phase transitions aligned when changing startup behavior.
+
+Outbound location is a hard startup condition. `queryCurrentServerLocation()` fails startup when no location is detected, and `computeProxyUiState()` only reports `Active` when the runtime is `Proxying`, the core is ready, the system proxy is enabled, and `currentServerLocation_` is non-empty. Do not relax this requirement to make the toolbar appear active.
+
+Runtime UI state should flow from `RuntimeStateSnapshot`. `AppBootstrap::syncStatusIndicators()` builds the snapshot, `RuntimeState::applySnapshot()` emits `snapshotApplied`, and `MainWindow::applyRuntimeState()` updates the UI from that full snapshot. Avoid adding new independent MainWindow booleans for core/proxy state; extend the snapshot or `ProxyUiState` instead.
+
+The START/STOP toolbar state is derived through `ProxyToolbarController` from `ProxyUiState`, outbound location availability, TUN state, existing cores, and the active server. Avoid direct `QAction` state edits for proxy controls outside the controller.
+
+Proxy startup blocks background work. `BackgroundTaskCoordinator` uses `AppBootstrap::isProxyActivationInProgress()` as its blocking predicate, covering the activation phases through `ApplySystemProxy`. New subscription updates, speed tests, imports, or core/resource updates must respect this coordinator instead of bypassing it.
+
+## Settings And Platform Rules
+Settings saves go through `evaluateSettingsDialogApplyPlan()` and `AppBootstrap::applySettingsDialogResult()`. Keep the dirty-plan model: unchanged settings should not be saved, and core restarts should be driven by the plan's runtime/TUN decisions rather than by a raw config-file comparison.
+
+TUN startup cleanup is part of environment cleanup. When TUN is enabled, stale `singbox_tun` adapter removal must happen before launching the managed core unless the environment has already been checked in the current startup flow. Preserve the cleanup/resume semantics when changing startup retry or crash-restart behavior.
+
+UWP loopback support is a Windows platform tool, opened from Help, implemented by `UwpLoopbackDialog` and `WindowsUwpLoopbackService`. It must use `CheckNetIsolation.exe` for loopback exemptions, check availability before use, and use the elevated temporary-script path when SongBird is not already running as administrator.
+
 ## Commit & Pull Request Guidelines
 Recent commits use concise, imperative summaries, for example `Data-driven Core tab with protocol-core compatibility filtering`. Keep commit titles specific to user-visible behavior or architectural intent. Pull requests should include a short problem statement, the chosen approach, test coverage, and screenshots for UI changes. Link any related issue and call out config, packaging, or platform-specific impact.
 
