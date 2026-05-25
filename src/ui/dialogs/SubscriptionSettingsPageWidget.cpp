@@ -19,8 +19,24 @@
 
 namespace {
 
-const QString kUaNekobox = QStringLiteral("Nekobox");
-const QString kUaClashVerge = QStringLiteral("ClashVerge");
+struct UserAgentPreset {
+    const char* label;
+    const char* userAgent;
+};
+
+const UserAgentPreset kUserAgentPresets[] = {
+    {"nekobox", ""},
+    {"clash verge rev", "clash-verge/v2.4"},
+    {"v2rayn", "v2rayN/7.10.4"},
+    {"shadowrocket", "Shadowrocket/2.2.56"},
+    {"surge", "Surge/5.0"},
+    {"sing-box", "sing-box/1.11.0"},
+    {"hiddify", "Hiddify/2.5.7"},
+    {"loon", "Loon/3.2.4"},
+};
+
+const QString kLegacyUaNekobox = QStringLiteral("Nekobox");
+const QString kLegacyUaClashVerge = QStringLiteral("ClashVerge");
 constexpr int kEnabledColumn = 0;
 constexpr int kUrlColumn = 1;
 constexpr int kRemarksColumn = 2;
@@ -50,17 +66,20 @@ QComboBox* createUserAgentCombo(QWidget* parent, const QString& storedValue)
     combo->setObjectName(QStringLiteral("uaCombo"));
     combo->setFrame(false);
     combo->addItem(QString());
-    combo->addItem(kUaNekobox);
-    combo->addItem(kUaClashVerge);
+    for (const UserAgentPreset& preset : kUserAgentPresets) {
+        combo->addItem(QString::fromLatin1(preset.label));
+    }
 
     const QString trimmed = storedValue.trimmed();
-    if (trimmed == kUaClashVerge) {
-        combo->setCurrentIndex(2);
-    } else if (trimmed == kUaNekobox || trimmed.isEmpty()) {
-        combo->setCurrentIndex(trimmed.isEmpty() ? 0 : 1);
-        if (trimmed.isEmpty()) {
-            enableCustomUserAgentInput(combo);
-        }
+    if (trimmed.isEmpty()) {
+        combo->setCurrentIndex(0);
+        enableCustomUserAgentInput(combo);
+    } else if (trimmed == kLegacyUaNekobox) {
+        combo->setCurrentIndex(combo->findText(QStringLiteral("nekobox")));
+    } else if (trimmed == kLegacyUaClashVerge) {
+        combo->setCurrentIndex(combo->findText(QStringLiteral("clash verge rev")));
+    } else if (combo->findText(trimmed) >= 0) {
+        combo->setCurrentIndex(combo->findText(trimmed));
     } else {
         combo->setCurrentIndex(0);
         enableCustomUserAgentInput(combo, trimmed);
@@ -169,11 +188,18 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
 QString SubscriptionSettingsPageWidget::resolveUserAgent(const QString& storedValue)
 {
     const QString trimmed = storedValue.trimmed();
-    if (trimmed.isEmpty() || trimmed == kUaNekobox) {
+    if (trimmed.isEmpty()
+        || trimmed == kLegacyUaNekobox
+        || trimmed == QStringLiteral("nekobox")) {
         return fallbackUserAgent();
     }
-    if (trimmed == kUaClashVerge) {
-        return QStringLiteral("clash-verge/v2.4");
+    if (trimmed == kLegacyUaClashVerge) {
+        return QString::fromLatin1(kUserAgentPresets[1].userAgent);
+    }
+    for (const UserAgentPreset& preset : kUserAgentPresets) {
+        if (trimmed == QString::fromLatin1(preset.label)) {
+            return QString::fromLatin1(preset.userAgent);
+        }
     }
     return trimmed;
 }

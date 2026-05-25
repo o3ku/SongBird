@@ -1107,7 +1107,8 @@ void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsC
     QVERIFY(userAgentCombo != nullptr);
     QCOMPARE(userAgentCombo->currentText(), QString());
     QVERIFY(userAgentCombo->isEditable());
-    QCOMPARE(userAgentCombo->findText(QStringLiteral("ClashVerge")), 2);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("clash verge rev")), 2);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("loon")), 8);
     QCOMPARE(userAgentCombo->objectName(), QStringLiteral("uaCombo"));
     QVERIFY(userAgentCombo->styleSheet().isEmpty());
     QVERIFY(userAgentCombo->lineEdit() != nullptr);
@@ -1116,6 +1117,8 @@ void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsC
 
     QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(userAgentCombo->currentText()),
              QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+    QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(QStringLiteral("v2rayn")),
+             QStringLiteral("v2rayN/7.10.4"));
     auto* urlItem = subTable->item(0, 1);
     QVERIFY(urlItem != nullptr);
     urlItem->setText(QStringLiteral("https://example.com/sub"));
