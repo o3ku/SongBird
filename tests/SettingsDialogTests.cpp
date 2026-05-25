@@ -375,16 +375,16 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
     auto* mtuSpin = dialog.findChild<QSpinBox*>(QStringLiteral("settingsTunMtuSpin"));
     auto* stackCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsTunStackCombo"));
     auto* ipv6Check = dialog.findChild<QCheckBox*>(QStringLiteral("settingsTunEnableIPv6AddressCheck"));
-    auto* icmpEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsTunIcmpRoutingEdit"));
-    auto* udpEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsTunUdpRoutingEdit"));
+    auto* icmpCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsTunIcmpRoutingCombo"));
+    auto* udpCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsTunUdpRoutingCombo"));
     QVERIFY(enableCheck != nullptr);
     QVERIFY(autoRouteCheck != nullptr);
     QVERIFY(strictRouteCheck != nullptr);
     QVERIFY(mtuSpin != nullptr);
     QVERIFY(stackCombo != nullptr);
     QVERIFY(ipv6Check != nullptr);
-    QVERIFY(icmpEdit != nullptr);
-    QVERIFY(udpEdit != nullptr);
+    QVERIFY(icmpCombo != nullptr);
+    QVERIFY(udpCombo != nullptr);
     QVERIFY(enableCheck->isChecked());
     QVERIFY(autoRouteCheck->isEnabled());
     QCOMPARE(mtuSpin->value(), 1400);
@@ -392,8 +392,8 @@ void SettingsDialogTests::tunSettingsRoundTripsConfig()
 
     mtuSpin->setValue(1500);
     stackCombo->setCurrentText(QStringLiteral("mixed"));
-    icmpEdit->setText(QStringLiteral("udp"));
-    udpEdit->setText(QStringLiteral("rule"));
+    icmpCombo->setCurrentText(QStringLiteral("udp"));
+    udpCombo->setCurrentText(QStringLiteral("rule"));
     strictRouteCheck->setChecked(true);
     ipv6Check->setChecked(false);
 

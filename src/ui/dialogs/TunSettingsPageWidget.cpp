@@ -4,9 +4,24 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLineEdit>
+#include <QStringList>
 #include <QSpinBox>
 
 #include "ui/theme/AppTheme.h"
+
+namespace {
+
+QStringList tunRoutingPolicyOptions()
+{
+    return {
+        QStringLiteral("rule"),
+        QStringLiteral("direct"),
+        QStringLiteral("unreachable"),
+        QStringLiteral("drop"),
+        QStringLiteral("reply")};
+}
+
+} // namespace
 
 TunSettingsPageWidget::TunSettingsPageWidget(QWidget* parent)
     : QWidget(parent)
@@ -24,8 +39,8 @@ void TunSettingsPageWidget::setConfig(const Config& config)
     tunMtuSpin_->setValue(tun.mtu > 0 ? tun.mtu : 9000);
     tunStackCombo_->setCurrentText(tun.stack.isEmpty() ? QStringLiteral("system") : tun.stack);
     tunEnableIPv6AddressCheck_->setChecked(tun.enableIPv6Address);
-    tunIcmpRoutingEdit_->setText(tun.icmpRouting);
-    tunUdpRoutingEdit_->setText(tun.udpRouting);
+    tunIcmpRoutingCombo_->setCurrentText(tun.icmpRouting);
+    tunUdpRoutingCombo_->setCurrentText(tun.udpRouting);
     updateFieldState();
 }
 
@@ -38,8 +53,8 @@ void TunSettingsPageWidget::applyToConfig(Config& config) const
     tun.mtu = tunMtuSpin_->value();
     tun.stack = tunStackCombo_->currentText().trimmed();
     tun.enableIPv6Address = tunEnableIPv6AddressCheck_->isChecked();
-    tun.icmpRouting = tunIcmpRoutingEdit_->text().trimmed();
-    tun.udpRouting = tunUdpRoutingEdit_->text().trimmed();
+    tun.icmpRouting = tunIcmpRoutingCombo_->currentText().trimmed();
+    tun.udpRouting = tunUdpRoutingCombo_->currentText().trimmed();
 }
 
 bool TunSettingsPageWidget::tunEnabled() const
@@ -73,12 +88,16 @@ void TunSettingsPageWidget::setupUi()
 
     tunEnableIPv6AddressCheck_ = new QCheckBox(tr("Enable IPv6 address"), this);
     tunEnableIPv6AddressCheck_->setObjectName(QStringLiteral("settingsTunEnableIPv6AddressCheck"));
-    tunIcmpRoutingEdit_ = new QLineEdit(this);
-    tunIcmpRoutingEdit_->setObjectName(QStringLiteral("settingsTunIcmpRoutingEdit"));
-    tunIcmpRoutingEdit_->setPlaceholderText(tr("Optional ICMP routing preference"));
-    tunUdpRoutingEdit_ = new QLineEdit(this);
-    tunUdpRoutingEdit_->setObjectName(QStringLiteral("settingsTunUdpRoutingEdit"));
-    tunUdpRoutingEdit_->setPlaceholderText(tr("UDP routing preference"));
+    tunIcmpRoutingCombo_ = new QComboBox(this);
+    tunIcmpRoutingCombo_->setObjectName(QStringLiteral("settingsTunIcmpRoutingCombo"));
+    tunIcmpRoutingCombo_->setEditable(true);
+    tunIcmpRoutingCombo_->addItems(tunRoutingPolicyOptions());
+    tunIcmpRoutingCombo_->lineEdit()->setPlaceholderText(tr("Optional ICMP routing preference"));
+    tunUdpRoutingCombo_ = new QComboBox(this);
+    tunUdpRoutingCombo_->setObjectName(QStringLiteral("settingsTunUdpRoutingCombo"));
+    tunUdpRoutingCombo_->setEditable(true);
+    tunUdpRoutingCombo_->addItems(tunRoutingPolicyOptions());
+    tunUdpRoutingCombo_->lineEdit()->setPlaceholderText(tr("UDP routing preference"));
 
     AppTheme::applyCompactFont({
         tunEnableCheck_,
@@ -87,8 +106,8 @@ void TunSettingsPageWidget::setupUi()
         tunMtuSpin_,
         tunStackCombo_,
         tunEnableIPv6AddressCheck_,
-        tunIcmpRoutingEdit_,
-        tunUdpRoutingEdit_});
+        tunIcmpRoutingCombo_,
+        tunUdpRoutingCombo_});
 
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableCheck_);
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunAutoRouteCheck_);
@@ -96,8 +115,8 @@ void TunSettingsPageWidget::setupUi()
     tunLayout->setWidget(tunLayout->rowCount(), QFormLayout::SpanningRole, tunEnableIPv6AddressCheck_);
     tunLayout->addRow(tr("MTU"), tunMtuSpin_);
     tunLayout->addRow(tr("Stack"), tunStackCombo_);
-    tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingEdit_);
-    tunLayout->addRow(tr("UDP Routing"), tunUdpRoutingEdit_);
+    tunLayout->addRow(tr("ICMP Routing"), tunIcmpRoutingCombo_);
+    tunLayout->addRow(tr("UDP Routing"), tunUdpRoutingCombo_);
 
     connect(tunEnableCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
         updateFieldState();
@@ -123,10 +142,10 @@ void TunSettingsPageWidget::updateFieldState()
     if (tunEnableIPv6AddressCheck_ != nullptr) {
         tunEnableIPv6AddressCheck_->setEnabled(tunEnabled);
     }
-    if (tunIcmpRoutingEdit_ != nullptr) {
-        tunIcmpRoutingEdit_->setEnabled(tunEnabled);
+    if (tunIcmpRoutingCombo_ != nullptr) {
+        tunIcmpRoutingCombo_->setEnabled(tunEnabled);
     }
-    if (tunUdpRoutingEdit_ != nullptr) {
-        tunUdpRoutingEdit_->setEnabled(tunEnabled);
+    if (tunUdpRoutingCombo_ != nullptr) {
+        tunUdpRoutingCombo_->setEnabled(tunEnabled);
     }
 }

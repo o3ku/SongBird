@@ -6,7 +6,6 @@
 
 class QCheckBox;
 class QComboBox;
-class QLineEdit;
 class QSpinBox;
 
 class TunSettingsPageWidget final : public QWidget
@@ -33,6 +32,6 @@ private:
     QSpinBox* tunMtuSpin_ = nullptr;
     QComboBox* tunStackCombo_ = nullptr;
     QCheckBox* tunEnableIPv6AddressCheck_ = nullptr;
-    QLineEdit* tunIcmpRoutingEdit_ = nullptr;
-    QLineEdit* tunUdpRoutingEdit_ = nullptr;
+    QComboBox* tunIcmpRoutingCombo_ = nullptr;
+    QComboBox* tunUdpRoutingCombo_ = nullptr;
 };
