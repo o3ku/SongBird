@@ -7,6 +7,7 @@
 namespace {
 constexpr int kMaxLogLines = 5000;
 constexpr int kTrimBatch = 500;
+constexpr int kMaxLogLineCharacters = 4096;
 }
 
 LogListModel::LogListModel(QObject* parent)
@@ -65,12 +66,15 @@ void LogListModel::appendLine(const QString& line)
         const int removeCount = entries_.size() - kMaxLogLines;
         beginRemoveRows(QModelIndex(), 0, removeCount - 1);
         entries_.erase(entries_.begin(), entries_.begin() + removeCount);
+        if (entries_.capacity() > kMaxLogLines + (2 * kTrimBatch)) {
+            entries_.squeeze();
+        }
         endRemoveRows();
     }
 
     LogEntry entry;
-    entry.text = line;
-    entry.visualLineCount = computeVisualLineCount(line);
+    entry.text = normalizeLine(line);
+    entry.visualLineCount = computeVisualLineCount(entry.text);
 
     const int row = entries_.size();
     beginInsertRows(QModelIndex(), row, row);
@@ -86,6 +90,7 @@ void LogListModel::clear()
 
     beginResetModel();
     entries_.clear();
+    entries_.squeeze();
     endResetModel();
 }
 
@@ -99,6 +104,14 @@ QStringList LogListModel::lines() const
     return result;
 }
 
+QString LogListModel::normalizeLine(const QString& text)
+{
+    if (text.size() <= kMaxLogLineCharacters) {
+        return text;
+    }
+
+    return text.left(kMaxLogLineCharacters) + QStringLiteral(" ... [truncated]");
+}
 
 int LogListModel::computeVisualLineCount(const QString& text) const
 {

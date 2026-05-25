@@ -29,6 +29,7 @@ private:
         int visualLineCount = 1;
     };
 
+    static QString normalizeLine(const QString& text);
     int computeVisualLineCount(const QString& text) const;
 
     QVector<LogEntry> entries_;
