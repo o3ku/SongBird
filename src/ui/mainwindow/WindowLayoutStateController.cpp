@@ -1,54 +1,16 @@
 #include "ui/mainwindow/WindowLayoutStateController.h"
 
-#include <QGuiApplication>
 #include <QHeaderView>
 #include <QMainWindow>
-#include <QPoint>
-#include <QScreen>
 #include <QSplitter>
-#include <QTableView>
 #include <QTimer>
 
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/ServerWorkspaceWidget.h"
 #include "ui/mainwindow/SharePanelWidget.h"
+#include "ui/mainwindow/WindowLayoutStateSupport.h"
 
-namespace {
-
-constexpr int DefaultServerLogSplitPercent = 60;
-constexpr int DefaultServerQrSplitPercent = 78;
-constexpr int DefaultMainWindowWidth = 1000;
-constexpr int DefaultMainWindowHeight = 640;
-constexpr int ManualServerColumnWidthsMarker = 1;
-constexpr int ServerResultColumn = 4;
-
-QStringList defaultServerColumnKeys()
-{
-    return {
-        QStringLiteral("Default"),
-        QStringLiteral("Type"),
-        QStringLiteral("Remarks"),
-        QStringLiteral("Address"),
-        QStringLiteral("TestResult")
-    };
-}
-
-QString manualServerColumnWidthsKey()
-{
-    return QStringLiteral("__manualServerColumnWidths");
-}
-
-bool hasLegacyServerColumnWidths(const QMap<QString, int>& widths)
-{
-    return widths.contains(QStringLiteral("Port"));
-}
-
-bool hasManualServerColumnWidths(const QMap<QString, int>& widths)
-{
-    return widths.value(manualServerColumnWidthsKey()) == ManualServerColumnWidthsMarker;
-}
-
-} // namespace
+namespace Layout = WindowLayoutStateSupport;
 
 WindowLayoutStateController::WindowLayoutStateController(
     QMainWindow* window,
@@ -67,7 +29,7 @@ WindowLayoutStateController::WindowLayoutStateController(
 
     if (serverView_ != nullptr && serverView_->horizontalHeader() != nullptr) {
         connect(serverView_->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int logicalIndex, int, int) {
-            if (!applyingServerColumnWidths_ && logicalIndex != ServerResultColumn) {
+            if (!applyingServerColumnWidths_ && logicalIndex != Layout::ServerResultColumn) {
                 serverColumnsManuallyAdjusted_ = true;
             }
         });
@@ -76,15 +38,7 @@ WindowLayoutStateController::WindowLayoutStateController(
 
 QList<int> WindowLayoutStateController::defaultServerColumnWidths()
 {
-    QList<int> widths{
-        44,
-        90,
-        220,
-        320,
-        84
-    };
-
-    return widths;
+    return Layout::defaultServerColumnWidths();
 }
 
 bool WindowLayoutStateController::qrPreviewVisible() const
@@ -106,14 +60,14 @@ void WindowLayoutStateController::restoreFromConfig(const Config& config)
     }
 
     if (config.ui().mainLocationX != 0 || config.ui().mainLocationY != 0) {
-        window_->move(clampWindowPosition(QPoint(config.ui().mainLocationX, config.ui().mainLocationY), window_->size()));
+        window_->move(Layout::clampWindowPosition(QPoint(config.ui().mainLocationX, config.ui().mainLocationY), window_->size()));
     }
 
-    pendingColumnWidths_ = hasManualServerColumnWidths(config.ui().mainColumnWidths)
+    pendingColumnWidths_ = Layout::hasManualServerColumnWidths(config.ui().mainColumnWidths)
         ? config.ui().mainColumnWidths
         : QMap<QString, int>();
-    serverLogSplitPercent_ = clampSplitPercent(config.ui().mainServerLogSplitPercent, DefaultServerLogSplitPercent);
-    serverQrSplitPercent_ = clampSplitPercent(config.ui().mainServerQrSplitPercent, DefaultServerQrSplitPercent);
+    serverLogSplitPercent_ = Layout::clampSplitPercent(config.ui().mainServerLogSplitPercent, Layout::DefaultServerLogSplitPercent);
+    serverQrSplitPercent_ = Layout::clampSplitPercent(config.ui().mainServerQrSplitPercent, Layout::DefaultServerQrSplitPercent);
     qrPreviewVisible_ = config.ui().mainQrPreviewVisible;
     if (sharePanel_ != nullptr) {
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
@@ -140,7 +94,7 @@ void WindowLayoutStateController::captureToConfig(Config& config) const
     config.ui().mainSizeHeight = bounds.height();
     if (serverColumnsManuallyAdjusted_) {
         config.ui().mainColumnWidths = captureServerColumnWidths();
-    } else if (!hasManualServerColumnWidths(config.ui().mainColumnWidths)) {
+    } else if (!Layout::hasManualServerColumnWidths(config.ui().mainColumnWidths)) {
         config.ui().mainColumnWidths.clear();
     }
     config.ui().mainServerLogSplitPercent = captureSplitPercent(
@@ -250,13 +204,13 @@ void WindowLayoutStateController::applyFrameAdjustedWindowMetrics()
         qMax(0, frameSize.width() - clientSize.width()),
         qMax(0, frameSize.height() - clientSize.height()));
     const QSize targetClientSize(
-        qMax(1, DefaultMainWindowWidth - frameDelta.width()),
-        qMax(1, DefaultMainWindowHeight - frameDelta.height()));
+        qMax(1, Layout::DefaultMainWindowWidth - frameDelta.width()),
+        qMax(1, Layout::DefaultMainWindowHeight - frameDelta.height()));
 
     frameAdjustedWindowMetricsApplied_ = true;
     window_->setMinimumSize(targetClientSize);
 
-    if (clientSize == QSize(DefaultMainWindowWidth, DefaultMainWindowHeight)) {
+    if (clientSize == QSize(Layout::DefaultMainWindowWidth, Layout::DefaultMainWindowHeight)) {
         window_->resize(targetClientSize);
     }
 }
@@ -267,143 +221,42 @@ void WindowLayoutStateController::restoreServerColumnWidths(const QMap<QString, 
         return;
     }
 
-    if (hasLegacyServerColumnWidths(widths) || !hasManualServerColumnWidths(widths)) {
-        return;
-    }
-
-    QMap<QString, int> effectiveWidths = widths;
-    effectiveWidths.remove(manualServerColumnWidthsKey());
-    const QStringList keys = serverColumnKeys();
     QHeaderView* header = serverView_->horizontalHeader();
     applyingServerColumnWidths_ = true;
-    for (int index = 0; index < keys.size() && index < header->count(); ++index) {
-        const auto it = effectiveWidths.constFind(keys.at(index));
-        if (it != effectiveWidths.constEnd() && it.value() > 0) {
-            header->resizeSection(index, it.value());
-        }
-    }
+    Layout::restoreServerColumnWidths(header, widths);
     applyingServerColumnWidths_ = false;
 }
 
 QMap<QString, int> WindowLayoutStateController::captureServerColumnWidths() const
 {
-    QMap<QString, int> widths;
     if (serverView_ == nullptr || serverView_->horizontalHeader() == nullptr) {
-        return widths;
+        return {};
     }
 
-    const QStringList keys = serverColumnKeys();
-    const QHeaderView* header = serverView_->horizontalHeader();
-    for (int index = 0; index < keys.size() && index < header->count(); ++index) {
-        if (index == ServerResultColumn) {
-            continue;
-        }
-        widths.insert(keys.at(index), header->sectionSize(index));
-    }
-    widths.insert(manualServerColumnWidthsKey(), ManualServerColumnWidthsMarker);
-
-    return widths;
+    return Layout::captureServerColumnWidths(serverView_->horizontalHeader());
 }
 
 int WindowLayoutStateController::captureSplitPercent(QSplitter* splitter, int fallback) const
 {
     if (splitter == nullptr) {
-        return clampSplitPercent(fallback, fallback);
+        return Layout::clampSplitPercent(fallback, fallback);
     }
 
     if (serverWorkspace_ != nullptr
         && splitter == serverWorkspace_->topSplitter()
         && (sharePanel_ == nullptr || !sharePanel_->isVisible())) {
-        return clampSplitPercent(serverQrSplitPercent_, fallback);
+        return Layout::clampSplitPercent(serverQrSplitPercent_, fallback);
     }
 
-    const QList<int> sizes = splitter->sizes();
-    if (sizes.size() < 2) {
-        return clampSplitPercent(fallback, fallback);
-    }
-
-    const int total = qMax(0, sizes.at(0)) + qMax(0, sizes.at(1));
-    if (total <= 0) {
-        return clampSplitPercent(fallback, fallback);
-    }
-
-    const int percent = static_cast<int>(qRound((sizes.at(0) * 100.0) / total));
-    return clampSplitPercent(percent, fallback);
+    return Layout::captureSplitPercent(splitter, fallback);
 }
 
 void WindowLayoutStateController::applySplitPercent(QSplitter* splitter, int percent)
 {
-    if (splitter == nullptr) {
-        return;
-    }
-
-    const QList<int> sizes = splitter->sizes();
-    if (sizes.size() < 2) {
-        return;
-    }
-
-    const int normalizedPercent = clampSplitPercent(
+    Layout::applySplitPercent(
+        splitter,
         percent,
         serverWorkspace_ != nullptr && splitter == serverWorkspace_->rootSplitter()
-            ? DefaultServerLogSplitPercent
-            : DefaultServerQrSplitPercent);
-    int total = qMax(0, sizes.at(0)) + qMax(0, sizes.at(1));
-    if (total <= 0) {
-        total = splitter->orientation() == Qt::Horizontal
-            ? splitter->contentsRect().width()
-            : splitter->contentsRect().height();
-    }
-
-    if (total <= 0) {
-        return;
-    }
-
-    const int firstSize = qMax(1, static_cast<int>(qRound((total * normalizedPercent) / 100.0)));
-    const int secondSize = qMax(1, total - firstSize);
-    splitter->setSizes({firstSize, secondSize});
-}
-
-int WindowLayoutStateController::clampSplitPercent(int value, int fallback)
-{
-    return value < 10 || value > 90 ? fallback : value;
-}
-
-QStringList WindowLayoutStateController::serverColumnKeys()
-{
-    return defaultServerColumnKeys();
-}
-
-QPoint WindowLayoutStateController::clampWindowPosition(const QPoint& topLeft, const QSize& size)
-{
-    QList<QRect> workingAreas;
-    const auto screens = QGuiApplication::screens();
-    for (QScreen* screen : screens) {
-        if (screen != nullptr) {
-            workingAreas.append(screen->availableGeometry());
-        }
-    }
-
-    QRect targetArea;
-    for (const QRect& area : workingAreas) {
-        if (area.contains(topLeft) || area.intersects(QRect(topLeft, size))) {
-            targetArea = area;
-            break;
-        }
-    }
-
-    if (!targetArea.isValid()) {
-        if (QScreen* primaryScreen = QGuiApplication::primaryScreen()) {
-            targetArea = primaryScreen->availableGeometry();
-        }
-    }
-
-    if (!targetArea.isValid()) {
-        return topLeft;
-    }
-
-    const int maxX = std::max(targetArea.left(), targetArea.right() - size.width() + 1);
-    const int maxY = std::max(targetArea.top(), targetArea.bottom() - size.height() + 1);
-    return QPoint(
-        qBound(targetArea.left(), topLeft.x(), maxX),
-        qBound(targetArea.top(), topLeft.y(), maxY));
+            ? Layout::DefaultServerLogSplitPercent
+            : Layout::DefaultServerQrSplitPercent);
 }

@@ -3,8 +3,6 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
-#include <QPoint>
-#include <QSize>
 
 #include "domain/models/Config.h"
 
@@ -40,10 +38,6 @@ private:
     QMap<QString, int> captureServerColumnWidths() const;
     int captureSplitPercent(QSplitter* splitter, int fallback) const;
     void applySplitPercent(QSplitter* splitter, int percent);
-
-    static int clampSplitPercent(int value, int fallback);
-    static QStringList serverColumnKeys();
-    static QPoint clampWindowPosition(const QPoint& topLeft, const QSize& size);
 
     QMainWindow* window_ = nullptr;
     ServerWorkspaceWidget* serverWorkspace_ = nullptr;

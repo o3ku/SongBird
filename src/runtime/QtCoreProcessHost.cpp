@@ -3,15 +3,10 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QPointer>
-#include <QRegularExpression>
 
 #include <utility>
 
 #include "common/CorePidFile.h"
-
-namespace {
-const QRegularExpression kAnsiEscape(QStringLiteral("\x1b\\[[0-9;]*[a-zA-Z]"));
-}
 
 QtCoreProcessHost::QtCoreProcessHost() = default;
 
@@ -54,8 +49,7 @@ OperationResult QtCoreProcessHost::start(
     startNotified_ = false;
     lastCoreInfo_ = coreInfo;
     lastConfigFilePath_ = configFilePath;
-    standardOutputBuffer_.clear();
-    standardErrorBuffer_.clear();
+    outputBuffer_.clear();
 
     process_->setProgram(coreInfo.program);
     process_->setArguments(buildArguments(coreInfo, configFilePath));
@@ -236,68 +230,19 @@ void QtCoreProcessHost::emitBufferedOutput(QProcess::ProcessChannel channel)
         return;
     }
 
-    const QByteArray payload = channel == QProcess::StandardOutput
-        ? process_->readAllStandardOutput()
-        : process_->readAllStandardError();
-    if (payload.isEmpty()) {
-        return;
-    }
-
-    QString& pendingBuffer = channel == QProcess::StandardOutput
-        ? standardOutputBuffer_
-        : standardErrorBuffer_;
-    pendingBuffer.append(QString::fromUtf8(payload));
-
-    qsizetype newlineIndex = pendingBuffer.indexOf(QChar('\n'));
-    while (newlineIndex >= 0) {
-        QString line = pendingBuffer.left(newlineIndex);
-        if (line.endsWith(QChar('\r'))) {
-            line.chop(1);
-        }
-
-        pendingBuffer.remove(0, newlineIndex + 1);
-        line.remove(kAnsiEscape);
-        if (!line.isEmpty()) {
-            outputReceived_(line);
-        }
-
-        newlineIndex = pendingBuffer.indexOf(QChar('\n'));
-    }
+    outputBuffer_.append(
+        channel == QProcess::StandardOutput
+            ? CoreProcessOutputBuffer::Channel::StandardOutput
+            : CoreProcessOutputBuffer::Channel::StandardError,
+        channel == QProcess::StandardOutput
+            ? process_->readAllStandardOutput()
+            : process_->readAllStandardError(),
+        outputReceived_);
 }
 
 void QtCoreProcessHost::flushBufferedOutput(bool flushPartialLines)
 {
-    if (!outputReceived_) {
-        standardOutputBuffer_.clear();
-        standardErrorBuffer_.clear();
-        return;
-    }
-
-    const auto flushBuffer = [this, flushPartialLines](QString& buffer) {
-        if (buffer.isEmpty()) {
-            return;
-        }
-
-        if (!flushPartialLines && !buffer.contains(QChar('\n'))) {
-            return;
-        }
-
-        QString remaining = std::move(buffer);
-        buffer.clear();
-        remaining.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-        remaining.replace(QChar('\r'), QChar('\n'));
-
-        const QStringList lines = remaining.split(QChar('\n'), Qt::SkipEmptyParts);
-        for (QString line : lines) {
-            line.remove(kAnsiEscape);
-            if (!line.isEmpty()) {
-                outputReceived_(line);
-            }
-        }
-    };
-
-    flushBuffer(standardOutputBuffer_);
-    flushBuffer(standardErrorBuffer_);
+    outputBuffer_.flush(flushPartialLines, outputReceived_);
 }
 
 void QtCoreProcessHost::resetProcessState(ProcessCleanupMode cleanupMode)
@@ -322,8 +267,7 @@ void QtCoreProcessHost::resetProcessState(ProcessCleanupMode cleanupMode)
     exitedCallback_ = {};
     startNotified_ = false;
     stopRequested_ = false;
-    standardOutputBuffer_.clear();
-    standardErrorBuffer_.clear();
+    outputBuffer_.clear();
 }
 
 void QtCoreProcessHost::scheduleForcedKill()

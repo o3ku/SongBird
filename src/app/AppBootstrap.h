@@ -16,26 +16,34 @@
 #include "app/RuntimeState.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
-#include "services/AppUpdateService.h"
-
-struct SettingsDialogApplyPlan;
 
 class ClientConfigWriter;
 class ProxySession;
 class AppUpdateCheckCoordinator;
+class AppRuntimeResolver;
+class RuntimeStateSnapshotBuilder;
+class ApplicationRestartCoordinator;
+class ConfigBackupCoordinator;
 class CoreUpdateCoordinator;
+class BackgroundThreadTracker;
+class DefaultServerSwitchCoordinator;
 class GeoResourceUpdateCoordinator;
 class IUserFeedback;
 class IProxyActivationCoordinator;
 class IRuntimeEnvironment;
 class IRuntimeProfileResolver;
 class MainWindow;
+class ServerCollectionCoordinator;
+class ServerEditorCoordinator;
+class SettingsApplyCoordinator;
 class SettingsDialog;
 class SettingsWorkflowCoordinator;
 class SpeedTestCoordinator;
+class SystemProxyCoordinator;
 class SubscriptionWorkflowCoordinator;
 class UwpLoopbackDialog;
 class JsonConfigRepository;
+class TunModeCoordinator;
 class QObject;
 class QThread;
 class QWidget;
@@ -50,12 +58,13 @@ class OutboundLocationProbeService;
 class TunRuntimeService;
 struct CoreUpdateConfig;
 class ServerService;
-class SpeedTestService;
+class SpeedTestController;
 class SubscriptionService;
 class SubscriptionUpdateService;
 class TrayController;
 class WindowsAutoRunService;
 class WindowsSystemProxyService;
+struct AppBootstrapObjects;
 
 class AppBootstrap {
 public:
@@ -74,10 +83,9 @@ private:
     void wireBackgroundTaskSignals();
     void wireMainWindowCommands();
     void wireTraySignals();
+    void wireWorkflowCoordinators(const std::function<void(QThread*)>& trackBackgroundThread);
     void syncWindow();
     void syncStatusIndicators();
-    void logProxySyncDiagnostic(const RuntimeStateSnapshot& snapshot);
-    ProxyUiState computeProxyUiState() const;
     bool reloadConfig();
     void applyStartupSystemProxyPreference();
     void appendStartupResourceCheckResults();
@@ -109,47 +117,15 @@ private:
     void disableSystemProxy();
     void setTunEnabled(bool enabled);
     void importFromClipboard();
-    void importClipboardTextAsync(const QString& text);
-    void importSubscriptionUrlsFromTextAsync(const QString& text);
-    void updateAllSubscriptions();
     void updateCurrentSubscription(const QString& subscriptionId);
     void updateCurrentSubscriptionViaProxy(const QString& subscriptionId);
-    void updateCore(int coreTypeValue);
-    void updateCore(int coreTypeValue, bool startAfterSuccess);
-    void updateCore(
-        int coreTypeValue,
-        bool startAfterSuccess,
-        QObject* progressContext,
-        QWidget* dialogParent,
-        bool skipConfirmation,
-        bool skipLocalVersionCheck,
-        const std::function<void(const QString&)>& progressObserver,
-        const std::function<void(const OperationResult&)>& completionObserver);
-    void continuePendingCoreUpdate();
-    void updateGeoResources();
-    void updateSelectedSubscriptions(const QList<int>& rowIndexes);
-    void updateSubscriptionsByIds(const QStringList& subscriptionIds, bool useProxy, const QString& startupMessage);
-    void hideSubscription(const QString& subscriptionId);
-    void deleteSubscription(const QString& subscriptionId);
     void handleRoutingSelectionResult(
         const OperationResult& result,
         bool previousAdvancedEnabled,
         int previousRoutingIndex);
-    void handleDefaultServerSelectionResult(const OperationResult& result, const QString& previousIndexId);
-    bool requestDefaultServerSwitchAfterCoreStop(const QString& indexId, bool enableTun);
-    void scheduleDefaultServerSwitchAfterCoreStopped(
-        const QString& indexId,
-        bool enableTun,
-        bool showStartupOverlay);
-    void switchDefaultServerAfterCoreStopped(
-        const QString& indexId,
-        bool enableTun,
-        bool showStartupOverlay);
-    void setDefaultServerWithTun(const QString& indexId);
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
     void checkAppUpdates(bool manual);
-    void downloadAppUpdate(const AppUpdateCheckResult& updateResult, QPointer<QWidget> dialogParent);
     void openSettingsDialog(int initialTab = 0);
     void applySettingsDialogResult(const Config& updatedConfig);
     void openAboutDialog();
@@ -160,7 +136,6 @@ private:
     void promptRestartForLanguageChange();
     bool promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent);
     bool restartApplication(bool requireAdministrator);
-    void startSpeedTest(const QStringList& indexIds);
     bool isCoreRunning() const;
     bool isCoreReady() const;
     const VmessItem* findServerById(const QString& indexId) const;
@@ -180,14 +155,8 @@ private:
     QList<CoreType> detectExistingCoreTypes() const;
     QString detectCoreVersion(CoreType coreType) const;
     QString resolveCoreInstallDirectory(CoreType coreType) const;
-    QString buildRoutingSummaryText() const;
-    QString buildListenSummaryText() const;
-    QString buildSystemProxyExceptions() const;
     bool updateSystemProxyMode(SystemProxyMode mode) const;
-    void trackBackgroundThread(QThread* thread);
-    void waitForBackgroundThreads();
     OperationResult removeStaleTunAdapterIfPresent() const;
-    void removeStaleSingBoxCache();
     void cleanupOrphanCoreProcesses();
     void cleanupCoreProcessesUsingConfiguredPorts();
 
@@ -195,49 +164,14 @@ private:
     bool startHidden_ = false;
     bool skipCoreChecks_ = false;
     Config config_;
-    std::unique_ptr<JsonConfigRepository> repository_;
-    std::unique_ptr<ServerService> serverService_;
-    std::unique_ptr<ConfigBackupService> configBackupService_;
-    std::unique_ptr<RoutingService> routingService_;
-    std::unique_ptr<SpeedTestService> speedTestService_;
-    std::unique_ptr<SubscriptionService> subscriptionService_;
-    std::unique_ptr<GeoResourceUpdateService> geoResourceUpdateService_;
-    std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
-    std::unique_ptr<QtCoreProcessHost> coreProcessHost_;
-    std::unique_ptr<AppUpdateInstallService> appUpdateInstallService_;
-    std::unique_ptr<CoreProcessCleanupService> coreProcessCleanupService_;
-    std::unique_ptr<CoreDiscoveryService> coreDiscoveryService_;
-    std::unique_ptr<OutboundLocationProbeService> outboundLocationProbeService_;
-    std::unique_ptr<TunRuntimeService> tunRuntimeService_;
-    std::unique_ptr<RuntimeState> runtimeState_;
-    std::unique_ptr<QtCoreProcessHost> auxiliaryCoreProcessHost_;
-    std::unique_ptr<WindowsAutoRunService> autoRunService_;
-    std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
-    std::unique_ptr<BackgroundTaskCoordinator> backgroundTasks_;
-    std::unique_ptr<IRuntimeProfileResolver> runtimeProfileResolver_;
-    std::unique_ptr<IRuntimeEnvironment> runtimeEnvironment_;
-    std::unique_ptr<IProxyActivationCoordinator> proxyActivationCoordinator_;
-    std::unique_ptr<ProxySession> proxySession_;
-    std::unique_ptr<IUserFeedback> userFeedback_;
-    std::unique_ptr<AppUpdateCheckCoordinator> appUpdateCheckCoordinator_;
-    std::unique_ptr<CoreUpdateCoordinator> coreUpdateCoordinator_;
-    std::unique_ptr<GeoResourceUpdateCoordinator> geoResourceUpdateCoordinator_;
-    std::unique_ptr<SettingsWorkflowCoordinator> settingsWorkflowCoordinator_;
-    std::unique_ptr<SpeedTestCoordinator> speedTestCoordinator_;
-    std::unique_ptr<SubscriptionWorkflowCoordinator> subscriptionWorkflowCoordinator_;
-    std::unique_ptr<TrayController> trayController_;
-    std::unique_ptr<MainWindow> mainWindow_;
+    std::unique_ptr<AppBootstrapObjects> objects_;
     QList<CoreType> existingCoreTypes_;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
     bool uiReady_ = false;
     bool uiStateRestored_ = false;
     bool shutdownUiStatePersisted_ = false;
-    bool exitProxyStateApplied_ = false;
     bool windowsShutdownRequested_ = false;
-    QString lastProxySyncDiagnostic_;
-    std::optional<ProxyUiState> lastProxyUiStateLogged_;
     bool setCurrentActivationPending_ = false;
-    QList<QPointer<QThread>> backgroundThreads_;
     QPointer<UwpLoopbackDialog> uwpLoopbackDialog_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();
     std::atomic_bool shuttingDown_{false};

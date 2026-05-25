@@ -7,6 +7,7 @@
 #include <QContextMenuEvent>
 #include <QElapsedTimer>
 #include <QFontMetrics>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
@@ -19,7 +20,9 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QScrollBar>
+#include <QSet>
 #include <QSplitter>
+#include <QStandardItemModel>
 #include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTextOption>
@@ -31,10 +34,17 @@
 #include "subscription/ShareUrlBuilder.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/MainWindowServerSelectionSupport.h"
+#include "ui/mainwindow/MainWindowTitleSupport.h"
 #include "ui/mainwindow/ServerTableView.h"
+#include "ui/mainwindow/StatusBarSupport.h"
+#include "ui/mainwindow/SubscriptionViewSupport.h"
+#include "ui/mainwindow/WindowLayoutStateSupport.h"
 #include "ui/models/LogListModel.h"
+#include "ui/models/ServerTableModel.h"
 #include "ui/qr/QrCodeRenderer.h"
 #include "ui/theme/AppTheme.h"
+#include "ui/tray/TrayMenuSupport.h"
 
 class MainWindowTests : public QObject {
     Q_OBJECT
@@ -62,6 +72,10 @@ private slots:
     void tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff();
     void tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxyStateWasStale();
     void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
+    void subscriptionViewSupportMapsTabKeysAndLabels();
+    void subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds();
+    void windowLayoutStateSupportCapturesAndRestoresServerColumnWidths();
+    void trayMenuSupportBuildsServerAndRoutingEntries();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
@@ -84,6 +98,8 @@ private slots:
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
     void currentServerStatusAppendsLocation();
     void currentServerStatusAppendsManualVerificationWarning();
+    void statusBarSupportFormatsLabelsAndTransientState();
+    void windowTitleSupportFormatsAndElidesRuntimeState();
     void coreStatusRemainsStartingUntilStrictActivation();
     void runtimeStatusLabelsRemainVisibleInStatusBar();
     void serverSelectionDoesNotShowTransientStatusMessage();
@@ -964,6 +980,168 @@ void MainWindowTests::restoreAndCaptureUiStatePreservesQrPreviewVisibility()
     QVERIFY(captured.ui().mainQrPreviewVisible);
 }
 
+void MainWindowTests::subscriptionViewSupportMapsTabKeysAndLabels()
+{
+    QCOMPARE(
+        SubscriptionViewSupport::tabKeyFromSelectionId(QStringLiteral(" sub-1 ")),
+        QStringLiteral("sub:sub-1"));
+    QCOMPARE(
+        SubscriptionViewSupport::tabKeyFromSelectionId(QStringLiteral("__unsubscribed__")),
+        QStringLiteral("ungrouped"));
+    QCOMPARE(
+        SubscriptionViewSupport::tabKeyFromSelectionId(QStringLiteral("UNGROUPED")),
+        QStringLiteral("ungrouped"));
+    QCOMPARE(
+        SubscriptionViewSupport::persistedSelectionIdFromTabKey(QStringLiteral("sub:sub-1")),
+        QStringLiteral("sub-1"));
+    QCOMPARE(
+        SubscriptionViewSupport::persistedSelectionIdFromTabKey(QStringLiteral("ungrouped")),
+        QStringLiteral("__unsubscribed__"));
+    QCOMPARE(
+        SubscriptionViewSupport::subscriptionIdFromTabKey(QStringLiteral("sub:sub-2")),
+        QStringLiteral("sub-2"));
+    QVERIFY(SubscriptionViewSupport::subscriptionIdFromTabKey(QStringLiteral("ungrouped")).isEmpty());
+
+    QList<SubItem> subscriptions;
+    SubItem first;
+    first.id = QStringLiteral(" sub-1 ");
+    first.remarks = QStringLiteral("First Subscription");
+    first.url = QStringLiteral("https://example.com/sub-1");
+    first.enabled = true;
+    subscriptions.append(first);
+
+    SubItem duplicate = first;
+    duplicate.id = QStringLiteral("sub-1");
+    subscriptions.append(duplicate);
+
+    SubItem disabled;
+    disabled.id = QStringLiteral("sub-2");
+    disabled.enabled = false;
+    subscriptions.append(disabled);
+
+    QCOMPARE(SubscriptionViewSupport::enabledSubscriptionIds(subscriptions), QSet<QString>({QStringLiteral("sub-1")}));
+    QCOMPARE(SubscriptionViewSupport::subscriptionDisplayName(first), QStringLiteral("First Subscription"));
+
+    SubItem urlOnly;
+    urlOnly.url = QStringLiteral("https://example.com/sub-url");
+    QCOMPARE(SubscriptionViewSupport::subscriptionDisplayName(urlOnly), QStringLiteral("https://example.com/sub-url"));
+
+    SubItem idOnly;
+    idOnly.id = QStringLiteral("sub-id");
+    QCOMPARE(SubscriptionViewSupport::subscriptionDisplayName(idOnly), QStringLiteral("sub-id"));
+
+    SubItem unnamed;
+    QCOMPARE(SubscriptionViewSupport::subscriptionDisplayName(unnamed), QStringLiteral("Subscription"));
+}
+
+void MainWindowTests::subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds()
+{
+    QList<VmessItem> servers;
+    VmessItem first = createServer(QStringLiteral("server-1"), QStringLiteral("First"), 1);
+    first.subId = QStringLiteral("sub-a");
+    servers.append(first);
+
+    VmessItem second = createServer(QStringLiteral("server-2"), QStringLiteral("Second"), 2);
+    second.subId = QStringLiteral("sub-b");
+    servers.append(second);
+
+    VmessItem blankId = createServer(QString(), QStringLiteral("Blank"), 3);
+    blankId.subId = QStringLiteral("sub-a");
+    servers.append(blankId);
+
+    VmessItem spacedSubscription = createServer(QStringLiteral("server-4"), QStringLiteral("Fourth"), 4);
+    spacedSubscription.subId = QStringLiteral(" sub-a ");
+    servers.append(spacedSubscription);
+
+    ServerTableModel model;
+    model.setItems(servers);
+
+    QCOMPARE(
+        MainWindowServerSelectionSupport::subscriptionServerIndexIds(&model, QStringLiteral(" sub-a ")),
+        QStringList({QStringLiteral("server-1"), QStringLiteral("server-4")}));
+    QVERIFY(MainWindowServerSelectionSupport::subscriptionServerIndexIds(&model, QStringLiteral("sub-missing")).isEmpty());
+    QVERIFY(MainWindowServerSelectionSupport::subscriptionServerIndexIds(nullptr, QStringLiteral("sub-a")).isEmpty());
+}
+
+void MainWindowTests::windowLayoutStateSupportCapturesAndRestoresServerColumnWidths()
+{
+    QTableView table;
+    QStandardItemModel model(1, WindowLayoutStateSupport::serverColumnKeys().size());
+    table.setModel(&model);
+    QHeaderView* header = table.horizontalHeader();
+    QVERIFY(header != nullptr);
+
+    const QList<int> initialWidths = {50, 70, 190, 230, 99};
+    for (int index = 0; index < initialWidths.size(); ++index) {
+        header->resizeSection(index, initialWidths.at(index));
+    }
+
+    const QMap<QString, int> captured = WindowLayoutStateSupport::captureServerColumnWidths(header);
+    QCOMPARE(captured.value(QStringLiteral("Default")), 50);
+    QCOMPARE(captured.value(QStringLiteral("Type")), 70);
+    QCOMPARE(captured.value(QStringLiteral("Remarks")), 190);
+    QCOMPARE(captured.value(QStringLiteral("Address")), 230);
+    QVERIFY(!captured.contains(QStringLiteral("TestResult")));
+    QVERIFY(WindowLayoutStateSupport::hasManualServerColumnWidths(captured));
+
+    QMap<QString, int> restored = captured;
+    restored.insert(QStringLiteral("Default"), 60);
+    restored.insert(QStringLiteral("Type"), 80);
+    restored.insert(QStringLiteral("Remarks"), 200);
+    restored.insert(QStringLiteral("Address"), 240);
+    restored.insert(QStringLiteral("TestResult"), 120);
+    WindowLayoutStateSupport::restoreServerColumnWidths(header, restored);
+    QCOMPARE(header->sectionSize(0), 60);
+    QCOMPARE(header->sectionSize(1), 80);
+    QCOMPARE(header->sectionSize(2), 200);
+    QCOMPARE(header->sectionSize(3), 240);
+    QCOMPARE(header->sectionSize(4), 120);
+
+    QMap<QString, int> legacy = restored;
+    legacy.insert(QStringLiteral("Port"), 443);
+    WindowLayoutStateSupport::restoreServerColumnWidths(header, legacy);
+    QCOMPARE(header->sectionSize(0), 60);
+}
+
+void MainWindowTests::trayMenuSupportBuildsServerAndRoutingEntries()
+{
+    VmessItem first = createServer(QStringLiteral("server-1"), QStringLiteral("First"), 1);
+    first.testResult = QStringLiteral("42 ms");
+    VmessItem second = createServer(QStringLiteral("server-2"), QString(), 2);
+    second.testResult = QStringLiteral("Timeout");
+
+    QList<VmessItem> servers;
+    servers.append(first);
+    servers.append(second);
+
+    const QList<TrayServerEntry> serverEntries = TrayMenuSupport::makeServerEntries(servers);
+    QCOMPARE(serverEntries.size(), 2);
+    QCOMPARE(serverEntries.at(0).indexId, QStringLiteral("server-1"));
+    QCOMPARE(serverEntries.at(0).displayName, QStringLiteral("First"));
+    QCOMPARE(serverEntries.at(0).testResult, QStringLiteral("42 ms"));
+    QCOMPARE(serverEntries.at(1).indexId, QStringLiteral("server-2"));
+    QVERIFY(!serverEntries.at(1).displayName.trimmed().isEmpty());
+    QCOMPARE(TrayMenuSupport::formatTestResult(serverEntries.at(0).testResult), QStringLiteral("42 ms"));
+    QCOMPARE(TrayMenuSupport::formatTestResult(serverEntries.at(1).testResult), QStringLiteral("unavailable"));
+
+    RoutingItem namedRouting;
+    namedRouting.remarks = QStringLiteral("Direct");
+    namedRouting.customIcon = QStringLiteral("direct.svg");
+    RoutingItem unnamedRouting;
+    unnamedRouting.customIcon = QStringLiteral("fallback.svg");
+
+    QList<RoutingItem> routings;
+    routings.append(namedRouting);
+    routings.append(unnamedRouting);
+
+    const QList<TrayRoutingEntry> routingEntries = TrayMenuSupport::makeRoutingEntries(routings);
+    QCOMPARE(routingEntries.size(), 2);
+    QCOMPARE(routingEntries.at(0).displayName, QStringLiteral("Direct"));
+    QCOMPARE(routingEntries.at(0).customIconPath, QStringLiteral("direct.svg"));
+    QCOMPARE(routingEntries.at(1).displayName, QStringLiteral("Routing 2"));
+    QCOMPARE(routingEntries.at(1).customIconPath, QStringLiteral("fallback.svg"));
+}
+
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 {
     const QString text = QStringLiteral("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron");
@@ -1743,6 +1921,77 @@ void MainWindowTests::currentServerStatusAppendsManualVerificationWarning()
     QCOMPARE(
         currentServerStatusLabel->text(),
         QStringLiteral("Current: Test Server | United States, Los Angeles"));
+}
+
+void MainWindowTests::statusBarSupportFormatsLabelsAndTransientState()
+{
+    QWidget widget;
+    const QFontMetrics fontMetrics = widget.fontMetrics();
+
+    QCOMPARE(
+        StatusBarSupport::currentServerStatusText(
+            fontMetrics,
+            QString(),
+            QString(),
+            QString(),
+            300),
+        QStringLiteral("Current: <No Server>"));
+    QCOMPARE(
+        StatusBarSupport::currentServerStatusText(
+            fontMetrics,
+            QStringLiteral("Test Server"),
+            QStringLiteral("United States, Los Angeles"),
+            QStringLiteral("Please verify manually"),
+            300),
+        QStringLiteral("Current: Test Server | United States, Los Angeles | Please verify manually"));
+    QCOMPARE(
+        StatusBarSupport::currentServerToolTip(fontMetrics, QString(), 300),
+        QStringLiteral("Click to show the current server."));
+    QVERIFY(StatusBarSupport::currentServerToolTip(
+        fontMetrics,
+        QStringLiteral("Test Server"),
+        300).contains(QStringLiteral("Test Server")));
+    QCOMPARE(StatusBarSupport::routingStatusText(QString()), QStringLiteral("Listening: Unavailable"));
+    QCOMPARE(StatusBarSupport::routingStatusText(QStringLiteral("127.0.0.1:2080")), QStringLiteral("Listening: 127.0.0.1:2080"));
+    QCOMPARE(
+        StatusBarSupport::transientStatusText(QString(), true, QStringLiteral("Updating subscriptions")),
+        QStringLiteral("Task: Updating subscriptions"));
+    QCOMPARE(
+        StatusBarSupport::transientStatusText(QStringLiteral("Copied"), true, QStringLiteral("Updating subscriptions")),
+        QStringLiteral("Copied"));
+    QVERIFY(StatusBarSupport::shouldSuppressRoutineStatus(QStringLiteral("Copied"), false, QString()));
+    QVERIFY(StatusBarSupport::shouldSuppressRoutineStatus(QString(), true, QStringLiteral("Updating subscriptions")));
+    QVERIFY(!StatusBarSupport::shouldSuppressRoutineStatus(QString(), false, QString()));
+
+    const QString longText = QStringLiteral("A very long status message that must be elided");
+    const QString elided = StatusBarSupport::elideTextWithThreeDots(fontMetrics, longText, 40);
+    QVERIFY(elided.endsWith(QStringLiteral("...")));
+    QVERIFY(elided.size() < longText.size());
+}
+
+void MainWindowTests::windowTitleSupportFormatsAndElidesRuntimeState()
+{
+    QWidget widget;
+    const QString defaultTitle = MainWindowTitleSupport::formatWindowTitle(
+        QString(),
+        QString(),
+        ProxyUiState::Idle,
+        false,
+        widget.fontMetrics(),
+        300);
+    QCOMPARE(defaultTitle, QStringLiteral("SongBird [Unknown] [None] [Proxy OFF] [TUN OFF]"));
+
+    const QString longServerName = QStringLiteral("Very Long Server Name That Must Be Elided For The Title Bar");
+    const QString activeTitle = MainWindowTitleSupport::formatWindowTitle(
+        QStringLiteral("sing-box"),
+        longServerName,
+        ProxyUiState::Active,
+        true,
+        widget.fontMetrics(),
+        90);
+    QVERIFY(activeTitle.startsWith(QStringLiteral("SongBird [sing-box] [")));
+    QVERIFY(activeTitle.contains(QStringLiteral("[Proxy ON] [TUN ON]")));
+    QVERIFY(!activeTitle.contains(longServerName));
 }
 
 void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()

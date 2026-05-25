@@ -10,7 +10,7 @@
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
-#include "services/SpeedTestService.h"
+#include "services/SpeedTestController.h"
 
 class SpeedTestCoordinator final : public QObject
 {
@@ -19,7 +19,7 @@ class SpeedTestCoordinator final : public QObject
 public:
     struct Dependencies {
         BackgroundTaskCoordinator* backgroundTasks = nullptr;
-        SpeedTestService* speedTestService = nullptr;
+        SpeedTestController* speedTestController = nullptr;
         std::function<Config&()> mutableConfig;
         std::function<bool(Config&)> saveConfig;
         std::function<const VmessItem*(const QString&)> findServerById;

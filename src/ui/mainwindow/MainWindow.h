@@ -6,9 +6,9 @@
 #include <QMap>
 #include <QStringList>
 
-#include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 #include "app/RuntimeState.h"
+#include "ui/mainwindow/MainWindowConfigState.h"
 class QAction;
 class QComboBox;
 class QEvent;
@@ -34,6 +34,7 @@ class StartupOverlayWidget;
 class SubscriptionViewController;
 class ServerListController;
 class ServerWorkspaceWidget;
+class MainWindowShortcutController;
 class WindowLayoutStateController;
 class ServerActionsController;
 class ServerSelectionController;
@@ -67,7 +68,6 @@ public:
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();
-    void setSystemProxyState(int mode, bool enabled);
     void setProxyEnabled(bool enabled);
     void setTunEnabled(bool enabled);
     void setProxyUiState(ProxyUiState state);
@@ -123,14 +123,6 @@ private slots:
     void refreshThemeAssets();
 
 private:
-    struct ConfigSnapshot {
-        QString currentIndexId;
-        QList<SubItem> subscriptions;
-        QList<RoutingItem> routingItems;
-        int routingIndex = 0;
-        QList<CoreTypeItem> coreTypeItems;
-    };
-
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -138,12 +130,6 @@ private:
     void setupUi();
     void setupToolbar();
     void createToolbarActions();
-    void createServerToolbarActions();
-    void createSubscriptionToolbarActions();
-    void createUpdateToolbarActions();
-    void createSystemToolbarActions();
-    void createHelpToolbarActions();
-    void createRuntimeToolbarActions();
     void createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu);
     void populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu);
     void initializeToolbarControllers();
@@ -165,30 +151,23 @@ private:
     void setupViewConnections();
     void setupSubscriptionViewConnections();
     void setupSplitterViewConnections();
-    void setupShortcutConnections();
-    void setupFilterShortcutConnections();
-    void setupUpdateShortcutConnections();
-    void setupExitShortcutConnection();
-    void setupSubscriptionTabShortcutConnections();
+    void setupShortcutController();
     void scheduleInitialCurrentServerReveal();
     void updateQrPreview();
     void updateQrPanelActionText();
     void updateSelectionForVisibleRows();
     void showCurrentServerInTable();
+    void applyBackgroundTaskRunningState(bool running);
     bool canStartBackgroundTask() const;
     bool ensureCanStartBackgroundTask();
     bool isUngroupedSubscriptionTabSelected() const;
-    QString currentSubscriptionIdForUpdate() const;
     void testSubscriptionServers(const QString& subscriptionId);
     void triggerCurrentSubscriptionUpdate();
     void copyCurrentSubscriptionUrlToClipboard();
     void clearTransientStatus();
     void updateWindowTitle();
     void setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel);
-    void updateConfigSnapshot(const Config& config);
-    void rebuildShareUrlCache(const QList<VmessItem>& servers);
     void preserveServerSelectionPreference();
-    void updateCurrentCoreFromConfig(const Config& config);
     void syncConfigControllers(const Config& config);
     void updateRuntimeUiState();
     void updateStatusPresentation(bool includeWindowTitle = false);
@@ -209,6 +188,7 @@ private:
     RoutingModeController* routingModeController_ = nullptr;
     SubscriptionViewController* subscriptionViewController_ = nullptr;
     ServerListController* serverListController_ = nullptr;
+    MainWindowShortcutController* shortcutController_ = nullptr;
     WindowLayoutStateController* windowLayoutStateController_ = nullptr;
     ServerActionsController* serverActionsController_ = nullptr;
     ServerSelectionController* serverSelectionController_ = nullptr;
@@ -262,7 +242,7 @@ private:
     QString backgroundTaskDescription_;
     QHash<QAction*, QString> toolbarIconFiles_;
     QHash<QToolButton*, QString> toolbarStandaloneIconFiles_;
-    ConfigSnapshot configSnapshot_;
+    MainWindowConfigSnapshot configSnapshot_;
     QHash<QString, QString> shareUrlByIndexId_;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;

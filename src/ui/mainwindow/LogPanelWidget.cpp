@@ -5,7 +5,6 @@
 #include <QClipboard>
 #include <QEvent>
 #include <QFrame>
-#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
@@ -17,46 +16,19 @@
 #include <QMetaObject>
 #include <QPoint>
 #include <QRegularExpression>
-#include <QScrollBar>
 #include <QSizePolicy>
-#include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 #include <QTime>
 #include <QVBoxLayout>
 
 #include "ui/mainwindow/LogItemDelegate.h"
+#include "ui/mainwindow/LogPanelSupport.h"
 #include "ui/models/LogFilterProxyModel.h"
 #include "ui/models/LogListModel.h"
 #include "ui/theme/AppTheme.h"
 
-namespace {
-
-constexpr int HeaderFilterMinimumCharacters = 14;
-
-int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
-{
-    if (widget == nullptr) {
-        return 0;
-    }
-
-    const QFontMetrics metrics(widget->font());
-    const int textWidth = metrics.horizontalAdvance(text);
-    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
-    return qMax(textWidth, characterWidth) + chromeWidth;
-}
-
-void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
-{
-    if (edit == nullptr) {
-        return;
-    }
-
-    edit->setMinimumWidth(textControlMinimumWidth(edit, edit->placeholderText(), minimumCharacters, 40));
-    edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-}
-
-} // namespace
+namespace LogUi = LogPanelSupport;
 
 LogPanelWidget::LogPanelWidget(QWidget* parent)
     : QWidget(parent)
@@ -104,7 +76,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     AppTheme::applyCompactFont(logFilterEdit_);
     logFilterEdit_->setClearButtonEnabled(true);
     logFilterEdit_->setPlaceholderText(tr("Filter logs"));
-    configureContentSizedLineEdit(logFilterEdit_, HeaderFilterMinimumCharacters);
+    LogUi::configureContentSizedLineEdit(logFilterEdit_, LogUi::HeaderFilterMinimumCharacters);
     const int logFilterHeight = logFilterEdit_->sizeHint().height();
     logStickToBottomButton_->setFixedSize(logFilterHeight, logFilterHeight);
     logHeaderLayout->addWidget(logFilterEdit_);
@@ -166,15 +138,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
         updateLogContextActions();
     });
     connect(selectAllLogAction_, &QAction::triggered, this, [this]() {
-        if (logView_ != nullptr && logFilterModel_ != nullptr && logView_->selectionModel() != nullptr) {
-            const QModelIndex topLeft = logFilterModel_->index(0, 0);
-            const QModelIndex bottomRight = logFilterModel_->index(logFilterModel_->rowCount() - 1, 0);
-            if (topLeft.isValid() && bottomRight.isValid()) {
-                logView_->selectionModel()->select(
-                    QItemSelection(topLeft, bottomRight),
-                    QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-            }
-        }
+        LogUi::selectAllRows(logView_, logFilterModel_);
     });
     connect(copySelectedLogAction_, &QAction::triggered, this, [this]() {
         copySelectedLogLines();
@@ -242,8 +206,7 @@ bool LogPanelWidget::eventFilter(QObject* watched, QEvent* event)
     if (logView_ != nullptr && watched == logView_ && event != nullptr
         && event->type() == QEvent::ShortcutOverride) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->matches(QKeySequence::Copy) && logView_->selectionModel() != nullptr
-            && !logView_->selectionModel()->selectedRows().isEmpty()) {
+        if (keyEvent->matches(QKeySequence::Copy) && LogUi::hasSelectedRows(logView_)) {
             event->accept();
         }
     }
@@ -251,8 +214,7 @@ bool LogPanelWidget::eventFilter(QObject* watched, QEvent* event)
     if (logView_ != nullptr && watched == logView_ && event != nullptr
         && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->matches(QKeySequence::Copy) && logView_->selectionModel() != nullptr
-            && !logView_->selectionModel()->selectedRows().isEmpty()) {
+        if (keyEvent->matches(QKeySequence::Copy) && LogUi::hasSelectedRows(logView_)) {
             copySelectedLogLines();
             return true;
         }
@@ -272,24 +234,13 @@ void LogPanelWidget::applyLogFilter()
         return;
     }
 
-    const auto setValidationState = [this](const char* value) {
-        if (logFilterEdit_ == nullptr) {
-            return;
-        }
-
-        logFilterEdit_->setProperty("validationState", QString::fromLatin1(value));
-        logFilterEdit_->style()->unpolish(logFilterEdit_);
-        logFilterEdit_->style()->polish(logFilterEdit_);
-        logFilterEdit_->update();
-    };
-
     const QString pattern = logFilterEdit_ == nullptr ? QString() : logFilterEdit_->text().trimmed();
     const bool wasAtBottom = logStickToBottomEnabled_ || shouldStickLogViewToBottom(true);
 
     logFilterModel_->setPattern(pattern, false);
     if (!logFilterModel_->hasValidPattern()) {
         if (logFilterEdit_ != nullptr) {
-            setValidationState("error");
+            LogUi::setLineEditValidationState(logFilterEdit_, QStringLiteral("error"));
             const QRegularExpression expression(
                 pattern,
                 QRegularExpression::CaseInsensitiveOption | QRegularExpression::UseUnicodePropertiesOption);
@@ -297,7 +248,7 @@ void LogPanelWidget::applyLogFilter()
         }
     } else {
         if (logFilterEdit_ != nullptr) {
-            setValidationState("");
+            LogUi::setLineEditValidationState(logFilterEdit_, QString());
             logFilterEdit_->setToolTip(QString());
         }
     }
@@ -355,8 +306,7 @@ bool LogPanelWidget::shouldStickLogViewToBottom(bool filterActive) const
         return false;
     }
 
-    QScrollBar* verticalScrollBar = logView_->verticalScrollBar();
-    return verticalScrollBar != nullptr && verticalScrollBar->value() >= verticalScrollBar->maximum();
+    return LogUi::viewAtBottom(logView_);
 }
 
 void LogPanelWidget::updateLogContextActions()
@@ -366,9 +316,7 @@ void LogPanelWidget::updateLogContextActions()
     }
 
     const int visibleRows = logFilterModel_ == nullptr ? 0 : logFilterModel_->rowCount();
-    const int selectedRows = logView_->selectionModel() == nullptr
-        ? 0
-        : logView_->selectionModel()->selectedRows().size();
+    const int selectedRows = LogUi::selectedRowCount(logView_);
     if (selectAllLogAction_ != nullptr) {
         selectAllLogAction_->setEnabled(visibleRows > 0);
     }
@@ -401,11 +349,7 @@ void LogPanelWidget::copySelectedLogLines()
         return;
     }
 
-    QStringList lines;
-    const QModelIndexList proxyIndexes = logView_->selectionModel()->selectedRows();
-    for (const QModelIndex& proxyIndex : proxyIndexes) {
-        lines.append(proxyIndex.data(Qt::DisplayRole).toString());
-    }
+    const QStringList lines = LogUi::selectedRowsText(logView_);
     if (!lines.isEmpty()) {
         QApplication::clipboard()->setText(lines.join(QChar('\n')));
     }
@@ -417,10 +361,7 @@ void LogPanelWidget::copyAllLogLines()
         return;
     }
 
-    QStringList lines;
-    for (int row = 0; row < logFilterModel_->rowCount(); ++row) {
-        lines.append(logFilterModel_->index(row, 0).data(Qt::DisplayRole).toString());
-    }
+    const QStringList lines = LogUi::modelRowsText(logFilterModel_);
     if (!lines.isEmpty()) {
         QApplication::clipboard()->setText(lines.join(QChar('\n')));
     }

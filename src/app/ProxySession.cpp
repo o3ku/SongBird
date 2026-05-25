@@ -1,12 +1,9 @@
 #include "app/ProxySession.h"
 
-#include <algorithm>
-
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
-#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QHostAddress>
@@ -33,9 +30,7 @@
 
 namespace {
 
-constexpr int CoreStartupOverlayMinimumVisibleMs = 650;
 constexpr int CoreStartupCompletionOverlayDelayMs = 2000;
-constexpr unsigned long BackgroundThreadShutdownWaitMs = 2000;
 const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 
 QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
@@ -78,6 +73,36 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
     return missingTags;
 }
 
+QStringList normalizedUniqueTags(const QStringList& tags)
+{
+    QStringList normalizedTags;
+    QSet<QString> seenTags;
+    for (const QString& tag : tags) {
+        const QString normalizedTag = tag.trimmed().toLower();
+        if (normalizedTag.isEmpty() || seenTags.contains(normalizedTag)) {
+            continue;
+        }
+        seenTags.insert(normalizedTag);
+        normalizedTags.append(normalizedTag);
+    }
+    return normalizedTags;
+}
+
+OperationResult combineOperationResults(const QList<OperationResult>& results)
+{
+    bool success = true;
+    QStringList messages;
+    for (const OperationResult& result : results) {
+        success = success && result.success;
+        if (!result.message.trimmed().isEmpty()) {
+            messages.append(result.message.trimmed());
+        }
+    }
+
+    const QString message = messages.join(QChar('\n'));
+    return success ? OperationResult::ok(message) : OperationResult::fail(message);
+}
+
 bool waitForLocalTcpPortReady(int port, int timeoutMs)
 {
     if (port <= 0 || port > 65535 || timeoutMs <= 0) {
@@ -98,16 +123,6 @@ bool waitForLocalTcpPortReady(int port, int timeoutMs)
     return false;
 }
 
-QString overlayDetailText(QString detail)
-{
-    detail = detail.trimmed();
-    const int urlSeparatorIndex = detail.indexOf(QStringLiteral(": http"), 0, Qt::CaseInsensitive);
-    if (urlSeparatorIndex > 0) {
-        return detail.left(urlSeparatorIndex).trimmed();
-    }
-    return detail;
-}
-
 QString tunAdminRequiredStartMessage()
 {
     return QCoreApplication::translate(
@@ -120,6 +135,10 @@ QString tunAdminRequiredStartMessage()
 ProxySession::ProxySession(Dependencies deps, QObject* parent)
     : QObject(parent)
     , deps_(deps)
+    , checklist_(
+          this,
+          [this](const QStringList& items) { emit checklistUpdated(items); },
+          [this]() { emit checklistCleared(); })
 {
 }
 
@@ -128,17 +147,7 @@ ProxySession::~ProxySession()
     shuttingDown_ = true;
     lifetimeGuard_.reset();
     cancelPendingCoreRestarts();
-    const QList<QPointer<QThread>> threads = backgroundThreads_;
-    for (const QPointer<QThread>& thread : threads) {
-        if (thread != nullptr && thread->isRunning()) {
-            thread->requestInterruption();
-            thread->quit();
-            while (!thread->wait(BackgroundThreadShutdownWaitMs)) {
-                thread->requestInterruption();
-            }
-        }
-    }
-    backgroundThreads_.clear();
+    backgroundThreads_.waitForAll();
 }
 
 void ProxySession::start(const StartRequest& request)
@@ -239,15 +248,21 @@ void ProxySession::adoptManagedSystemProxy(bool active)
 
 void ProxySession::requestChecklistOverlay()
 {
-    if (checklistSteps_.isEmpty()) {
-        return;
-    }
-
-    checklistOverlayRequested_ = true;
-    syncChecklistOverlay();
+    checklist_.requestOverlay();
 }
 
 // --- Phase management ---
+
+ProxySession::StartupSteps ProxySession::startupSteps()
+{
+    return {
+        tr("Environment cleanup"),
+        tr("Validate core application"),
+        tr("Validate runtime resources"),
+        tr("Validate core config"),
+        tr("Start TUN runtime"),
+        tr("Start core process")};
+}
 
 void ProxySession::setPhase(Phase phase)
 {
@@ -266,141 +281,41 @@ void ProxySession::startInternal(
     bool environmentAlreadyChecked,
     bool showStartupOverlay)
 {
-    const QString environmentStep = tr("Environment cleanup");
-    const QString downloadCoreStep = tr("Validate core application");
-    const QString checkRuntimeResourcesStep = tr("Validate runtime resources");
-    const QString validateConfigStep = tr("Validate core config");
-    const QString startTunRuntimeStep = tr("Start TUN runtime");
-    const QString startCoreStep = tr("Start core process");
+    const StartupContext context{startupSteps(), skipTunCleanup, environmentAlreadyChecked, showStartupOverlay};
+    const QString& downloadCoreStep = context.steps.downloadCore;
+    const QString& checkRuntimeResourcesStep = context.steps.runtimeResources;
+    const QString& validateConfigStep = context.steps.validateConfig;
+    const QString& startTunRuntimeStep = context.steps.tunRuntime;
+    const QString& startCoreStep = context.steps.startCore;
 
-    if (!skipTunCleanup && !environmentAlreadyChecked) {
-        prepareChecklist(showStartupOverlay);
-    } else if (checklistSteps_.isEmpty()) {
-        prepareChecklist(showStartupOverlay);
-    } else if (showStartupOverlay && !checklistOverlayRequested_) {
-        checklistOverlayRequested_ = true;
-        syncChecklistOverlay();
-    }
-
-    if (deps_.mainCore.isRunning() || phase_ == Phase::Stopping) {
-        keepChecklistForUserDismissal(startCoreStep,
-            phase_ == Phase::Stopping
-                ? QStringLiteral("Core stop is already in progress.")
-                : QStringLiteral("Core start is already in progress."));
+    ensureChecklistPrepared(context);
+    if (rejectOverlappingStart(context)) {
         return;
     }
 
-    beginActivation();
-    if (!environmentAlreadyChecked) {
-        coreTunAdapterConflictRetryCount_ = 0;
-    }
-    cancelPendingCoreRestarts();
-    clearServerLocation();
-    deps_.environment.cleanupPortProcesses();
-
-    if (isTunRuntimeBlocked(
-            currentRequest_.config,
-            deps_.environment.isWindowsPlatform(),
-            deps_.environment.isProcessElevated())) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, environmentStep,
-            QStringLiteral("Administrator permission is required for TUN."));
-        failStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
+    beginStartupAttempt(context);
+    if (!ensureTunCleanupCompleted(context)) {
         return;
     }
 
-    // TUN cleanup phase
-    if (currentRequest_.config.tun().tunModeItem.enableTun && !environmentAlreadyChecked) {
-        if (tunCleanupState_ != TunCleanupState::Idle) {
-            keepChecklistForUserDismissal(environmentStep,
-                QStringLiteral("TUN adapter cleanup is already in progress."));
-            return;
-        }
-
-        setCheckpointStatus(CoreStartupCheckpointStatus::Started, environmentStep,
-            QStringLiteral("Removing stale TUN adapter if needed."));
-        setTunCleanupState(TunCleanupState::CleaningThenResume);
-        removeStaleTunAdapterAsync([this, environmentStep](const OperationResult& result) {
-            const bool resumeStart = tunCleanupState_ == TunCleanupState::CleaningThenResume;
-            setTunCleanupState(TunCleanupState::Idle);
-            const bool shouldResume = shouldResumeCoreStartAfterTunCleanup(
-                result.success, resumeStart, shuttingDown_.load(), phase_ == Phase::Stopping);
-            if (!shouldResume) {
-                setCheckpointStatus(
-                    result.success ? CoreStartupCheckpointStatus::Passed : CoreStartupCheckpointStatus::Failed,
-                    environmentStep, result.message);
-                if (!result.success) {
-                    failStartup(result);
-                } else {
-                    keepChecklistForUserDismissal(environmentStep,
-                        QStringLiteral("Core startup was canceled before TUN cleanup finished."));
-                    cancelActivation();
-                    emit statusSyncRequested();
-                }
-                return;
-            }
-
-            setCheckpointStatus(CoreStartupCheckpointStatus::Passed, environmentStep, result.message);
-            startInternal(true, true, checklistOverlayRequested_);
-        });
+    const std::optional<StartupProfile> profile = resolveStartupProfile(context);
+    if (!profile.has_value()) {
         return;
     }
 
-    if (environmentAlreadyChecked
-        && checklistStepStatus_.value(environmentStep) == CoreStartupCheckpointStatus::Pending) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, environmentStep,
-            QStringLiteral("Environment cleanup completed."));
-    } else if (!environmentAlreadyChecked) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, environmentStep,
-            skipTunCleanup
-                ? QStringLiteral("TUN cleanup completed.")
-                : QStringLiteral("No TUN cleanup required."));
-    }
-
-    // Validate core application
-    setPhase(Phase::ValidateCoreApplication);
-    const std::optional<VmessItem> server = deps_.profileResolver.resolveActiveServer();
-    if (!server.has_value()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep,
-            QStringLiteral("No active server."));
-        failStartup(OperationResult::fail(QStringLiteral("No active server is available for runtime config generation.")));
-        return;
-    }
-    currentServer_ = *server;
-
-    const CoreType launchCore = deps_.profileResolver.resolveLaunchCoreType(*server);
-    const CoreInfo coreInfo = deps_.profileResolver.resolveCoreInfo(*server);
-    if (coreInfo.program.isEmpty()) {
-        const QStringList candidates = deps_.profileResolver.resolveCoreCandidates(launchCore);
-        const OperationResult missingCoreResult = OperationResult::fail(
-            tr("No compatible %1 core executable was found for the active server.")
-                .arg(coreTypeDisplayName(launchCore)));
-        downloadMissingCoreAndResume(launchCore, missingCoreResult, downloadCoreStep,
-            skipTunCleanup, showStartupOverlay);
-        return;
-    }
-    if (checklistStepStatus_.value(downloadCoreStep) == CoreStartupCheckpointStatus::Pending) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, downloadCoreStep,
-            QStringLiteral("Required core executable is available."));
-    }
-
-    // Validate config
-    const QString coreConfigPath = deps_.profileResolver.resolveRuntimeConfigPath(*server);
-    if (coreConfigPath.isEmpty()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep,
-            QStringLiteral("Runtime config path is empty."));
-        failStartup(OperationResult::fail(QStringLiteral("Failed to resolve the runtime config output path.")));
-        return;
-    }
+    const VmessItem& server = profile->server;
+    const CoreType launchCore = profile->launchCore;
+    const CoreInfo& coreInfo = profile->coreInfo;
+    const QString& coreConfigPath = profile->coreConfigPath;
 
     setPhase(Phase::ValidateCoreConfig);
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, validateConfigStep,
         QStringLiteral("Generating runtime config."));
 
     QStringList auxiliaryConfigPaths;
-    deps_.environment.removeStaleSingBoxCache();
     deps_.configWriter.setExistingCoreTypes(currentRequest_.existingCoreTypes);
     const OperationResult writeResult = deps_.configWriter.writeClientConfigs(
-        currentRequest_.config, *server, coreConfigPath, &auxiliaryConfigPaths);
+        currentRequest_.config, server, coreConfigPath, &auxiliaryConfigPaths);
     if (!writeResult.success) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep, writeResult.message);
         failStartup(writeResult);
@@ -450,7 +365,7 @@ void ProxySession::startInternal(
     // Start TUN runtime (auxiliary core)
     if (!auxiliaryConfigPaths.isEmpty()) {
         const QList<CoreType> auxiliaryCoreTypes =
-            resolveAuxiliaryTunCompatCoreTypes(currentRequest_.config, *server, currentRequest_.existingCoreTypes);
+            resolveAuxiliaryTunCompatCoreTypes(currentRequest_.config, server, currentRequest_.existingCoreTypes);
         const CoreType auxiliaryCoreType = auxiliaryCoreTypes.isEmpty()
             ? CoreType::Unknown
             : auxiliaryCoreTypes.constFirst();
@@ -522,8 +437,8 @@ void ProxySession::startInternal(
     CoreInfo launchCoreInfo = coreInfo;
     launchCoreInfo.asyncStart = true;
 
-    const QString serverIndexId = server->indexId;
-    const bool customServer = (server->configType == ConfigType::Custom);
+    const QString serverIndexId = server.indexId;
+    const bool customServer = (server.configType == ConfigType::Custom);
 
     setPhase(Phase::StartCoreProcess);
     coreTunEnabledAtStart_ = currentRequest_.config.tun().tunModeItem.enableTun;
@@ -533,12 +448,12 @@ void ProxySession::startInternal(
 
     const OperationResult startResult = deps_.mainCore.start(
         launchCoreInfo, coreConfigPath,
-        [this](const QString& line) { emit coreOutput(line); },
+        [this](const QString& line) { handleMainCoreOutput(line); },
         [this, serverIndexId, customServer](const QString& message) {
             coreStartTime_ = QDateTime::currentMSecsSinceEpoch();
             setCheckpointStatus(CoreStartupCheckpointStatus::Started, tr("Start core process"), message);
             if (coreTunEnabledAtStart_
-                && checklistStepStatus_.value(tr("Start TUN runtime")) == CoreStartupCheckpointStatus::Started) {
+                && checklist_.status(tr("Start TUN runtime")) == CoreStartupCheckpointStatus::Started) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Passed, tr("Start TUN runtime"),
                     QStringLiteral("TUN runtime startup is handled by the core process."));
             }
@@ -555,7 +470,7 @@ void ProxySession::startInternal(
         stopAuxiliaryCore();
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, startCoreStep, startResult.message);
         if (tunEnabledAtFailedStart
-            && checklistStepStatus_.value(startTunRuntimeStep) == CoreStartupCheckpointStatus::Started) {
+            && checklist_.status(startTunRuntimeStep) == CoreStartupCheckpointStatus::Started) {
             setCheckpointStatus(CoreStartupCheckpointStatus::Failed, startTunRuntimeStep, startResult.message);
         }
         failStartup(startResult);
@@ -563,6 +478,141 @@ void ProxySession::startInternal(
     }
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, startCoreStep, startResult.message);
     emit statusSyncRequested();
+}
+
+void ProxySession::ensureChecklistPrepared(const StartupContext& context)
+{
+    if (!context.skipTunCleanup && !context.environmentAlreadyChecked) {
+        prepareChecklist(context.showStartupOverlay);
+    } else if (checklist_.isEmpty()) {
+        prepareChecklist(context.showStartupOverlay);
+    } else if (context.showStartupOverlay && !checklist_.overlayRequested()) {
+        checklist_.requestOverlay();
+    }
+}
+
+bool ProxySession::rejectOverlappingStart(const StartupContext& context)
+{
+    if (!deps_.mainCore.isRunning() && phase_ != Phase::Stopping) {
+        return false;
+    }
+
+    keepChecklistForUserDismissal(context.steps.startCore,
+        phase_ == Phase::Stopping
+            ? QStringLiteral("Core stop is already in progress.")
+            : QStringLiteral("Core start is already in progress."));
+    return true;
+}
+
+void ProxySession::beginStartupAttempt(const StartupContext& context)
+{
+    beginActivation();
+    if (!context.environmentAlreadyChecked) {
+        crashRestartPolicy_.resetTunConflictRetries();
+    }
+    cancelPendingCoreRestarts();
+    clearServerLocation();
+    deps_.environment.cleanupPortProcesses();
+}
+
+bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
+{
+    if (isTunRuntimeBlocked(
+            currentRequest_.config,
+            deps_.environment.isWindowsPlatform(),
+            deps_.environment.isProcessElevated())) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.environment,
+            QStringLiteral("Administrator permission is required for TUN."));
+        failStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
+        return false;
+    }
+
+    if (currentRequest_.config.tun().tunModeItem.enableTun && !context.environmentAlreadyChecked) {
+        if (tunCleanupState_ != TunCleanupState::Idle) {
+            keepChecklistForUserDismissal(context.steps.environment,
+                QStringLiteral("TUN adapter cleanup is already in progress."));
+            return false;
+        }
+
+        setCheckpointStatus(CoreStartupCheckpointStatus::Started, context.steps.environment,
+            QStringLiteral("Removing stale TUN adapter if needed."));
+        setTunCleanupState(TunCleanupState::CleaningThenResume);
+        removeStaleTunAdapterAsync([this, context](const OperationResult& result) {
+            const bool resumeStart = tunCleanupState_ == TunCleanupState::CleaningThenResume;
+            setTunCleanupState(TunCleanupState::Idle);
+            const bool shouldResume = shouldResumeCoreStartAfterTunCleanup(
+                result.success, resumeStart, shuttingDown_.load(), phase_ == Phase::Stopping);
+            if (!shouldResume) {
+                setCheckpointStatus(
+                    result.success ? CoreStartupCheckpointStatus::Passed : CoreStartupCheckpointStatus::Failed,
+                    context.steps.environment, result.message);
+                if (!result.success) {
+                    failStartup(result);
+                } else {
+                    keepChecklistForUserDismissal(context.steps.environment,
+                        QStringLiteral("Core startup was canceled before TUN cleanup finished."));
+                    cancelActivation();
+                    emit statusSyncRequested();
+                }
+                return;
+            }
+
+            setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.environment, result.message);
+            startInternal(true, true, checklist_.overlayRequested());
+        });
+        return false;
+    }
+
+    if (context.environmentAlreadyChecked
+        && checklist_.status(context.steps.environment) == CoreStartupCheckpointStatus::Pending) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.environment,
+            QStringLiteral("Environment cleanup completed."));
+    } else if (!context.environmentAlreadyChecked) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.environment,
+            context.skipTunCleanup
+                ? QStringLiteral("TUN cleanup completed.")
+                : QStringLiteral("No TUN cleanup required."));
+    }
+
+    return true;
+}
+
+std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(const StartupContext& context)
+{
+    setPhase(Phase::ValidateCoreApplication);
+    const std::optional<VmessItem> server = deps_.profileResolver.resolveActiveServer();
+    if (!server.has_value()) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig,
+            QStringLiteral("No active server."));
+        failStartup(OperationResult::fail(QStringLiteral("No active server is available for runtime config generation.")));
+        return std::nullopt;
+    }
+    currentServer_ = *server;
+
+    const CoreType launchCore = deps_.profileResolver.resolveLaunchCoreType(*server);
+    const CoreInfo coreInfo = deps_.profileResolver.resolveCoreInfo(*server);
+    if (coreInfo.program.isEmpty()) {
+        const OperationResult missingCoreResult = OperationResult::fail(
+            tr("No compatible %1 core executable was found for the active server.")
+                .arg(coreTypeDisplayName(launchCore)));
+        downloadMissingCoreAndResume(launchCore, missingCoreResult, context.steps.downloadCore,
+            context.skipTunCleanup, context.showStartupOverlay);
+        return std::nullopt;
+    }
+    if (checklist_.status(context.steps.downloadCore) == CoreStartupCheckpointStatus::Pending) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.downloadCore,
+            QStringLiteral("Required core executable is available."));
+    }
+
+    const QString coreConfigPath = deps_.profileResolver.resolveRuntimeConfigPath(*server);
+    if (coreConfigPath.isEmpty()) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig,
+            QStringLiteral("Runtime config path is empty."));
+        failStartup(OperationResult::fail(QStringLiteral("Failed to resolve the runtime config output path.")));
+        return std::nullopt;
+    }
+
+    return StartupProfile{*server, launchCore, coreInfo, coreConfigPath};
 }
 
 void ProxySession::beginActivation()
@@ -590,32 +640,7 @@ void ProxySession::cancelActivation()
 
 void ProxySession::prepareChecklist(bool showOverlay)
 {
-    checklistSteps_.clear();
-    checklistSteps_
-        << tr("Environment cleanup")
-        << tr("Validate core application")
-        << tr("Validate runtime resources")
-        << tr("Validate core config");
-    if (currentRequest_.config.tun().tunModeItem.enableTun) {
-        checklistSteps_.append(tr("Start TUN runtime"));
-    }
-    checklistSteps_
-        << tr("Start core process")
-        << tr("Check outbound location")
-        << tr("Apply system proxy");
-    checklistStepStatus_.clear();
-    checklistStepDetails_.clear();
-    checklistOverlayRequested_ = showOverlay;
-    checklistOverlayShown_ = false;
-    ++checklistStableRunGeneration_;
-    for (const QString& step : checklistSteps_) {
-        checklistStepStatus_.insert(step, CoreStartupCheckpointStatus::Pending);
-    }
-
-    if (showOverlay) {
-        syncChecklistOverlay();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    }
+    checklist_.prepare(currentRequest_.config.tun().tunModeItem.enableTun, showOverlay);
 }
 
 void ProxySession::setCheckpointStatus(
@@ -623,93 +648,24 @@ void ProxySession::setCheckpointStatus(
     const QString& step,
     const QString& detail)
 {
-    if (!checklistSteps_.contains(step)) {
-        checklistSteps_.append(step);
-    }
-    checklistStepStatus_.insert(step, status);
-    checklistStepDetails_.insert(step, detail.trimmed());
-
-    if (!checklistOverlayRequested_) {
-        return;
-    }
-
-    syncChecklistOverlay();
+    checklist_.setStatus(status, step, detail);
 }
 
 void ProxySession::clearChecklist()
 {
-    if (checklistOverlayShown_ && checklistOverlayShownAtMs_ > 0) {
-        const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch() - checklistOverlayShownAtMs_;
-        if (elapsedMs < CoreStartupOverlayMinimumVisibleMs) {
-            const int generation = ++checklistClearGeneration_;
-            QTimer::singleShot(
-                static_cast<int>(CoreStartupOverlayMinimumVisibleMs - elapsedMs),
-                this,
-                [this, generation]() {
-                    if (generation == checklistClearGeneration_) {
-                        clearChecklist();
-                    }
-                });
-            return;
-        }
-    }
-
-    checklistSteps_.clear();
-    checklistStepStatus_.clear();
-    checklistStepDetails_.clear();
-    const bool shouldClearOverlay = checklistOverlayShown_;
-    checklistOverlayRequested_ = false;
-    checklistOverlayShown_ = false;
-    checklistOverlayShownAtMs_ = 0;
-    ++checklistClearGeneration_;
-    ++checklistStableRunGeneration_;
-    if (shouldClearOverlay) {
-        emit checklistCleared();
-    }
+    checklist_.clear();
 }
 
 void ProxySession::clearChecklistAfterStableRun(int delayMs)
 {
-    const int generation = ++checklistStableRunGeneration_;
-    QTimer::singleShot(delayMs, this, [this, generation]() {
-        if (generation != checklistStableRunGeneration_) {
-            return;
-        }
-        if (phase_ != Phase::Proxying) {
-            return;
-        }
-        clearChecklist();
+    checklist_.clearAfterStableRun(delayMs, [this]() {
+        return phase_ == Phase::Proxying;
     });
 }
 
 void ProxySession::keepChecklistForUserDismissal(const QString& step, const QString& detail)
 {
-    checklistKeepOnNextStop_ = true;
-    setCheckpointStatus(CoreStartupCheckpointStatus::Failed, step, detail);
-}
-
-void ProxySession::syncChecklistOverlay()
-{
-    if (!checklistOverlayRequested_) {
-        return;
-    }
-
-    QStringList items;
-    items.reserve(checklistSteps_.size());
-    for (const QString& itemStep : checklistSteps_) {
-        const CoreStartupCheckpointStatus itemStatus = checklistStepStatus_.value(
-            itemStep,
-            CoreStartupCheckpointStatus::Pending);
-        items.append(coreStartupChecklistItem(
-            itemStatus,
-            itemStep,
-            overlayDetailText(checklistStepDetails_.value(itemStep))));
-    }
-    emit checklistUpdated(items);
-    checklistOverlayShown_ = true;
-    if (checklistOverlayShownAtMs_ <= 0) {
-        checklistOverlayShownAtMs_ = QDateTime::currentMSecsSinceEpoch();
-    }
+    checklist_.keepForUserDismissal(step, detail);
 }
 
 // --- Startup failure ---
@@ -744,7 +700,7 @@ void ProxySession::cleanupAfterFailedStartup()
     clearProxyStateAfterStopped();
 
     if (deps_.mainCore.isRunning()) {
-        checklistKeepOnNextStop_ = true;
+        checklist_.markKeepOnNextStop();
         setPhase(Phase::Stopping);
         const OperationResult stopResult = deps_.mainCore.stop(false);
         emit logMessage(stopResult.message);
@@ -786,61 +742,27 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     QThread* thread = QThread::create([this, targetDirectory, checkGeoStep, skipTunCleanup,
                                        showStartupOverlay, guard]() {
         const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            if (message.trimmed().isEmpty()) {
-                return;
-            }
-            QMetaObject::invokeMethod(this, [this, checkGeoStep, message, guard]() {
-                if (guard.expired() || !isActivationInProgress()) {
-                    return;
-                }
-                setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, message);
-            }, Qt::QueuedConnection);
+            postStartupDownloadProgress(checkGeoStep, message, guard);
         };
 
         GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
         const QList<OperationResult> results{
             geoUpdateService.update(QStringLiteral("geosite")),
             geoUpdateService.update(QStringLiteral("geoip"))};
-
-        bool success = true;
-        QStringList messages;
-        for (const OperationResult& r : results) {
-            success = success && r.success;
-            if (!r.message.trimmed().isEmpty()) {
-                messages.append(r.message.trimmed());
-            }
-        }
-        const OperationResult result = success
-            ? OperationResult::ok(messages.join(QChar('\n')))
-            : OperationResult::fail(messages.join(QChar('\n')));
+        const OperationResult result = combineOperationResults(results);
 
         QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
                                          showStartupOverlay, guard]() {
             if (guard.expired() || shuttingDown_.load()) {
                 return;
             }
-            const bool startupCanceled = !isActivationInProgress();
-            if (startupCanceled) {
-                keepChecklistForUserDismissal(checkGeoStep,
-                    tr("Proxy startup was canceled while Geo files were updating."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            if (!result.success) {
-                setCheckpointStatus(CoreStartupCheckpointStatus::Failed, checkGeoStep, result.message);
-                failStartup(result);
-                return;
-            }
-            if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
-                keepChecklistForUserDismissal(checkGeoStep,
-                    tr("Geo files were updated, but proxy startup was canceled."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            setCheckpointStatus(CoreStartupCheckpointStatus::Passed, checkGeoStep, result.message);
-            startInternal(skipTunCleanup, true, showStartupOverlay);
+            handleStartupDownloadFinished(
+                checkGeoStep,
+                result,
+                skipTunCleanup,
+                showStartupOverlay,
+                tr("Proxy startup was canceled while Geo files were updating."),
+                tr("Geo files were updated, but proxy startup was canceled."));
         }, Qt::QueuedConnection);
     });
     trackBackgroundThread(thread);
@@ -853,17 +775,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    QStringList tags;
-    QSet<QString> seenTags;
-    for (const QString& tag : missingRuleSetTags) {
-        const QString normalizedTag = tag.trimmed().toLower();
-        if (normalizedTag.isEmpty() || seenTags.contains(normalizedTag)) {
-            continue;
-        }
-        seenTags.insert(normalizedTag);
-        tags.append(normalizedTag);
-    }
-
+    const QStringList tags = normalizedUniqueTags(missingRuleSetTags);
     if (tags.isEmpty()) {
         startInternal(skipTunCleanup, true, showStartupOverlay);
         return;
@@ -881,15 +793,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     QThread* thread = QThread::create([this, targetDirectory, tags, checkGeoStep, skipTunCleanup,
                                        showStartupOverlay, guard]() {
         const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            if (message.trimmed().isEmpty()) {
-                return;
-            }
-            QMetaObject::invokeMethod(this, [this, checkGeoStep, message, guard]() {
-                if (guard.expired() || !isActivationInProgress()) {
-                    return;
-                }
-                setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, message);
-            }, Qt::QueuedConnection);
+            postStartupDownloadProgress(checkGeoStep, message, guard);
         };
 
         GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
@@ -897,46 +801,20 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
         for (const QString& tag : tags) {
             results.append(geoUpdateService.updateSingBoxRuleSet(tag));
         }
-
-        bool success = true;
-        QStringList messages;
-        for (const OperationResult& r : results) {
-            success = success && r.success;
-            if (!r.message.trimmed().isEmpty()) {
-                messages.append(r.message.trimmed());
-            }
-        }
-        const OperationResult result = success
-            ? OperationResult::ok(messages.join(QChar('\n')))
-            : OperationResult::fail(messages.join(QChar('\n')));
+        const OperationResult result = combineOperationResults(results);
 
         QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
                                          showStartupOverlay, guard]() {
             if (guard.expired() || shuttingDown_.load()) {
                 return;
             }
-            const bool startupCanceled = !isActivationInProgress();
-            if (startupCanceled) {
-                keepChecklistForUserDismissal(checkGeoStep,
-                    tr("Proxy startup was canceled while sing-box rule sets were updating."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            if (!result.success) {
-                setCheckpointStatus(CoreStartupCheckpointStatus::Failed, checkGeoStep, result.message);
-                failStartup(result);
-                return;
-            }
-            if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
-                keepChecklistForUserDismissal(checkGeoStep,
-                    tr("sing-box rule sets were updated, but proxy startup was canceled."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            setCheckpointStatus(CoreStartupCheckpointStatus::Passed, checkGeoStep, result.message);
-            startInternal(skipTunCleanup, true, showStartupOverlay);
+            handleStartupDownloadFinished(
+                checkGeoStep,
+                result,
+                skipTunCleanup,
+                showStartupOverlay,
+                tr("Proxy startup was canceled while sing-box rule sets were updating."),
+                tr("sing-box rule sets were updated, but proxy startup was canceled."));
         }, Qt::QueuedConnection);
     });
     trackBackgroundThread(thread);
@@ -988,21 +866,7 @@ void ProxySession::downloadMissingCoreAndResume(
         CoreUpdateService coreUpdateService;
         CoreUpdateService::UpdateOptions options;
         options.progressHandler = [this, downloadCoreStep, token, guard](const QString& message) {
-            if (message.trimmed().isEmpty()) {
-                return;
-            }
-            QMetaObject::invokeMethod(this, [this, downloadCoreStep, message, token, guard]() {
-                if (guard.expired()) {
-                    return;
-                }
-                if (!deps_.backgroundTasks.isCurrent(token)) {
-                    return;
-                }
-                if (!isActivationInProgress()) {
-                    return;
-                }
-                setCheckpointStatus(CoreStartupCheckpointStatus::Started, downloadCoreStep, message);
-            }, Qt::QueuedConnection);
+            postStartupDownloadProgress(downloadCoreStep, message, token, guard);
         };
         options.cancelCheck = [this]() {
             QThread* currentThread = QThread::currentThread();
@@ -1014,7 +878,7 @@ void ProxySession::downloadMissingCoreAndResume(
         const OperationResult result = coreUpdateService.update(
             runtimeCore, workerConfig, installDirectory, options);
 
-        QMetaObject::invokeMethod(this, [this, runtimeCore, downloadCoreStep, skipTunCleanup,
+        QMetaObject::invokeMethod(this, [this, downloadCoreStep, skipTunCleanup,
                                          showStartupOverlay, token, result, guard]() {
             if (guard.expired()) {
                 return;
@@ -1026,33 +890,93 @@ void ProxySession::downloadMissingCoreAndResume(
             if (shuttingDown_.load()) {
                 return;
             }
-            const bool startupCanceled = !isActivationInProgress();
-            if (startupCanceled) {
-                keepChecklistForUserDismissal(downloadCoreStep,
-                    tr("Proxy startup was canceled while the core was downloading."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            if (!result.success) {
-                setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep, result.message);
-                failStartup(result);
-                return;
-            }
-            if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
-                keepChecklistForUserDismissal(downloadCoreStep,
-                    tr("The core was downloaded, but proxy startup was canceled."));
-                cancelActivation();
-                emit statusSyncRequested();
-                return;
-            }
-            deps_.activationCoordinator.refreshExistingCoreTypes();
-            setCheckpointStatus(CoreStartupCheckpointStatus::Passed, downloadCoreStep, result.message);
-            startInternal(skipTunCleanup, true, showStartupOverlay);
+            handleStartupDownloadFinished(
+                downloadCoreStep,
+                result,
+                skipTunCleanup,
+                showStartupOverlay,
+                tr("Proxy startup was canceled while the core was downloading."),
+                tr("The core was downloaded, but proxy startup was canceled."),
+                [this]() { deps_.activationCoordinator.refreshExistingCoreTypes(); });
         }, Qt::QueuedConnection);
     });
     trackBackgroundThread(thread);
     thread->start();
+}
+
+void ProxySession::postStartupDownloadProgress(
+    const QString& step,
+    const QString& message,
+    const std::weak_ptr<char>& guard)
+{
+    if (message.trimmed().isEmpty()) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [this, step, message, guard]() {
+        if (guard.expired() || !isActivationInProgress()) {
+            return;
+        }
+        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
+    }, Qt::QueuedConnection);
+}
+
+void ProxySession::postStartupDownloadProgress(
+    const QString& step,
+    const QString& message,
+    const BackgroundTaskCoordinator::Token& token,
+    const std::weak_ptr<char>& guard)
+{
+    if (message.trimmed().isEmpty()) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [this, step, message, token, guard]() {
+        if (guard.expired()) {
+            return;
+        }
+        if (!deps_.backgroundTasks.isCurrent(token)) {
+            return;
+        }
+        if (!isActivationInProgress()) {
+            return;
+        }
+        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
+    }, Qt::QueuedConnection);
+}
+
+void ProxySession::handleStartupDownloadFinished(
+    const QString& step,
+    const OperationResult& result,
+    bool skipTunCleanup,
+    bool showStartupOverlay,
+    const QString& canceledMessage,
+    const QString& completedButCanceledMessage,
+    const std::function<void()>& successAction)
+{
+    if (!isActivationInProgress()) {
+        keepChecklistForUserDismissal(step, canceledMessage);
+        cancelActivation();
+        emit statusSyncRequested();
+        return;
+    }
+    if (!result.success) {
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, step, result.message);
+        failStartup(result);
+        return;
+    }
+    if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
+        keepChecklistForUserDismissal(step, completedButCanceledMessage);
+        cancelActivation();
+        emit statusSyncRequested();
+        return;
+    }
+
+    if (successAction) {
+        successAction();
+    }
+    setCheckpointStatus(CoreStartupCheckpointStatus::Passed, step, result.message);
+    startInternal(skipTunCleanup, true, showStartupOverlay);
 }
 // --- Core started/failed ---
 
@@ -1127,12 +1051,24 @@ void ProxySession::validateCoreListeningAndHandleStarted(
     thread->start();
 }
 
+void ProxySession::handleMainCoreOutput(const QString& line)
+{
+    if (coreTunEnabledAtStart_ && isTunAdapterConflictOutput(line)) {
+        coreTunAdapterConflictDetected_ = true;
+    }
+    emit coreOutput(line);
+}
+
 void ProxySession::handleCoreStartFailed(const QString& message)
 {
+    if (isTunAdapterConflictOutput(message)) {
+        coreTunAdapterConflictDetected_ = true;
+    }
+
     const bool tunEnabledAtFailedStart = coreTunEnabledAtStart_;
     setCheckpointStatus(CoreStartupCheckpointStatus::Failed, tr("Start core process"), message);
     if (tunEnabledAtFailedStart
-        && checklistStepStatus_.value(tr("Start TUN runtime")) == CoreStartupCheckpointStatus::Started) {
+        && checklist_.status(tr("Start TUN runtime")) == CoreStartupCheckpointStatus::Started) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, tr("Start TUN runtime"), message);
     }
     coreTunEnabledAtStart_ = false;
@@ -1243,9 +1179,8 @@ bool ProxySession::applySystemProxyAfterLocation()
 
 void ProxySession::stopInternal(bool immediate, bool clearPostStopAction)
 {
-    const bool keepChecklist = checklistKeepOnNextStop_;
-    checklistKeepOnNextStop_ = false;
-    const bool checklistVisible = checklistOverlayShown_ || checklistOverlayRequested_;
+    const bool keepChecklist = checklist_.consumeKeepOnNextStop();
+    const bool checklistVisible = checklist_.visible();
     const bool coreStopPending = !immediate && deps_.mainCore.isRunning();
     setPhase(coreStopPending ? Phase::Stopping : Phase::Stopped);
 
@@ -1291,7 +1226,7 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         if (std::holds_alternative<std::monostate>(postStopAction_)) {
             cancelActivation();
         }
-        if (stopRequested && !checklistOverlayShown_ && !checklistOverlayRequested_) {
+        if (stopRequested && !checklist_.visible()) {
             clearChecklist();
         }
     }
@@ -1383,51 +1318,31 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         return;
     }
 
-    // Crash restart logic
     const QProcess::ExitStatus exitStatus = static_cast<QProcess::ExitStatus>(status);
-    constexpr int kMaxTunAdapterConflictRestarts = 1;
-    if (!auxiliary
-        && shouldRetryAfterTunAdapterConflict(
-            deps_.environment.isWindowsPlatform(),
-            tunEnabledAtCoreExit,
-            tunAdapterConflictDetected,
-            coreTunAdapterConflictRetryCount_,
-            kMaxTunAdapterConflictRestarts)) {
-        ++coreTunAdapterConflictRetryCount_;
-        scheduleCoreRestart(
-            QStringLiteral("TUN adapter conflict detected (code=%1). Cleaning 'singbox_tun' before retry...")
-                .arg(exitCode),
-            false,
-            1000);
-        return;
-    }
-    if (!auxiliary && tunAdapterConflictDetected) {
-        emit logMessage(QStringLiteral("TUN adapter conflict persisted after cleanup retry. Auto-restart disabled."));
+    const qint64 runDuration = coreStartTime_ > 0
+        ? (QDateTime::currentMSecsSinceEpoch() - coreStartTime_)
+        : 0;
+    const ProxyCrashRestartPolicy::Decision restartDecision = crashRestartPolicy_.decide(
+        exitCode,
+        exitStatus,
+        auxiliary,
+        deps_.environment.isWindowsPlatform(),
+        tunEnabledAtCoreExit,
+        tunAdapterConflictDetected,
+        runDuration);
+
+    if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableAfterTunConflict) {
+        emit logMessage(restartDecision.message);
         clearProxyStateAfterStopped();
         emit statusSyncRequested();
         emit stopped();
         return;
     }
 
-    int& crashCount = auxiliary ? auxiliaryCrashRestartCount_ : coreCrashRestartCount_;
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const qint64 runDuration = coreStartTime_ > 0 ? (now - coreStartTime_) : 0;
-
-    constexpr qint64 kStableRunThresholdMs = 60000;
-    if (runDuration > kStableRunThresholdMs) {
-        crashCount = 0;
-    }
-    ++crashCount;
-
-    constexpr int kMaxCrashRestarts = 5;
-    if (crashCount > kMaxCrashRestarts) {
-        const QString core = auxiliary ? QStringLiteral("Auxiliary core") : QStringLiteral("Core");
-        const QString kind = exitStatus == QProcess::CrashExit ? QStringLiteral("crash") : QStringLiteral("exit");
-        emit logMessage(QStringLiteral("%1 %2 detected (code=%3). Auto-restart disabled after %4 consecutive failures.")
-            .arg(core, kind).arg(exitCode).arg(kMaxCrashRestarts));
+    if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
+        emit logMessage(restartDecision.message);
         if (!auxiliary) {
-            emit transientStatus(
-                tr("Core crashed %1 times. Auto-restart disabled. Check your configuration.").arg(kMaxCrashRestarts), 0);
+            emit transientStatus(restartDecision.transientStatus, 0);
             clearProxyStateAfterStopped();
             emit statusSyncRequested();
         }
@@ -1435,14 +1350,7 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         return;
     }
 
-    const QString core = auxiliary ? QStringLiteral("Auxiliary core") : QStringLiteral("Core");
-    const QString kind = exitStatus == QProcess::CrashExit ? QStringLiteral("crash") : QStringLiteral("exit");
-    const int delayMs = std::min(3000 * crashCount, 30000);
-    scheduleCoreRestart(
-        QStringLiteral("%1 %2 detected (code=%3). Restarting in %4s... (attempt %5/%6)")
-            .arg(core, kind).arg(exitCode).arg(delayMs / 1000).arg(crashCount).arg(kMaxCrashRestarts),
-        auxiliary,
-        delayMs);
+    scheduleCoreRestart(restartDecision.message, restartDecision.auxiliary, restartDecision.delayMs);
 }
 
 void ProxySession::scheduleCoreStartAfterStop(bool showStartupOverlay)
@@ -1547,7 +1455,7 @@ void ProxySession::scheduleCoreRestart(const QString& reason, bool auxiliary, in
                             true,
                             shuttingDown_.load(),
                             phase_ == Phase::Stopping)) {
-                        if (!checklistSteps_.isEmpty()) {
+                        if (!checklist_.isEmpty()) {
                             setCheckpointStatus(
                                 CoreStartupCheckpointStatus::Passed,
                                 tr("Environment cleanup"),
@@ -1616,21 +1524,5 @@ bool ProxySession::updateSystemProxyMode(SystemProxyMode mode) const
 
 void ProxySession::trackBackgroundThread(QThread* thread)
 {
-    if (thread == nullptr) {
-        return;
-    }
-
-    for (int index = backgroundThreads_.size() - 1; index >= 0; --index) {
-        const QPointer<QThread>& trackedThread = backgroundThreads_.at(index);
-        if (trackedThread.isNull() || !trackedThread->isRunning()) {
-            backgroundThreads_.removeAt(index);
-        }
-    }
-
-    QPointer<QThread> guard(thread);
-    backgroundThreads_.append(guard);
-    QObject::connect(thread, &QThread::finished, this, [this, guard]() {
-        backgroundThreads_.removeAll(guard);
-    });
-    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    backgroundThreads_.track(thread);
 }

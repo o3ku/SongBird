@@ -3,24 +3,79 @@
 #include <utility>
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
 #include <QMetaObject>
 #include <QNetworkAccessManager>
 #include <QPointer>
+#include <QStandardPaths>
 #include <QThread>
+#include <QUuid>
 
 #include "persistence/JsonConfigRepository.h"
+#include "services/ServerService.h"
 #include "services/SubscriptionService.h"
 #include "services/SubscriptionUpdateService.h"
+#include "subscription/CustomConfigTextParser.h"
 #include "subscription/SubscriptionImportTextParser.h"
 #include "subscription/SubscriptionUrlImportService.h"
 
+namespace {
+
+OperationResult importCustomConfigTextWithService(
+    const QString& text,
+    Config& config,
+    ServerService& serverService)
+{
+    QString extension;
+    bool ok = false;
+    VmessItem item = CustomConfigTextParser::parse(text, &extension, &ok);
+    if (!ok) {
+        return OperationResult::fail(QString());
+    }
+
+    QString tempDirectory = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (tempDirectory.trimmed().isEmpty()) {
+        tempDirectory = QDir::tempPath();
+    }
+    if (!QDir().mkpath(tempDirectory)) {
+        return OperationResult::fail(QStringLiteral("Failed to create temporary directory for custom config import."));
+    }
+
+    const QString fileName = extension.trimmed().isEmpty()
+        ? QUuid::createUuid().toString(QUuid::WithoutBraces)
+        : QStringLiteral("%1.%2").arg(QUuid::createUuid().toString(QUuid::WithoutBraces), extension.trimmed());
+    const QString tempFilePath = QDir(tempDirectory).filePath(fileName);
+
+    QFile file(tempFilePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return OperationResult::fail(QStringLiteral("Failed to create temporary custom config file."));
+    }
+    if (file.write(text.toUtf8()) < 0) {
+        file.close();
+        QFile::remove(tempFilePath);
+        return OperationResult::fail(QStringLiteral("Failed to write temporary custom config file."));
+    }
+    file.close();
+
+    item.address = tempFilePath;
+    const OperationResult result = serverService.addServer(config, item);
+    QFile::remove(tempFilePath);
+    return result;
+}
+
+} // namespace
+
 SubscriptionWorkflowCoordinator::SubscriptionWorkflowCoordinator(
-    BackgroundTaskCoordinator& backgroundTasks,
-    Callbacks callbacks,
+    Dependencies dependencies,
     QObject* parent)
     : QObject(parent)
-    , backgroundTasks_(backgroundTasks)
-    , callbacks_(std::move(callbacks))
+    , backgroundTasks_(dependencies.backgroundTasks)
+    , configCallbacks_(std::move(dependencies.callbacks.config))
+    , uiCallbacks_(std::move(dependencies.callbacks.ui))
+    , threadCallbacks_(std::move(dependencies.callbacks.thread))
+    , workflowCallbacks_(std::move(dependencies.callbacks.workflow))
 {
 }
 
@@ -41,25 +96,29 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
     emitStartupMessage(QCoreApplication::translate(
         "AppBootstrap",
         "Importing clipboard content in the background..."));
-    if (callbacks_.setSubscriptionUpdateRunning) {
-        callbacks_.setSubscriptionUpdateRunning(true);
+    if (uiCallbacks_.setSubscriptionUpdateRunning) {
+        uiCallbacks_.setSubscriptionUpdateRunning(true);
     }
 
-    const QString configPath = callbacks_.configPath ? callbacks_.configPath() : QString();
+    const QString configPath = configCallbacks_.configPath ? configCallbacks_.configPath() : QString();
+    const QString customConfigDirectory = configCallbacks_.customConfigDirectory
+        ? configCallbacks_.customConfigDirectory()
+        : QString();
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
-    const auto importCustomConfigText = callbacks_.importCustomConfigText;
     QPointer<SubscriptionWorkflowCoordinator> self(this);
-    QThread* thread = QThread::create([self, text, configPath, uiContext, token, lifetimeGuard, importCustomConfigText]() {
+    QThread* thread = QThread::create([self, text, configPath, customConfigDirectory, uiContext, token, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
+        ServerService serverService(repository, customConfigDirectory);
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
         Config workerConfig = repository.load();
 
         OperationResult result = subscriptionUpdateService.importFromText(workerConfig, text);
-        if (!result.success && importCustomConfigText) {
-            const OperationResult customImportResult = importCustomConfigText(text, workerConfig);
+        if (!result.success) {
+            const OperationResult customImportResult =
+                importCustomConfigTextWithService(text, workerConfig, serverService);
             if (customImportResult.success) {
                 result = customImportResult;
             }
@@ -76,8 +135,8 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
             }
         }, Qt::QueuedConnection);
     });
-    if (callbacks_.trackBackgroundThread) {
-        callbacks_.trackBackgroundThread(thread);
+    if (threadCallbacks_.trackBackgroundThread) {
+        threadCallbacks_.trackBackgroundThread(thread);
     } else {
         QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     }
@@ -91,22 +150,22 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
         return;
     }
 
-    const QString activeSubscriptionId = callbacks_.activeSubscriptionId
-        ? callbacks_.activeSubscriptionId().trimmed()
+    const QString activeSubscriptionId = configCallbacks_.activeSubscriptionId
+        ? configCallbacks_.activeSubscriptionId().trimmed()
         : QString();
 
     emitStartupMessage(QCoreApplication::translate(
         "AppBootstrap",
         "Importing subscription URLs from the clipboard in the background..."));
 
-    if (callbacks_.clearServerTestResultsAndSync) {
-        callbacks_.clearServerTestResultsAndSync();
+    if (uiCallbacks_.clearServerTestResultsAndSync) {
+        uiCallbacks_.clearServerTestResultsAndSync();
     }
-    if (callbacks_.setSubscriptionUpdateRunning) {
-        callbacks_.setSubscriptionUpdateRunning(true);
+    if (uiCallbacks_.setSubscriptionUpdateRunning) {
+        uiCallbacks_.setSubscriptionUpdateRunning(true);
     }
 
-    const QString configPath = callbacks_.configPath ? callbacks_.configPath() : QString();
+    const QString configPath = configCallbacks_.configPath ? configCallbacks_.configPath() : QString();
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
     QPointer<SubscriptionWorkflowCoordinator> self(this);
@@ -144,8 +203,8 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
             }
         }, Qt::QueuedConnection);
     });
-    if (callbacks_.trackBackgroundThread) {
-        callbacks_.trackBackgroundThread(thread);
+    if (threadCallbacks_.trackBackgroundThread) {
+        threadCallbacks_.trackBackgroundThread(thread);
     } else {
         QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     }
@@ -155,8 +214,8 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
 void SubscriptionWorkflowCoordinator::updateAll()
 {
     if (backgroundTasks_.isKindActive(BackgroundTaskCoordinator::Kind::SubscriptionUpdate)) {
-        if (callbacks_.appendResult) {
-            callbacks_.appendResult(OperationResult::fail(
+        if (uiCallbacks_.appendResult) {
+            uiCallbacks_.appendResult(OperationResult::fail(
                 QStringLiteral("A subscription update is already running in the background.")));
         }
         return;
@@ -170,7 +229,7 @@ void SubscriptionWorkflowCoordinator::updateAll()
 
 void SubscriptionWorkflowCoordinator::updateSelected(const QList<int>& rowIndexes)
 {
-    const Config config = callbacks_.currentConfig ? callbacks_.currentConfig() : Config();
+    const Config config = configCallbacks_.currentConfig ? configCallbacks_.currentConfig() : Config();
     QStringList subscriptionIds;
     for (int rowIndex : rowIndexes) {
         if (rowIndex < 0 || rowIndex >= config.collection().subscriptions.size()) {
@@ -199,20 +258,20 @@ void SubscriptionWorkflowCoordinator::updateByIds(
         return;
     }
 
-    const QString activeSubscriptionId = callbacks_.activeSubscriptionId
-        ? callbacks_.activeSubscriptionId().trimmed()
+    const QString activeSubscriptionId = configCallbacks_.activeSubscriptionId
+        ? configCallbacks_.activeSubscriptionId().trimmed()
         : QString();
 
     emitStartupMessage(startupMessage);
 
-    if (callbacks_.clearServerTestResultsAndSync) {
-        callbacks_.clearServerTestResultsAndSync();
+    if (uiCallbacks_.clearServerTestResultsAndSync) {
+        uiCallbacks_.clearServerTestResultsAndSync();
     }
-    if (callbacks_.setSubscriptionUpdateRunning) {
-        callbacks_.setSubscriptionUpdateRunning(true);
+    if (uiCallbacks_.setSubscriptionUpdateRunning) {
+        uiCallbacks_.setSubscriptionUpdateRunning(true);
     }
 
-    const QString configPath = callbacks_.configPath ? callbacks_.configPath() : QString();
+    const QString configPath = configCallbacks_.configPath ? configCallbacks_.configPath() : QString();
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
     QPointer<SubscriptionWorkflowCoordinator> self(this);
@@ -242,8 +301,8 @@ void SubscriptionWorkflowCoordinator::updateByIds(
             }
         }, Qt::QueuedConnection);
     });
-    if (callbacks_.trackBackgroundThread) {
-        callbacks_.trackBackgroundThread(thread);
+    if (threadCallbacks_.trackBackgroundThread) {
+        threadCallbacks_.trackBackgroundThread(thread);
     } else {
         QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     }
@@ -254,8 +313,8 @@ BackgroundTaskCoordinator::Token SubscriptionWorkflowCoordinator::beginSubscript
 {
     if (reportAlreadyRunning
         && backgroundTasks_.isKindActive(BackgroundTaskCoordinator::Kind::SubscriptionUpdate)
-        && callbacks_.appendResult) {
-        callbacks_.appendResult(OperationResult::fail(
+        && uiCallbacks_.appendResult) {
+        uiCallbacks_.appendResult(OperationResult::fail(
             QStringLiteral("A subscription update is already running in the background.")));
         return {};
     }
@@ -278,37 +337,37 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
     }
 
     backgroundTasks_.finish(token);
-    if (callbacks_.setSubscriptionUpdateRunning) {
-        callbacks_.setSubscriptionUpdateRunning(false);
+    if (uiCallbacks_.setSubscriptionUpdateRunning) {
+        uiCallbacks_.setSubscriptionUpdateRunning(false);
     }
-    if (completion.reloadConfig && callbacks_.reloadConfig) {
-        callbacks_.reloadConfig();
+    if (completion.reloadConfig && configCallbacks_.reloadConfig) {
+        configCallbacks_.reloadConfig();
     }
-    if (callbacks_.appendResult) {
-        callbacks_.appendResult(completion.result);
+    if (uiCallbacks_.appendResult) {
+        uiCallbacks_.appendResult(completion.result);
     }
-    if (completion.syncWindow && callbacks_.syncWindow) {
-        callbacks_.syncWindow();
+    if (completion.syncWindow && uiCallbacks_.syncWindow) {
+        uiCallbacks_.syncWindow();
     }
-    if (completion.selectLastSubscription && callbacks_.selectSubscriptionTab) {
-        callbacks_.selectSubscriptionTab(completion.lastSubscriptionId);
+    if (completion.selectLastSubscription && uiCallbacks_.selectSubscriptionTab) {
+        uiCallbacks_.selectSubscriptionTab(completion.lastSubscriptionId);
     }
-    if (completion.restartActiveSubscription && callbacks_.restartCoreIfRunning) {
-        callbacks_.restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."), true);
+    if (completion.restartActiveSubscription && workflowCallbacks_.restartCoreIfRunning) {
+        workflowCallbacks_.restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."), true);
     }
 }
 
 void SubscriptionWorkflowCoordinator::emitStartupMessage(const QString& message)
 {
-    if (callbacks_.showStartupMessage) {
-        callbacks_.showStartupMessage(message);
+    if (uiCallbacks_.showStartupMessage) {
+        uiCallbacks_.showStartupMessage(message);
     }
 }
 
 QObject* SubscriptionWorkflowCoordinator::resolvedUiContext() const
 {
-    if (callbacks_.uiContext) {
-        QObject* context = callbacks_.uiContext();
+    if (uiCallbacks_.context) {
+        QObject* context = uiCallbacks_.context();
         if (context != nullptr) {
             return context;
         }
@@ -318,8 +377,8 @@ QObject* SubscriptionWorkflowCoordinator::resolvedUiContext() const
 
 std::weak_ptr<char> SubscriptionWorkflowCoordinator::resolvedLifetimeGuard() const
 {
-    if (callbacks_.lifetimeGuard) {
-        return callbacks_.lifetimeGuard();
+    if (uiCallbacks_.lifetimeGuard) {
+        return uiCallbacks_.lifetimeGuard();
     }
 
     static const std::shared_ptr<char> fallbackGuard = std::make_shared<char>();

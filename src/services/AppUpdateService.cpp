@@ -4,9 +4,6 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QIODevice>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -21,76 +18,14 @@
 #include "common/GitHubMirrorHelper.h"
 #include "common/GitHubUrls.h"
 #include "common/UserAgent.h"
+#include "services/AppUpdateReleaseMetadata.h"
+#include "services/CoreUpdateVersion.h"
 
 namespace {
 
 constexpr int kAppUpdateMetadataTimeoutMs = 30000;
 constexpr int kAppUpdateDownloadTimeoutMs = 180000;
 constexpr int kCancellationPollIntervalMs = 100;
-
-struct GitHubAppAsset {
-    QString name;
-    QUrl downloadUrl;
-};
-
-struct GitHubAppRelease {
-    QString tagName;
-    QString name;
-    QUrl htmlUrl;
-    bool prerelease = false;
-    bool draft = false;
-    QList<GitHubAppAsset> assets;
-};
-
-QString normalizeVersionTag(QString value)
-{
-    value = value.trimmed().toLower();
-    if (value.startsWith(QStringLiteral("version "))) {
-        value = value.mid(QStringLiteral("version ").size()).trimmed();
-    }
-    if (!value.isEmpty() && value.front().isDigit()) {
-        value.prepend(QChar('v'));
-    }
-    return value;
-}
-
-QList<int> parseVersionParts(QString version)
-{
-    version = normalizeVersionTag(version);
-    if (version.startsWith(QChar('v'))) {
-        version = version.mid(1);
-    }
-    const int dashIndex = version.indexOf(QChar('-'));
-    if (dashIndex >= 0) {
-        version = version.left(dashIndex);
-    }
-
-    QList<int> parts;
-    for (const QString& segment : version.split(QChar('.'))) {
-        bool ok = false;
-        const int value = segment.toInt(&ok);
-        parts.append(ok ? value : 0);
-    }
-    return parts;
-}
-
-bool isVersionNewerThan(const QString& candidate, const QString& current)
-{
-    const QList<int> candidateParts = parseVersionParts(candidate);
-    const QList<int> currentParts = parseVersionParts(current);
-    const int maxLen = qMax(candidateParts.size(), currentParts.size());
-    for (int i = 0; i < maxLen; ++i) {
-        const int c = i < candidateParts.size() ? candidateParts.at(i) : 0;
-        const int r = i < currentParts.size() ? currentParts.at(i) : 0;
-        if (c > r) {
-            return true;
-        }
-        if (c < r) {
-            return false;
-        }
-    }
-    return false;
-}
 
 OperationResult downloadBytesWithNetwork(const QUrl& url, QByteArray* content, int timeoutMs)
 {
@@ -184,125 +119,6 @@ bool writeBytesToFile(const QString& path, const QByteArray& content)
     return file.commit();
 }
 
-const GitHubAppAsset* selectBestAsset(const QList<GitHubAppAsset>& assets)
-{
-    const GitHubAppAsset* bestAsset = nullptr;
-    int bestScore = -1;
-    for (const GitHubAppAsset& asset : assets) {
-        const QString normalized = asset.name.trimmed().toLower();
-        int score = -1;
-        if (normalized.endsWith(QStringLiteral(".exe"))) {
-            score = normalized.contains(QStringLiteral("setup"))
-                || normalized.contains(QStringLiteral("install"))
-                ? 500
-                : 300;
-        }
-
-        if (!normalized.contains(QStringLiteral("windows"))
-            && !normalized.contains(QStringLiteral("win"))
-            && !normalized.contains(QStringLiteral("songbird"))) {
-            score -= 100;
-        }
-        if (normalized.contains(QStringLiteral("source"))
-            || normalized.contains(QStringLiteral("linux"))
-            || normalized.contains(QStringLiteral("macos"))
-            || normalized.contains(QStringLiteral("darwin"))
-            || normalized.contains(QStringLiteral("android"))) {
-            score = -1;
-        }
-
-        if (score > bestScore && asset.downloadUrl.isValid()) {
-            bestScore = score;
-            bestAsset = &asset;
-        }
-    }
-    return bestScore >= 0 ? bestAsset : nullptr;
-}
-
-bool parseLatestRelease(
-    const QByteArray& payload,
-    bool allowPrerelease,
-    GitHubAppRelease* release,
-    QString* errorMessage)
-{
-    if (release == nullptr) {
-        if (errorMessage != nullptr) {
-            *errorMessage = QCoreApplication::translate("AppUpdateService", "Release output buffer is unavailable.");
-        }
-        return false;
-    }
-
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
-        if (errorMessage != nullptr) {
-            *errorMessage = parseError.errorString();
-        }
-        return false;
-    }
-    if (!document.isArray()) {
-        if (errorMessage != nullptr) {
-            const QString message = document.isObject()
-                ? document.object().value(QStringLiteral("message")).toString().trimmed()
-                : QString();
-            *errorMessage = message.isEmpty()
-                ? QCoreApplication::translate("AppUpdateService", "Release metadata is invalid.")
-                : message;
-        }
-        return false;
-    }
-
-    bool skippedOnlyPrerelease = false;
-    for (const QJsonValue& value : document.array()) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        const QJsonObject object = value.toObject();
-        const bool draft = object.value(QStringLiteral("draft")).toBool(false);
-        const bool prerelease = object.value(QStringLiteral("prerelease")).toBool(false);
-        if (draft) {
-            continue;
-        }
-        if (!allowPrerelease && prerelease) {
-            skippedOnlyPrerelease = true;
-            continue;
-        }
-
-        const QString tagName = object.value(QStringLiteral("tag_name")).toString().trimmed();
-        const QUrl htmlUrl(object.value(QStringLiteral("html_url")).toString().trimmed());
-        if (tagName.isEmpty()) {
-            continue;
-        }
-
-        GitHubAppRelease parsedRelease{
-            tagName,
-            object.value(QStringLiteral("name")).toString().trimmed(),
-            htmlUrl,
-            prerelease,
-            draft,
-            {}};
-        const QJsonArray assets = object.value(QStringLiteral("assets")).toArray();
-        for (const QJsonValue& assetValue : assets) {
-            const QJsonObject assetObject = assetValue.toObject();
-            const QString assetName = assetObject.value(QStringLiteral("name")).toString().trimmed();
-            const QUrl downloadUrl(assetObject.value(QStringLiteral("browser_download_url")).toString().trimmed());
-            if (!assetName.isEmpty() && downloadUrl.isValid()) {
-                parsedRelease.assets.append(GitHubAppAsset{assetName, downloadUrl});
-            }
-        }
-        *release = parsedRelease;
-        return true;
-    }
-
-    if (errorMessage != nullptr) {
-        *errorMessage = skippedOnlyPrerelease && !allowPrerelease
-            ? QCoreApplication::translate("AppUpdateService", "No stable releases were found.")
-            : QCoreApplication::translate("AppUpdateService", "No releases were found.");
-    }
-    return false;
-}
-
 } // namespace
 
 AppUpdateService::AppUpdateService(DownloadHandler downloadHandler)
@@ -324,7 +140,7 @@ OperationResult AppUpdateService::checkForUpdate(
     result->currentVersion = currentVersion.trimmed();
 
     QString lastError;
-    GitHubAppRelease release;
+    AppUpdateRelease release;
     for (const QUrl& candidateUrl : buildGitHubMirrorCandidateUrls(songbirdReleasesApiUrl())) {
         QThread* const currentThread = QThread::currentThread();
         if (currentThread != nullptr && currentThread->isInterruptionRequested()) {
@@ -345,7 +161,7 @@ OperationResult AppUpdateService::checkForUpdate(
         }
 
         QString parseError;
-        if (parseLatestRelease(payload, allowPrerelease, &release, &parseError)) {
+        if (parseLatestAppRelease(payload, allowPrerelease, &release, &parseError)) {
             lastError.clear();
             break;
         }
@@ -365,11 +181,11 @@ OperationResult AppUpdateService::checkForUpdate(
     result->releaseUrl = release.htmlUrl.isValid()
         ? release.htmlUrl
         : QUrl(songbirdReleasePageUrl());
-    if (const GitHubAppAsset* asset = selectBestAsset(release.assets)) {
+    if (const AppUpdateReleaseAsset* asset = selectBestAppUpdateAsset(release.assets)) {
         result->assetName = asset->name;
         result->assetDownloadUrl = asset->downloadUrl;
     }
-    result->updateAvailable = isVersionNewerThan(release.tagName, currentVersion);
+    result->updateAvailable = CoreUpdateVersion::isNewerThan(release.tagName, currentVersion);
 
     if (result->updateAvailable) {
         return OperationResult::ok(

@@ -1,6 +1,14 @@
 #include <QtTest>
 
+#include <QDir>
+#include <QJsonArray>
+#include <QJsonObject>
+
+#include "services/SpeedTestBatchConfig.h"
+#include "services/SpeedTestPortReservation.h"
+#include "services/SpeedTestRuntimeProcess.h"
 #include "services/SpeedTestServiceInternal.h"
+#include "services/SpeedTestUrlProbe.h"
 
 class SpeedTestServiceInternalTests : public QObject {
     Q_OBJECT
@@ -10,11 +18,18 @@ private slots:
     void detectReadyProxyAcceptsSocksWhenHttpIsNotReady();
     void detectReadyProxyReturnsNulloptWhenNoPortIsReady();
     void reserveProxyPortsRejectsOverlapUntilReleased();
+    void takeAvailableProxyPortsReservesDistinctPortsUntilReleased();
     void makeUrlTestRuntimeConfigKeepsRoutingAndDnsBehavior();
+    void extractBatchPrimaryOutboundDetectsLegacyAndSingBox();
+    void assembleBatchConfigsBuildExpectedInboundAndRoutingShape();
     void classifyUrlProbeResultFormatsAccessibleLatency();
     void classifyUrlProbeResultFormatsTimeout();
     void classifyUrlProbeResultFormatsBlockedFailure();
     void tryParseUrlProbeLatencyAcceptsLegacyAndAccessibleFormats();
+    void normalizeUrlProbeErrorUsesStableShortMessages();
+    void retryUrlProbeOnlyForTransientFailures();
+    void summarizeProcessOutputKeepsStableShortPreview();
+    void buildCoreArgumentsReplacesPlaceholderAndAppendsConfigPath();
 };
 
 void SpeedTestServiceInternalTests::detectReadyProxyPrefersHttpWhenBothPortsAreReady()
@@ -65,6 +80,30 @@ void SpeedTestServiceInternalTests::reserveProxyPortsRejectsOverlapUntilReleased
     QVERIFY(SpeedTestServiceInternal::reserveProxyPorts(54911, 54912));
 
     SpeedTestServiceInternal::releaseProxyPorts(54911, 54912);
+}
+
+void SpeedTestServiceInternalTests::takeAvailableProxyPortsReservesDistinctPortsUntilReleased()
+{
+    SpeedTestServiceInternal::resetGlobalState();
+
+    const SpeedTestPortReservation::Ports ports = SpeedTestPortReservation::takeAvailable();
+    QVERIFY(ports.socksPort > 0);
+    QVERIFY(ports.httpPort > 0);
+    QVERIFY(ports.locationProbePort > 0);
+    QVERIFY(ports.socksPort != ports.httpPort);
+    QVERIFY(ports.socksPort != ports.locationProbePort);
+    QVERIFY(ports.httpPort != ports.locationProbePort);
+    QVERIFY(!SpeedTestServiceInternal::reserveProxyPorts(
+        ports.socksPort,
+        ports.httpPort,
+        ports.locationProbePort));
+
+    SpeedTestPortReservation::release(ports);
+    QVERIFY(SpeedTestServiceInternal::reserveProxyPorts(
+        ports.socksPort,
+        ports.httpPort,
+        ports.locationProbePort));
+    SpeedTestPortReservation::release(ports);
 }
 
 void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBehavior()
@@ -123,6 +162,78 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     QVERIFY(runtimeConfig.policy().coreTypeItems.isEmpty());
 }
 
+void SpeedTestServiceInternalTests::extractBatchPrimaryOutboundDetectsLegacyAndSingBox()
+{
+    QJsonObject legacyOutbound;
+    legacyOutbound.insert(QStringLiteral("protocol"), QStringLiteral("vmess"));
+    QJsonArray legacyOutbounds;
+    legacyOutbounds.append(legacyOutbound);
+    QJsonObject legacyRoot;
+    legacyRoot.insert(QStringLiteral("outbounds"), legacyOutbounds);
+
+    const auto legacyExtracted = SpeedTestBatchConfig::extractPrimaryOutbound(legacyRoot);
+    QVERIFY(legacyExtracted.has_value());
+    QVERIFY(legacyExtracted->first == SpeedTestBatchConfig::BatchFlavor::Legacy);
+    QCOMPARE(legacyExtracted->second.value(QStringLiteral("protocol")).toString(), QStringLiteral("vmess"));
+
+    QJsonObject singBoxOutbound;
+    singBoxOutbound.insert(QStringLiteral("type"), QStringLiteral("vless"));
+    QJsonArray singBoxOutbounds;
+    singBoxOutbounds.append(singBoxOutbound);
+    QJsonObject singBoxRoot;
+    singBoxRoot.insert(QStringLiteral("outbounds"), singBoxOutbounds);
+
+    const auto singBoxExtracted = SpeedTestBatchConfig::extractPrimaryOutbound(singBoxRoot);
+    QVERIFY(singBoxExtracted.has_value());
+    QVERIFY(singBoxExtracted->first == SpeedTestBatchConfig::BatchFlavor::SingBox);
+    QCOMPARE(singBoxExtracted->second.value(QStringLiteral("type")).toString(), QStringLiteral("vless"));
+}
+
+void SpeedTestServiceInternalTests::assembleBatchConfigsBuildExpectedInboundAndRoutingShape()
+{
+    SpeedTestBatchConfig::ProbeEntry entry;
+    entry.socksPort = 55080;
+    entry.inboundTag = QStringLiteral("socks_in_0");
+    entry.outboundTag = QStringLiteral("proxy_0");
+    entry.outbound.insert(QStringLiteral("tag"), entry.outboundTag);
+    entry.outbound.insert(QStringLiteral("protocol"), QStringLiteral("vmess"));
+
+    const QJsonObject legacyRoot = SpeedTestBatchConfig::assembleLegacyConfig({entry});
+    const QJsonObject legacyInbound =
+        legacyRoot.value(QStringLiteral("inbounds")).toArray().first().toObject();
+    QCOMPARE(legacyInbound.value(QStringLiteral("protocol")).toString(), QStringLiteral("socks"));
+    QCOMPARE(legacyInbound.value(QStringLiteral("listen")).toString(), QStringLiteral("127.0.0.1"));
+    QCOMPARE(legacyInbound.value(QStringLiteral("port")).toInt(), 55080);
+    QCOMPARE(legacyRoot.value(QStringLiteral("outbounds")).toArray().size(), 3);
+
+    const QJsonObject legacyRule =
+        legacyRoot.value(QStringLiteral("routing")).toObject()
+            .value(QStringLiteral("rules")).toArray().first().toObject();
+    QCOMPARE(
+        legacyRule.value(QStringLiteral("inboundTag")).toArray().first().toString(),
+        QStringLiteral("socks_in_0"));
+    QCOMPARE(legacyRule.value(QStringLiteral("outboundTag")).toString(), QStringLiteral("proxy_0"));
+
+    entry.outbound = QJsonObject{};
+    entry.outbound.insert(QStringLiteral("tag"), entry.outboundTag);
+    entry.outbound.insert(QStringLiteral("type"), QStringLiteral("vless"));
+
+    const QJsonObject singBoxRoot = SpeedTestBatchConfig::assembleSingBoxConfig({entry});
+    const QJsonObject singBoxInbound =
+        singBoxRoot.value(QStringLiteral("inbounds")).toArray().first().toObject();
+    QCOMPARE(singBoxInbound.value(QStringLiteral("type")).toString(), QStringLiteral("socks"));
+    QCOMPARE(singBoxInbound.value(QStringLiteral("listen_port")).toInt(), 55080);
+    QCOMPARE(singBoxRoot.value(QStringLiteral("outbounds")).toArray().size(), 2);
+
+    const QJsonObject singBoxRule =
+        singBoxRoot.value(QStringLiteral("route")).toObject()
+            .value(QStringLiteral("rules")).toArray().first().toObject();
+    QCOMPARE(
+        singBoxRule.value(QStringLiteral("inbound")).toArray().first().toString(),
+        QStringLiteral("socks_in_0"));
+    QCOMPARE(singBoxRule.value(QStringLiteral("outbound")).toString(), QStringLiteral("proxy_0"));
+}
+
 void SpeedTestServiceInternalTests::classifyUrlProbeResultFormatsAccessibleLatency()
 {
     const auto result = SpeedTestServiceInternal::classifyUrlProbeResult(true, false, 287, QString{});
@@ -156,6 +267,62 @@ void SpeedTestServiceInternalTests::tryParseUrlProbeLatencyAcceptsLegacyAndAcces
 
     QVERIFY(!SpeedTestServiceInternal::tryParseUrlProbeLatency(QStringLiteral("Blocked: reset"), latencyMs));
     QVERIFY(!SpeedTestServiceInternal::tryParseUrlProbeLatency(QStringLiteral("Timeout"), latencyMs));
+}
+
+void SpeedTestServiceInternalTests::normalizeUrlProbeErrorUsesStableShortMessages()
+{
+    QCOMPARE(SpeedTestUrlProbe::normalizeErrorText(QString{}), QStringLiteral("Failed"));
+    QCOMPARE(SpeedTestUrlProbe::normalizeErrorText(QStringLiteral("Operation timed out")), QStringLiteral("Timeout"));
+    QCOMPARE(
+        SpeedTestUrlProbe::normalizeErrorText(QStringLiteral("Connection reset by peer\nsecond line")),
+        QStringLiteral("Connection reset by peer"));
+
+    const QString longError(140, QLatin1Char('x'));
+    QCOMPARE(SpeedTestUrlProbe::normalizeErrorText(longError).size(), 96);
+}
+
+void SpeedTestServiceInternalTests::retryUrlProbeOnlyForTransientFailures()
+{
+    QVERIFY(SpeedTestUrlProbe::shouldRetry(
+        SpeedTestServiceInternal::UrlProbeResult{SpeedTestServiceInternal::UrlProbeStatus::Timeout, -1, QStringLiteral("Timeout")}));
+    QVERIFY(SpeedTestUrlProbe::shouldRetry(
+        SpeedTestServiceInternal::UrlProbeResult{SpeedTestServiceInternal::UrlProbeStatus::Failed, 120, QStringLiteral("Connection reset")}));
+    QVERIFY(!SpeedTestUrlProbe::shouldRetry(
+        SpeedTestServiceInternal::UrlProbeResult{SpeedTestServiceInternal::UrlProbeStatus::Failed, 900, QStringLiteral("Connection reset")}));
+    QVERIFY(!SpeedTestUrlProbe::shouldRetry(
+        SpeedTestServiceInternal::UrlProbeResult{SpeedTestServiceInternal::UrlProbeStatus::Accessible, 50, {}}));
+}
+
+void SpeedTestServiceInternalTests::summarizeProcessOutputKeepsStableShortPreview()
+{
+    QCOMPARE(SpeedTestRuntimeProcess::summarizeProcessOutput(QString{}), QStringLiteral("<no output>"));
+    QCOMPARE(
+        SpeedTestRuntimeProcess::summarizeProcessOutput(QStringLiteral(" first \n\n second \r\n third \n fourth ")),
+        QStringLiteral("first | second | third"));
+
+    const QString longLine(300, QLatin1Char('x'));
+    QCOMPARE(SpeedTestRuntimeProcess::summarizeProcessOutput(longLine).size(), 240);
+}
+
+void SpeedTestServiceInternalTests::buildCoreArgumentsReplacesPlaceholderAndAppendsConfigPath()
+{
+    CoreInfo coreInfo;
+    coreInfo.arguments = QStringList{
+        QStringLiteral("run"),
+        QStringLiteral("CONFIG"),
+        QStringLiteral("--verbose")
+    };
+    coreInfo.configPlaceholder = QStringLiteral("CONFIG");
+    coreInfo.appendConfigArgument = true;
+
+    const QString normalizedPath = QDir::toNativeSeparators(QStringLiteral("tmp/runtime.json"));
+    const QStringList arguments = SpeedTestRuntimeProcess::buildCoreArguments(coreInfo, QStringLiteral("tmp/runtime.json"));
+
+    QCOMPARE(arguments.at(0), QStringLiteral("run"));
+    QCOMPARE(arguments.at(1), normalizedPath);
+    QCOMPARE(arguments.at(2), QStringLiteral("--verbose"));
+    QCOMPARE(arguments.at(3), QStringLiteral("-config"));
+    QCOMPARE(arguments.at(4), normalizedPath);
 }
 
 QTEST_MAIN(SpeedTestServiceInternalTests)

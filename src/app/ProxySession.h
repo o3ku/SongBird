@@ -3,18 +3,20 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
-#include <QHash>
 #include <QList>
 #include <QObject>
-#include <QPointer>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
 
 #include "app/BackgroundTaskCoordinator.h"
+#include "app/BackgroundThreadTracker.h"
 #include "app/CoreStartupCheckpoint.h"
+#include "app/CoreStartupChecklist.h"
 #include "app/PostStopAction.h"
+#include "app/ProxyCrashRestartPolicy.h"
 #include "app/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
@@ -113,11 +115,41 @@ private:
         CleaningThenResume
     };
 
+    struct StartupSteps {
+        QString environment;
+        QString downloadCore;
+        QString runtimeResources;
+        QString validateConfig;
+        QString tunRuntime;
+        QString startCore;
+    };
+
+    struct StartupContext {
+        StartupSteps steps;
+        bool skipTunCleanup = false;
+        bool environmentAlreadyChecked = false;
+        bool showStartupOverlay = false;
+    };
+
+    struct StartupProfile {
+        VmessItem server;
+        CoreType launchCore = CoreType::Unknown;
+        CoreInfo coreInfo;
+        QString coreConfigPath;
+    };
+
+    static StartupSteps startupSteps();
+
     void setPhase(Phase phase);
     void startInternal(
         bool skipTunCleanup,
         bool environmentAlreadyChecked = false,
         bool showStartupOverlay = false);
+    void ensureChecklistPrepared(const StartupContext& context);
+    bool rejectOverlappingStart(const StartupContext& context);
+    void beginStartupAttempt(const StartupContext& context);
+    bool ensureTunCleanupCompleted(const StartupContext& context);
+    std::optional<StartupProfile> resolveStartupProfile(const StartupContext& context);
     void beginActivation();
     void finishActivation();
     void cancelActivation();
@@ -130,7 +162,6 @@ private:
     void clearChecklist();
     void clearChecklistAfterStableRun(int delayMs);
     void keepChecklistForUserDismissal(const QString& step, const QString& detail);
-    void syncChecklistOverlay();
 
     void failStartup(const OperationResult& result);
     void cleanupAfterFailedStartup();
@@ -152,12 +183,30 @@ private:
         const QString& downloadCoreStep,
         bool skipTunCleanup,
         bool showStartupOverlay);
+    void postStartupDownloadProgress(
+        const QString& step,
+        const QString& message,
+        const std::weak_ptr<char>& guard);
+    void postStartupDownloadProgress(
+        const QString& step,
+        const QString& message,
+        const BackgroundTaskCoordinator::Token& token,
+        const std::weak_ptr<char>& guard);
+    void handleStartupDownloadFinished(
+        const QString& step,
+        const OperationResult& result,
+        bool skipTunCleanup,
+        bool showStartupOverlay,
+        const QString& canceledMessage,
+        const QString& completedButCanceledMessage,
+        const std::function<void()>& successAction = {});
 
     void handleCoreStarted(const QString& serverIndexId);
     void validateCoreListeningAndHandleStarted(
         const QString& serverIndexId,
         bool customServer);
     void handleCoreStartFailed(const QString& message);
+    void handleMainCoreOutput(const QString& line);
 
     void queryServerLocation(
         const QString& serverIndexId);
@@ -194,27 +243,17 @@ private:
 
     bool coreTunEnabledAtStart_ = false;
     bool coreTunAdapterConflictDetected_ = false;
-    int coreTunAdapterConflictRetryCount_ = 0;
     bool managedSystemProxyActive_ = false;
     bool skipTunCleanupOnNextCoreExit_ = false;
     qint64 coreStartTime_ = 0;
 
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
-    int coreCrashRestartCount_ = 0;
-    int auxiliaryCrashRestartCount_ = 0;
+    ProxyCrashRestartPolicy crashRestartPolicy_;
 
-    QStringList checklistSteps_;
-    QHash<QString, CoreStartupCheckpointStatus> checklistStepStatus_;
-    QHash<QString, QString> checklistStepDetails_;
-    bool checklistOverlayRequested_ = false;
-    bool checklistOverlayShown_ = false;
-    qint64 checklistOverlayShownAtMs_ = 0;
-    int checklistClearGeneration_ = 0;
-    int checklistStableRunGeneration_ = 0;
-    bool checklistKeepOnNextStop_ = false;
+    CoreStartupChecklist checklist_;
 
-    QList<QPointer<QThread>> backgroundThreads_;
+    BackgroundThreadTracker backgroundThreads_;
     std::shared_ptr<char> lifetimeGuard_ = std::make_shared<char>();
     std::atomic_bool shuttingDown_{false};
 };

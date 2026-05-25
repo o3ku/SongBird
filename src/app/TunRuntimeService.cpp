@@ -49,7 +49,7 @@ OperationResult TunRuntimeService::removeStaleAdapterIfPresent() const
     return OperationResult::ok(QStringLiteral("TUN adapter cleanup is only required on Windows."));
 #else
     if (!isAdapterPresent()) {
-        return OperationResult::ok(QStringLiteral("No stale 'singbox_tun' adapter was found."));
+        return OperationResult::ok(QStringLiteral("TUN preflight did not find a removable stale 'singbox_tun' adapter."));
     }
     QProcess remover;
     remover.setProgram(QStringLiteral("powershell"));

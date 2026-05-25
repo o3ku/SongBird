@@ -7,7 +7,7 @@
 #include <QList>
 #include <QPointer>
 
-#include "app/SettingsDialogSession.h"
+#include "app/SettingsDialogRunner.h"
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 

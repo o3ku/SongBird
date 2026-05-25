@@ -1,11 +1,12 @@
 #include "ui/mainwindow/ServerActionsController.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QKeySequence>
 #include <QMenu>
 #include <QMessageBox>
 #include <QTableView>
-#include <QTimer>
 
 #include "common/DialogUtils.h"
 #include "services/ServerService.h"
@@ -13,6 +14,28 @@
 #include "ui/models/ServerTableModel.h"
 
 namespace {
+
+void addViewShortcutAction(QTableView* view, QAction* action, const QKeySequence& shortcut)
+{
+    if (view == nullptr || action == nullptr) {
+        return;
+    }
+
+    action->setShortcut(shortcut);
+    action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    view->addAction(action);
+}
+
+void addViewShortcutAction(QTableView* view, QAction* action, const QList<QKeySequence>& shortcuts)
+{
+    if (view == nullptr || action == nullptr) {
+        return;
+    }
+
+    action->setShortcuts(shortcuts);
+    action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    view->addAction(action);
+}
 
 void showPopupMenu(QMenu* menu, const QPoint& globalPosition)
 {
@@ -133,47 +156,19 @@ void ServerActionsController::setup()
             }
         });
 
-        context_.copyShareLinkAction->setShortcut(QKeySequence::Copy);
-        context_.copyShareLinkAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.copyShareLinkAction);
-
-        context_.importClipboardAction->setShortcut(QKeySequence::Paste);
-        context_.importClipboardAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.importClipboardAction);
-
-        context_.setDefaultServerAction->setShortcut(QKeySequence(Qt::Key_Return));
-        context_.setDefaultServerAction->setShortcuts({
+        addViewShortcutAction(context_.serverView, context_.copyShareLinkAction, QKeySequence::Copy);
+        addViewShortcutAction(context_.serverView, context_.importClipboardAction, QKeySequence::Paste);
+        addViewShortcutAction(context_.serverView, context_.setDefaultServerAction, {
             QKeySequence(Qt::Key_Return),
             QKeySequence(Qt::Key_Enter)});
-        context_.setDefaultServerAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.setDefaultServerAction);
-
-        context_.setDefaultServerWithTunAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
-        context_.setDefaultServerWithTunAction->setShortcuts({
+        addViewShortcutAction(context_.serverView, context_.setDefaultServerWithTunAction, {
             QKeySequence(Qt::CTRL | Qt::Key_Return),
             QKeySequence(Qt::CTRL | Qt::Key_Enter)});
-        context_.setDefaultServerWithTunAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.setDefaultServerWithTunAction);
-
-        context_.removeServerAction->setShortcut(QKeySequence::Delete);
-        context_.removeServerAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.removeServerAction);
-
-        context_.moveServerTopAction->setShortcut(QKeySequence(Qt::Key_T));
-        context_.moveServerTopAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.moveServerTopAction);
-
-        context_.moveServerBottomAction->setShortcut(QKeySequence(Qt::Key_B));
-        context_.moveServerBottomAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.moveServerBottomAction);
-
-        context_.moveServerUpAction->setShortcut(QKeySequence(Qt::Key_U));
-        context_.moveServerUpAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.moveServerUpAction);
-
-        context_.moveServerDownAction->setShortcut(QKeySequence(Qt::Key_D));
-        context_.moveServerDownAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        context_.serverView->addAction(context_.moveServerDownAction);
+        addViewShortcutAction(context_.serverView, context_.removeServerAction, QKeySequence::Delete);
+        addViewShortcutAction(context_.serverView, context_.moveServerTopAction, QKeySequence(Qt::Key_T));
+        addViewShortcutAction(context_.serverView, context_.moveServerBottomAction, QKeySequence(Qt::Key_B));
+        addViewShortcutAction(context_.serverView, context_.moveServerUpAction, QKeySequence(Qt::Key_U));
+        addViewShortcutAction(context_.serverView, context_.moveServerDownAction, QKeySequence(Qt::Key_D));
 
         auto* selectAllServersShortcutAction = new QAction(context_.window);
         selectAllServersShortcutAction->setObjectName(QStringLiteral("selectAllServersShortcutAction"));
@@ -193,10 +188,7 @@ void ServerActionsController::setup()
 ServerActionsController::ActionState
 ServerActionsController::buildActionState(const SelectionSnapshot& snapshot) const
 {
-    const ServerTableRow* selectedItem = snapshot.selectedItems.isEmpty()
-        ? nullptr
-        : snapshot.selectedItems.constFirst();
-    const bool hasSelection = selectedItem != nullptr;
+    const bool hasSelection = !snapshot.selectedItems.isEmpty();
     const bool hasSingleSelection = snapshot.selectedItems.size() == 1;
     const bool hasShareExports = !snapshot.selectedShareLinks.isEmpty();
     const bool canReorder = hasSelection && snapshot.hasServers;
@@ -263,8 +255,8 @@ void ServerActionsController::showContextMenu(const QPoint& position)
         return;
     }
 
-    const QModelIndex clickedIndex = context_.serverView->indexAt(position);
     const bool ungroupedTabSelected = isUngroupedSubscriptionTabSelected_();
+    const QModelIndex clickedIndex = context_.serverView->indexAt(position);
     if (!clickedIndex.isValid()) {
         if (!ungroupedTabSelected || context_.addServerAction == nullptr) {
             return;

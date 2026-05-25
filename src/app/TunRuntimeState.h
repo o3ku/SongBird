@@ -27,8 +27,9 @@ inline bool shouldRunPostStopActionAfterTunCleanup(
 inline bool isTunAdapterConflictOutput(const QString& line)
 {
     const QString normalized = line.toLower();
-    return normalized.contains(QStringLiteral("configure tun interface"))
-        && normalized.contains(QStringLiteral("cannot create a file when that file already exists"));
+    return (normalized.contains(QStringLiteral("configure tun interface"))
+            && normalized.contains(QStringLiteral("cannot create a file when that file already exists")))
+        || normalized.contains(QStringLiteral("open interface take too much time"));
 }
 
 inline bool shouldRetryAfterTunAdapterConflict(

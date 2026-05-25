@@ -1,23 +1,18 @@
 #include "platform/windows/WindowsUwpLoopbackService.h"
 
 #include <algorithm>
-#include <utility>
 
 #include <QDir>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QFile>
 #include <QTemporaryDir>
-#include <QSaveFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QObject>
 #include <QIODevice>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QThread>
-#include <QTextStream>
+
+#include "platform/windows/WindowsUwpLoopbackSupport.h"
 
 #if defined(Q_OS_WIN)
 #ifndef NOMINMAX
@@ -35,43 +30,6 @@ constexpr int kElevatedScriptWaitMs = 180000;
 QString processText(const QByteArray& data)
 {
     return QString::fromUtf8(data);
-}
-
-WindowsUwpPackageInfo packageFromJson(const QJsonObject& object)
-{
-    WindowsUwpPackageInfo package;
-    package.name = object.value(QStringLiteral("Name")).toString().trimmed();
-    package.packageFamilyName = object.value(QStringLiteral("PackageFamilyName")).toString().trimmed();
-    package.packageFullName = object.value(QStringLiteral("PackageFullName")).toString().trimmed();
-    package.publisher = object.value(QStringLiteral("Publisher")).toString().trimmed();
-    package.installLocation = object.value(QStringLiteral("InstallLocation")).toString().trimmed();
-    return package;
-}
-
-void appendPackageFromJson(QList<WindowsUwpPackageInfo>& packages, const QJsonValue& value)
-{
-    if (!value.isObject()) {
-        return;
-    }
-
-    WindowsUwpPackageInfo package = packageFromJson(value.toObject());
-    if (package.packageFamilyName.trimmed().isEmpty()) {
-        return;
-    }
-
-    packages.append(std::move(package));
-}
-
-QString psSingleQuoted(QString value)
-{
-    value.replace(QChar('\''), QStringLiteral("''"));
-    return QStringLiteral("'%1'").arg(value);
-}
-
-QString checkNetIsolationScriptPath()
-{
-    const QString systemRoot = qEnvironmentVariable("SystemRoot", QStringLiteral("C:\\Windows"));
-    return QDir::toNativeSeparators(QDir(systemRoot).filePath(QStringLiteral("System32/CheckNetIsolation.exe")));
 }
 
 } // namespace
@@ -111,25 +69,14 @@ QList<WindowsUwpPackageInfo> WindowsUwpLoopbackService::listPackages(OperationRe
         return {};
     }
 
-    QJsonParseError parseError{};
-    const QJsonDocument document = QJsonDocument::fromJson(output.toUtf8(), &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
+    OperationResult parseResult;
+    QList<WindowsUwpPackageInfo> packages =
+        WindowsUwpLoopbackSupport::parsePackageListJson(output, &parseResult);
+    if (!parseResult.success) {
         if (result != nullptr) {
-            *result = OperationResult::fail(
-                QObject::tr("Failed to parse UWP package list: %1").arg(parseError.errorString()));
+            *result = parseResult;
         }
         return {};
-    }
-
-    QList<WindowsUwpPackageInfo> packages;
-    if (document.isArray()) {
-        const QJsonArray array = document.array();
-        packages.reserve(array.size());
-        for (const QJsonValue& value : array) {
-            appendPackageFromJson(packages, value);
-        }
-    } else if (document.isObject()) {
-        appendPackageFromJson(packages, document.object());
     }
 
     OperationResult exemptionsResult;
@@ -185,20 +132,7 @@ QSet<QString> WindowsUwpLoopbackService::listExemptPackageFamilyNames(OperationR
         return {};
     }
 
-    QSet<QString> packageNames;
-    const QRegularExpression nameLine(QStringLiteral("^\\s*Name:\\s*(.+?)\\s*$"));
-    const QStringList lines = output.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
-    for (const QString& line : lines) {
-        const QRegularExpressionMatch match = nameLine.match(line);
-        if (!match.hasMatch()) {
-            continue;
-        }
-
-        const QString packageName = match.captured(1).trimmed();
-        if (!packageName.isEmpty() && packageName != QStringLiteral("AppContainer NOT FOUND")) {
-            packageNames.insert(packageName);
-        }
-    }
+    const QSet<QString> packageNames = WindowsUwpLoopbackSupport::parseExemptPackageFamilyNames(output);
 
     if (result != nullptr) {
         *result = OperationResult::ok();
@@ -261,43 +195,13 @@ OperationResult WindowsUwpLoopbackService::setLoopbackEnabledElevated(
     const QString logPath = QDir(tempDir.path()).filePath(QStringLiteral("loopback.log"));
     const QString scriptPath = QDir(tempDir.path()).filePath(QStringLiteral("apply-loopback.ps1"));
 
-    QSaveFile script(scriptPath);
-    if (!script.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return OperationResult::fail(QObject::tr("Failed to create temporary loopback script."));
-    }
-
-    QStringList packages = enabledByPackageFamilyName.keys();
-    std::sort(packages.begin(), packages.end());
-
-    QTextStream stream(&script);
-#if QT_VERSION_MAJOR >= 6
-    stream.setEncoding(QStringConverter::Utf8);
-#else
-    stream.setCodec("UTF-8");
-#endif
-    stream << "$ErrorActionPreference = 'Stop'\n";
-    stream << "$check = " << psSingleQuoted(checkNetIsolationScriptPath()) << "\n";
-    stream << "$log = " << psSingleQuoted(QDir::toNativeSeparators(logPath)) << "\n";
-    stream << "$done = " << psSingleQuoted(QDir::toNativeSeparators(donePath)) << "\n";
-    stream << "try {\n";
-    stream << "  \"SongBird UWP loopback update started\" | Out-File -FilePath $log -Encoding UTF8\n";
-    for (const QString& packageFamilyName : packages) {
-        const QString operation = enabledByPackageFamilyName.value(packageFamilyName)
-            ? QStringLiteral("-a")
-            : QStringLiteral("-d");
-        stream << "  & $check LoopbackExempt " << operation
-               << " ('-n=' + " << psSingleQuoted(packageFamilyName) << ")"
-               << " *>&1 | Out-File -FilePath $log -Append -Encoding UTF8\n";
-        stream << "  if ($LASTEXITCODE -ne 0) { throw 'CheckNetIsolation failed for "
-               << packageFamilyName << "' }\n";
-    }
-    stream << "  '0' | Out-File -FilePath $done -Encoding ASCII\n";
-    stream << "} catch {\n";
-    stream << "  $_ | Out-File -FilePath $log -Append -Encoding UTF8\n";
-    stream << "  '1' | Out-File -FilePath $done -Encoding ASCII\n";
-    stream << "}\n";
-    if (!script.commit()) {
-        return OperationResult::fail(QObject::tr("Failed to write temporary loopback script."));
+    const OperationResult scriptResult = WindowsUwpLoopbackSupport::writeElevatedLoopbackScript(
+        scriptPath,
+        donePath,
+        logPath,
+        enabledByPackageFamilyName);
+    if (!scriptResult.success) {
+        return scriptResult;
     }
 
     const OperationResult launchResult = runElevatedScript(scriptPath);
@@ -393,7 +297,7 @@ OperationResult WindowsUwpLoopbackService::runElevatedScript(const QString& scri
 QString WindowsUwpLoopbackService::checkNetIsolationPath() const
 {
 #if defined(Q_OS_WIN)
-    return checkNetIsolationScriptPath();
+    return WindowsUwpLoopbackSupport::checkNetIsolationPath();
 #else
     return {};
 #endif

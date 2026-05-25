@@ -131,14 +131,15 @@ void CoreUpdateCoordinator::updateCore(const Request& request)
             "AppBootstrap",
             "Stopping the running core before installing the update.");
         appendResult(deps_.appendResult, OperationResult::ok(message));
-        pendingCoreUpdateType_ = coreType;
-        pendingCoreUpdateStartAfterSuccess_ = request.startAfterSuccess;
-        pendingCoreUpdateSkipLocalVersionCheck_ = request.skipLocalVersionCheck;
-        pendingCoreUpdateProgressContext_ = progressContextGuard;
-        pendingCoreUpdateDialogParent_ = dialogParentGuard;
-        pendingCoreUpdateProgressObserver_ = request.progressObserver;
-        pendingCoreUpdateCompletionObserver_ = request.completionObserver;
-        pendingCoreUpdateTaskToken_ = token;
+        pendingCoreUpdate_.store(
+            coreType,
+            request.startAfterSuccess,
+            request.skipLocalVersionCheck,
+            progressContextGuard,
+            dialogParentGuard,
+            request.progressObserver,
+            request.completionObserver,
+            token);
         if (deps_.stopForCoreUpdate) {
             deps_.stopForCoreUpdate();
         }
@@ -162,50 +163,41 @@ void CoreUpdateCoordinator::updateCore(const Request& request)
 
 void CoreUpdateCoordinator::continuePendingCoreUpdate()
 {
-    if (fallbackUiContext() == nullptr || !pendingCoreUpdateTaskToken_.isValid()) {
+    if (fallbackUiContext() == nullptr || !pendingCoreUpdate_.isValid()) {
         return;
     }
 
-    const CoreType coreType = pendingCoreUpdateType_;
-    const bool startAfterSuccess = pendingCoreUpdateStartAfterSuccess_;
-    const bool skipLocalVersionCheck = pendingCoreUpdateSkipLocalVersionCheck_;
-    QPointer<QObject> progressContextGuard = pendingCoreUpdateProgressContext_;
-    QPointer<QWidget> dialogParentGuard = pendingCoreUpdateDialogParent_;
-    std::function<void(const QString&)> progressObserver = pendingCoreUpdateProgressObserver_;
-    std::function<void(const OperationResult&)> completionObserver = pendingCoreUpdateCompletionObserver_;
-    const BackgroundTaskCoordinator::Token token = pendingCoreUpdateTaskToken_;
+    CoreUpdatePendingState::Snapshot pending = pendingCoreUpdate_.take();
 
-    clearPendingCoreUpdate();
-
-    if (!isCurrent(token)) {
+    if (!isCurrent(pending.taskToken)) {
         return;
     }
 
     const QString title = QCoreApplication::translate("AppBootstrap", "Install / Update %1 Core")
-                              .arg(coreTypeDisplayName(coreType));
+                              .arg(coreTypeDisplayName(pending.coreType));
     const QString installDirectory =
-        deps_.resolveCoreInstallDirectory ? deps_.resolveCoreInstallDirectory(coreType) : QString();
+        deps_.resolveCoreInstallDirectory ? deps_.resolveCoreInstallDirectory(pending.coreType) : QString();
     const CoreUpdateConfig workerConfig =
         deps_.makeWorkerConfig ? deps_.makeWorkerConfig() : CoreUpdateConfig{};
 
     startCoreUpdateWorker(
-        token,
-        coreType,
+        pending.taskToken,
+        pending.coreType,
         workerConfig,
         installDirectory,
         title,
         true,
-        startAfterSuccess,
-        skipLocalVersionCheck,
-        progressContextGuard,
-        dialogParentGuard,
-        std::move(progressObserver),
-        std::move(completionObserver));
+        pending.startAfterSuccess,
+        pending.skipLocalVersionCheck,
+        pending.progressContext,
+        pending.dialogParent,
+        std::move(pending.progressObserver),
+        std::move(pending.completionObserver));
 }
 
 bool CoreUpdateCoordinator::hasPendingCoreUpdate() const
 {
-    return pendingCoreUpdateTaskToken_.isValid();
+    return pendingCoreUpdate_.isValid();
 }
 
 void CoreUpdateCoordinator::runCoreUpdateTask(
@@ -279,9 +271,7 @@ void CoreUpdateCoordinator::finalizeCoreUpdate(
     }
 
     deps_.backgroundTasks->finish(token);
-    if (pendingCoreUpdateTaskToken_.generation == token.generation) {
-        pendingCoreUpdateTaskToken_ = {};
-    }
+    pendingCoreUpdate_.clearIfGeneration(token.generation);
     if (isShuttingDown()) {
         return;
     }
@@ -422,18 +412,6 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
         deps_.trackBackgroundThread(thread);
     }
     thread->start();
-}
-
-void CoreUpdateCoordinator::clearPendingCoreUpdate()
-{
-    pendingCoreUpdateType_ = CoreType::Unknown;
-    pendingCoreUpdateStartAfterSuccess_ = false;
-    pendingCoreUpdateSkipLocalVersionCheck_ = false;
-    pendingCoreUpdateProgressContext_.clear();
-    pendingCoreUpdateDialogParent_.clear();
-    pendingCoreUpdateProgressObserver_ = {};
-    pendingCoreUpdateCompletionObserver_ = {};
-    pendingCoreUpdateTaskToken_ = {};
 }
 
 QObject* CoreUpdateCoordinator::fallbackUiContext() const

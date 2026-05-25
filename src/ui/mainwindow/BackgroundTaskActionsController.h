@@ -16,7 +16,6 @@ public:
     };
 
     struct State {
-        bool hasSubscriptionUrl = false;
         bool canStartTask = false;
     };
 

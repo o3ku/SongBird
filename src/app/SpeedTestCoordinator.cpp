@@ -20,25 +20,25 @@ SpeedTestCoordinator::SpeedTestCoordinator(Dependencies dependencies, QObject* p
     : QObject(parent)
     , deps_(std::move(dependencies))
 {
-    if (deps_.speedTestService != nullptr) {
+    if (deps_.speedTestController != nullptr) {
         QObject::connect(
-            deps_.speedTestService,
-            &SpeedTestService::runningChanged,
+            deps_.speedTestController,
+            &SpeedTestController::runningChanged,
             this,
             &SpeedTestCoordinator::handleRunningChanged);
         QObject::connect(
-            deps_.speedTestService,
-            &SpeedTestService::logGenerated,
+            deps_.speedTestController,
+            &SpeedTestController::logGenerated,
             this,
             &SpeedTestCoordinator::handleLogGenerated);
         QObject::connect(
-            deps_.speedTestService,
-            &SpeedTestService::testResultReady,
+            deps_.speedTestController,
+            &SpeedTestController::testResultReady,
             this,
             &SpeedTestCoordinator::handleTestResultReady);
         QObject::connect(
-            deps_.speedTestService,
-            &SpeedTestService::finished,
+            deps_.speedTestController,
+            &SpeedTestController::finished,
             this,
             &SpeedTestCoordinator::handleFinished);
     }
@@ -46,7 +46,7 @@ SpeedTestCoordinator::SpeedTestCoordinator(Dependencies dependencies, QObject* p
 
 void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
 {
-    if (deps_.speedTestService == nullptr || deps_.backgroundTasks == nullptr || !deps_.mutableConfig) {
+    if (deps_.speedTestController == nullptr || deps_.backgroundTasks == nullptr || !deps_.mutableConfig) {
         if (deps_.appendResult) {
             deps_.appendResult(OperationResult::fail(QStringLiteral("Speed test service is unavailable.")));
         }
@@ -89,7 +89,7 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
     }
 
     Config& config = deps_.mutableConfig();
-    const OperationResult startResult = deps_.speedTestService->start(config, items);
+    const OperationResult startResult = deps_.speedTestController->start(config, items);
     if (!startResult.success && deps_.appendResult) {
         deps_.appendResult(startResult);
     }
@@ -123,8 +123,8 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
 
 void SpeedTestCoordinator::cancelActiveSpeedTest()
 {
-    if (deps_.speedTestService != nullptr) {
-        deps_.speedTestService->cancel();
+    if (deps_.speedTestController != nullptr) {
+        deps_.speedTestController->cancel();
     }
     speedTestResultsDirty_ = false;
     speedTestTaskToken_ = {};

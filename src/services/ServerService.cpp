@@ -1,8 +1,6 @@
 #include "services/ServerService.h"
 
 #include <QDate>
-#include <QFile>
-#include <QFileInfo>
 #include <QSet>
 #include <QStringList>
 #include <QUuid>
@@ -12,9 +10,27 @@
 
 #include "common/PortValidator.h"
 
+namespace {
+
+QString normalizedServerRemarks(const VmessItem& server)
+{
+    const QString trimmedRemarks = server.remarks.trimmed();
+    if (!trimmedRemarks.isEmpty()) {
+        return trimmedRemarks;
+    }
+
+    if (server.configType == ConfigType::Custom) {
+        return QStringLiteral("import custom@%1").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")));
+    }
+
+    return QStringLiteral("%1:%2").arg(server.address).arg(server.port);
+}
+
+} // namespace
+
 ServerService::ServerService(IConfigRepository& repository, QString customConfigDirectory)
     : repository_(repository)
-    , customConfigDirectory_(std::move(customConfigDirectory))
+    , customConfigStore_(std::move(customConfigDirectory))
 {
 }
 
@@ -32,17 +48,13 @@ OperationResult ServerService::addServer(Config& config, const VmessItem& item)
 
     VmessItem server = item;
     if (server.configType == ConfigType::Custom) {
-        const OperationResult customResult = prepareCustomServer(server, nullptr);
+        const OperationResult customResult = customConfigStore_.prepareServer(server, nullptr);
         if (!customResult.success) {
             return customResult;
         }
     }
     server.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    server.remarks = server.remarks.trimmed().isEmpty()
-        ? (server.configType == ConfigType::Custom
-                ? QStringLiteral("import custom@%1").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")))
-                : QStringLiteral("%1:%2").arg(server.address).arg(server.port))
-        : server.remarks.trimmed();
+    server.remarks = normalizedServerRemarks(server);
     config.collection().servers.append(server);
 
     if (config.currentIndexId.trimmed().isEmpty()) {
@@ -85,16 +97,12 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
         ? item.preSocksPort
         : it->preSocksPort;
     if (updated.configType == ConfigType::Custom) {
-        const OperationResult customResult = prepareCustomServer(updated, &(*it));
+        const OperationResult customResult = customConfigStore_.prepareServer(updated, &(*it));
         if (!customResult.success) {
             return customResult;
         }
     }
-    updated.remarks = updated.remarks.trimmed().isEmpty()
-        ? (updated.configType == ConfigType::Custom
-                ? QStringLiteral("import custom@%1").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")))
-                : QStringLiteral("%1:%2").arg(updated.address).arg(updated.port))
-        : updated.remarks.trimmed();
+    updated.remarks = normalizedServerRemarks(updated);
 
     *it = updated;
 
@@ -142,7 +150,7 @@ OperationResult ServerService::removeServers(Config& config, const QList<QString
     }
 
     for (const QString& address : removedCustomAddresses) {
-        removeManagedCustomConfig(address);
+        customConfigStore_.removeManagedConfig(address);
     }
 
     return OperationResult::ok(QStringLiteral("Server selection removed."));
@@ -158,62 +166,12 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
-    QSet<QString> selectedIds;
-    for (const QString& indexId : indexIds) {
-        const QString trimmed = indexId.trimmed();
-        if (!trimmed.isEmpty()) {
-            selectedIds.insert(trimmed);
-        }
-    }
+    const QStringList selectedIds = ServerListOperations::normalizedIndexIds(indexIds);
     if (selectedIds.isEmpty()) {
         return OperationResult::ok(QStringLiteral("No server was selected."));
     }
 
-    bool moved = false;
-    switch (operation) {
-    case ServerMoveOperation::Up:
-        for (int index = 1; index < config.collection().servers.size(); ++index) {
-            if (selectedIds.contains(config.collection().servers.at(index).indexId)
-                && !selectedIds.contains(config.collection().servers.at(index - 1).indexId)) {
-                config.collection().servers.swapItemsAt(index - 1, index);
-                moved = true;
-            }
-        }
-        break;
-    case ServerMoveOperation::Down:
-        for (int index = config.collection().servers.size() - 2; index >= 0; --index) {
-            if (selectedIds.contains(config.collection().servers.at(index).indexId)
-                && !selectedIds.contains(config.collection().servers.at(index + 1).indexId)) {
-                config.collection().servers.swapItemsAt(index, index + 1);
-                moved = true;
-            }
-        }
-        break;
-    case ServerMoveOperation::Top:
-    case ServerMoveOperation::Bottom: {
-        QList<VmessItem> selectedItems;
-        QList<VmessItem> remainingItems;
-        selectedItems.reserve(config.collection().servers.size());
-        remainingItems.reserve(config.collection().servers.size());
-        for (const VmessItem& item : config.collection().servers) {
-            if (selectedIds.contains(item.indexId)) {
-                selectedItems.append(item);
-            } else {
-                remainingItems.append(item);
-            }
-        }
-
-        if (!selectedItems.isEmpty() && selectedItems.size() != config.collection().servers.size()) {
-            config.collection().servers = operation == ServerMoveOperation::Top
-                ? selectedItems + remainingItems
-                : remainingItems + selectedItems;
-            moved = true;
-        }
-        break;
-    }
-    }
-
-    if (!moved) {
+    if (!ServerListOperations::moveServers(config.collection().servers, selectedIds, operation)) {
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
@@ -230,54 +188,20 @@ OperationResult ServerService::reorderServers(Config& config, const QList<QStrin
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
-    QStringList normalizedIds;
-    for (const QString& indexId : orderedIndexIds) {
-        const QString trimmed = indexId.trimmed();
-        if (!trimmed.isEmpty() && !normalizedIds.contains(trimmed)) {
-            normalizedIds.append(trimmed);
-        }
-    }
+    const QStringList normalizedIds = ServerListOperations::normalizedIndexIds(orderedIndexIds);
     if (normalizedIds.isEmpty()) {
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
 
-    QList<VmessItem> reordered;
-    reordered.reserve(config.collection().servers.size());
-
-    for (const QString& indexId : normalizedIds) {
-        const auto it = std::find_if(
-            config.collection().servers.cbegin(),
-            config.collection().servers.cend(),
-            [&indexId](const VmessItem& item) {
-                return item.indexId == indexId;
-            });
-        if (it != config.collection().servers.cend()) {
-            reordered.append(*it);
-        }
-    }
-
-    for (const VmessItem& item : config.collection().servers) {
-        if (!normalizedIds.contains(item.indexId)) {
-            reordered.append(item);
-        }
-    }
-
-    if (reordered.size() != config.collection().servers.size()) {
+    const ServerListOperations::ReorderResult reorderResult =
+        ServerListOperations::reorderServers(config.collection().servers, normalizedIds);
+    if (reorderResult == ServerListOperations::ReorderResult::Invalid) {
         return OperationResult::fail(QStringLiteral("Failed to rebuild the requested server order."));
     }
 
-    if (std::equal(
-            reordered.cbegin(),
-            reordered.cend(),
-            config.collection().servers.cbegin(),
-            config.collection().servers.cend(),
-            [](const VmessItem& left, const VmessItem& right) {
-                return left.indexId == right.indexId;
-            })) {
+    if (reorderResult == ServerListOperations::ReorderResult::Unchanged) {
         return OperationResult::ok(QStringLiteral("Server order unchanged."));
     }
-
-    config.collection().servers = reordered;
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save configuration after drag reordering server(s)."));
@@ -352,23 +276,7 @@ bool ServerService::save(Config& config)
 
 QString ServerService::resolveCustomConfigPath(const QString& address) const
 {
-    const QString trimmed = address.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    if (QFileInfo::exists(trimmed)) {
-        return QFileInfo(trimmed).absoluteFilePath();
-    }
-
-    if (!customConfigDirectory_.trimmed().isEmpty()) {
-        const QString managedPath = QDir(customConfigDirectory_).filePath(trimmed);
-        if (QFileInfo::exists(managedPath)) {
-            return QFileInfo(managedPath).absoluteFilePath();
-        }
-    }
-
-    return trimmed;
+    return customConfigStore_.resolveConfigPath(address);
 }
 
 OperationResult ServerService::validateServer(const VmessItem& item)
@@ -389,71 +297,4 @@ OperationResult ServerService::validateServer(const VmessItem& item)
     }
 
     return OperationResult::ok();
-}
-
-OperationResult ServerService::prepareCustomServer(VmessItem& server, const VmessItem* existing) const
-{
-    const QString sourcePath = resolveCustomConfigPath(server.address);
-    if (sourcePath.trimmed().isEmpty() || !QFileInfo::exists(sourcePath)) {
-        return OperationResult::fail(QStringLiteral("Custom config file does not exist."));
-    }
-
-    if (customConfigDirectory_.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Custom config directory is unavailable."));
-    }
-
-    QDir customDirectory(customConfigDirectory_);
-    if (!customDirectory.exists() && !QDir().mkpath(customDirectory.absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create custom config directory."));
-    }
-
-    const QString existingStoredPath = existing == nullptr ? QString() : resolveCustomConfigPath(existing->address);
-    if (!existingStoredPath.isEmpty()
-        && QFileInfo(existingStoredPath).absoluteFilePath().compare(QFileInfo(sourcePath).absoluteFilePath(), Qt::CaseInsensitive) == 0) {
-        server.address = existing->address;
-        return OperationResult::ok();
-    }
-
-    const QString extension = QFileInfo(sourcePath).suffix();
-    const QString targetFileName = extension.isEmpty()
-        ? QUuid::createUuid().toString(QUuid::WithoutBraces)
-        : QStringLiteral("%1.%2").arg(QUuid::createUuid().toString(QUuid::WithoutBraces), extension);
-    const QString targetPath = customDirectory.filePath(targetFileName);
-
-    if (QFileInfo::exists(targetPath)) {
-        QFile::remove(targetPath);
-    }
-    if (!QFile::copy(sourcePath, targetPath)) {
-        return OperationResult::fail(QStringLiteral("Failed to copy custom config file into managed storage."));
-    }
-
-    if (!existingStoredPath.isEmpty() && isManagedCustomConfigPath(existingStoredPath) && QFileInfo::exists(existingStoredPath)) {
-        QFile::remove(existingStoredPath);
-    }
-
-    server.address = targetFileName;
-    server.port = 0;
-    return OperationResult::ok();
-}
-
-bool ServerService::removeManagedCustomConfig(const QString& address) const
-{
-    const QString resolvedPath = resolveCustomConfigPath(address);
-    if (!isManagedCustomConfigPath(resolvedPath) || !QFileInfo::exists(resolvedPath)) {
-        return false;
-    }
-
-    return QFile::remove(resolvedPath);
-}
-
-bool ServerService::isManagedCustomConfigPath(const QString& filePath) const
-{
-    if (customConfigDirectory_.trimmed().isEmpty() || filePath.trimmed().isEmpty()) {
-        return false;
-    }
-
-    const QString rootPath = QDir::cleanPath(QDir(customConfigDirectory_).absolutePath()).replace('\\', '/').toLower();
-    const QString absoluteFilePath = QDir::cleanPath(QFileInfo(filePath).absoluteFilePath()).replace('\\', '/').toLower();
-    return absoluteFilePath == rootPath
-        || absoluteFilePath.startsWith(rootPath + QStringLiteral("/"));
 }

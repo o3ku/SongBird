@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 
+#include "runtime/CoreProcessOutputBuffer.h"
 #include "runtime/ICoreProcessHost.h"
 
 class QtCoreProcessHost final : public ICoreProcessHost {
@@ -53,7 +54,6 @@ private:
     std::shared_ptr<ProcessHandle> processHandle_ = std::make_shared<ProcessHandle>();
     bool stopRequested_ = false;
     bool startNotified_ = false;
-    QString standardOutputBuffer_;
-    QString standardErrorBuffer_;
+    CoreProcessOutputBuffer outputBuffer_;
     QTimer* forcedKillTimer_ = nullptr;
 };

@@ -27,7 +27,6 @@ private:
         const QUrl& url,
         const QString& fileName,
         const QString& targetPath) const;
-    OperationResult downloadBytes(const QUrl& url, const QString& fileName, QByteArray* content) const;
     static QUrl buildDownloadUrl(const QString& geoName);
     static QUrl buildSingBoxRuleSetDownloadUrl(const QString& tag);
 

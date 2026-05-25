@@ -2,13 +2,13 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 
 #include <QObject>
 #include <QPointer>
 #include <QString>
 
 #include "app/BackgroundTaskCoordinator.h"
+#include "app/CoreUpdatePendingState.h"
 #include "common/OperationResult.h"
 #include "domain/models/VmessItem.h"
 #include "services/CoreUpdateService.h"
@@ -106,7 +106,6 @@ private:
         QPointer<QWidget> dialogParentGuard,
         std::function<void(const QString&)> progressObserver,
         std::function<void(const OperationResult&)> completionObserver);
-    void clearPendingCoreUpdate();
 
     QObject* fallbackUiContext() const;
     QWidget* fallbackDialogParent() const;
@@ -115,13 +114,5 @@ private:
     std::weak_ptr<char> weakLifetimeGuard() const;
 
     Dependencies deps_;
-
-    CoreType pendingCoreUpdateType_ = CoreType::Unknown;
-    bool pendingCoreUpdateStartAfterSuccess_ = false;
-    bool pendingCoreUpdateSkipLocalVersionCheck_ = false;
-    QPointer<QObject> pendingCoreUpdateProgressContext_;
-    QPointer<QWidget> pendingCoreUpdateDialogParent_;
-    std::function<void(const QString&)> pendingCoreUpdateProgressObserver_;
-    std::function<void(const OperationResult&)> pendingCoreUpdateCompletionObserver_;
-    BackgroundTaskCoordinator::Token pendingCoreUpdateTaskToken_;
+    CoreUpdatePendingState pendingCoreUpdate_;
 };

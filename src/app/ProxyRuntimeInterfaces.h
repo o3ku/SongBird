@@ -32,7 +32,6 @@ public:
     virtual ~IRuntimeEnvironment() = default;
 
     virtual void cleanupPortProcesses() = 0;
-    virtual void removeStaleSingBoxCache() = 0;
     virtual OperationResult removeStaleTunAdapter() = 0;
     virtual bool skipCoreChecks() const = 0;
     virtual bool isWindowsPlatform() const = 0;

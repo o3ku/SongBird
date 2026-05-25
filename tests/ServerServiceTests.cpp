@@ -1,5 +1,9 @@
 #include <QtTest>
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QUuid>
 
 #include "persistence/IConfigRepository.h"
@@ -58,6 +62,7 @@ private slots:
     void addServerRejectsInvalidPort();
     void addServerReturnsFailureWhenSaveFails();
     void addServerAppendsToList();
+    void addCustomServerCopiesConfigIntoManagedStorage();
 
     // updateServer
     void updateServerModifiesExisting();
@@ -79,6 +84,7 @@ private slots:
     void removeServerClearsDefaultIfNoneLeft();
     void removeServerReturnsOkForEmptyList();
     void removeServerReturnsFailureWhenSaveFails();
+    void removeCustomServerDeletesManagedConfig();
 
     // setDefaultServer
     void setDefaultServerUpdatesCurrentIndexId();
@@ -263,6 +269,38 @@ void ServerServiceTests::addServerAppendsToList()
     QCOMPARE(config.collection().servers.size(), 2);
     QCOMPARE(config.collection().servers.first().address, kAddr1);
     QCOMPARE(config.collection().servers.last().address, kAddr2);
+}
+
+void ServerServiceTests::addCustomServerCopiesConfigIntoManagedStorage()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    const QString sourcePath = QDir(temporaryDirectory.path()).filePath(QStringLiteral("custom.json"));
+    QFile sourceFile(sourcePath);
+    QVERIFY(sourceFile.open(QIODevice::WriteOnly | QIODevice::Text));
+    QVERIFY(sourceFile.write("{}") > 0);
+    sourceFile.close();
+
+    const QString managedDirectory = QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed"));
+    ServerService service(*mock_, managedDirectory);
+
+    Config config;
+    VmessItem item;
+    item.configType = ConfigType::Custom;
+    item.address = sourcePath;
+    item.preSocksPort = 1080;
+
+    const OperationResult result = service.addServer(config, item);
+    QVERIFY(result.success);
+    QCOMPARE(config.collection().servers.size(), 1);
+
+    const VmessItem stored = config.collection().servers.first();
+    QVERIFY(stored.address != sourcePath);
+    QCOMPARE(stored.port, 0);
+    const QString managedPath = QDir(managedDirectory).filePath(stored.address);
+    QVERIFY(QFileInfo::exists(managedPath));
+    QCOMPARE(service.resolveCustomConfigPath(stored.address), QFileInfo(managedPath).absoluteFilePath());
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +538,35 @@ void ServerServiceTests::removeServerReturnsFailureWhenSaveFails()
 
     const OperationResult result = service_->removeServers(config, {kId1});
     QVERIFY(!result.success);
+}
+
+void ServerServiceTests::removeCustomServerDeletesManagedConfig()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    const QString sourcePath = QDir(temporaryDirectory.path()).filePath(QStringLiteral("custom.json"));
+    QFile sourceFile(sourcePath);
+    QVERIFY(sourceFile.open(QIODevice::WriteOnly | QIODevice::Text));
+    QVERIFY(sourceFile.write("{}") > 0);
+    sourceFile.close();
+
+    const QString managedDirectory = QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed"));
+    ServerService service(*mock_, managedDirectory);
+
+    Config config;
+    VmessItem item;
+    item.configType = ConfigType::Custom;
+    item.address = sourcePath;
+    QVERIFY(service.addServer(config, item).success);
+
+    const QString indexId = config.collection().servers.first().indexId;
+    const QString managedPath = service.resolveCustomConfigPath(config.collection().servers.first().address);
+    QVERIFY(QFileInfo::exists(managedPath));
+
+    const OperationResult result = service.removeServers(config, {indexId});
+    QVERIFY(result.success);
+    QVERIFY(!QFileInfo::exists(managedPath));
 }
 
 // ---------------------------------------------------------------------------

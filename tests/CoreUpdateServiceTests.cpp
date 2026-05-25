@@ -11,12 +11,14 @@
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/core/ICoreBackend.h"
 #include "services/CoreUpdateService.h"
+#include "services/CoreUpdateVersion.h"
 
 class CoreUpdateServiceTests : public QObject {
     Q_OBJECT
 
 private slots:
     void backendMetadataMatchesCatalog();
+    void versionComparisonNormalizesTagsAndComparesNumericParts();
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
     void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
@@ -30,6 +32,18 @@ void CoreUpdateServiceTests::backendMetadataMatchesCatalog()
         QCOMPARE(backend->displayName(), catalogCoreDisplayName(coreType));
         QCOMPARE(backend->executableNames(), catalogCoreExecutableNames(coreType));
     }
+}
+
+void CoreUpdateServiceTests::versionComparisonNormalizesTagsAndComparesNumericParts()
+{
+    QCOMPARE(CoreUpdateVersion::normalizeTag(QStringLiteral("Version 1.2.3")), QStringLiteral("v1.2.3"));
+    QCOMPARE(CoreUpdateVersion::normalizeTag(QStringLiteral("  V2.0.0  ")), QStringLiteral("v2.0.0"));
+
+    QVERIFY(CoreUpdateVersion::isNewerThan(QStringLiteral("v1.10.0"), QStringLiteral("v1.9.9")));
+    QVERIFY(CoreUpdateVersion::isNewerThan(QStringLiteral("v2.0.0"), QStringLiteral("v1.99.99")));
+    QVERIFY(CoreUpdateVersion::isNewerThan(QStringLiteral("V2.0.0"), QStringLiteral("version 1.99.99")));
+    QVERIFY(!CoreUpdateVersion::isNewerThan(QStringLiteral("v1.2.0"), QStringLiteral("v1.2")));
+    QVERIFY(!CoreUpdateVersion::isNewerThan(QStringLiteral("v1.2.3-beta"), QStringLiteral("v1.2.3")));
 }
 
 void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDuringDownload()

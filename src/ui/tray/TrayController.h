@@ -9,22 +9,12 @@
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/VmessItem.h"
+#include "ui/tray/TrayMenuSupport.h"
 
 class QAction;
 class MainWindow;
 class QMenu;
 class QSystemTrayIcon;
-
-struct TrayServerEntry {
-    QString indexId;
-    QString displayName;
-    QString testResult;
-};
-
-struct TrayRoutingEntry {
-    QString displayName;
-    QString customIconPath;
-};
 
 class TrayController final : public QObject {
     Q_OBJECT
@@ -60,9 +50,6 @@ private:
     void updateMenuText();
     void updateToolTip();
     void updateTrayIcon();
-    void rebuildServerMenu();
-    void rebuildRoutingMenu();
-    static QString describeRouting(const RoutingItem& item, int index);
 
     QPointer<MainWindow> mainWindow_;
     QPointer<QSystemTrayIcon> trayIcon_;

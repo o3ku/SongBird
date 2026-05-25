@@ -182,10 +182,6 @@ struct ProxySessionHarness final
     {
     }
 
-    void removeStaleSingBoxCache() override
-    {
-    }
-
     OperationResult removeStaleTunAdapter() override
     {
         ++tunCleanupCount;

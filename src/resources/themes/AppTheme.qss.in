@@ -103,6 +103,10 @@ QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: @surface@; bor
 QLineEdit#serverFilterEdit:hover, QLineEdit#logFilterEdit:hover { background: @surface@; border: 1px solid @inputBorderHover@; }
 QLineEdit#serverFilterEdit:focus, QLineEdit#logFilterEdit:focus { background: @surface@; border: 1px solid @focus@; }
 QLineEdit#uwpLoopbackFilterEdit { padding: 4px 8px; }
+QPushButton#uwpLoopbackRefreshButton { background: transparent; border: 1px solid transparent; color: @textMuted@; }
+QPushButton#uwpLoopbackRefreshButton:hover { background: @hover@; border: 1px solid @subtleButtonBorder@; color: @text@; }
+QPushButton#uwpLoopbackRefreshButton:pressed { background: @selection@; border: 1px solid @focus@; color: @text@; }
+QPushButton#uwpLoopbackRefreshButton:disabled { background: transparent; border: 1px solid transparent; color: @textSubtle@; }
 #logHeaderRow { background: @sectionHeader@; border: none; border-bottom: 1px solid @border@; }
 QWidget#loadingOverlay { background: @overlay@; border: none; }
 QWidget#loadingContentWidget { background: @loadingContent@; border: 1px solid @border@; }

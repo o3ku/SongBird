@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QDir>
 #include <QList>
 #include <QString>
 
@@ -8,13 +7,8 @@
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
 #include "persistence/IConfigRepository.h"
-
-enum class ServerMoveOperation {
-    Top = 0,
-    Up,
-    Down,
-    Bottom
-};
+#include "services/ServerCustomConfigStore.h"
+#include "services/ServerListOperations.h"
 
 class ServerService {
 public:
@@ -34,10 +28,7 @@ public:
 
 private:
     static OperationResult validateServer(const VmessItem& item);
-    OperationResult prepareCustomServer(VmessItem& server, const VmessItem* existing) const;
-    bool removeManagedCustomConfig(const QString& address) const;
-    bool isManagedCustomConfigPath(const QString& filePath) const;
 
     IConfigRepository& repository_;
-    QString customConfigDirectory_;
+    ServerCustomConfigStore customConfigStore_;
 };

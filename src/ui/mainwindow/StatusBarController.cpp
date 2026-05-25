@@ -2,7 +2,6 @@
 
 #include <QContextMenuEvent>
 #include <QEvent>
-#include <QFontMetrics>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPoint>
@@ -12,56 +11,13 @@
 #include <QTimer>
 #include <QWidget>
 
-#include "common/AppPlatform.h"
+#include "ui/mainwindow/StatusBarSupport.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
 
 constexpr int CurrentServerNameMaximumWidth = 260;
 constexpr int CurrentServerTooltipNameMaximumWidth = 360;
-
-QString elideTextWithThreeDots(const QFontMetrics& fontMetrics, const QString& text, int availableWidth)
-{
-    static const QString ellipsis = QStringLiteral("...");
-    if (availableWidth <= 0 || fontMetrics.horizontalAdvance(text) <= availableWidth) {
-        return text;
-    }
-
-    if (fontMetrics.horizontalAdvance(ellipsis) >= availableWidth) {
-        return ellipsis;
-    }
-
-    int low = 0;
-    int high = text.size();
-    while (low < high) {
-        const int mid = (low + high + 1) / 2;
-        const QString candidate = text.left(mid) + ellipsis;
-        if (fontMetrics.horizontalAdvance(candidate) <= availableWidth) {
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    return text.left(low) + ellipsis;
-}
-
-QString displayCurrentServerName(const QLabel* label, const QString& name)
-{
-    const QString trimmed = name.trimmed();
-    if (trimmed.isEmpty()) {
-        return noServerPlaceholderText();
-    }
-
-    if (label == nullptr) {
-        return trimmed;
-    }
-
-    return elideTextWithThreeDots(
-        label->fontMetrics(),
-        trimmed,
-        CurrentServerNameMaximumWidth);
-}
 
 } // namespace
 
@@ -177,7 +133,7 @@ void StatusBarController::refreshTransientStatusLabel(bool ownerVisible)
     QString visibleText = fullText;
     const int availableWidth = transientStatusLabel_->contentsRect().width();
     if (ownerVisible && availableWidth > 0) {
-        visibleText = elideTextWithThreeDots(
+        visibleText = StatusBarSupport::elideTextWithThreeDots(
             transientStatusLabel_->fontMetrics(),
             fullText,
             availableWidth);
@@ -238,32 +194,20 @@ bool StatusBarController::handleEvent(QObject* watched, QEvent* event)
 void StatusBarController::updateStatusIndicators()
 {
     if (currentServerStatusLabel_ != nullptr) {
-        const QString currentServerText = displayCurrentServerName(
-            currentServerStatusLabel_,
-            snapshot_.currentServerName);
-        QString labelText = QObject::tr("Current: %1").arg(currentServerText);
-        if (!snapshot_.currentServerLocation.isEmpty()) {
-            labelText += QStringLiteral(" | %1").arg(snapshot_.currentServerLocation);
-        }
-        if (!snapshot_.currentServerWarning.isEmpty()) {
-            labelText += QStringLiteral(" | %1").arg(snapshot_.currentServerWarning);
-        }
-        currentServerStatusLabel_->setText(labelText);
-        currentServerStatusLabel_->setToolTip(
-            snapshot_.currentServerName.trimmed().isEmpty()
-                ? QObject::tr("Click to show the current server.")
-                : QObject::tr("Click to show the current server: %1").arg(
-                    elideTextWithThreeDots(
-                        currentServerStatusLabel_->fontMetrics(),
-                        snapshot_.currentServerName.trimmed(),
-                        CurrentServerTooltipNameMaximumWidth)));
+        currentServerStatusLabel_->setText(StatusBarSupport::currentServerStatusText(
+            currentServerStatusLabel_->fontMetrics(),
+            snapshot_.currentServerName,
+            snapshot_.currentServerLocation,
+            snapshot_.currentServerWarning,
+            CurrentServerNameMaximumWidth));
+        currentServerStatusLabel_->setToolTip(StatusBarSupport::currentServerToolTip(
+            currentServerStatusLabel_->fontMetrics(),
+            snapshot_.currentServerName,
+            CurrentServerTooltipNameMaximumWidth));
     }
 
     if (routingStatusLabel_ != nullptr) {
-        const QString listenText = snapshot_.listenSummary.isEmpty()
-            ? QObject::tr("Unavailable")
-            : snapshot_.listenSummary;
-        routingStatusLabel_->setText(QObject::tr("Listening: %1").arg(listenText));
+        routingStatusLabel_->setText(StatusBarSupport::routingStatusText(snapshot_.listenSummary));
     }
 
     if (transientStatusLabel_ != nullptr) {
@@ -273,19 +217,16 @@ void StatusBarController::updateStatusIndicators()
 
 QString StatusBarController::currentTransientStatusText() const
 {
-    if (!transientStatusMessage_.isEmpty()) {
-        return transientStatusMessage_;
-    }
-
-    if (snapshot_.backgroundTaskRunning && !snapshot_.backgroundTaskDescription.isEmpty()) {
-        return QObject::tr("Task: %1").arg(snapshot_.backgroundTaskDescription);
-    }
-
-    return QObject::tr("Ready");
+    return StatusBarSupport::transientStatusText(
+        transientStatusMessage_,
+        snapshot_.backgroundTaskRunning,
+        snapshot_.backgroundTaskDescription);
 }
 
 bool StatusBarController::shouldSuppressRoutineStatus() const
 {
-    return !transientStatusMessage_.isEmpty()
-        || (snapshot_.backgroundTaskRunning && !snapshot_.backgroundTaskDescription.isEmpty());
+    return StatusBarSupport::shouldSuppressRoutineStatus(
+        transientStatusMessage_,
+        snapshot_.backgroundTaskRunning,
+        snapshot_.backgroundTaskDescription);
 }

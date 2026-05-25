@@ -9,6 +9,7 @@
 
 #include "domain/models/Config.h"
 #include "domain/models/CoreTypeItem.h"
+#include "ui/dialogs/CoreSettingsPageSupport.h"
 
 class QCheckBox;
 class QComboBox;
@@ -38,11 +39,6 @@ public:
     void setCoreDownloadHandler(const std::function<void(CoreType)>& handler);
 
 private:
-    struct CoreProtocolEntry {
-        QString name;
-        ConfigType configType = ConfigType::VMess;
-    };
-
     struct CoreStatusRow {
         QLabel* versionLabel = nullptr;
         QLabel* statusLabel = nullptr;
@@ -57,7 +53,6 @@ private:
     void setupUi();
     void reloadCoreTypeTable();
     void refreshCoreStatusPresentation();
-    QString coreStatusTextForProgress(const QString& message) const;
 
     Config config_;
     QCheckBox* enableCacheFile4SboxCheck_ = nullptr;
@@ -67,7 +62,7 @@ private:
     QCheckBox* tunEnableLegacyProtectCheck_ = nullptr;
     QList<CoreTypeItem> coreTypeItems_;
     QList<QComboBox*> coreTypeCombos_;
-    QList<CoreProtocolEntry> coreProtocolEntries_;
+    QList<CoreSettingsPageSupport::CoreProtocolEntry> coreProtocolEntries_;
     QList<CoreType> existingCoreTypes_;
     QTabWidget* coreDetailTabs_ = nullptr;
     QMap<int, CoreStatusRow> coreStatusRows_;

@@ -8,6 +8,7 @@
 #include <QSignalBlocker>
 #include <QTabBar>
 
+#include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/models/ServerFilterProxyModel.h"
 
 SubscriptionViewController::SubscriptionViewController(
@@ -29,18 +30,8 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
         return;
     }
 
-    QSet<QString> knownSubscriptionIds;
-    for (const SubItem& item : subscriptions_) {
-        if (!item.enabled) {
-            continue;
-        }
-
-        const QString subscriptionId = item.id.trimmed();
-        if (!subscriptionId.isEmpty()) {
-            knownSubscriptionIds.insert(subscriptionId);
-        }
-    }
-    context_.serverFilterModel->setKnownSubscriptionIds(knownSubscriptionIds);
+    context_.serverFilterModel->setKnownSubscriptionIds(
+        SubscriptionViewSupport::enabledSubscriptionIds(subscriptions_));
 
     {
         const QSignalBlocker blocker(context_.subscriptionTabBar);
@@ -60,7 +51,9 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
             }
 
             addedSubscriptionIds.insert(subscriptionId);
-            const int index = context_.subscriptionTabBar->insertTab(0, describeSubscription(item));
+            const int index = context_.subscriptionTabBar->insertTab(
+                0,
+                SubscriptionViewSupport::subscriptionDisplayName(item));
             context_.subscriptionTabBar->setTabData(index, QStringLiteral("sub:%1").arg(subscriptionId));
         }
 
@@ -114,7 +107,7 @@ bool SubscriptionViewController::selectSubscriptionTab(const QString& selectionI
         return false;
     }
 
-    const QString targetTabKey = resolveTabKeyFromSelectionId(selectionId);
+    const QString targetTabKey = SubscriptionViewSupport::tabKeyFromSelectionId(selectionId);
     for (int index = 0; index < context_.subscriptionTabBar->count(); ++index) {
         if (context_.subscriptionTabBar->tabData(index).toString() == targetTabKey) {
             context_.subscriptionTabBar->setCurrentIndex(index);
@@ -136,7 +129,7 @@ QString SubscriptionViewController::currentTabKey() const
 
 QString SubscriptionViewController::currentSubscriptionUrl() const
 {
-    const QString subscriptionId = resolveSubscriptionIdFromTabKey(currentTabKey());
+    const QString subscriptionId = SubscriptionViewSupport::subscriptionIdFromTabKey(currentTabKey());
     if (subscriptionId.isEmpty()) {
         return {};
     }
@@ -152,7 +145,7 @@ QString SubscriptionViewController::currentSubscriptionUrl() const
 
 QString SubscriptionViewController::persistedSelectionId() const
 {
-    return resolvePersistedSelectionId(currentTabKey());
+    return SubscriptionViewSupport::persistedSelectionIdFromTabKey(currentTabKey());
 }
 
 bool SubscriptionViewController::isUngroupedTabSelected() const
@@ -176,7 +169,7 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
     }
 
     const QString tabKey = context_.subscriptionTabBar->tabData(tabIndex).toString();
-    const QString subscriptionId = resolveSubscriptionIdFromTabKey(tabKey);
+    const QString subscriptionId = SubscriptionViewSupport::subscriptionIdFromTabKey(tabKey);
     QMenu menu(context_.subscriptionTabBar);
 
     if (!subscriptionId.isEmpty()) {
@@ -239,54 +232,4 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
     });
 
     menu.exec(context_.subscriptionTabBar->mapToGlobal(position));
-}
-
-QString SubscriptionViewController::resolveTabKeyFromSelectionId(const QString& selectionId)
-{
-    const QString normalized = selectionId.trimmed();
-    if (normalized == QStringLiteral("__unsubscribed__")
-        || normalized.compare(QStringLiteral("ungrouped"), Qt::CaseInsensitive) == 0) {
-        return QStringLiteral("ungrouped");
-    }
-
-    return normalized.isEmpty()
-        ? QStringLiteral("ungrouped")
-        : QStringLiteral("sub:%1").arg(normalized);
-}
-
-QString SubscriptionViewController::resolvePersistedSelectionId(const QString& tabKey)
-{
-    if (tabKey == QStringLiteral("ungrouped")) {
-        return QStringLiteral("__unsubscribed__");
-    }
-
-    if (tabKey.startsWith(QStringLiteral("sub:"))) {
-        return tabKey.mid(QStringLiteral("sub:").size());
-    }
-
-    return {};
-}
-
-QString SubscriptionViewController::resolveSubscriptionIdFromTabKey(const QString& tabKey)
-{
-    return tabKey.startsWith(QStringLiteral("sub:"))
-        ? tabKey.mid(QStringLiteral("sub:").size())
-        : QString();
-}
-
-QString SubscriptionViewController::describeSubscription(const SubItem& item)
-{
-    const QString remarks = item.remarks.trimmed();
-    if (!remarks.isEmpty()) {
-        return remarks;
-    }
-
-    const QString url = item.url.trimmed();
-    if (!url.isEmpty()) {
-        return url;
-    }
-
-    return item.id.trimmed().isEmpty()
-        ? QObject::tr("Subscription")
-        : item.id.trimmed();
 }

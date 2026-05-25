@@ -13,7 +13,6 @@ class QPushButton;
 class QShowEvent;
 class QStackedLayout;
 class QTableWidget;
-class QTableWidgetItem;
 
 class UwpLoopbackDialog final : public QDialog {
     Q_OBJECT
@@ -41,7 +40,6 @@ private:
     bool confirmDiscardChanges();
     bool isPackageDirty(const QString& packageFamilyName) const;
     bool currentLoopbackState(const QString& packageFamilyName) const;
-    QTableWidgetItem* createReadOnlyItem(const QString& text) const;
 
     WindowsUwpLoopbackService loopbackService_;
     QList<WindowsUwpPackageInfo> packages_;

@@ -2,16 +2,12 @@
 
 #include <utility>
 
-#include <QAbstractItemView>
 #include <QApplication>
-#include <QFrame>
-#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMetaObject>
 #include <QPointer>
 #include <QPushButton>
-#include <QSignalBlocker>
 #include <QShowEvent>
 #include <QStackedLayout>
 #include <QTableWidget>
@@ -23,27 +19,10 @@
 
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
+#include "ui/dialogs/UwpLoopbackDialogSupport.h"
 #include "ui/theme/AppTheme.h"
 
-namespace {
-
-constexpr int kEnabledColumn = 0;
-constexpr int kAppColumn = 1;
-constexpr int kPackageColumn = 2;
-constexpr int kPackageRole = Qt::UserRole + 100;
-constexpr int kOriginalEnabledRole = Qt::UserRole + 101;
-
-QString displayNameForPackage(const WindowsUwpPackageInfo& package)
-{
-    return package.name.trimmed().isEmpty() ? package.packageFamilyName : package.name.trimmed();
-}
-
-int tableRowHeight(const QWidget* widget)
-{
-    return widget == nullptr ? 0 : widget->fontMetrics().height() + 8;
-}
-
-} // namespace
+namespace UwpUi = UwpLoopbackDialogSupport;
 
 UwpLoopbackDialog::UwpLoopbackDialog(QWidget* parent)
     : QDialog(parent)
@@ -103,30 +82,7 @@ void UwpLoopbackDialog::setupUi()
 
     table_ = new QTableWidget(this);
     table_->setObjectName(QStringLiteral("uwpLoopbackTable"));
-    table_->setColumnCount(3);
-    table_->setHorizontalHeaderLabels({tr("Enabled"), tr("App"), tr("Package Family Name")});
-    AppTheme::applyCompactFont({table_, table_->horizontalHeader()});
-    table_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table_->setSelectionMode(QAbstractItemView::SingleSelection);
-    table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table_->setAlternatingRowColors(true);
-    table_->setFocusPolicy(Qt::StrongFocus);
-    table_->setFrameShape(QFrame::NoFrame);
-    table_->setContentsMargins(0, 0, 0, 0);
-    table_->verticalHeader()->setVisible(false);
-    const int rowHeight = tableRowHeight(table_);
-    table_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    table_->verticalHeader()->setDefaultSectionSize(rowHeight);
-    table_->verticalHeader()->setMinimumSectionSize(rowHeight);
-    table_->horizontalHeader()->setSectionResizeMode(kEnabledColumn, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(kAppColumn, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(kPackageColumn, QHeaderView::Stretch);
-    table_->horizontalHeader()->setSectionsClickable(true);
-    table_->horizontalHeader()->setHighlightSections(false);
-    const int headerHeight = table_->horizontalHeader()->fontMetrics().height() + 8;
-    table_->horizontalHeader()->setDefaultSectionSize(headerHeight);
-    table_->horizontalHeader()->setMinimumSectionSize(headerHeight);
-    AppTheme::applyServerTableStyle(table_);
+    UwpUi::configurePackageTable(table_, {tr("Enabled"), tr("App"), tr("Package Family Name")});
 
     loadingLabel_ = new QLabel(tr("Loading UWP app list..."), this);
     loadingLabel_->setObjectName(QStringLiteral("uwpLoopbackLoadingLabel"));
@@ -153,11 +109,11 @@ void UwpLoopbackDialog::setupUi()
     });
     connect(applyButton_, &QPushButton::clicked, this, &UwpLoopbackDialog::applyChanges);
     connect(table_, &QTableWidget::itemChanged, this, [this](QTableWidgetItem* item) {
-        if (applying_ || item == nullptr || item->column() != kEnabledColumn) {
+        if (applying_ || item == nullptr || item->column() != UwpUi::EnabledColumn) {
             return;
         }
 
-        const QString packageFamilyName = item->data(kPackageRole).toString();
+        const QString packageFamilyName = item->data(UwpUi::PackageRole).toString();
         if (packageFamilyName.trimmed().isEmpty()) {
             return;
         }
@@ -267,51 +223,14 @@ void UwpLoopbackDialog::setLoading(bool loading)
 
 void UwpLoopbackDialog::reloadTable()
 {
-    const QSignalBlocker blocker(table_);
-    table_->setRowCount(0);
-
-    for (const WindowsUwpPackageInfo& package : packages_) {
-        const int row = table_->rowCount();
-        table_->insertRow(row);
-
-        auto* enabledItem = new QTableWidgetItem();
-        enabledItem->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-        enabledItem->setTextAlignment(Qt::AlignCenter);
-        enabledItem->setCheckState(package.loopbackEnabled ? Qt::Checked : Qt::Unchecked);
-        enabledItem->setData(kPackageRole, package.packageFamilyName);
-        enabledItem->setData(kOriginalEnabledRole, package.loopbackEnabled);
-        table_->setItem(row, kEnabledColumn, enabledItem);
-
-        auto* nameItem = createReadOnlyItem(displayNameForPackage(package));
-        nameItem->setToolTip(package.packageFullName);
-        table_->setItem(row, kAppColumn, nameItem);
-
-        auto* packageItem = createReadOnlyItem(package.packageFamilyName);
-        packageItem->setToolTip(package.packageFullName);
-        table_->setItem(row, kPackageColumn, packageItem);
-    }
-
+    UwpUi::populatePackageTable(table_, packages_);
     applyFilter();
 }
 
 void UwpLoopbackDialog::applyFilter()
 {
     const QString needle = filterEdit_ == nullptr ? QString() : filterEdit_->text().trimmed();
-    for (int row = 0; row < table_->rowCount(); ++row) {
-        const QString app = table_->item(row, kAppColumn) == nullptr ? QString() : table_->item(row, kAppColumn)->text();
-        const QString packageFamilyName = table_->item(row, kPackageColumn) == nullptr
-            ? QString()
-            : table_->item(row, kPackageColumn)->text();
-        const QString packageFullName = table_->item(row, kPackageColumn) == nullptr
-            ? QString()
-            : table_->item(row, kPackageColumn)->toolTip();
-
-        const bool match = needle.isEmpty()
-            || app.contains(needle, Qt::CaseInsensitive)
-            || packageFamilyName.contains(needle, Qt::CaseInsensitive)
-            || packageFullName.contains(needle, Qt::CaseInsensitive);
-        table_->setRowHidden(row, !match);
-    }
+    UwpUi::applyPackageFilter(table_, needle);
     updateStatusSummary();
 }
 
@@ -385,12 +304,7 @@ void UwpLoopbackDialog::setStatus(const QString& statusText)
 void UwpLoopbackDialog::updateStatusSummary()
 {
     if (statusLabel_ != nullptr) {
-        int selectedCount = 0;
-        for (const WindowsUwpPackageInfo& package : packages_) {
-            if (package.loopbackEnabled) {
-                ++selectedCount;
-            }
-        }
+        const int selectedCount = UwpUi::enabledPackageCount(packages_);
 
         const QString summary = dirtyPackages_.isEmpty()
             ? tr("Enabled: %1/%2 apps").arg(selectedCount).arg(packages_.size())
@@ -430,11 +344,4 @@ bool UwpLoopbackDialog::currentLoopbackState(const QString& packageFamilyName) c
         }
     }
     return false;
-}
-
-QTableWidgetItem* UwpLoopbackDialog::createReadOnlyItem(const QString& text) const
-{
-    auto* item = new QTableWidgetItem(text);
-    item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-    return item;
 }

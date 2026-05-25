@@ -63,32 +63,3 @@ void ProxyToolbarController::sync(
         tunToggleAction_->setEnabled(canToggleTun);
     }
 }
-
-void ProxyToolbarController::refresh(
-    ProxyUiState uiState,
-    bool outboundLocationAvailable,
-    bool tunEnabled,
-    const QList<CoreType>& existingCoreTypes,
-    const QList<CoreTypeItem>& coreTypeItems,
-    const ServerTableRow* activeServer)
-{
-    Snapshot snapshot;
-    snapshot.uiState = uiState;
-    snapshot.outboundLocationAvailable = outboundLocationAvailable;
-    snapshot.tunEnabled = tunEnabled;
-    snapshot.existingCoreTypes = existingCoreTypes;
-    snapshot.coreTypeItems = coreTypeItems;
-    sync(snapshot, activeServer);
-}
-
-bool ProxyToolbarController::shouldDisableProxy(const Snapshot& snapshot) const
-{
-    return snapshot.uiState == ProxyUiState::Active;
-}
-
-bool ProxyToolbarController::shouldEnableProxy(
-    const Snapshot& snapshot,
-    const ServerTableRow* activeServer) const
-{
-    return snapshot.uiState == ProxyUiState::Idle && activeServer != nullptr;
-}

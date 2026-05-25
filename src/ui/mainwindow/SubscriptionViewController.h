@@ -50,11 +50,6 @@ public:
 
     void showTabContextMenu(const QPoint& position);
 
-    static QString resolveTabKeyFromSelectionId(const QString& selectionId);
-    static QString resolvePersistedSelectionId(const QString& tabKey);
-    static QString resolveSubscriptionIdFromTabKey(const QString& tabKey);
-    static QString describeSubscription(const SubItem& item);
-
 private:
     Context context_;
     MenuCallbacks callbacks_;

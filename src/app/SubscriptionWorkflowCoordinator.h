@@ -29,27 +29,47 @@ public:
         bool selectLastSubscription = false;
     };
 
-    struct Callbacks {
+    struct ConfigCallbacks {
         std::function<QString()> configPath;
         std::function<Config()> currentConfig;
         std::function<QString()> activeSubscriptionId;
-        std::function<QObject*()> uiContext;
+        std::function<QString()> customConfigDirectory;
+        std::function<void()> reloadConfig;
+    };
+
+    struct UiCallbacks {
+        std::function<QObject*()> context;
         std::function<std::weak_ptr<char>()> lifetimeGuard;
-        std::function<void(QThread*)> trackBackgroundThread;
         std::function<void(const QString&)> showStartupMessage;
         std::function<void(bool)> setSubscriptionUpdateRunning;
         std::function<void()> clearServerTestResultsAndSync;
         std::function<void(const OperationResult&)> appendResult;
-        std::function<void()> reloadConfig;
         std::function<void()> syncWindow;
         std::function<void(const QString&)> selectSubscriptionTab;
+    };
+
+    struct ThreadCallbacks {
+        std::function<void(QThread*)> trackBackgroundThread;
+    };
+
+    struct WorkflowCallbacks {
         std::function<void(const QString&, bool)> restartCoreIfRunning;
-        std::function<OperationResult(const QString&, Config&)> importCustomConfigText;
+    };
+
+    struct Callbacks {
+        ConfigCallbacks config;
+        UiCallbacks ui;
+        ThreadCallbacks thread;
+        WorkflowCallbacks workflow;
+    };
+
+    struct Dependencies {
+        BackgroundTaskCoordinator& backgroundTasks;
+        Callbacks callbacks;
     };
 
     SubscriptionWorkflowCoordinator(
-        BackgroundTaskCoordinator& backgroundTasks,
-        Callbacks callbacks,
+        Dependencies dependencies,
         QObject* parent = nullptr);
 
     void importClipboard(const QString& text);
@@ -69,5 +89,8 @@ private:
     std::weak_ptr<char> resolvedLifetimeGuard() const;
 
     BackgroundTaskCoordinator& backgroundTasks_;
-    Callbacks callbacks_;
+    ConfigCallbacks configCallbacks_;
+    UiCallbacks uiCallbacks_;
+    ThreadCallbacks threadCallbacks_;
+    WorkflowCallbacks workflowCallbacks_;
 };

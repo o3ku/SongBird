@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QJsonArray>
-#include <QJsonObject>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -22,9 +21,7 @@ public:
 private:
     static QList<VmessItem> tryParseClash(const QString& content);
     static QList<VmessItem> tryParseJsonArray(const QJsonArray& array);
-    static QList<VmessItem> tryParse(const QString& content);
     static QList<VmessItem> tryParseSingBox(const QString& content);
-    static QList<VmessItem> tryParseSingBoxOutboundObject(const QJsonObject& object);
     static QList<VmessItem> tryParseSip008(const QString& content);
     static QString tryDecodeBase64(const QString& content);
 };

@@ -46,8 +46,6 @@ private:
     void updateRoutingActionState();
     int findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const;
     int selectedBaseRouteIndex() const;
-    static QString joinValues(const QStringList& values);
-    static QStringList splitValues(const QString& value);
 
     QList<RoutingItem> routingItems_;
     QLabel* baseRouteTitleLabel_ = nullptr;

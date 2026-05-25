@@ -25,7 +25,7 @@ void SettingsWorkflowCoordinator::openSettingsDialog(int initialTab)
         deps_.refreshExistingCoreTypes();
     }
 
-    SettingsDialogSession session(
+    SettingsDialogRunner session(
         parent,
         deps_.trackBackgroundThread,
         deps_.detectCoreVersion,
@@ -33,24 +33,24 @@ void SettingsWorkflowCoordinator::openSettingsDialog(int initialTab)
             handleCoreDownload(requestedCoreType, dialogGuard);
         });
 
-    const SettingsDialogSession::Result sessionResult = session.exec(
+    const SettingsDialogRunner::Result sessionResult = session.exec(
         deps_.currentConfig ? deps_.currentConfig() : Config(),
         initialTab,
         deps_.existingCoreTypes ? deps_.existingCoreTypes() : QList<CoreType>{},
         deps_.lifetimeGuard ? deps_.lifetimeGuard() : std::weak_ptr<char>{});
 
-    if (sessionResult.outcome == SettingsDialogSession::Outcome::Cancelled) {
+    if (sessionResult.outcome == SettingsDialogRunner::Outcome::Cancelled) {
         return;
     }
 
-    if (sessionResult.outcome == SettingsDialogSession::Outcome::RestoreBackup) {
+    if (sessionResult.outcome == SettingsDialogRunner::Outcome::RestoreBackup) {
         if (deps_.restoreConfigFromBackup) {
             deps_.restoreConfigFromBackup();
         }
         return;
     }
 
-    if (sessionResult.outcome == SettingsDialogSession::Outcome::UpdateSubscriptions) {
+    if (sessionResult.outcome == SettingsDialogRunner::Outcome::UpdateSubscriptions) {
         if (deps_.saveAndUpdateSubscriptions) {
             deps_.saveAndUpdateSubscriptions(sessionResult.selectedSubscriptionRows, sessionResult.config);
         }

@@ -2,19 +2,15 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QFileInfo>
 #include <QMetaObject>
 #include <QThread>
 #include <QWidget>
 
 #include <utility>
 
-namespace {
+#include "app/AppUpdateCheckPresentation.h"
 
-QString unknownVersionText()
-{
-    return QCoreApplication::translate("AppBootstrap", "Unknown");
-}
+namespace {
 
 bool isShuttingDown(const AppUpdateCheckCoordinator::Dependencies& deps)
 {
@@ -123,30 +119,10 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
                 return;
             }
 
-            QString prompt = QCoreApplication::translate(
-                "AppBootstrap",
-                "%1\n\nCurrent version: %2\nLatest version: %3\n\nDownload the update in the background?")
-                                 .arg(result.message)
-                                 .arg(updateResult.currentVersion.trimmed().isEmpty()
-                                     ? unknownVersionText()
-                                     : updateResult.currentVersion)
-                                 .arg(updateResult.latestVersion);
-            if (!updateResult.releaseName.trimmed().isEmpty()) {
-                prompt.append(QStringLiteral("\n"));
-                prompt.append(QCoreApplication::translate("AppBootstrap", "Release: %1")
-                                  .arg(updateResult.releaseName.trimmed()));
-            }
-            if (!updateResult.assetName.trimmed().isEmpty()) {
-                prompt.append(QStringLiteral("\n"));
-                prompt.append(QCoreApplication::translate("AppBootstrap", "Package: %1")
-                                  .arg(updateResult.assetName.trimmed()));
-            }
+            QString prompt = AppUpdateCheckPresentation::buildUpdateAvailablePrompt(updateResult, result.message);
 
             if (!updateResult.assetDownloadUrl.isValid()) {
-                prompt.append(QStringLiteral("\n\n"));
-                prompt.append(QCoreApplication::translate(
-                    "AppBootstrap",
-                    "No downloadable Windows executable was found. Open the release page instead?"));
+                prompt = AppUpdateCheckPresentation::appendMissingDownloadPrompt(prompt);
                 if (self->deps_.feedback->askYesNo(
                         messageParent,
                         QCoreApplication::translate("AppBootstrap", "Update Available"),
@@ -185,9 +161,7 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
         ? deps_.applicationDirectory()
         : QCoreApplication::applicationDirPath();
     const QString updateDirectory = QDir(appDir).filePath(QStringLiteral("updates"));
-    const QString assetName = QFileInfo(updateResult.assetName).suffix().compare(QStringLiteral("exe"), Qt::CaseInsensitive) == 0
-        ? QStringLiteral("SongBird.new.exe")
-        : updateResult.assetName;
+    const QString assetName = AppUpdateCheckPresentation::resolveDownloadAssetName(updateResult.assetName);
     const QString startMessage = QCoreApplication::translate("AppBootstrap", "Downloading SongBird %1...")
                                      .arg(updateResult.latestVersion);
     deps_.feedback->appendLog(startMessage);
@@ -244,13 +218,7 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
             }
 
             if (!savedPath.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
-                const QString message = QCoreApplication::translate(
-                    "AppBootstrap",
-                    "%1\n\nRestart SongBird and use the downloaded package to update to the new version.")
-                        .arg(savedPath.trimmed().isEmpty()
-                            ? result.message
-                            : QCoreApplication::translate("AppBootstrap", "Downloaded package: %1")
-                                  .arg(QDir::toNativeSeparators(savedPath)));
+                const QString message = AppUpdateCheckPresentation::buildDownloadedPackageMessage(savedPath, result);
                 self->deps_.feedback->showInformation(
                     messageParent,
                     QCoreApplication::translate("AppBootstrap", "Update Downloaded"),
