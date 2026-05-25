@@ -367,6 +367,7 @@ void CoreSettingsPageWidget::setupUi()
         }
         case CoreType::Xray:
             row.optionsLayout->addWidget(xrayEnableFragmentCheck_);
+            row.optionsLayout->addWidget(tunEnableLegacyProtectCheck_);
             {
                 auto* userAgentRow = new QWidget(optionsWidget);
                 auto* userAgentLayout = new QHBoxLayout(userAgentRow);
@@ -377,7 +378,6 @@ void CoreSettingsPageWidget::setupUi()
                 userAgentLayout->addWidget(xrayDefaultUserAgentCombo_, 1);
                 row.optionsLayout->addWidget(userAgentRow);
             }
-            row.optionsLayout->addWidget(tunEnableLegacyProtectCheck_);
             break;
         default:
             break;
