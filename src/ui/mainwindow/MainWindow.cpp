@@ -668,7 +668,6 @@ bool MainWindow::isUngroupedSubscriptionTabSelected() const
 
 void MainWindow::setupUi()
 {
-    setMinimumSize(DefaultMainWindowWidth, DefaultMainWindowHeight);
     resize(DefaultMainWindowWidth, DefaultMainWindowHeight);
 
     mainContentWidget_ = new QWidget(this);

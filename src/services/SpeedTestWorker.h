@@ -22,6 +22,12 @@ signals:
     void batchFinished(const QString& summary);
 
 private:
+    void runDirectProxyGroup(
+        const QList<int>& indices,
+        const QList<SpeedTestRequestItem>& items,
+        const QString& urlTestUrl,
+        int& completed);
+
     void runFallbackGroup(
         const QList<int>& indices,
         const QList<SpeedTestRequestItem>& items,

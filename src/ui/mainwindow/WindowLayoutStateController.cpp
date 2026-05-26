@@ -208,7 +208,6 @@ void WindowLayoutStateController::applyFrameAdjustedWindowMetrics()
         qMax(1, Layout::DefaultMainWindowHeight - frameDelta.height()));
 
     frameAdjustedWindowMetricsApplied_ = true;
-    window_->setMinimumSize(targetClientSize);
 
     if (clientSize == QSize(Layout::DefaultMainWindowWidth, Layout::DefaultMainWindowHeight)) {
         window_->resize(targetClientSize);

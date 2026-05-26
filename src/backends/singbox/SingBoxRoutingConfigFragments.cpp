@@ -57,6 +57,9 @@ QJsonObject SingBoxRoutingConfigFragments::buildRoute(const Config& config, cons
     locationProbeRule.insert(QStringLiteral("outbound"), QStringLiteral("proxy"));
     locationProbeRule.insert(QStringLiteral("inbound"), QJsonArray{RoutingConfigFragments::locationProbeTag()});
     rules.append(locationProbeRule);
+
+    rules.append(SingBoxConfigFragments::buildTunCompatPrivateAddressDirectRule());
+
     if (config.tun().tunModeItem.enableTun) {
         route.insert(QStringLiteral("auto_detect_interface"), true);
         QJsonArray tunRules = SingBoxConfigFragments::buildTunCompatRejectRules();

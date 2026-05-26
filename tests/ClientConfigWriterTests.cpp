@@ -59,7 +59,9 @@ private slots:
     void generateClientConfigsMovesTunCompatSniffToRouteAction();
     void generateClientConfigsAddsTunCompatRejectRules();
     void generateClientConfigsSplitsTunCompatDnsAndDirectProcessRules();
+    void generateClientConfigsAddsPrivateAddressDirectRuleForTunCompatRelay();
     void generateClientConfigsAddsTunRoutePackForNativeSingBoxCore();
+    void generateClientConfigsAddsPrivateAddressDirectRuleForSingBoxCore();
     void generateClientConfigsUsesDirectIcmpRoutingForNativeSingBoxCore();
     void generateClientConfigsUsesRejectIcmpRoutingForNativeSingBoxCore();
     void generateClientConfigsIgnoresInvalidIcmpRoutingForNativeSingBoxCore();
@@ -1413,6 +1415,30 @@ void ClientConfigWriterTests::generateClientConfigsSplitsTunCompatDnsAndDirectPr
     QVERIFY(jsonArrayContainsString(directProcessNames, QStringLiteral("sing-box.exe")));
 }
 
+void ClientConfigWriterTests::generateClientConfigsAddsPrivateAddressDirectRuleForTunCompatRelay()
+{
+    const Config config = tunCompatXrayBaseConfig();
+    const VmessItem server = baseServer();
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject compatRoot = generated.auxiliary.constFirst().root;
+    const QJsonArray rules = compatRoot.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
+
+    bool foundPrivateDirectRule = false;
+    for (const QJsonValue& value : rules) {
+        const QJsonObject rule = value.toObject();
+        if (rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("direct")
+            && rule.value(QStringLiteral("ip_is_private")).toBool()) {
+            foundPrivateDirectRule = true;
+            break;
+        }
+    }
+
+    QVERIFY(foundPrivateDirectRule);
+}
+
 void ClientConfigWriterTests::generateClientConfigsAddsTunRoutePackForNativeSingBoxCore()
 {
     const Config config = baseConfig();
@@ -1449,6 +1475,36 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunRoutePackForNativeSing
     QVERIFY(foundUdpRejectRule);
     QVERIFY(foundDnsHijackRule);
     QVERIFY(foundDirectProcessRule);
+}
+
+void ClientConfigWriterTests::generateClientConfigsAddsPrivateAddressDirectRuleForSingBoxCore()
+{
+    Config config = baseConfig();
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
+
+    int locationProbeIndex = -1;
+    int privateDirectIndex = -1;
+    for (int i = 0; i < rules.size(); ++i) {
+        const QJsonObject rule = rules.at(i).toObject();
+        if (jsonArrayContainsString(rule.value(QStringLiteral("inbound")).toArray(), QStringLiteral("location-probe"))
+            && rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("proxy")) {
+            locationProbeIndex = i;
+        }
+        if (rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("direct")
+            && rule.value(QStringLiteral("ip_is_private")).toBool()) {
+            privateDirectIndex = i;
+        }
+    }
+
+    QVERIFY(locationProbeIndex >= 0);
+    QVERIFY(privateDirectIndex >= 0);
+    QVERIFY(locationProbeIndex < privateDirectIndex);
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesDirectIcmpRoutingForNativeSingBoxCore()

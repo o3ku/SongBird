@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QHostAddress>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
 #include <QNetworkReply>
@@ -19,12 +20,15 @@ const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 
 SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
     QNetworkProxy::ProxyType proxyType,
+    const QString& proxyHost,
     int proxyPort,
+    const QString& user,
+    const QString& password,
     const QString& url,
     int timeoutMs)
 {
     QNetworkAccessManager manager;
-    manager.setProxy(QNetworkProxy(proxyType, kLoopbackAddress, proxyPort));
+    manager.setProxy(QNetworkProxy(proxyType, proxyHost, proxyPort, user, password));
 
     QNetworkRequest request{QUrl(url)};
     request.setHeader(QNetworkRequest::UserAgentHeader, fallbackUserAgent());
@@ -88,19 +92,40 @@ SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
 
 SpeedTestServiceInternal::UrlProbeResult probeWithRetry(
     QNetworkProxy::ProxyType proxyType,
+    const QString& proxyHost,
     int proxyPort,
+    const QString& user,
+    const QString& password,
     const QString& url,
     int timeoutMs,
     const std::atomic_bool& cancelled)
 {
     SpeedTestServiceInternal::UrlProbeResult result =
-        probeProxiedUrl(proxyType, proxyPort, url, timeoutMs);
+        probeProxiedUrl(proxyType, proxyHost, proxyPort, user, password, url, timeoutMs);
 
     if (SpeedTestUrlProbe::shouldRetry(result) && !cancelled.load()) {
-        result = probeProxiedUrl(proxyType, proxyPort, url, timeoutMs);
+        result = probeProxiedUrl(proxyType, proxyHost, proxyPort, user, password, url, timeoutMs);
     }
 
     return result;
+}
+
+bool isIpLiteral(const QString& host)
+{
+    QHostAddress address;
+    return address.setAddress(host.trimmed());
+}
+
+QString normalizeUpstreamProxyErrorText(const VmessItem& server, const QString& value)
+{
+    const QString normalized = SpeedTestUrlProbe::normalizeErrorText(value);
+    if (server.configType == ConfigType::Socks
+        && isIpLiteral(server.address)
+        && normalized.contains(QStringLiteral("host not found"), Qt::CaseInsensitive)) {
+        return QStringLiteral("SOCKS handshake failed");
+    }
+
+    return normalized;
 }
 
 } // namespace
@@ -140,7 +165,15 @@ SpeedTestServiceInternal::UrlProbeResult probeReadyProxyWithRetry(
     int timeoutMs,
     const std::atomic_bool& cancelled)
 {
-    return probeWithRetry(proxy.type, proxy.port, url, timeoutMs, cancelled);
+    return probeWithRetry(
+        proxy.type,
+        kLoopbackAddress,
+        proxy.port,
+        QString{},
+        QString{},
+        url,
+        timeoutMs,
+        cancelled);
 }
 
 SpeedTestServiceInternal::UrlProbeResult probeSocksWithRetry(
@@ -149,7 +182,48 @@ SpeedTestServiceInternal::UrlProbeResult probeSocksWithRetry(
     int timeoutMs,
     const std::atomic_bool& cancelled)
 {
-    return probeWithRetry(QNetworkProxy::Socks5Proxy, socksPort, url, timeoutMs, cancelled);
+    return probeWithRetry(
+        QNetworkProxy::Socks5Proxy,
+        kLoopbackAddress,
+        socksPort,
+        QString{},
+        QString{},
+        url,
+        timeoutMs,
+        cancelled);
+}
+
+SpeedTestServiceInternal::UrlProbeResult probeUpstreamProxyWithRetry(
+    const VmessItem& server,
+    const QString& url,
+    int timeoutMs,
+    const std::atomic_bool& cancelled)
+{
+    QNetworkProxy::ProxyType proxyType = QNetworkProxy::DefaultProxy;
+    if (server.configType == ConfigType::Socks) {
+        proxyType = QNetworkProxy::Socks5Proxy;
+    } else if (server.configType == ConfigType::HTTP) {
+        proxyType = QNetworkProxy::HttpProxy;
+    } else {
+        return SpeedTestServiceInternal::UrlProbeResult{
+            SpeedTestServiceInternal::UrlProbeStatus::Failed,
+            -1,
+            QStringLiteral("Unsupported")};
+    }
+
+    SpeedTestServiceInternal::UrlProbeResult result = probeWithRetry(
+        proxyType,
+        server.address,
+        server.port,
+        server.id,
+        server.security,
+        url,
+        timeoutMs,
+        cancelled);
+    if (result.status == SpeedTestServiceInternal::UrlProbeStatus::Failed) {
+        result.errorText = normalizeUpstreamProxyErrorText(server, result.errorText);
+    }
+    return result;
 }
 
 } // namespace SpeedTestUrlProbe

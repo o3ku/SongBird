@@ -15,6 +15,7 @@
 #include "services/SpeedTestBatchRuntimeRunner.h"
 #include "services/SpeedTestRuntimeRunner.h"
 #include "services/SpeedTestServiceInternal.h"
+#include "services/SpeedTestUrlProbe.h"
 
 namespace {
 
@@ -22,8 +23,16 @@ namespace {
 // parallel just contends on disk/CPU and pushes every spawn past its
 // startup timeout. Keep this conservative.
 constexpr int kFallbackMaxConcurrency = 8;
+constexpr int kDirectProxyProbeTimeoutMs = 3000;
 namespace BatchRuntimeRunner = SpeedTestBatchRuntimeRunner;
 namespace RuntimeRunner = SpeedTestRuntimeRunner;
+namespace UrlProbe = SpeedTestUrlProbe;
+
+bool canProbeUpstreamProxyDirectly(const VmessItem& server)
+{
+    return server.configType == ConfigType::Socks
+        || server.configType == ConfigType::HTTP;
+}
 
 } // namespace
 
@@ -58,10 +67,15 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
     // a multi-outbound Xray config.
     QMap<QString, QList<int>> groupsByCore;
     QList<int> customIndices;
+    QList<int> directProxyIndices;
     for (int i = 0; i < items.size(); ++i) {
         const SpeedTestRequestItem& item = items[i];
         if (item.server.configType == ConfigType::Custom) {
             customIndices.append(i);
+            continue;
+        }
+        if (canProbeUpstreamProxyDirectly(item.server)) {
+            directProxyIndices.append(i);
             continue;
         }
 
@@ -82,6 +96,8 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
         emit testResultReady(items[index].server.indexId, result);
         emit logGenerated(QStringLiteral("URL Test result | %1 -> %2").arg(serverName, result));
     }
+
+    runDirectProxyGroup(directProxyIndices, items, urlTestUrl, completed);
 
     for (auto it = groupsByCore.constBegin(); it != groupsByCore.constEnd(); ++it) {
         if (cancelled_.load()) {
@@ -116,6 +132,35 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
     emit batchFinished(wasCancelled
         ? QStringLiteral("URL Test cancelled after %1 server(s).").arg(completed)
         : QStringLiteral("URL Test finished for %1 server(s).").arg(completed));
+}
+
+void SpeedTestWorker::runDirectProxyGroup(
+    const QList<int>& indices,
+    const QList<SpeedTestRequestItem>& items,
+    const QString& urlTestUrl,
+    int& completed)
+{
+    for (int idx : indices) {
+        if (cancelled_.load()) {
+            break;
+        }
+
+        const SpeedTestRequestItem& item = items[idx];
+        const QString serverName = serverDisplayName(item.server);
+        emit logGenerated(QStringLiteral("URL Test direct proxy: %1").arg(serverName));
+        const SpeedTestServiceInternal::UrlProbeResult probeResult =
+            UrlProbe::probeUpstreamProxyWithRetry(
+                item.server,
+                urlTestUrl,
+                kDirectProxyProbeTimeoutMs,
+                cancelled_);
+        const QString result = SpeedTestServiceInternal::formatUrlProbeResult(probeResult);
+        ++completed;
+        if (!cancelled_.load()) {
+            emit testResultReady(item.server.indexId, result);
+            emit logGenerated(QStringLiteral("URL Test result | %1 -> %2").arg(serverName, result));
+        }
+    }
 }
 
 void SpeedTestWorker::runFallbackGroup(

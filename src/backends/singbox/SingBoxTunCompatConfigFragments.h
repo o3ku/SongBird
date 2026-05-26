@@ -12,6 +12,7 @@ namespace SingBoxTunCompatConfigFragments {
 QJsonObject buildDns();
 QJsonObject buildRoute(const Config& config);
 QJsonArray buildOutbounds(const Config& config);
+QJsonObject buildPrivateAddressDirectRule();
 QJsonArray buildRejectRules();
 void appendProcessRules(QJsonArray& rules);
 void appendIcmpRouteRule(QJsonArray& rules, const TunModeItem& tun);

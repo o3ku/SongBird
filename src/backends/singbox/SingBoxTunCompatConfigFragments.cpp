@@ -96,6 +96,7 @@ QJsonObject buildRoute(const Config& config)
 
     QJsonArray rules = buildRejectRules();
     appendProcessRules(rules);
+    rules.append(buildPrivateAddressDirectRule());
     appendIcmpRouteRule(rules, config.tun().tunModeItem);
     appendSniffRules(rules, config);
     appendUdpRouteRule(rules, config.tun().tunModeItem);
@@ -114,6 +115,15 @@ QJsonArray buildOutbounds(const Config& config)
     outbounds.append(buildDirectOutbound());
     outbounds.append(buildBlockOutbound());
     return outbounds;
+}
+
+QJsonObject buildPrivateAddressDirectRule()
+{
+    QJsonObject rule;
+    rule.insert(QStringLiteral("action"), QStringLiteral("route"));
+    rule.insert(QStringLiteral("outbound"), QStringLiteral("direct"));
+    rule.insert(QStringLiteral("ip_is_private"), true);
+    return rule;
 }
 
 QJsonArray buildRejectRules()

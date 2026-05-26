@@ -144,6 +144,11 @@ QJsonArray SingBoxConfigFragments::buildTunCompatOutbounds(const Config& config)
     return TunCompatConfig::buildOutbounds(config);
 }
 
+QJsonObject SingBoxConfigFragments::buildTunCompatPrivateAddressDirectRule()
+{
+    return TunCompatConfig::buildPrivateAddressDirectRule();
+}
+
 QJsonArray SingBoxConfigFragments::buildTunCompatRejectRules()
 {
     return TunCompatConfig::buildRejectRules();

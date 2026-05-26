@@ -27,6 +27,7 @@ private slots:
     void classifyUrlProbeResultFormatsBlockedFailure();
     void tryParseUrlProbeLatencyAcceptsLegacyAndAccessibleFormats();
     void normalizeUrlProbeErrorUsesStableShortMessages();
+    void upstreamSocksIpLiteralDoesNotReportHostNotFound();
     void retryUrlProbeOnlyForTransientFailures();
     void summarizeProcessOutputKeepsStableShortPreview();
     void buildCoreArgumentsReplacesPlaceholderAndAppendsConfigPath();
@@ -279,6 +280,26 @@ void SpeedTestServiceInternalTests::normalizeUrlProbeErrorUsesStableShortMessage
 
     const QString longError(140, QLatin1Char('x'));
     QCOMPARE(SpeedTestUrlProbe::normalizeErrorText(longError).size(), 96);
+}
+
+void SpeedTestServiceInternalTests::upstreamSocksIpLiteralDoesNotReportHostNotFound()
+{
+    std::atomic_bool cancelled{false};
+    VmessItem server;
+    server.configType = ConfigType::Socks;
+    server.address = QStringLiteral("192.0.2.1");
+    server.port = 9;
+
+    const SpeedTestServiceInternal::UrlProbeResult result =
+        SpeedTestUrlProbe::probeUpstreamProxyWithRetry(
+            server,
+            QStringLiteral("https://example.com/"),
+            10,
+            cancelled);
+
+    if (result.status == SpeedTestServiceInternal::UrlProbeStatus::Failed) {
+        QVERIFY(!result.errorText.contains(QStringLiteral("host not found"), Qt::CaseInsensitive));
+    }
 }
 
 void SpeedTestServiceInternalTests::retryUrlProbeOnlyForTransientFailures()

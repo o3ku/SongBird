@@ -1,10 +1,10 @@
 # SongBird
 
-SongBird is a lightweight native Windows proxy client written in Qt/C++. It started as a rewrite and simplification of [v2rayN](https://github.com/2dust/v2rayN), with a smaller runtime footprint and a single JSON configuration file.
+SongBird is a lightweight native Windows proxy client written in Qt/C++. It started as a rewrite and simplification of [v2rayN](https://github.com/2dust/v2rayN), with a smaller runtime footprint and JSON-based configuration.
 
-Current version: **2.2.0**
+Current version: **2.2.1**
 
-SongBird uses `songbird.json` for user configuration. It does not require the .NET runtime, NuGet packages, or external UI assets at runtime; the application is built as a native `SongBird.exe`.
+SongBird uses `songbird.json` for primary user configuration and a sidecar `songbird.state.json` for runtime/UI state. It does not require the .NET runtime, NuGet packages, or external UI assets at runtime; the application is built as a native `SongBird.exe`.
 
 ## Highlights
 
@@ -58,16 +58,16 @@ SongBird uses `songbird.json` for user configuration. It does not require the .N
 
 | Feature | SongBird |
 |---------|----------|
-| Config format | `songbird.json` |
-| Server management | Add, edit, duplicate, remove, reorder, filter, QR import/share |
-| Protocols | VMess, VLESS, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, Custom |
-| Core engines | Xray, V2Ray, sing-box, Clash, ClashMeta |
+| Config format | Primary `songbird.json` plus sidecar `songbird.state.json` |
+| Server management | Add, edit, remove, reorder, filter, clipboard import, share-link copy, QR preview |
+| Protocols | VMess, VLESS, Trojan, Shadowsocks, Socks, HTTP, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, Custom |
+| Core engines | Xray, sing-box |
 | TUN mode | sing-box with admin elevation and cleanup |
-| Speed test | Ping, TCP ping, real ping, download, URL test result persistence |
+| Speed test | URL Test with persisted results |
 | System proxy | Managed Windows global proxy on/off |
 | Translation | Embedded `.qm` resources |
 | Themes | Embedded light and dark QSS themes |
-| GitHub mirror | Configurable mirror fallback for core and geo resource updates |
+| GitHub mirror | Mirror fallback for app, core, and geo resource updates |
 
 ## Build
 
@@ -105,9 +105,7 @@ The repository currently contains 30 CTest entries covering config persistence, 
 
 ## Package
 
-```powershell
-pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>
-```
+No Windows packaging script is currently checked in. The release build produces `build/msvc-release/src/SongBird.exe`.
 
 ## License
 
