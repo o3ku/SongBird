@@ -88,27 +88,19 @@ QString StatusBarSupport::routingStatusText(const QString& listenSummary)
     return QObject::tr("Listening: %1").arg(listenText);
 }
 
-QString StatusBarSupport::transientStatusText(
-    const QString& transientStatusMessage,
+QString StatusBarSupport::backgroundTaskStatusText(
     bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription)
+    const QString& backgroundTaskDescription,
+    const QString& idleText,
+    const QString& updateAvailableText)
 {
-    if (!transientStatusMessage.isEmpty()) {
-        return transientStatusMessage;
-    }
-
     if (backgroundTaskRunning && !backgroundTaskDescription.isEmpty()) {
         return QObject::tr("Task: %1").arg(backgroundTaskDescription);
     }
 
-    return QObject::tr("Ready");
-}
+    if (!updateAvailableText.trimmed().isEmpty()) {
+        return updateAvailableText.trimmed();
+    }
 
-bool StatusBarSupport::shouldSuppressRoutineStatus(
-    const QString& transientStatusMessage,
-    bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription)
-{
-    return !transientStatusMessage.isEmpty()
-        || (backgroundTaskRunning && !backgroundTaskDescription.isEmpty());
+    return idleText.trimmed().isEmpty() ? QObject::tr("SongBird") : idleText.trimmed();
 }

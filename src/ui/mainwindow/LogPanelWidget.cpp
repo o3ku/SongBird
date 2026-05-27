@@ -192,6 +192,18 @@ void LogPanelWidget::appendLog(const QString& message)
     logModel_->appendLine(line);
 }
 
+void LogPanelWidget::setCompactMode(bool compact)
+{
+    if (compactMode_ == compact) {
+        return;
+    }
+
+    compactMode_ = compact;
+    if (logFilterEdit_ != nullptr) {
+        logFilterEdit_->setVisible(!compactMode_);
+    }
+}
+
 bool LogPanelWidget::eventFilter(QObject* watched, QEvent* event)
 {
     if ((watched == logHeaderRow_ || watched->property("logHeaderCollapseTrigger").toBool()) && event != nullptr

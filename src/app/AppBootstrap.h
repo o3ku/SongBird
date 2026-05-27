@@ -109,6 +109,7 @@ private:
         bool skipTunCleanup = false,
         bool immediateStop = false,
         bool showStartupOverlay = false);
+    void setAutoRunEnabled(bool enabled);
     void clearProxyStateAfterCoreStopped();
     void applySystemProxyModeOnExit(bool windowsShutdown);
     void cleanupRuntimeForExit(bool windowsShutdown);
@@ -121,8 +122,7 @@ private:
     void updateCurrentSubscriptionViaProxy(const QString& subscriptionId);
     void handleRoutingSelectionResult(
         const OperationResult& result,
-        bool previousAdvancedEnabled,
-        int previousRoutingIndex);
+        const QString& previousRoutingModeId);
     void autoBackupCurrentConfig();
     void restoreConfigFromBackup();
     void checkAppUpdates(bool manual);

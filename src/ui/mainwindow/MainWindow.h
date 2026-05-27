@@ -1,7 +1,10 @@
 #pragma once
 
+#include <functional>
+
 #include <QCloseEvent>
 #include <QHash>
+#include <QList>
 #include <QMainWindow>
 #include <QMap>
 #include <QStringList>
@@ -50,21 +53,13 @@ class MainWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
-    enum class TransientStatusPriority {
-        Important,
-        Routine
-    };
-
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
     void setConfig(const Config& config);
+    void setShareUrlResolver(std::function<QString(const QString&)> resolver);
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void appendLog(const QString& message);
-    void showTransientStatus(
-        const QString& message,
-        int timeoutMs = 5000,
-        TransientStatusPriority priority = TransientStatusPriority::Important);
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();
@@ -80,6 +75,8 @@ public:
     void clearCoreStartupChecklist();
     void setBackgroundTaskRunning(bool running);
     void setBackgroundTaskDescription(const QString& description);
+    void setAvailableAppUpdateVersion(const QString& version);
+    void clearAvailableAppUpdateVersion();
     void applyRuntimeState(const RuntimeStateSnapshot& snapshot);
     void restoreUiState(const Config& config);
     void captureUiState(Config& config) const;
@@ -106,13 +103,14 @@ signals:
     void setDefaultServerRequested(const QString& indexId);
     void setDefaultServerWithTunRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);
-    void routingModeSelected(int mode);
+    void routingModeSelected(const QString& routingModeId);
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
     void tunEnabledChanged(bool enabled);
     void settingsRequested();
     void aboutRequested();
     void checkAppUpdateRequested();
+    void downloadAppUpdateRequested();
     void uwpLoopbackRequested();
     void retryCoreStartupRequested();
     void hiddenToTray();
@@ -164,7 +162,6 @@ private:
     void testSubscriptionServers(const QString& subscriptionId);
     void triggerCurrentSubscriptionUpdate();
     void copyCurrentSubscriptionUrlToClipboard();
-    void clearTransientStatus();
     void updateWindowTitle();
     void setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel);
     void preserveServerSelectionPreference();
@@ -174,11 +171,14 @@ private:
     bool confirmExit();
     const ServerTableRow* activeServer() const;
     void showSelectServerHint();
-    void clearSelectServerHint();
     void refreshToolbarIcons();
     void refreshServerSelectionUi();
+    QStringList selectedShareLinks() const;
     void syncStatusBarController();
     void syncProxyToolbarController();
+    void applyCompactMode(bool compact);
+    void applyToolbarCompactMode(bool compact);
+    void applyServerTableCompactMode(bool compact);
 
     ServerTableModel* serverModel_ = nullptr;
     ServerFilterProxyModel* serverFilterModel_ = nullptr;
@@ -223,11 +223,12 @@ private:
     QAction* proxyToggleAction_ = nullptr;
     QAction* tunToggleAction_ = nullptr;
     QAction* toggleQrPanelAction_ = nullptr;
-    QLabel* selectServerHintLabel_ = nullptr;
     QComboBox* routingModeCombo_ = nullptr;
     QLineEdit* serverFilterEdit_ = nullptr;
     QWidget* mainContentWidget_ = nullptr;
     QVBoxLayout* mainContentLayout_ = nullptr;
+    QWidget* toolbarFlexibleSpacer_ = nullptr;
+    QAction* toolbarFlexibleSpacerAction_ = nullptr;
     StartupOverlayWidget* startupOverlay_ = nullptr;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
@@ -240,10 +241,15 @@ private:
     bool coreStartupChecklistVisible_ = false;
     bool coreStartupChecklistFailed_ = false;
     QString backgroundTaskDescription_;
+    QString appVersionStatusText_;
+    QString appUpdateStatusText_;
+    bool appUpdateAvailable_ = false;
     QHash<QAction*, QString> toolbarIconFiles_;
     QHash<QToolButton*, QString> toolbarStandaloneIconFiles_;
+    QList<QWidget*> desktopOnlyToolbarWidgets_;
+    QList<QAction*> desktopOnlyToolbarWidgetActions_;
     MainWindowConfigSnapshot configSnapshot_;
-    QHash<QString, QString> shareUrlByIndexId_;
+    std::function<QString(const QString&)> shareUrlResolver_;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;
     QString currentServerName_;
@@ -253,4 +259,5 @@ private:
     bool tunEnabled_ = false;
     bool initialCurrentServerRevealScheduled_ = false;
     bool initialCurrentServerRevealDone_ = false;
+    bool compactMode_ = false;
 };

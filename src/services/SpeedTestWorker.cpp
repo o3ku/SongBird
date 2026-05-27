@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "common/ServerDisplayName.h"
 #include "services/SpeedTestBatchRuntimeRunner.h"
 #include "services/SpeedTestRuntimeRunner.h"
 #include "services/SpeedTestServiceInternal.h"
@@ -43,11 +42,12 @@ SpeedTestWorker::SpeedTestWorker(QString customConfigDirectory, std::atomic_bool
 {
 }
 
-void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestRequestItem>& items)
+void SpeedTestWorker::runBatch(
+    const Config& probeConfigTemplate,
+    const QString& urlTestUrl,
+    const QList<SpeedTestRequestItem>& items)
 {
     int completed = 0;
-    const Config probeConfigTemplate = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(config);
-    const QString urlTestUrl = RuntimeRunner::defaultUrlTestUrl(config);
 
     auto logCallback = [this](const QString& message) {
         QMetaObject::invokeMethod(this, [this, message]() {
@@ -70,11 +70,11 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
     QList<int> directProxyIndices;
     for (int i = 0; i < items.size(); ++i) {
         const SpeedTestRequestItem& item = items[i];
-        if (item.server.configType == ConfigType::Custom) {
+        if (item.configType == ConfigType::Custom) {
             customIndices.append(i);
             continue;
         }
-        if (canProbeUpstreamProxyDirectly(item.server)) {
+        if (canProbeUpstreamProxyDirectly(item.runtimeServer)) {
             directProxyIndices.append(i);
             continue;
         }
@@ -89,11 +89,11 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
         if (cancelled_.load()) {
             break;
         }
-        const QString serverName = serverDisplayName(items[index].server);
+        const QString serverName = items[index].displayName;
         emit logGenerated(QStringLiteral("URL Test: %1").arg(serverName));
         const QString result = QStringLiteral("Unsupported");
         ++completed;
-        emit testResultReady(items[index].server.indexId, result);
+        emit testResultReady(items[index].indexId, result);
         emit logGenerated(QStringLiteral("URL Test result | %1 -> %2").arg(serverName, result));
     }
 
@@ -109,7 +109,7 @@ void SpeedTestWorker::runBatch(const Config& config, const QList<SpeedTestReques
         groupItems.reserve(indices.size());
         for (int idx : indices) {
             groupItems.append(items[idx]);
-            emit logGenerated(QStringLiteral("URL Test: %1").arg(serverDisplayName(items[idx].server)));
+            emit logGenerated(QStringLiteral("URL Test: %1").arg(items[idx].displayName));
         }
 
         const bool batched = BatchRuntimeRunner::runBatchedGroup(
@@ -146,18 +146,18 @@ void SpeedTestWorker::runDirectProxyGroup(
         }
 
         const SpeedTestRequestItem& item = items[idx];
-        const QString serverName = serverDisplayName(item.server);
+        const QString serverName = item.displayName;
         emit logGenerated(QStringLiteral("URL Test direct proxy: %1").arg(serverName));
         const SpeedTestServiceInternal::UrlProbeResult probeResult =
             UrlProbe::probeUpstreamProxyWithRetry(
-                item.server,
+                item.runtimeServer,
                 urlTestUrl,
                 kDirectProxyProbeTimeoutMs,
                 cancelled_);
         const QString result = SpeedTestServiceInternal::formatUrlProbeResult(probeResult);
         ++completed;
         if (!cancelled_.load()) {
-            emit testResultReady(item.server.indexId, result);
+            emit testResultReady(item.indexId, result);
             emit logGenerated(QStringLiteral("URL Test result | %1 -> %2").arg(serverName, result));
         }
     }
@@ -218,13 +218,13 @@ void SpeedTestWorker::runFallbackGroup(
         }
 
         const SpeedTestRequestItem item = items[idx];
-        const QString serverName = serverDisplayName(item.server);
+        const QString serverName = item.displayName;
 
         pending.push_back(PendingItem{
-            item.server.indexId,
+            item.indexId,
             serverName,
             std::async(std::launch::async, [this, item, &probeConfigTemplate, &urlTestUrl]() -> QString {
-                if (item.server.configType == ConfigType::Custom) {
+                if (item.configType == ConfigType::Custom) {
                     return QStringLiteral("Unsupported");
                 }
                 if (cancelled_.load()) {

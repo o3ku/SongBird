@@ -44,7 +44,7 @@ private:
     void selectRoutingCustomRuleTab(const QString& key);
     QString selectedRoutingCustomRuleTabKey() const;
     void updateRoutingActionState();
-    int findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const;
+    int findInitialRouteIndex(const QList<RoutingItem>& items, const QString& routingModeId) const;
     int selectedBaseRouteIndex() const;
 
     QList<RoutingItem> routingItems_;
@@ -55,5 +55,4 @@ private:
     QTabWidget* customRuleTabs_ = nullptr;
     QMap<QString, CustomRuleEditors> customRuleEditors_;
     QList<RoutingRule> preservedCustomRules_;
-    Config config_;
 };

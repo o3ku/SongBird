@@ -118,10 +118,11 @@ inline bool areSettingsRoutingRuleListsEqual(const QList<RoutingRule>& lhs, cons
 
 inline bool areSettingsRoutingItemsEqual(const RoutingItem& lhs, const RoutingItem& rhs)
 {
-    return lhs.remarks.trimmed() == rhs.remarks.trimmed()
+    return lhs.id.trimmed() == rhs.id.trimmed()
+        && lhs.remarks.trimmed() == rhs.remarks.trimmed()
         && lhs.url.trimmed() == rhs.url.trimmed()
         && lhs.enabled == rhs.enabled
-        && lhs.locked == rhs.locked
+        && lhs.builtin == rhs.builtin
         && lhs.customIcon.trimmed() == rhs.customIcon.trimmed()
         && lhs.domainStrategy4Singbox.trimmed() == rhs.domainStrategy4Singbox.trimmed()
         && areSettingsRoutingRuleListsEqual(lhs.rules, rhs.rules);
@@ -178,11 +179,10 @@ inline bool areSettingsTunFieldsEqual(const Config& previousConfig, const Config
 
 inline bool areSettingsRoutingFieldsEqual(const Config& previousConfig, const Config& updatedConfig)
 {
-    return previousConfig.collection().enableRoutingAdvanced == updatedConfig.collection().enableRoutingAdvanced
-        && previousConfig.collection().routingIndex == updatedConfig.collection().routingIndex
+    return previousConfig.collection().routingModeId.trimmed() == updatedConfig.collection().routingModeId.trimmed()
         && areSettingsRoutingItemListsEqual(
-            previousConfig.collection().routingItems,
-            updatedConfig.collection().routingItems)
+            previousConfig.collection().customRoutingItems,
+            updatedConfig.collection().customRoutingItems)
         && areSettingsRoutingRuleListsEqual(
             previousConfig.collection().routingCustomRules,
             updatedConfig.collection().routingCustomRules)

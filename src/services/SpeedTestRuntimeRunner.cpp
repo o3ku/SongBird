@@ -6,7 +6,6 @@
 
 #include <optional>
 
-#include "common/ServerDisplayName.h"
 #include "runtime/ClientConfigWriter.h"
 #include "services/SpeedTestPortReservation.h"
 #include "services/SpeedTestRuntimeProcess.h"
@@ -43,7 +42,7 @@ QString runUrlTest(
     const std::atomic_bool& cancelled,
     const std::function<void(const QString&)>& log)
 {
-    const QString serverName = serverDisplayName(item.server);
+    const QString serverName = item.displayName;
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
         return QStringLiteral("Core missing");
     }

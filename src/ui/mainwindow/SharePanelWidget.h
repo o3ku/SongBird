@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QPixmap>
+#include <QString>
 #include <QStringList>
 #include <QWidget>
 
@@ -14,9 +16,7 @@ public:
 
     void setShareLinks(const QStringList& shareLinks);
     void setPreviewVisible(bool visible);
-
-signals:
-    void transientStatusRequested(const QString& message, int timeoutMs);
+    bool previewVisible() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -25,10 +25,15 @@ protected:
 
 private:
     void refreshPreview();
+    void clearPreviewPixmap();
 
     QWidget* shareContentPanel_ = nullptr;
     QLabel* qrPlaceholder_ = nullptr;
     QPlainTextEdit* shareLinkLabel_ = nullptr;
-    QStringList shareLinks_;
+    QString shareText_;
+    QString firstShareUrl_;
+    QPixmap cachedQrPixmap_;
+    QString cachedQrShareUrl_;
+    int cachedQrExtent_ = 0;
     bool previewVisible_ = false;
 };

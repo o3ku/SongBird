@@ -54,7 +54,6 @@ public:
         std::function<bool()> canStartBackgroundTask,
         std::function<void()> updateActionState,
         std::function<void(const QString&)> appendLog,
-        std::function<void(const QString&, int, int)> showTransientStatus,
         std::function<QStringList()> selectedShareLinks);
 
     void setup();
@@ -71,6 +70,5 @@ private:
     std::function<bool()> canStartBackgroundTask_;
     std::function<void()> updateActionState_;
     std::function<void(const QString&)> appendLog_;
-    std::function<void(const QString&, int, int)> showTransientStatus_;
     std::function<QStringList()> selectedShareLinks_;
 };

@@ -74,12 +74,12 @@ void RoutingSettingsPageWidget::setupUi()
         protocolPortLayout->setSpacing(4);
         auto* protocolLabel = new QLabel(tr("Protocol"), protocolPortColumn);
         editors.protocolEdit = new QTextEdit(protocolPortColumn);
-        editors.protocolEdit->setObjectName(QStringLiteral("routingCustom%1ProtocolEdit").arg(title));
+        editors.protocolEdit->setObjectName(QStringLiteral("routingCustom%1ProtocolEdit").arg(action));
         editors.protocolEdit->setTabChangesFocus(true);
         editors.protocolEdit->setPlaceholderText(QStringLiteral("tcp\nudp"));
         auto* portLabel = new QLabel(tr("Port"), protocolPortColumn);
         editors.portEdit = new QLineEdit(protocolPortColumn);
-        editors.portEdit->setObjectName(QStringLiteral("routingCustom%1PortEdit").arg(title));
+        editors.portEdit->setObjectName(QStringLiteral("routingCustom%1PortEdit").arg(action));
         editors.portEdit->setPlaceholderText(QStringLiteral("0-65535"));
         AppTheme::applyCompactFont({protocolLabel, editors.protocolEdit, portLabel, editors.portEdit});
         protocolPortLayout->addWidget(protocolLabel);
@@ -93,7 +93,7 @@ void RoutingSettingsPageWidget::setupUi()
         ipLayout->setSpacing(4);
         auto* ipLabel = new QLabel(QStringLiteral("IP"), ipColumn);
         editors.ipEdit = new QTextEdit(ipColumn);
-        editors.ipEdit->setObjectName(QStringLiteral("routingCustom%1IpEdit").arg(title));
+        editors.ipEdit->setObjectName(QStringLiteral("routingCustom%1IpEdit").arg(action));
         editors.ipEdit->setTabChangesFocus(true);
         editors.ipEdit->setPlaceholderText(QStringLiteral("geoip:private\n10.0.0.0/8"));
         AppTheme::applyCompactFont({ipLabel, editors.ipEdit});
@@ -106,7 +106,7 @@ void RoutingSettingsPageWidget::setupUi()
         domainLayout->setSpacing(4);
         auto* domainLabel = new QLabel(tr("Domain"), domainColumn);
         editors.domainEdit = new QTextEdit(domainColumn);
-        editors.domainEdit->setObjectName(QStringLiteral("routingCustom%1DomainEdit").arg(title));
+        editors.domainEdit->setObjectName(QStringLiteral("routingCustom%1DomainEdit").arg(action));
         editors.domainEdit->setTabChangesFocus(true);
         editors.domainEdit->setPlaceholderText(QStringLiteral("geosite:cn\ndomain:example.com"));
         AppTheme::applyCompactFont({domainLabel, editors.domainEdit});

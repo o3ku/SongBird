@@ -105,7 +105,6 @@ signals:
     void coreUpdateResumeRequested();
     void serverSwitchResumeRequested(const QString& indexId, bool enableTun, bool showOverlay);
     void logMessage(const QString& message);
-    void transientStatus(const QString& message, int timeoutMs);
     void statusSyncRequested();
 
 private:

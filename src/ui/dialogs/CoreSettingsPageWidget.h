@@ -20,6 +20,8 @@ class QVBoxLayout;
 
 class CoreSettingsPageWidget final : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit CoreSettingsPageWidget(QWidget* parent = nullptr);
 
@@ -53,8 +55,6 @@ private:
     void setupUi();
     void reloadCoreTypeTable();
     void refreshCoreStatusPresentation();
-
-    Config config_;
     QCheckBox* enableCacheFile4SboxCheck_ = nullptr;
     QComboBox* mux4SboxProtocolCombo_ = nullptr;
     QCheckBox* xrayEnableFragmentCheck_ = nullptr;

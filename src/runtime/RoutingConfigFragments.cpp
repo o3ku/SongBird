@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include "domain/models/RoutingRule.h"
+#include "domain/models/RoutingProfiles.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/RoutingRuleJsonMapper.h"
 
@@ -29,22 +30,9 @@ int RoutingConfigFragments::locationProbePortOffset()
     return kLocationProbePortOffset;
 }
 
-const RoutingItem* RoutingConfigFragments::resolveSelectedRouting(const Config& config)
+std::optional<RoutingItem> RoutingConfigFragments::resolveSelectedRouting(const Config& config)
 {
-    if (config.collection().enableRoutingAdvanced) {
-        if (config.collection().routingIndex >= 0 && config.collection().routingIndex < config.collection().routingItems.size()) {
-            return &config.collection().routingItems.at(config.collection().routingIndex);
-        }
-        return nullptr;
-    }
-
-    for (const RoutingItem& item : config.collection().routingItems) {
-        if (item.locked) {
-            return &item;
-        }
-    }
-
-    return nullptr;
+    return RoutingProfiles::selectedRouting(config);
 }
 
 QList<RoutingRule> RoutingConfigFragments::effectiveRoutingRules(const Config& config, const RoutingItem* selectedRouting)

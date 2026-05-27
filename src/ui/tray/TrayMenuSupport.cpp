@@ -6,7 +6,9 @@
 #include <QCoreApplication>
 #include <QMenu>
 #include <QObject>
+#include <QSet>
 #include <QStyle>
+#include <QStringList>
 #include <QWidget>
 
 #include <algorithm>
@@ -74,6 +76,43 @@ TrayServerSortKey makeTrayServerSortKey(const TrayServerEntry& item)
     return TrayServerSortKey{2, 0};
 }
 
+QSet<QString> enabledSubscriptionIds(const QList<SubItem>& subscriptions)
+{
+    QSet<QString> ids;
+    for (const SubItem& item : subscriptions) {
+        if (!item.enabled) {
+            continue;
+        }
+
+        const QString id = item.id.trimmed();
+        if (!id.isEmpty()) {
+            ids.insert(id);
+        }
+    }
+    return ids;
+}
+
+bool isUngroupedSubscriptionId(const QString& subscriptionId, const QSet<QString>& knownSubscriptionIds)
+{
+    const QString trimmed = subscriptionId.trimmed();
+    return trimmed.isEmpty() || !knownSubscriptionIds.contains(trimmed);
+}
+
+QString trayRoutingSummaryText(const QString& routingSummary)
+{
+    QString routing = routingSummary.trimmed();
+    const QString advanced = QCoreApplication::translate("AppBootstrap", "Advanced");
+    if (routing == advanced) {
+        return {};
+    }
+
+    const QString advancedSuffix = QStringLiteral(" (%1)").arg(advanced);
+    if (routing.endsWith(advancedSuffix)) {
+        routing.chop(advancedSuffix.size());
+    }
+    return routing.trimmed();
+}
+
 } // namespace
 
 QString TrayMenuSupport::formatTestResult(const QString& value)
@@ -88,7 +127,7 @@ QString TrayMenuSupport::formatTestResult(const QString& value)
         return QStringLiteral("%1 ms").arg(qRound(latencyMs));
     }
 
-    return QStringLiteral("unavailable");
+    return trayText("Unavailable");
 }
 
 QString TrayMenuSupport::currentServerActionText(QMenu* menu, const QString& currentServerName)
@@ -128,16 +167,16 @@ QString TrayMenuSupport::formatServerActionToolTip(QMenu* menu, const TrayServer
 
 QString TrayMenuSupport::buildToolTip(
     QMenu* menu,
+    const QString& appVersion,
     const QString& currentServerName,
     ProxyUiState proxyUiState,
     bool systemProxyApplied,
     bool autoRunEnabled,
-    const QString& routingSummary,
-    bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription)
+    bool tunEnabled,
+    const QString& routingSummary)
 {
     const bool active = proxyUiState == ProxyUiState::Active;
-    const QString proxyText = active && systemProxyApplied ? trayText("On") : trayText("Off");
+    const QString proxyText = active && systemProxyApplied ? trayText("ON") : trayText("OFF");
     const QString currentServerText = currentServerName.trimmed().isEmpty()
         ? trayText("No default server")
         : currentServerName.trimmed();
@@ -145,21 +184,23 @@ QString TrayMenuSupport::buildToolTip(
         menu,
         currentServerText,
         TrayCurrentServerNameTextMaxWidth);
+    const QString title = appVersion.trimmed().isEmpty()
+        ? QStringLiteral("SongBird")
+        : QStringLiteral("SongBird %1").arg(appVersion.trimmed());
 
-    QString tooltip = QStringLiteral("SongBird | %1 | %2 | %3 | %4")
-                          .arg(currentServerDisplayText)
-                          .arg(trayText("Core %1").arg(coreStatusText(proxyUiState)))
-                          .arg(trayText("Proxy %1").arg(proxyText))
-                          .arg(trayText("Auto Run %1").arg(autoRunEnabled ? trayText("Enabled") : trayText("Disabled")));
-    const QString routing = routingSummary.trimmed();
+    QStringList lines{
+        title,
+        trayText("Current: %1").arg(currentServerDisplayText),
+        trayText("Auto Run: %1").arg(autoRunEnabled ? trayText("ON") : trayText("OFF"))};
+    const QString routing = trayRoutingSummaryText(routingSummary);
     if (!routing.isEmpty()) {
-        tooltip += QStringLiteral(" | ") + trayText("Routing %1").arg(routing);
+        lines.append(trayText("Routing: %1").arg(routing));
     }
-    const QString backgroundDescription = backgroundTaskDescription.trimmed();
-    if (backgroundTaskRunning && !backgroundDescription.isEmpty()) {
-        tooltip += QStringLiteral(" | ") + trayText("Task %1").arg(backgroundDescription);
-    }
-    return tooltip;
+    lines.append(trayText("Core %1 | Proxy %2 | Tun %3")
+                     .arg(coreStatusText(proxyUiState))
+                     .arg(proxyText)
+                     .arg(tunEnabled ? trayText("ON") : trayText("OFF")));
+    return lines.join(QChar('\n'));
 }
 
 QIcon TrayMenuSupport::defaultTrayIcon()
@@ -193,6 +234,41 @@ void TrayMenuSupport::applyWindowIcon(const QIcon& icon, QWidget* window)
     }
 }
 
+QList<VmessItem> TrayMenuSupport::serversInCurrentGroup(
+    const QList<VmessItem>& servers,
+    const QList<SubItem>& subscriptions,
+    const QString& currentServerId)
+{
+    const QString trimmedCurrentId = currentServerId.trimmed();
+    const VmessItem* currentServer = nullptr;
+    for (const VmessItem& server : servers) {
+        if (!trimmedCurrentId.isEmpty() && server.indexId.trimmed() == trimmedCurrentId) {
+            currentServer = &server;
+            break;
+        }
+    }
+    if (currentServer == nullptr) {
+        return servers;
+    }
+
+    const QSet<QString> knownSubscriptionIds = enabledSubscriptionIds(subscriptions);
+    const QString currentSubscriptionId = currentServer->subId.trimmed();
+    const bool currentUngrouped = isUngroupedSubscriptionId(currentSubscriptionId, knownSubscriptionIds);
+
+    QList<VmessItem> groupedServers;
+    groupedServers.reserve(servers.size());
+    for (const VmessItem& server : servers) {
+        const QString subscriptionId = server.subId.trimmed();
+        const bool sameGroup = currentUngrouped
+            ? isUngroupedSubscriptionId(subscriptionId, knownSubscriptionIds)
+            : subscriptionId == currentSubscriptionId;
+        if (sameGroup) {
+            groupedServers.append(server);
+        }
+    }
+    return groupedServers;
+}
+
 QList<TrayServerEntry> TrayMenuSupport::makeServerEntries(const QList<VmessItem>& servers)
 {
     QList<TrayServerEntry> entries;
@@ -210,6 +286,7 @@ QList<TrayRoutingEntry> TrayMenuSupport::makeRoutingEntries(const QList<RoutingI
     for (int index = 0; index < routings.size(); ++index) {
         const RoutingItem& item = routings.at(index);
         entries.append(TrayRoutingEntry{
+            item.id,
             describeRouting(item, index),
             item.customIcon});
     }
@@ -313,22 +390,15 @@ void TrayMenuSupport::rebuildServerMenu(
 void TrayMenuSupport::rebuildRoutingMenu(
     QMenu* menu,
     const QList<TrayRoutingEntry>& routings,
-    int currentRoutingIndex,
-    bool advancedRoutingEnabled,
+    const QString& currentRoutingId,
     QObject* receiver,
-    const std::function<void(int)>& selectRouting)
+    const std::function<void(const QString&)>& selectRouting)
 {
     if (menu == nullptr) {
         return;
     }
 
     menu->clear();
-    if (!advancedRoutingEnabled) {
-        QAction* placeholder = menu->addAction(trayText("Advanced routing is disabled"));
-        placeholder->setEnabled(false);
-        return;
-    }
-
     if (routings.isEmpty()) {
         QAction* placeholder = menu->addAction(trayText("No routing entries"));
         placeholder->setEnabled(false);
@@ -341,12 +411,12 @@ void TrayMenuSupport::rebuildRoutingMenu(
     for (int index = 0; index < routings.size(); ++index) {
         QAction* action = menu->addAction(routings.at(index).displayName);
         action->setCheckable(true);
-        action->setChecked(index == currentRoutingIndex);
-        action->setData(index);
+        action->setChecked(routings.at(index).id == currentRoutingId);
+        action->setData(routings.at(index).id);
         action->setObjectName(QStringLiteral("trayRoutingAction_%1").arg(index));
         group->addAction(action);
         QObject::connect(action, &QAction::triggered, receiver, [action, selectRouting]() {
-            selectRouting(action->data().toInt());
+            selectRouting(action->data().toString());
         });
     }
 }

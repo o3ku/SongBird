@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include <QCoreApplication>
 #include <QDialog>
 
 #include "services/ServerService.h"
@@ -40,7 +41,7 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
     OperationResult result;
     if (existing->configType == ConfigType::Custom) {
         CustomServerDialog dialog(dialogParent());
-        dialog.setWindowTitle(QStringLiteral("Edit Custom Server"));
+        dialog.setWindowTitle(QCoreApplication::translate("ServerEditorCoordinator", "Edit Custom Server"));
         dialog.setServer(*existing, deps_.serverService.resolveCustomConfigPath(existing->address));
         if (dialog.exec() != QDialog::Accepted) {
             return;
@@ -49,7 +50,7 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
         result = deps_.serverService.updateServer(deps_.config, indexId, dialog.server());
     } else {
         AddServerDialog dialog(dialogParent());
-        dialog.setWindowTitle(QStringLiteral("Edit Server"));
+        dialog.setWindowTitle(QCoreApplication::translate("ServerEditorCoordinator", "Edit Server"));
         dialog.setServer(*existing);
         if (dialog.exec() != QDialog::Accepted) {
             return;

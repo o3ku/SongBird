@@ -6,7 +6,7 @@
 
 namespace {
 
-constexpr qsizetype kMaxBufferedCharactersPerChannel = 64 * 1024;
+constexpr qsizetype kMaxBufferedCharactersPerChannel = 32 * 1024;
 const QRegularExpression kAnsiEscape(QStringLiteral("\x1b\\[[0-9;]*[a-zA-Z]"));
 
 void emitLine(QString line, const CoreProcessOutputBuffer::OutputCallback& outputReceived)
@@ -53,6 +53,8 @@ void CoreProcessOutputBuffer::clear()
 {
     standardOutput_.clear();
     standardError_.clear();
+    standardOutput_.squeeze();
+    standardError_.squeeze();
 }
 
 void CoreProcessOutputBuffer::emitCompleteLines(QString& buffer, const OutputCallback& outputReceived)

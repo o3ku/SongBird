@@ -4,6 +4,8 @@
 
 #include <QCoreApplication>
 
+#include "domain/models/RoutingProfiles.h"
+
 RuntimeStateSnapshotBuilder::RuntimeStateSnapshotBuilder(Callbacks callbacks)
     : callbacks_(std::move(callbacks))
 {
@@ -18,7 +20,6 @@ RuntimeStateSnapshot RuntimeStateSnapshotBuilder::buildSnapshot(const Inputs& in
     if (inputs.config != nullptr) {
         snapshot.routingSummary = buildRoutingSummaryText(*inputs.config);
         snapshot.listenSummary = buildListenSummaryText(*inputs.config);
-        snapshot.routingAdvancedEnabled = inputs.config->collection().enableRoutingAdvanced;
     }
     snapshot.proxyUiState = computeProxyUiState(inputs);
     snapshot.systemProxyMode = inputs.systemProxyMode;
@@ -30,22 +31,20 @@ RuntimeStateSnapshot RuntimeStateSnapshotBuilder::buildSnapshot(const Inputs& in
 
 QString RuntimeStateSnapshotBuilder::buildRoutingSummaryText(const Config& config) const
 {
-    if (!config.collection().enableRoutingAdvanced || config.collection().routingItems.isEmpty()) {
+    const QList<RoutingItem> items = RoutingProfiles::routingItems(config.collection());
+    if (items.isEmpty()) {
         return QCoreApplication::translate("AppBootstrap", "Basic");
     }
 
-    if (config.collection().routingIndex >= 0
-        && config.collection().routingIndex < config.collection().routingItems.size()) {
-        const QString remarks = config.collection().routingItems.at(config.collection().routingIndex).remarks.trimmed();
-        if (!remarks.isEmpty()) {
-            return QCoreApplication::translate("AppBootstrap", "%1 (Advanced)").arg(remarks);
-        }
-
-        return QCoreApplication::translate("AppBootstrap", "Routing %1 (Advanced)")
-            .arg(config.collection().routingIndex + 1);
+    const int index = RoutingProfiles::selectedRoutingIndex(config.collection());
+    if (index >= 0 && index < items.size()) {
+        const QString remarks = items.at(index).remarks.trimmed();
+        return remarks.isEmpty()
+            ? QCoreApplication::translate("AppBootstrap", "Routing %1").arg(index + 1)
+            : remarks;
     }
 
-    return QCoreApplication::translate("AppBootstrap", "Advanced");
+    return QCoreApplication::translate("AppBootstrap", "Basic");
 }
 
 QString RuntimeStateSnapshotBuilder::buildListenSummaryText(const Config& config) const

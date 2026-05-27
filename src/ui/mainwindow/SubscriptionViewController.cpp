@@ -169,8 +169,30 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
     }
 
     const QString tabKey = context_.subscriptionTabBar->tabData(tabIndex).toString();
+    showContextMenu(tabKey, context_.subscriptionTabBar->mapToGlobal(position), context_.subscriptionTabBar);
+}
+
+void SubscriptionViewController::showContextMenuForTabKey(const QString& tabKey, const QPoint& globalPosition)
+{
+    if (context_.subscriptionTabBar == nullptr) {
+        return;
+    }
+
+    for (int index = 0; index < context_.subscriptionTabBar->count(); ++index) {
+        if (context_.subscriptionTabBar->tabData(index).toString() == tabKey) {
+            if (context_.subscriptionTabBar->currentIndex() != index) {
+                context_.subscriptionTabBar->setCurrentIndex(index);
+            }
+            showContextMenu(tabKey, globalPosition, context_.subscriptionTabBar);
+            return;
+        }
+    }
+}
+
+void SubscriptionViewController::showContextMenu(const QString& tabKey, const QPoint& globalPosition, QWidget* parent)
+{
     const QString subscriptionId = SubscriptionViewSupport::subscriptionIdFromTabKey(tabKey);
-    QMenu menu(context_.subscriptionTabBar);
+    QMenu menu(parent == nullptr ? context_.subscriptionTabBar : parent);
 
     if (!subscriptionId.isEmpty()) {
         auto* copySubscriptionUrlAction = menu.addAction(QObject::tr("Copy Subscription Url"));
@@ -231,5 +253,5 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
         }
     });
 
-    menu.exec(context_.subscriptionTabBar->mapToGlobal(position));
+    menu.exec(globalPosition);
 }

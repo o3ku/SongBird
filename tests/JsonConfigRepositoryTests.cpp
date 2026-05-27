@@ -7,6 +7,7 @@
 #include <QTemporaryDir>
 
 #include "persistence/JsonConfigRepository.h"
+#include "domain/models/RoutingProfiles.h"
 
 namespace {
 
@@ -285,9 +286,8 @@ QJsonObject makeCanonicalRoot()
     root.insert(QStringLiteral("tunModeItem"), tunModeItem);
     root.insert(QStringLiteral("servers"), QJsonArray{serverObject});
     root.insert(QStringLiteral("subscriptions"), QJsonArray{subscriptionObject});
-    root.insert(QStringLiteral("routingIndex"), 1);
-    root.insert(QStringLiteral("enableRoutingAdvanced"), true);
-    root.insert(QStringLiteral("routingItems"), QJsonArray{routingObject});
+    root.insert(QStringLiteral("routingModeId"), QStringLiteral("custom:route"));
+    root.insert(QStringLiteral("customRoutingItems"), QJsonArray{routingObject});
     root.insert(QStringLiteral("routingCustomRules"), QJsonArray{ruleObject});
     root.insert(QStringLiteral("policyGroups"), QJsonArray{policyGroupObject});
     root.insert(QStringLiteral("coreTypeItems"), QJsonArray{coreTypeObject});
@@ -330,7 +330,7 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     QCOMPARE(config.tun().tunModeItem.udpRouting, QStringLiteral("direct"));
     QVERIFY(!config.tun().tunModeItem.enableIPv6Address);
     QVERIFY(config.policy().coreTypeItems.size() > 0);
-    QVERIFY(config.collection().routingItems.size() >= 3);
+    QVERIFY(RoutingProfiles::routingItems(config.collection()).size() >= 3);
     QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.collection().subscriptions.isEmpty());
 }
@@ -433,13 +433,11 @@ void JsonConfigRepositoryTests::loadReadsCanonicalSongBirdStructure()
     QCOMPARE(config.collection().servers.constFirst().minIdleSession, QStringLiteral("5"));
     QCOMPARE(config.collection().subscriptions.size(), 1);
     QCOMPARE(config.collection().subscriptions.constFirst().remarks, QStringLiteral("feed"));
-    QCOMPARE(config.collection().routingIndex, 1);
-    QVERIFY(config.collection().enableRoutingAdvanced);
-    QVERIFY(config.collection().routingItems.size() >= 1);
-    QCOMPARE(config.collection().routingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
-    QCOMPARE(config.collection().routingItems.constFirst().rules.constFirst().network, QStringLiteral("tcp,udp"));
+    QVERIFY(config.collection().customRoutingItems.size() >= 1);
+    QCOMPARE(config.collection().customRoutingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
+    QCOMPARE(config.collection().customRoutingItems.constFirst().rules.constFirst().network, QStringLiteral("tcp,udp"));
     const QStringList expectedRuleProcess{QStringLiteral("chrome.exe")};
-    QCOMPARE(config.collection().routingItems.constFirst().rules.constFirst().process, expectedRuleProcess);
+    QCOMPARE(config.collection().customRoutingItems.constFirst().rules.constFirst().process, expectedRuleProcess);
     QCOMPARE(config.collection().routingCustomRules.size(), 1);
     QCOMPARE(config.collection().routingCustomRules.constFirst().network, QStringLiteral("tcp,udp"));
     QCOMPARE(config.collection().routingCustomRules.constFirst().process, expectedRuleProcess);
@@ -559,7 +557,7 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
     QVERIFY(!config.ui().mainProxyEnabled);
     QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.collection().subscriptions.isEmpty());
-    QVERIFY(config.collection().routingItems.size() >= 3);
+    QVERIFY(RoutingProfiles::routingItems(config.collection()).size() >= 3);
 }
 
 void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
@@ -641,9 +639,7 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     config.collection().servers = {makeServer()};
     config.collection().servers[0].testResult = QStringLiteral("123 ms");
     config.collection().subscriptions = {makeSubscription()};
-    config.collection().routingIndex = 2;
-    config.collection().enableRoutingAdvanced = true;
-    config.collection().routingItems = {makeRoutingItem()};
+    config.collection().customRoutingItems = {makeRoutingItem()};
     config.collection().routingCustomRules = {makeRoutingRule()};
     config.policy().policyGroups = {makePolicyGroup()};
     config.policy().coreTypeItems = {makeCoreTypeItem()};
@@ -660,7 +656,7 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QVERIFY(savedRoot.contains(QStringLiteral("tunModeItem")));
     QVERIFY(savedRoot.contains(QStringLiteral("servers")));
     QVERIFY(savedRoot.contains(QStringLiteral("subscriptions")));
-    QVERIFY(savedRoot.contains(QStringLiteral("routingItems")));
+    QVERIFY(savedRoot.contains(QStringLiteral("customRoutingItems")));
     QVERIFY(savedRoot.contains(QStringLiteral("routingCustomRules")));
     QVERIFY(savedRoot.contains(QStringLiteral("policyGroups")));
     QVERIFY(savedRoot.contains(QStringLiteral("coreTypeItems")));
@@ -723,7 +719,7 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QCOMPARE(savedServerState.value(QStringLiteral("indexId")).toString(), QStringLiteral("server-1"));
     QCOMPARE(savedServerState.value(QStringLiteral("testResult")).toString(), QStringLiteral("123 ms"));
 
-    const QJsonObject savedRouting = savedRoot.value(QStringLiteral("routingItems")).toArray().at(0).toObject();
+    const QJsonObject savedRouting = savedRoot.value(QStringLiteral("customRoutingItems")).toArray().at(0).toObject();
     QCOMPARE(savedRouting.value(QStringLiteral("domainStrategyForSingbox")).toString(), QStringLiteral("prefer_ipv4"));
     QCOMPARE(savedRouting.value(QStringLiteral("rules")).toArray().at(0).toObject().value(QStringLiteral("network")).toString(), QStringLiteral("tcp,udp"));
     QCOMPARE(savedRouting.value(QStringLiteral("rules")).toArray().at(0).toObject().value(QStringLiteral("process")).toArray().at(0).toString(), QStringLiteral("chrome.exe"));
@@ -733,7 +729,7 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QCOMPARE(reloaded.ui().mainSelectedSubId, QStringLiteral("sub-1"));
     QCOMPARE(reloaded.collection().servers.size(), 1);
     QCOMPARE(reloaded.collection().servers.constFirst().subId, QStringLiteral("sub-1"));
-    QCOMPARE(reloaded.collection().routingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
+    QCOMPARE(reloaded.collection().customRoutingItems.constFirst().domainStrategy4Singbox, QStringLiteral("prefer_ipv4"));
     QCOMPARE(reloaded.policy().policyGroups.size(), 1);
 }
 

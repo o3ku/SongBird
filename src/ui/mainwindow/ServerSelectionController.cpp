@@ -152,16 +152,17 @@ QStringList ServerSelectionController::selectedServerIds() const
     return ids;
 }
 
-QStringList ServerSelectionController::selectedShareLinks(const QHash<QString, QString>& shareUrlsByIndexId) const
+QStringList ServerSelectionController::selectedShareLinks(
+    const std::function<QString(const QString&)>& shareUrlForIndexId) const
 {
     QStringList shareLinks;
     const QList<const ServerTableRow*> items = selectedServers();
     for (const ServerTableRow* item : items) {
-        if (item == nullptr) {
+        if (item == nullptr || !shareUrlForIndexId) {
             continue;
         }
 
-        const QString shareUrl = shareUrlsByIndexId.value(item->indexId).trimmed();
+        const QString shareUrl = shareUrlForIndexId(item->indexId).trimmed();
         if (!shareUrl.isEmpty()) {
             shareLinks.append(shareUrl);
         }

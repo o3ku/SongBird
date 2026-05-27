@@ -144,9 +144,8 @@ inline bool shouldHotApplyRuntimeSettings(
         && (previousLocalPort != updatedLocalPort
             || previous.allowLanConnection != updated.allowLanConnection
             || previousCoreTypeItems != updatedCoreTypeItems
-            || previous.collection().enableRoutingAdvanced != updated.collection().enableRoutingAdvanced
-            || previous.collection().routingIndex != updated.collection().routingIndex
-            || previous.collection().routingItems != updated.collection().routingItems
+            || previous.collection().routingModeId != updated.collection().routingModeId
+            || previous.collection().customRoutingItems != updated.collection().customRoutingItems
             || previous.collection().routingCustomRules != updated.collection().routingCustomRules
             || tunDecision.tunRuntimeChanged);
 }

@@ -2,6 +2,22 @@
 
 #include <algorithm>
 
+#include "domain/models/RoutingProfiles.h"
+
+namespace {
+
+bool containsRoutingModeId(const CollectionConfigState& config, const QString& routingModeId)
+{
+    for (const RoutingItem& item : RoutingProfiles::routingItems(config)) {
+        if (item.id == routingModeId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 RoutingService::RoutingService(IConfigRepository& repository)
     : repository_(repository)
 {
@@ -22,11 +38,31 @@ OperationResult RoutingService::saveRouting(
         items[index].locked = index == effectiveIndex;
     }
 
+    QString selectedRoutingModeId;
+    if (effectiveIndex >= 0 && effectiveIndex < items.size()) {
+        const RoutingItem& selectedItem = items.at(effectiveIndex);
+        if (selectedItem.id.startsWith(QStringLiteral("builtin:"))) {
+            selectedRoutingModeId = selectedItem.id;
+        } else {
+            int customIndex = -1;
+            for (int index = 0; index <= effectiveIndex; ++index) {
+                const RoutingItem& item = items.at(index);
+                if (!item.builtin && !item.id.startsWith(QStringLiteral("builtin:"))) {
+                    ++customIndex;
+                }
+            }
+            selectedRoutingModeId = RoutingProfiles::customRoutingId(selectedItem.id, customIndex);
+        }
+    }
+
     config.dns().domainStrategy = domainStrategy.trimmed();
     config.dns().domainMatcher = domainMatcher.trimmed();
-    config.collection().enableRoutingAdvanced = enableAdvanced;
-    config.collection().routingIndex = effectiveIndex < 0 ? 0 : effectiveIndex;
-    config.collection().routingItems = std::move(items);
+    Q_UNUSED(enableAdvanced);
+    config.collection().customRoutingItems = RoutingProfiles::customRoutingItemsFromRuntime(items);
+    if (!selectedRoutingModeId.isEmpty()) {
+        config.collection().routingModeId = selectedRoutingModeId;
+    }
+    RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save routing settings."));
@@ -35,32 +71,18 @@ OperationResult RoutingService::saveRouting(
     return OperationResult::ok(QStringLiteral("Routing settings saved."));
 }
 
-OperationResult RoutingService::setRoutingMode(Config& config, bool enableAdvanced, int selectedIndex)
+OperationResult RoutingService::setRoutingMode(Config& config, const QString& routingModeId)
 {
-    if (!enableAdvanced || config.collection().routingItems.isEmpty()) {
-        for (RoutingItem& item : config.collection().routingItems) {
-            item.locked = false;
-        }
-        config.collection().enableRoutingAdvanced = false;
-        config.collection().routingIndex = 0;
-
-        if (!repository_.save(config)) {
-            return OperationResult::fail(QStringLiteral("Failed to save the selected routing mode."));
-        }
-
-        return OperationResult::ok(QStringLiteral("Routing mode switched to Basic."));
-    }
-
-    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.collection().routingItems.size());
-    if (effectiveIndex < 0) {
+    const QString normalizedId = routingModeId.trimmed();
+    if (normalizedId.isEmpty()) {
         return OperationResult::fail(QStringLiteral("No routing entry is available."));
     }
 
-    for (int index = 0; index < config.collection().routingItems.size(); ++index) {
-        config.collection().routingItems[index].locked = index == effectiveIndex;
+    if (!containsRoutingModeId(config.collection(), normalizedId)) {
+        return OperationResult::fail(QStringLiteral("No routing entry is available."));
     }
-    config.collection().enableRoutingAdvanced = true;
-    config.collection().routingIndex = effectiveIndex;
+    config.collection().routingModeId = normalizedId;
+    RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
         return OperationResult::fail(QStringLiteral("Failed to save the selected routing mode."));
@@ -69,23 +91,9 @@ OperationResult RoutingService::setRoutingMode(Config& config, bool enableAdvanc
     return OperationResult::ok(QStringLiteral("Routing mode switched."));
 }
 
-OperationResult RoutingService::selectRouting(Config& config, int selectedIndex)
+OperationResult RoutingService::selectRouting(Config& config, const QString& routingModeId)
 {
-    const int effectiveIndex = resolveSelectedIndex(selectedIndex, config.collection().routingItems.size());
-    if (effectiveIndex < 0) {
-        return OperationResult::fail(QStringLiteral("No routing entry is available."));
-    }
-
-    for (int index = 0; index < config.collection().routingItems.size(); ++index) {
-        config.collection().routingItems[index].locked = index == effectiveIndex;
-    }
-    config.collection().routingIndex = effectiveIndex;
-
-    if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save the selected routing entry."));
-    }
-
-    return OperationResult::ok(QStringLiteral("Routing entry switched."));
+    return setRoutingMode(config, routingModeId);
 }
 
 void RoutingService::normalizeRoutingItems(QList<RoutingItem>& items)

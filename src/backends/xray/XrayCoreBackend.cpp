@@ -1,5 +1,7 @@
 #include "backends/xray/XrayCoreBackend.h"
 
+#include <optional>
+
 #include <QDir>
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -90,13 +92,14 @@ QJsonObject XrayCoreBackend::buildClientRoot(const Config& config, const VmessIt
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
     root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
 
-    const RoutingItem* selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    const QJsonObject routing = RoutingConfigFragments::buildLegacyRouting(config, selectedRouting);
+    const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
+    const RoutingItem* selectedRoutingPtr = selectedRouting.has_value() ? &*selectedRouting : nullptr;
+    const QJsonObject routing = RoutingConfigFragments::buildLegacyRouting(config, selectedRoutingPtr);
     if (!routing.isEmpty()) {
         root.insert(QStringLiteral("routing"), routing);
     }
 
-    const QJsonObject dns = DnsConfigFragments::buildLegacyDns(config, selectedRouting);
+    const QJsonObject dns = DnsConfigFragments::buildLegacyDns(config, selectedRoutingPtr);
     if (!dns.isEmpty()) {
         root.insert(QStringLiteral("dns"), dns);
     }

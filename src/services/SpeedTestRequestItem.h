@@ -1,10 +1,14 @@
 #pragma once
 
+#include <QString>
+
 #include "domain/models/VmessItem.h"
 #include "runtime/CoreInfo.h"
 
 struct SpeedTestRequestItem {
-    VmessItem server;
+    QString indexId;
+    QString displayName;
+    ConfigType configType = ConfigType::Unknown;
     VmessItem runtimeServer;
     CoreInfo coreInfo;
 };

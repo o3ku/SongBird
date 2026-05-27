@@ -2,6 +2,11 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test Widgets Network Svg)
 
 link_libraries(songbird_core_descriptors)
 
+set(SONGBIRD_COMMON_DOMAIN_TEST_SOURCES
+    ../src/domain/models/RoutingProfiles.h
+    ../src/domain/models/RoutingProfiles.cpp
+)
+
 find_program(SONGBIRD_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
 if(SONGBIRD_POWERSHELL_EXECUTABLE)
     add_test(
@@ -30,6 +35,11 @@ function(songbird_add_qt_test target_name test_name)
     else()
         add_executable(${target_name} ${SONGBIRD_TEST_SOURCES})
     endif()
+
+    target_sources(${target_name}
+        PRIVATE
+            ${SONGBIRD_COMMON_DOMAIN_TEST_SOURCES}
+    )
 
     target_include_directories(${target_name}
         PRIVATE

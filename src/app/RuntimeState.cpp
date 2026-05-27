@@ -20,8 +20,7 @@ void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
         || snapshot_.systemProxyApplied != snapshot.systemProxyApplied;
     const bool autoRunChanged = snapshot_.autoRunEnabled != snapshot.autoRunEnabled;
     const bool routingStatusChanged = snapshot_.routingSummary != snapshot.routingSummary
-        || snapshot_.listenSummary != snapshot.listenSummary
-        || snapshot_.routingAdvancedEnabled != snapshot.routingAdvancedEnabled;
+        || snapshot_.listenSummary != snapshot.listenSummary;
 
     snapshot_ = snapshot;
 
@@ -47,7 +46,6 @@ void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
     if (routingStatusChanged) {
         emit this->routingStatusChanged(
             snapshot_.routingSummary,
-            snapshot_.listenSummary,
-            snapshot_.routingAdvancedEnabled);
+            snapshot_.listenSummary);
     }
 }

@@ -102,8 +102,8 @@ void GeneralSettingsPageWidget::setupUi()
 
     themeCombo_ = new QComboBox(this);
     themeCombo_->setObjectName(QStringLiteral("settingsThemeCombo"));
-    themeCombo_->addItem(AppTheme::lightThemeName(), AppTheme::lightThemeName());
-    themeCombo_->addItem(AppTheme::darkThemeName(), AppTheme::darkThemeName());
+    themeCombo_->addItem(tr("Light"), AppTheme::lightThemeName());
+    themeCombo_->addItem(tr("Dark"), AppTheme::darkThemeName());
 
     AppTheme::applyCompactFont({
         showMainOnStartupCheck_,

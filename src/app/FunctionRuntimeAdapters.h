@@ -48,7 +48,6 @@ public:
     std::function<QObject*()> uiContextFn;
     std::function<QWidget*()> dialogParentFn;
     std::function<void(const QString&)> appendLogFn;
-    std::function<void(const QString&, int, TransientStatusPriority)> showTransientStatusFn;
     std::function<void(const OperationResult&)> recordOperationResultFn;
     std::function<void(const QString&, const OperationResult&, QWidget*)> showOperationMessageFn;
     std::function<bool(QWidget*, const QString&, const QString&, YesNoDefault)> askYesNoFn;
@@ -60,10 +59,6 @@ public:
     QObject* uiContext() const override;
     QWidget* dialogParent() const override;
     void appendLog(const QString& message) override;
-    void showTransientStatus(
-        const QString& message,
-        int timeoutMs,
-        TransientStatusPriority priority = TransientStatusPriority::Routine) override;
     void recordOperationResult(const OperationResult& result) override;
     void showOperationMessage(const QString& title, const OperationResult& result, QWidget* parent) override;
     bool askYesNo(

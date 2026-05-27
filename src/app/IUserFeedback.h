@@ -8,10 +8,6 @@ struct OperationResult;
 
 class IUserFeedback {
 public:
-    enum class TransientStatusPriority {
-        Routine
-    };
-
     enum class YesNoDefault {
         Yes,
         No
@@ -23,10 +19,6 @@ public:
     virtual QWidget* dialogParent() const = 0;
 
     virtual void appendLog(const QString& message) = 0;
-    virtual void showTransientStatus(
-        const QString& message,
-        int timeoutMs,
-        TransientStatusPriority priority = TransientStatusPriority::Routine) = 0;
     virtual void recordOperationResult(const OperationResult& result) = 0;
     virtual void showOperationMessage(const QString& title, const OperationResult& result, QWidget* parent) = 0;
     virtual bool askYesNo(

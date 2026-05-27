@@ -8,6 +8,7 @@
 
 #include "app/RuntimeState.h"
 #include "domain/models/RoutingItem.h"
+#include "domain/models/SubItem.h"
 #include "domain/models/VmessItem.h"
 
 class QMenu;
@@ -21,6 +22,7 @@ struct TrayServerEntry {
 };
 
 struct TrayRoutingEntry {
+    QString id;
     QString displayName;
     QString customIconPath;
 };
@@ -34,16 +36,20 @@ QString formatServerMenuText(QMenu* menu, const TrayServerEntry& item);
 QString formatServerActionToolTip(QMenu* menu, const TrayServerEntry& item);
 QString buildToolTip(
     QMenu* menu,
+    const QString& appVersion,
     const QString& currentServerName,
     ProxyUiState proxyUiState,
     bool systemProxyApplied,
     bool autoRunEnabled,
-    const QString& routingSummary,
-    bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription);
+    bool tunEnabled,
+    const QString& routingSummary);
 QIcon defaultTrayIcon();
 QIcon trayIconForState(ProxyUiState proxyUiState, bool systemProxyApplied);
 void applyWindowIcon(const QIcon& icon, QWidget* window);
+QList<VmessItem> serversInCurrentGroup(
+    const QList<VmessItem>& servers,
+    const QList<SubItem>& subscriptions,
+    const QString& currentServerId);
 QList<TrayServerEntry> makeServerEntries(const QList<VmessItem>& servers);
 QList<TrayRoutingEntry> makeRoutingEntries(const QList<RoutingItem>& routings);
 int serverMenuMaxCount();
@@ -61,9 +67,8 @@ void rebuildServerMenu(
 void rebuildRoutingMenu(
     QMenu* menu,
     const QList<TrayRoutingEntry>& routings,
-    int currentRoutingIndex,
-    bool advancedRoutingEnabled,
+    const QString& currentRoutingId,
     QObject* receiver,
-    const std::function<void(int)>& selectRouting);
+    const std::function<void(const QString&)>& selectRouting);
 
 } // namespace TrayMenuSupport

@@ -57,7 +57,6 @@ ServerActionsController::ServerActionsController(
     std::function<bool()> canStartBackgroundTask,
     std::function<void()> updateActionState,
     std::function<void(const QString&)> appendLog,
-    std::function<void(const QString&, int, int)> showTransientStatus,
     std::function<QStringList()> selectedShareLinks)
     : context_(context)
     , selectedServerId_(std::move(selectedServerId))
@@ -66,7 +65,6 @@ ServerActionsController::ServerActionsController(
     , canStartBackgroundTask_(std::move(canStartBackgroundTask))
     , updateActionState_(std::move(updateActionState))
     , appendLog_(std::move(appendLog))
-    , showTransientStatus_(std::move(showTransientStatus))
     , selectedShareLinks_(std::move(selectedShareLinks))
 {
 }
@@ -316,12 +314,6 @@ void ServerActionsController::copySelectedServerUrlsToClipboard(QObject* senderO
     const QStringList shareLinks = selectedShareLinks_();
     const bool copyShareLinkRequested = senderObject == context_.copyShareLinkAction;
     if (shareLinks.isEmpty()) {
-        showTransientStatus_(
-            copyShareLinkRequested
-                ? QObject::tr("Share link unavailable for the selected server.")
-                : QObject::tr("URL unavailable for the selected server."),
-            4000,
-            0);
         return;
     }
 
@@ -333,5 +325,4 @@ void ServerActionsController::copySelectedServerUrlsToClipboard(QObject* senderO
         ? QObject::tr("Copied %1 share link(s) to the clipboard.").arg(shareLinks.size())
         : QObject::tr("Copied %1 URL(s) to the clipboard.").arg(shareLinks.size());
     appendLog_(message);
-    showTransientStatus_(message, 3000, 1);
 }

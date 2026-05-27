@@ -29,16 +29,21 @@ public:
     void setProxyUiState(ProxyUiState state);
     void setSystemProxyState(int mode, bool enabled);
     void setAutoRunEnabled(bool enabled);
-    void setRoutingSummary(const QString& value, bool advancedEnabled);
-    void setServers(const QList<VmessItem>& servers, const QString& currentIndexId);
-    void setRoutings(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedEnabled);
+    void setTunEnabled(bool enabled);
+    void setRoutingSummary(const QString& value);
+    void setServers(
+        const QList<VmessItem>& servers,
+        const QList<SubItem>& subscriptions,
+        const QString& currentIndexId);
+    void setRoutings(const QList<RoutingItem>& routings, const QString& currentRoutingId);
     void setBackgroundTaskRunning(bool running);
     void setBackgroundTaskDescription(const QString& description);
     void showMessage(const QString& title, const QString& message, bool error = false, int timeoutMs = 5000);
 
 signals:
     void defaultServerRequested(const QString& indexId);
-    void routingRequested(int index);
+    void routingRequested(const QString& routingModeId);
+    void autoRunToggled(bool enabled);
     void quitRequested();
 
 public slots:
@@ -57,18 +62,19 @@ private:
     QPointer<QAction> currentServerAction_;
     QPointer<QMenu> serversMenu_;
     QPointer<QMenu> routingsMenu_;
+    QPointer<QAction> autoRunAction_;
     QPointer<QAction> quitAction_;
     QString currentServerName_;
     QString routingSummary_;
     QList<TrayServerEntry> servers_;
     QList<TrayRoutingEntry> routings_;
     QString currentServerId_;
-    int currentRoutingIndex_ = -1;
+    QString currentRoutingId_;
     ProxyUiState proxyUiState_ = ProxyUiState::Idle;
     bool backgroundTaskRunning_ = false;
     QString backgroundTaskDescription_;
     bool systemProxyApplied_ = false;
     bool autoRunEnabled_ = false;
-    bool advancedRoutingEnabled_ = false;
+    bool tunEnabled_ = false;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
 };

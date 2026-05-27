@@ -2,7 +2,6 @@
 
 #include <functional>
 
-#include <QHash>
 #include <QStringList>
 
 class QTableView;
@@ -26,7 +25,7 @@ public:
     const ServerTableRow* selectedServer() const;
     QString selectedServerId() const;
     QStringList selectedServerIds() const;
-    QStringList selectedShareLinks(const QHash<QString, QString>& shareUrlsByIndexId) const;
+    QStringList selectedShareLinks(const std::function<QString(const QString&)>& shareUrlForIndexId) const;
 
 private:
     void handleSelectionChanged();

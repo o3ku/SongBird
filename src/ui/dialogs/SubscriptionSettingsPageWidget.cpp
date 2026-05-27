@@ -121,10 +121,10 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_ = new QTableWidget(this);
     table_->setColumnCount(4);
     table_->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
+        tr("Enabled"),
         QStringLiteral("URL"),
-        QStringLiteral("Remarks"),
-        QStringLiteral("User Agent")
+        tr("Remarks"),
+        tr("User Agent")
     });
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -144,9 +144,9 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_->horizontalHeader()->setMinimumSectionSize(headerHeight);
     AppTheme::applyServerTableStyle(table_);
 
-    addButton_ = new QPushButton(QStringLiteral("Add"), this);
-    removeButton_ = new QPushButton(QStringLiteral("Remove"), this);
-    updateButton_ = new QPushButton(QStringLiteral("Update Selected"), this);
+    addButton_ = new QPushButton(tr("Add"), this);
+    removeButton_ = new QPushButton(tr("Remove"), this);
+    updateButton_ = new QPushButton(tr("Update Selected"), this);
     AppTheme::applyCompactFont({addButton_, removeButton_, updateButton_});
 
     auto* buttonLayout = new QHBoxLayout();

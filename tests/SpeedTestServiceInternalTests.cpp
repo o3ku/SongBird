@@ -116,9 +116,7 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     config.dns().enableCacheFile4Sbox = true;
     config.sniffingEnabled = true;
     config.routeOnly = true;
-    config.collection().enableRoutingAdvanced = true;
-    config.collection().routingIndex = 3;
-    config.collection().routingItems = {RoutingItem{}};
+    config.collection().customRoutingItems = {RoutingItem{}};
     config.collection().routingCustomRules = {RoutingRule{}};
     config.dns().remoteDns = QStringLiteral("https://dns.google/dns-query");
     config.dns().directDns = QStringLiteral("https://dns.alidns.com/dns-query");
@@ -143,9 +141,7 @@ void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBe
     QVERIFY(!runtimeConfig.dns().enableCacheFile4Sbox);
     QVERIFY(runtimeConfig.sniffingEnabled);
     QVERIFY(runtimeConfig.routeOnly);
-    QVERIFY(runtimeConfig.collection().enableRoutingAdvanced);
-    QCOMPARE(runtimeConfig.collection().routingIndex, 3);
-    QCOMPARE(runtimeConfig.collection().routingItems.size(), 1);
+    QCOMPARE(runtimeConfig.collection().customRoutingItems.size(), 1);
     QCOMPARE(runtimeConfig.collection().routingCustomRules.size(), 1);
     QCOMPARE(runtimeConfig.dns().remoteDns, QStringLiteral("https://dns.google/dns-query"));
     QCOMPARE(runtimeConfig.dns().directDns, QStringLiteral("https://dns.alidns.com/dns-query"));

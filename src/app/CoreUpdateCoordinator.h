@@ -48,8 +48,6 @@ public:
         std::function<bool(QWidget*, const QString&, const QString&)> confirmUpdate;
         std::function<void(const OperationResult&)> appendResult;
         std::function<void(const QString&)> appendLog;
-        std::function<void(const QString&, int)> showRoutineTransientStatus;
-        std::function<void(const QString&, int)> showTransientStatus;
         std::function<void(const QString&, const OperationResult&, QWidget*)> showOperationMessage;
 
         std::function<void()> stopForCoreUpdate;

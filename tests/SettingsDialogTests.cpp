@@ -568,15 +568,15 @@ void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
     routing.remarks = QStringLiteral("route");
     routing.locked = true;
     routing.rules = {rule};
-    config.collection().routingItems = {routing};
+    config.collection().customRoutingItems = {routing};
 
     SettingsDialog dialog;
     dialog.setConfig(config);
 
     const Config updated = dialog.config();
-    QCOMPARE(updated.collection().routingItems.size(), 1);
-    QCOMPARE(updated.collection().routingItems.constFirst().rules.size(), 1);
-    const RoutingRule updatedRule = updated.collection().routingItems.constFirst().rules.constFirst();
+    QCOMPARE(updated.collection().customRoutingItems.size(), 1);
+    QCOMPARE(updated.collection().customRoutingItems.constFirst().rules.size(), 1);
+    const RoutingRule updatedRule = updated.collection().customRoutingItems.constFirst().rules.constFirst();
     QCOMPARE(updatedRule.network, QStringLiteral("tcp,udp"));
     QCOMPARE(
         updatedRule.process,
@@ -615,14 +615,14 @@ void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
     auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
     QVERIFY(tabs != nullptr);
     QCOMPARE(tabs->count(), 3);
-    QCOMPARE(tabs->tabText(0), QStringLiteral("Block"));
-    QCOMPARE(tabs->tabText(1), QStringLiteral("Direct"));
-    QCOMPARE(tabs->tabText(2), QStringLiteral("Proxy"));
+    QCOMPARE(tabs->tabText(0), QStringLiteral("BLOCK"));
+    QCOMPARE(tabs->tabText(1), QStringLiteral("DIRECT"));
+    QCOMPARE(tabs->tabText(2), QStringLiteral("PROXY"));
 
-    auto* blockDomainEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomBlockDomainEdit"));
-    auto* directIpEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomDirectIpEdit"));
-    auto* proxyProtocolEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomProxyProtocolEdit"));
-    auto* proxyPortEdit = dialog.findChild<QLineEdit*>(QStringLiteral("routingCustomProxyPortEdit"));
+    auto* blockDomainEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomblockDomainEdit"));
+    auto* directIpEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomdirectIpEdit"));
+    auto* proxyProtocolEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomproxyProtocolEdit"));
+    auto* proxyPortEdit = dialog.findChild<QLineEdit*>(QStringLiteral("routingCustomproxyPortEdit"));
     QVERIFY(blockDomainEdit != nullptr);
     QVERIFY(directIpEdit != nullptr);
     QVERIFY(proxyProtocolEdit != nullptr);
@@ -658,17 +658,17 @@ void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelectio
 
     auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("routingCustomRuleTabs"));
     QVERIFY(tabs != nullptr);
-    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Direct"));
+    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("DIRECT"));
     QCOMPARE(dialog.config().ui().settingsRoutingRuleTabKey, QStringLiteral("direct"));
 
     Config config;
     config.ui().settingsRoutingRuleTabKey = QStringLiteral("proxy");
     dialog.setConfig(config);
-    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Proxy"));
+    QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("PROXY"));
 
     int blockIndex = -1;
     for (int index = 0; index < tabs->count(); ++index) {
-        if (tabs->tabText(index) == QStringLiteral("Block")) {
+        if (tabs->tabText(index) == QStringLiteral("BLOCK")) {
             blockIndex = index;
             break;
         }
@@ -702,7 +702,8 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
     RoutingItem routing;
     routing.remarks = QStringLiteral("Builtin");
     routing.rules = {blockRule, directRule, proxyRule};
-    config.collection().routingItems = {routing};
+    config.collection().customRoutingItems = {routing};
+    config.collection().routingModeId = QStringLiteral("custom:1");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -712,15 +713,15 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
         QVERIFY(label->text() != QStringLiteral("Custom rules are applied first in this order: block, direct, proxy, then the selected base route."));
     }
 
-    auto* card = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_0"));
+    auto* card = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_3"));
     QVERIFY(card != nullptr);
     QVERIFY(card->styleSheet().isEmpty());
     QVERIFY(card->text().contains(QStringLiteral("BLOCK: geosite:category-ads-all")));
     QVERIFY(card->text().contains(QStringLiteral("DIRECT: geoip:private")));
-    QVERIFY(card->text().contains(QStringLiteral("PROXY: port: 443, protocol: tls")));
+    QVERIFY(card->text().contains(QStringLiteral("PROXY: Port: 443, Protocol: tls")));
     QVERIFY(card->toolTip().contains(QStringLiteral("BLOCK: geosite:category-ads-all, domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")));
     QVERIFY(card->toolTip().contains(QStringLiteral("DIRECT: geoip:private")));
-    QVERIFY(card->toolTip().contains(QStringLiteral("PROXY: port: 443, protocol: tls")));
+    QVERIFY(card->toolTip().contains(QStringLiteral("PROXY: Port: 443, Protocol: tls")));
     QVERIFY(card->toolTip().indexOf(QStringLiteral("BLOCK:")) < card->toolTip().indexOf(QStringLiteral("DIRECT:")));
     QVERIFY(card->toolTip().indexOf(QStringLiteral("DIRECT:")) < card->toolTip().indexOf(QStringLiteral("PROXY:")));
     QVERIFY(card->toolTip().contains(QStringLiteral("domain:very-long-domain-name-that-should-not-expand-the-card-width.example.com")));
@@ -732,7 +733,7 @@ void SettingsDialogTests::routingPageUsesCompactCardsAndPlainCustomRuleForms()
     for (int index = 0; index < tabs->count(); ++index) {
         QVERIFY(tabs->widget(index)->findChildren<QGroupBox*>().isEmpty());
     }
-    QVERIFY(dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomProxyProtocolEdit")) != nullptr);
+    QVERIFY(dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomproxyProtocolEdit")) != nullptr);
 }
 
 void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
@@ -751,25 +752,26 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
                 QStringLiteral("domain:very-long-domain-name-that-should-wrap-in-expanded-card.example.com")};
             item.rules = {rule};
         }
-        config.collection().routingItems.append(item);
+        config.collection().customRoutingItems.append(item);
     }
+    config.collection().routingModeId = QStringLiteral("custom:1");
 
     SettingsDialog dialog;
     dialog.setConfig(config);
 
-    auto* first = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_0"));
-    auto* second = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_1"));
-    auto* third = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_2"));
+    auto* first = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_3"));
+    auto* second = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_4"));
+    auto* third = dialog.findChild<QPushButton*>(QStringLiteral("routingBaseRouteCard_5"));
     QVERIFY(first != nullptr);
     QVERIFY(second != nullptr);
     QVERIFY(third != nullptr);
 
     auto* routeLayout = dialog.findChild<QHBoxLayout*>(QStringLiteral("routingBaseRouteLayout"));
     QVERIFY(routeLayout != nullptr);
-    QCOMPARE(routeLayout->count(), 3);
-    QCOMPARE(routeLayout->stretch(0), 1);
-    QCOMPARE(routeLayout->stretch(1), 0);
-    QCOMPARE(routeLayout->stretch(2), 0);
+    QCOMPARE(routeLayout->count(), 6);
+    QCOMPARE(routeLayout->stretch(3), 1);
+    QCOMPARE(routeLayout->stretch(4), 0);
+    QCOMPARE(routeLayout->stretch(5), 0);
 
     QCOMPARE(first->maximumWidth(), QWIDGETSIZE_MAX);
     QCOMPARE(second->maximumWidth(), 100);
@@ -782,10 +784,10 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
     QCOMPARE(first->maximumWidth(), 100);
     QCOMPARE(second->maximumWidth(), 100);
     QCOMPARE(third->maximumWidth(), QWIDGETSIZE_MAX);
-    QCOMPARE(routeLayout->count(), 3);
-    QCOMPARE(routeLayout->stretch(0), 0);
-    QCOMPARE(routeLayout->stretch(1), 0);
-    QCOMPARE(routeLayout->stretch(2), 1);
+    QCOMPARE(routeLayout->count(), 6);
+    QCOMPARE(routeLayout->stretch(3), 0);
+    QCOMPARE(routeLayout->stretch(4), 0);
+    QCOMPARE(routeLayout->stretch(5), 1);
     QCOMPARE(third->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
     QVERIFY(!third->text().contains(QStringLiteral("...")));
     QVERIFY(third->text().contains(QStringLiteral("domain:very-long-domain-name-that-should-wrap-in-expanded-card.example.com")));
@@ -803,7 +805,7 @@ void SettingsDialogTests::routingBaseRouteCardsCollapseAroundSelectedCard()
     QCOMPARE(tabLayout->stretch(1), 1);
     QCOMPARE(tabLayout->stretch(2), 1);
 
-    auto* protocolEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomBlockProtocolEdit"));
+    auto* protocolEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomblockProtocolEdit"));
     QVERIFY(protocolEdit != nullptr);
     QCOMPARE(protocolEdit->maximumHeight(), QWIDGETSIZE_MAX);
     QVERIFY(protocolEdit->styleSheet().isEmpty());
@@ -829,15 +831,15 @@ void SettingsDialogTests::routingPageShowsExplicitEmptyStateWithoutBaseRoutes()
     QVERIFY(customRulesTitle != nullptr);
     QVERIFY(customRuleTabs != nullptr);
 
-    QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route (No Presets Configured)"));
-    QCOMPARE(customRulesTitle->text(), QStringLiteral("Custom Rules (Still Applied)"));
-    QVERIFY(baseRouteTitle->toolTip().contains(QStringLiteral("Custom rules below are still applied")));
+    QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route"));
+    QCOMPARE(customRulesTitle->text(), QStringLiteral("Custom Rules"));
+    QVERIFY(baseRouteTitle->toolTip().isEmpty());
     QCOMPARE(customRuleTabs->toolTip(), customRulesTitle->toolTip());
 
     Config config;
     RoutingItem routing;
     routing.remarks = QStringLiteral("Builtin");
-    config.collection().routingItems = {routing};
+    config.collection().customRoutingItems = {routing};
     dialog.setConfig(config);
 
     QCOMPARE(baseRouteTitle->text(), QStringLiteral("Base Route"));

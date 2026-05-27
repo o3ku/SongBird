@@ -62,16 +62,6 @@ void FunctionUserFeedback::appendLog(const QString& message)
     }
 }
 
-void FunctionUserFeedback::showTransientStatus(
-    const QString& message,
-    int timeoutMs,
-    TransientStatusPriority priority)
-{
-    if (showTransientStatusFn) {
-        showTransientStatusFn(message, timeoutMs, priority);
-    }
-}
-
 void FunctionUserFeedback::recordOperationResult(const OperationResult& result)
 {
     if (recordOperationResultFn) {

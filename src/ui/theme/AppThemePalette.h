@@ -43,6 +43,9 @@ struct ThemePalette {
     const char* accentHover;
     const char* accentPressed;
     const char* activeBackground;
+    const char* navigationSelectedBackground;
+    const char* navigationSelectedText;
+    const char* navigationSelectedBorder;
     const char* qrPressedBackground;
     const char* hover;
     const char* selection;

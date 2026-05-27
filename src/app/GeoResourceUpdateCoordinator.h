@@ -27,7 +27,6 @@ public:
         std::function<bool()> isAvailable;
         std::function<void(QThread*)> trackBackgroundThread;
         std::function<void(const QString&)> appendLog;
-        std::function<void(const QString&, int)> showRoutineTransientStatus;
         std::function<void(const OperationResult&)> appendResult;
         std::function<void(QWidget*, const QString&, const QString&)> showWarning;
         std::function<void(QWidget*, const QString&, const QString&)> showInformation;

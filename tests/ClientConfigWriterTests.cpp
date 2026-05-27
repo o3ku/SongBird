@@ -126,6 +126,7 @@ Config baseConfig()
     config.sniffingEnabled = true;
     config.tun().tunModeItem.enableTun = true;
     config.tun().tunModeItem.enableLegacyProtect = true;
+    config.collection().routingModeId = QStringLiteral("custom:1");
     return config;
 }
 
@@ -783,7 +784,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsLegacySimpleDnsServersA
     config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv4");
     config.dns().domainStrategyForProxy = QStringLiteral("UseIPv6");
     config.dns().dnsHosts = QStringLiteral("example.com 1.2.3.4");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("full:cn.example.com")}),
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("full:google.com")})})};
@@ -867,7 +868,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyDirectDnsAsFinalSer
     config.tun().tunModeItem.enableTun = false;
     config.dns().directDns = QStringLiteral("223.5.5.5");
     config.dns().remoteDns = QStringLiteral("8.8.8.8");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("direct"),
@@ -1629,7 +1630,7 @@ void ClientConfigWriterTests::generateClientConfigsIgnoresRuleUdpRoutingForNativ
 void ClientConfigWriterTests::generateClientConfigsKeepsDefaultTunUdpRuleBeforeUserRoutingRules()
 {
     Config config = baseConfig();
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -1922,7 +1923,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesDirectDnsAsFinalServerFor
 {
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("direct"),
@@ -2020,7 +2021,7 @@ void ClientConfigWriterTests::generateClientConfigsKeepsDirectDnsAheadOfNonGloba
     config.tun().tunModeItem.enableTun = false;
     config.dns().fakeIp = true;
     config.dns().globalFakeIp = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("full:direct.example")}),
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("full:proxy.example")})})};
@@ -2241,7 +2242,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsLegacyDirectExpectedIpsFo
     config.dns().directDns = QStringLiteral("223.5.5.5");
     config.dns().remoteDns = QStringLiteral("8.8.8.8");
     config.dns().directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
@@ -2415,7 +2416,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxClashModeRouteRule
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
     VmessItem server = baseServer();
@@ -2456,7 +2457,7 @@ void ClientConfigWriterTests::generateClientConfigsDownloadsSingBoxRemoteRuleSet
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -2493,7 +2494,7 @@ void ClientConfigWriterTests::generateClientConfigsPrefersLocalSingBoxRuleSetsWh
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
     VmessItem server = baseServer();
@@ -2575,7 +2576,7 @@ void ClientConfigWriterTests::generateClientConfigsMapsSingBoxBlockRoutingRuleTo
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("block"), QStringList{QStringLiteral("geosite:category-ads-all")})})};
     VmessItem server = baseServer();
@@ -2605,7 +2606,7 @@ void ClientConfigWriterTests::generateClientConfigsTreatsPlainSingBoxRoutingDoma
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("example.com")})})};
     VmessItem server = baseServer();
@@ -2634,7 +2635,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingPortsInto
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), {}, {}, {}, QStringLiteral("80,443,1000-2000"))})};
     VmessItem server = baseServer();
@@ -2670,7 +2671,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleBeforeU
     config.sniffingEnabled = false;
     config.dns().domainStrategy = QStringLiteral("IPOnDemand");
     config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv6");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
     VmessItem server = baseServer();
@@ -2709,7 +2710,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleAfterUs
     RoutingItem route = createRoutingItem({
         createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})});
     route.domainStrategy4Singbox = QStringLiteral("ipv6_only");
-    config.collection().routingItems = {route};
+    config.collection().customRoutingItems = {route};
     VmessItem server = baseServer();
     server.coreType = CoreType::SingBox;
 
@@ -2743,7 +2744,7 @@ void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterR
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
     config.dns().domainStrategy = QStringLiteral("IPIfNonMatch");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})})};
     VmessItem server = baseServer();
@@ -2782,7 +2783,7 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
     config.dns().directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
@@ -2817,7 +2818,7 @@ void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIn
     Config config = legacyConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -2852,7 +2853,7 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNa
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(
                 QStringLiteral("proxy"),
@@ -2898,13 +2899,11 @@ void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelect
 {
     Config config = legacyConfig();
     config.tun().tunModeItem.enableTun = false;
-    config.collection().enableRoutingAdvanced = true;
-    config.collection().routingIndex = 0;
     config.collection().routingCustomRules = {
         createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("domain:openai.com")}),
         createRoutingRule(QStringLiteral("direct"), {}, QStringList{QStringLiteral("geoip:private")}),
         createRoutingRule(QStringLiteral("block"), QStringList{QStringLiteral("geosite:category-ads-all")})};
-    config.collection().routingItems = {
+    config.collection().customRoutingItems = {
         createRoutingItem(QList<RoutingRule>{
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
 
@@ -3028,8 +3027,7 @@ void ClientConfigWriterTests::generateClientConfigsOmitsSingBoxDnsAndDefaultReso
 {
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
-    config.collection().enableRoutingAdvanced = false;
-    config.collection().routingItems.clear();
+    config.collection().customRoutingItems.clear();
     config.collection().routingCustomRules.clear();
     config.dns().remoteDns.clear();
     config.dns().directDns.clear();

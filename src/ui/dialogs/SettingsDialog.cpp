@@ -18,6 +18,7 @@
 
 #include <QWidget>
 
+#include "domain/models/RoutingProfiles.h"
 #include "ui/dialogs/CoreSettingsPageWidget.h"
 #include "ui/dialogs/DnsSettingsPageWidget.h"
 #include "ui/dialogs/GeneralSettingsPageWidget.h"
@@ -143,16 +144,17 @@ Config SettingsDialog::config() const
         generalSettingsPage_->applyToConfig(updated);
     }
     if (routingSettingsPage_ != nullptr) {
-        updated.collection().routingItems = routingSettingsPage_->routingItems();
-        updated.collection().routingCustomRules = routingSettingsPage_->routingCustomRules();
-        updated.collection().enableRoutingAdvanced = !updated.collection().routingItems.isEmpty();
-        updated.collection().routingIndex = 0;
-        for (int index = 0; index < updated.collection().routingItems.size(); ++index) {
-            if (updated.collection().routingItems.at(index).locked) {
-                updated.collection().routingIndex = index;
+        const QList<RoutingItem> routingItems = routingSettingsPage_->routingItems();
+        updated.collection().routingModeId = RoutingProfiles::defaultRoutingModeId();
+        for (const RoutingItem& item : routingItems) {
+            if (item.locked && !item.id.trimmed().isEmpty()) {
+                updated.collection().routingModeId = item.id;
                 break;
             }
         }
+        updated.collection().customRoutingItems = RoutingProfiles::customRoutingItemsFromRuntime(routingItems);
+        updated.collection().routingCustomRules = routingSettingsPage_->routingCustomRules();
+        RoutingProfiles::normalizeRoutingConfig(updated.collection());
         updated.ui().settingsRoutingRuleTabKey = routingSettingsPage_->settingsRoutingRuleTabKey();
     }
     if (subscriptionSettingsPage_ != nullptr) {

@@ -5,6 +5,8 @@
         <file alias="logo-fire.svg">logo-fire.svg</file>
 
         <file alias="down.svg">down.svg</file>
+        <file alias="left.svg">left.svg</file>
+        <file alias="right.svg">right.svg</file>
         <file alias="up.svg">up.svg</file>
         <file alias="down-dark.svg">down-dark.svg</file>
         <file alias="up-dark.svg">up-dark.svg</file>

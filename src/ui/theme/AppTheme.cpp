@@ -40,6 +40,7 @@ void AppTheme::applyApplicationTheme(QApplication& app, QStringView themeName)
     const QString normalizedThemeName = normalizeThemeName(themeName);
     setCurrentThemeName(normalizedThemeName);
     themedIconCache().clear();
+    themedIconCache().squeeze();
     applyApplicationPalette(app, currentPalette());
     app.setStyleSheet(loadThemeStyleSheet(normalizedThemeName));
     polishThemedWidgets(app);

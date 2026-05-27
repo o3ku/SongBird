@@ -5,9 +5,9 @@
 #include <QTextOption>
 
 namespace {
-constexpr int kMaxLogLines = 5000;
-constexpr int kTrimBatch = 500;
-constexpr int kMaxLogLineCharacters = 4096;
+constexpr int kMaxLogLines = 500;
+constexpr int kTrimBatch = 100;
+constexpr int kMaxLogLineCharacters = 1536;
 }
 
 LogListModel::LogListModel(QObject* parent)
@@ -62,11 +62,13 @@ void LogListModel::setWrapConfiguration(const QFont& font, int textWidth)
 
 void LogListModel::appendLine(const QString& line)
 {
-    if (entries_.size() >= kMaxLogLines + kTrimBatch) {
-        const int removeCount = entries_.size() - kMaxLogLines;
+    if (entries_.size() >= kMaxLogLines) {
+        const int removeCount = qMin(
+            entries_.size(),
+            qMax(kTrimBatch, entries_.size() - kMaxLogLines + 1));
         beginRemoveRows(QModelIndex(), 0, removeCount - 1);
         entries_.erase(entries_.begin(), entries_.begin() + removeCount);
-        if (entries_.capacity() > kMaxLogLines + (2 * kTrimBatch)) {
+        if (entries_.capacity() > kMaxLogLines + kTrimBatch) {
             entries_.squeeze();
         }
         endRemoveRows();

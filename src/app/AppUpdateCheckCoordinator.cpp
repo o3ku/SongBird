@@ -37,12 +37,7 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
     }
 
     if (checkRunning_) {
-        if (manual) {
-            deps_.feedback->showTransientStatus(
-                QCoreApplication::translate("AppBootstrap", "Update check is already running."),
-                3000,
-                IUserFeedback::TransientStatusPriority::Routine);
-        }
+        Q_UNUSED(manual);
         return;
     }
 
@@ -51,10 +46,6 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
     if (manual) {
         const QString message = QCoreApplication::translate("AppBootstrap", "Checking for SongBird updates...");
         deps_.feedback->appendLog(message);
-        deps_.feedback->showTransientStatus(
-            message,
-            0,
-            IUserFeedback::TransientStatusPriority::Routine);
     }
 
     const QString currentVersion = deps_.currentVersion
@@ -101,14 +92,17 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
             }
 
             if (!updateResult.updateAvailable) {
+                self->latestAvailableUpdate_ = {};
+                emit self->updateUnavailable();
                 if (manual) {
                     self->deps_.feedback->showOperationMessage(title, result, messageParent);
                 }
                 return;
             }
 
+            self->latestAvailableUpdate_ = updateResult;
+            emit self->updateAvailable(updateResult, result.message);
             self->deps_.feedback->recordOperationResult(result);
-            self->deps_.feedback->showTransientStatus(result.message, 10000);
             self->deps_.feedback->showTrayMessage(
                 QCoreApplication::translate("AppBootstrap", "Update Available"),
                 result.message,
@@ -165,10 +159,6 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
     const QString startMessage = QCoreApplication::translate("AppBootstrap", "Downloading SongBird %1...")
                                      .arg(updateResult.latestVersion);
     deps_.feedback->appendLog(startMessage);
-    deps_.feedback->showTransientStatus(
-        startMessage,
-        0,
-        IUserFeedback::TransientStatusPriority::Routine);
 
     QPointer<QObject> uiContext(deps_.feedback->uiContext());
     QPointer<AppUpdateCheckCoordinator> self(this);
@@ -229,6 +219,22 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
             self->deps_.feedback->promptRestartForDownloadedAppUpdate(savedPath, messageParent);
         });
     });
+}
+
+void AppUpdateCheckCoordinator::downloadLatestAvailableUpdate(QPointer<QWidget> dialogParent)
+{
+    if (!latestAvailableUpdate_.updateAvailable) {
+        return;
+    }
+
+    if (!latestAvailableUpdate_.assetDownloadUrl.isValid()) {
+        if (deps_.feedback != nullptr && latestAvailableUpdate_.releaseUrl.isValid()) {
+            deps_.feedback->openExternalUrl(latestAvailableUpdate_.releaseUrl.toString());
+        }
+        return;
+    }
+
+    downloadAppUpdate(latestAvailableUpdate_, dialogParent);
 }
 
 void AppUpdateCheckCoordinator::runInBackground(std::function<void()> task)

@@ -29,7 +29,9 @@ WindowLayoutStateController::WindowLayoutStateController(
 
     if (serverView_ != nullptr && serverView_->horizontalHeader() != nullptr) {
         connect(serverView_->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int logicalIndex, int, int) {
-            if (!applyingServerColumnWidths_ && logicalIndex != Layout::ServerResultColumn) {
+            if (!applyingServerColumnWidths_
+                && (serverWorkspace_ == nullptr || !serverWorkspace_->compactMode())
+                && logicalIndex != Layout::ServerResultColumn) {
                 serverColumnsManuallyAdjusted_ = true;
             }
         });
@@ -92,7 +94,7 @@ void WindowLayoutStateController::captureToConfig(Config& config) const
     config.ui().mainLocationY = bounds.y();
     config.ui().mainSizeWidth = bounds.width();
     config.ui().mainSizeHeight = bounds.height();
-    if (serverColumnsManuallyAdjusted_) {
+    if (serverColumnsManuallyAdjusted_ && (serverWorkspace_ == nullptr || !serverWorkspace_->compactMode())) {
         config.ui().mainColumnWidths = captureServerColumnWidths();
     } else if (!Layout::hasManualServerColumnWidths(config.ui().mainColumnWidths)) {
         config.ui().mainColumnWidths.clear();

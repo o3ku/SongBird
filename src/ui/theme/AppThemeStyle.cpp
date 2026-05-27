@@ -53,6 +53,9 @@ void applyThemeTokens(QString& styleSheet, const ThemePalette& palette)
     replaceToken(styleSheet, "accentHover", palette.accentHover);
     replaceToken(styleSheet, "accentPressed", palette.accentPressed);
     replaceToken(styleSheet, "activeBackground", palette.activeBackground);
+    replaceToken(styleSheet, "navigationSelectedBackground", palette.navigationSelectedBackground);
+    replaceToken(styleSheet, "navigationSelectedText", palette.navigationSelectedText);
+    replaceToken(styleSheet, "navigationSelectedBorder", palette.navigationSelectedBorder);
     replaceToken(styleSheet, "qrPressedBackground", palette.qrPressedBackground);
     replaceToken(styleSheet, "hover", palette.hover);
     replaceToken(styleSheet, "selection", palette.selection);

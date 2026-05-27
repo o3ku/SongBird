@@ -1,6 +1,7 @@
 #include "services/SubscriptionService.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QHash>
 #include <QSet>
@@ -142,31 +143,21 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     }
 
     const QString previousCurrentIndexId = config.currentIndexId;
-    QList<VmessItem> oldSubscriptionServers;
-    auto newEnd = std::remove_if(
-        config.collection().servers.begin(),
-        config.collection().servers.end(),
-        [&normalizedId, &oldSubscriptionServers](const VmessItem& item) {
-            if (item.subId.trimmed() == normalizedId) {
-                oldSubscriptionServers.append(item);
-                return true;
-            }
-
-            return false;
-        });
-    config.collection().servers.erase(newEnd, config.collection().servers.end());
-
-    QHash<QString, QList<VmessItem>> reusableServersByKey;
-    for (const VmessItem& oldItem : oldSubscriptionServers) {
-        reusableServersByKey[serverReuseKey(oldItem)].append(oldItem);
-    }
+    bool currentBelongedToUpdatedSubscription = false;
+    QHash<QString, QList<ReusableServerState>> reusableServersByKey = takeReusableServerStates(
+        config.collection().servers,
+        normalizedId,
+        previousCurrentIndexId,
+        &currentBelongedToUpdatedSubscription);
 
     QStringList newSubscriptionIndexIds;
+    newSubscriptionIndexIds.reserve(items.size());
+    config.collection().servers.reserve(config.collection().servers.size() + items.size());
     for (VmessItem& item : items) {
         const QString reuseKey = serverReuseKey(item);
-        QList<VmessItem>& reusableServers = reusableServersByKey[reuseKey];
+        QList<ReusableServerState>& reusableServers = reusableServersByKey[reuseKey];
         if (!reusableServers.isEmpty()) {
-            const VmessItem reusableServer = reusableServers.takeFirst();
+            const ReusableServerState reusableServer = reusableServers.takeFirst();
             item.indexId = reusableServer.indexId;
             item.testResult = reusableServer.testResult;
         } else {
@@ -175,17 +166,11 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
         }
 
         item.subId = normalizedId;
-        config.collection().servers.append(item);
         newSubscriptionIndexIds.append(item.indexId);
+        config.collection().servers.append(std::move(item));
     }
 
     if (!hasServerWithIndexId(config.collection().servers, previousCurrentIndexId)) {
-        const bool currentBelongedToUpdatedSubscription = std::any_of(
-            oldSubscriptionServers.cbegin(),
-            oldSubscriptionServers.cend(),
-            [&previousCurrentIndexId](const VmessItem& item) {
-                return item.indexId == previousCurrentIndexId;
-            });
         if (currentBelongedToUpdatedSubscription) {
             if (!newSubscriptionIndexIds.isEmpty()) {
                 config.currentIndexId = newSubscriptionIndexIds.constFirst();
@@ -206,6 +191,37 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     }
 
     return OperationResult::ok(QStringLiteral("Subscription servers replaced."));
+}
+
+QHash<QString, QList<SubscriptionService::ReusableServerState>> SubscriptionService::takeReusableServerStates(
+    QList<VmessItem>& servers,
+    const QString& subscriptionId,
+    const QString& currentIndexId,
+    bool* currentBelongedToUpdatedSubscription)
+{
+    if (currentBelongedToUpdatedSubscription != nullptr) {
+        *currentBelongedToUpdatedSubscription = false;
+    }
+
+    QHash<QString, QList<ReusableServerState>> reusableServersByKey;
+    auto newEnd = std::remove_if(
+        servers.begin(),
+        servers.end(),
+        [&subscriptionId, &currentIndexId, currentBelongedToUpdatedSubscription, &reusableServersByKey](const VmessItem& item) {
+            if (item.subId.trimmed() != subscriptionId) {
+                return false;
+            }
+
+            if (currentBelongedToUpdatedSubscription != nullptr && item.indexId == currentIndexId) {
+                *currentBelongedToUpdatedSubscription = true;
+            }
+
+            reusableServersByKey[serverReuseKey(item)].append(ReusableServerState{item.indexId, item.testResult});
+            return true;
+        });
+    servers.erase(newEnd, servers.end());
+
+    return reusableServersByKey;
 }
 
 void SubscriptionService::normalizeSubscriptionIds(QList<SubItem>& items)

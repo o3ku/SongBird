@@ -1,5 +1,7 @@
 #include "backends/singbox/SingBoxCoreBackend.h"
 
+#include <optional>
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonArray>
@@ -158,10 +160,11 @@ QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const Vmes
     root.insert(QStringLiteral("log"), buildLog(config));
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
     root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
-    const RoutingItem* selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    root.insert(QStringLiteral("route"), SingBoxRoutingConfigFragments::buildRoute(config, selectedRouting));
+    const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
+    const RoutingItem* selectedRoutingPtr = selectedRouting.has_value() ? &*selectedRouting : nullptr;
+    root.insert(QStringLiteral("route"), SingBoxRoutingConfigFragments::buildRoute(config, selectedRoutingPtr));
 
-    const QJsonObject dns = DnsConfigFragments::buildSingBoxDns(config, selectedRouting);
+    const QJsonObject dns = DnsConfigFragments::buildSingBoxDns(config, selectedRoutingPtr);
     if (!dns.isEmpty()) {
         root.insert(QStringLiteral("dns"), dns);
     }

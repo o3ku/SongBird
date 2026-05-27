@@ -15,10 +15,13 @@ class LogListModel;
 class QTimer;
 
 class LogPanelWidget final : public QWidget {
+    Q_OBJECT
+
 public:
     explicit LogPanelWidget(QWidget* parent = nullptr);
 
     void appendLog(const QString& message);
+    void setCompactMode(bool compact);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -50,4 +53,5 @@ private:
     bool logStickToBottomEnabled_ = true;
     bool logWasAtBottom_ = false;
     bool collapsed_ = false;
+    bool compactMode_ = false;
 };

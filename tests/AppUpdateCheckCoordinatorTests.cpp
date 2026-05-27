@@ -10,14 +10,6 @@ public:
     QWidget* dialogParent() const override { return nullptr; }
 
     void appendLog(const QString& message) override { logs.append(message); }
-    void showTransientStatus(
-        const QString& message,
-        int timeoutMs,
-        TransientStatusPriority = TransientStatusPriority::Routine) override
-    {
-        transientMessages.append(message);
-        transientTimeouts.append(timeoutMs);
-    }
     void recordOperationResult(const OperationResult& result) override { results.append(result); }
     void showOperationMessage(const QString& title, const OperationResult& result, QWidget*) override
     {
@@ -45,8 +37,6 @@ public:
     }
 
     QStringList logs;
-    QStringList transientMessages;
-    QList<int> transientTimeouts;
     QList<OperationResult> results;
     QStringList operationMessageTitles;
     QStringList operationMessages;

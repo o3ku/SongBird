@@ -46,9 +46,11 @@
 #include <QTextDocument>
 #include <QTextOption>
 #include <QVBoxLayout>
+#include <QVariant>
 #include <QWidget>
 #include <QAbstractItemView>
 
+#include "domain/models/RoutingProfiles.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/LogPanelWidget.h"
@@ -82,8 +84,14 @@ namespace {
 
 constexpr int DefaultMainWindowWidth = 1000;
 constexpr int DefaultMainWindowHeight = 640;
-constexpr int InitialRoutingComboMinimumCharacters = 12;
+constexpr int MinimumMainWindowWidth = 360;
+constexpr int MinimumMainWindowHeight = 540;
+constexpr int CompactMainWindowWidth = 520;
+constexpr int ProxyToggleButtonWidth = 64;
+constexpr int RoutingModeComboWidth = 87;
 constexpr int WindowTitleServerNameMaximumWidth = 300;
+constexpr int ServerTypeColumn = 1;
+constexpr int ServerAddressColumn = 3;
 namespace ServerSelection = MainWindowServerSelectionSupport;
 namespace WindowTitle = MainWindowTitleSupport;
 
@@ -118,10 +126,17 @@ void applySemanticState(QLabel* label, const QString& state)
     label->update();
 }
 
+QAction* toolbarWidgetAction(QWidget* widget)
+{
+    return widget == nullptr
+        ? nullptr
+        : qobject_cast<QAction*>(widget->property("toolbarWidgetAction").value<QObject*>());
+}
+
 ServerActionsController::SelectionSnapshot makeServerActionSelectionSnapshot(
     const ServerSelectionController* serverSelectionController,
     const ServerTableModel* serverModel,
-    const QHash<QString, QString>& shareUrlByIndexId,
+    const QStringList& selectedShareLinks,
     bool canStartTask)
 {
     ServerActionsController::SelectionSnapshot snapshot;
@@ -130,9 +145,7 @@ ServerActionsController::SelectionSnapshot makeServerActionSelectionSnapshot(
         : serverSelectionController->selectedServers();
     snapshot.hasServers = serverModel != nullptr && serverModel->rowCount() > 1;
     snapshot.canStartTask = canStartTask;
-    snapshot.selectedShareLinks = serverSelectionController == nullptr
-        ? QStringList()
-        : serverSelectionController->selectedShareLinks(shareUrlByIndexId);
+    snapshot.selectedShareLinks = selectedShareLinks;
     return snapshot;
 }
 
@@ -191,6 +204,10 @@ bool shouldIgnoreTunToggle(ProxyUiState uiState)
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    const QString version = QCoreApplication::applicationVersion().trimmed();
+    appVersionStatusText_ = version.isEmpty()
+        ? tr("SongBird")
+        : version;
     setupUi();
     setupConnections();
 }
@@ -212,7 +229,6 @@ void MainWindow::setConfig(const Config& config)
 {
     refreshToolbarIcons();
     configSnapshot_ = makeMainWindowConfigSnapshot(config);
-    shareUrlByIndexId_ = buildMainWindowShareUrlCache(config.collection().servers);
     preserveServerSelectionPreference();
 
     serverModel_->setItems(config.collection().servers, config.currentIndexId);
@@ -229,6 +245,12 @@ void MainWindow::setConfig(const Config& config)
     updateQrPreview();
     updateActionState();
     updateWindowTitle();
+}
+
+void MainWindow::setShareUrlResolver(std::function<QString(const QString&)> resolver)
+{
+    shareUrlResolver_ = std::move(resolver);
+    refreshServerSelectionUi();
 }
 
 void MainWindow::setExistingCoreTypes(const QList<CoreType>& coreTypes)
@@ -280,27 +302,6 @@ void MainWindow::appendLog(const QString& message)
 {
     if (serverWorkspace_ != nullptr && serverWorkspace_->logPanel() != nullptr) {
         serverWorkspace_->logPanel()->appendLog(message);
-    }
-}
-
-void MainWindow::showTransientStatus(
-    const QString& message,
-    int timeoutMs,
-    TransientStatusPriority priority)
-{
-    if (statusBarController_ != nullptr) {
-        const StatusBarController::TransientStatusPriority controllerPriority =
-            priority == TransientStatusPriority::Routine
-            ? StatusBarController::TransientStatusPriority::Routine
-            : StatusBarController::TransientStatusPriority::Important;
-        statusBarController_->showTransientStatus(message, timeoutMs, controllerPriority);
-    }
-}
-
-void MainWindow::clearTransientStatus()
-{
-    if (statusBarController_ != nullptr) {
-        statusBarController_->clearTransientStatus();
     }
 }
 
@@ -405,6 +406,27 @@ void MainWindow::setBackgroundTaskDescription(const QString& description)
     updateStatusPresentation();
 }
 
+void MainWindow::setAvailableAppUpdateVersion(const QString& version)
+{
+    const QString trimmedVersion = version.trimmed();
+    appUpdateAvailable_ = !trimmedVersion.isEmpty();
+    appUpdateStatusText_ = appUpdateAvailable_
+        ? tr("Update available: %1").arg(trimmedVersion)
+        : QString();
+    updateStatusPresentation();
+}
+
+void MainWindow::clearAvailableAppUpdateVersion()
+{
+    if (!appUpdateAvailable_ && appUpdateStatusText_.isEmpty()) {
+        return;
+    }
+
+    appUpdateAvailable_ = false;
+    appUpdateStatusText_.clear();
+    updateStatusPresentation();
+}
+
 void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
 {
     currentServerName_ = snapshot.currentServerName.trimmed();
@@ -444,6 +466,9 @@ void MainWindow::restoreUiState(const Config& config)
     tunEnabled_ = config.tun().tunModeItem.enableTun;
     updateRuntimeUiState();
     updateQrPanelActionText();
+    if (compactMode_ && sharePanel_ != nullptr) {
+        sharePanel_->hide();
+    }
 
     if (subscriptionTabBar_ != nullptr && serverModel_ != nullptr) {
         const QString preferredTabKey = ServerSelection::restoredSubscriptionTabKey(
@@ -488,7 +513,7 @@ void MainWindow::updateActionState()
             makeServerActionSelectionSnapshot(
                 serverSelectionController_,
                 serverModel_,
-                shareUrlByIndexId_,
+                selectedShareLinks(),
                 canStartTask);
         serverActionsController_->syncActionState(serverActionsController_->buildActionState(snapshot));
     }
@@ -523,7 +548,6 @@ void MainWindow::refreshToolbarIcons()
 void MainWindow::refreshThemeAssets()
 {
     refreshToolbarIcons();
-    applySemanticState(selectServerHintLabel_, QStringLiteral("error"));
 }
 
 void MainWindow::updateQrPreview()
@@ -532,10 +556,7 @@ void MainWindow::updateQrPreview()
         return;
     }
 
-    sharePanel_->setShareLinks(
-        serverSelectionController_ == nullptr
-            ? QStringList()
-            : serverSelectionController_->selectedShareLinks(shareUrlByIndexId_));
+    sharePanel_->setShareLinks(selectedShareLinks());
 }
 
 void MainWindow::updateQrPanelActionText()
@@ -559,7 +580,6 @@ void MainWindow::updateSelectionForVisibleRows()
 void MainWindow::showCurrentServerInTable()
 {
     if (currentIndexId_.trimmed().isEmpty()) {
-        showTransientStatus(tr("No current server."), 4000);
         return;
     }
     if (serverModel_ == nullptr
@@ -571,7 +591,6 @@ void MainWindow::showCurrentServerInTable()
 
     const ServerTableRow* currentServer = serverModel_->itemByIndexId(currentIndexId_);
     if (currentServer == nullptr) {
-        showTransientStatus(tr("Current server is unavailable."), 4000);
         return;
     }
 
@@ -589,7 +608,6 @@ void MainWindow::showCurrentServerInTable()
         serverModel_,
         currentIndexId_);
     if (!targetIndex.isValid()) {
-        showTransientStatus(tr("Current server is hidden by the current filter."), 4000);
         return;
     }
 
@@ -651,11 +669,6 @@ bool MainWindow::ensureCanStartBackgroundTask()
         return true;
     }
 
-    showTransientStatus(
-        blockReason == BackgroundTaskBlockReason::ProxyStartupInProgress
-            ? tr("Proxy startup is in progress.")
-            : tr("A background task is already running."),
-        4000);
     updateActionState();
     return false;
 }
@@ -668,6 +681,7 @@ bool MainWindow::isUngroupedSubscriptionTabSelected() const
 
 void MainWindow::setupUi()
 {
+    setMinimumSize(MinimumMainWindowWidth, MinimumMainWindowHeight);
     resize(DefaultMainWindowWidth, DefaultMainWindowHeight);
 
     mainContentWidget_ = new QWidget(this);
@@ -792,21 +806,31 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
         tr("Settings"),
         ToolbarWidgets::loadIcon(QStringLiteral("option.svg")),
         settingsAction_);
-    toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
-    ToolbarWidgets::createActionButton(
+    QWidget* settingsSpacing = ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing);
+    desktopOnlyToolbarWidgetActions_.append(toolBar->addWidget(settingsSpacing));
+    desktopOnlyToolbarWidgets_.append(settingsSpacing);
+    QToolButton* subButton = ToolbarWidgets::createActionButton(
         toolBar,
         QStringLiteral("subButton"),
         tr("Subscriptions"),
         ToolbarWidgets::loadIcon(QStringLiteral("subscription.svg")),
         subAction_);
-    toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
-    ToolbarWidgets::createActionButton(
+    desktopOnlyToolbarWidgets_.append(subButton);
+    desktopOnlyToolbarWidgetActions_.append(toolbarWidgetAction(subButton));
+    QWidget* subSpacing = ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing);
+    desktopOnlyToolbarWidgetActions_.append(toolBar->addWidget(subSpacing));
+    desktopOnlyToolbarWidgets_.append(subSpacing);
+    QToolButton* routingButton = ToolbarWidgets::createActionButton(
         toolBar,
         QStringLiteral("routingButton"),
         tr("Routing"),
         ToolbarWidgets::loadIcon(QStringLiteral("routing.svg")),
         routingSettingsAction_);
-    toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
+    desktopOnlyToolbarWidgets_.append(routingButton);
+    desktopOnlyToolbarWidgetActions_.append(toolbarWidgetAction(routingButton));
+    QWidget* routingSpacing = ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing);
+    desktopOnlyToolbarWidgetActions_.append(toolBar->addWidget(routingSpacing));
+    desktopOnlyToolbarWidgets_.append(routingSpacing);
 
     auto* helpButton = ToolbarWidgets::createMenuButton(
         toolBar,
@@ -815,22 +839,13 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
         ToolbarWidgets::loadIcon(QStringLiteral("help.svg")),
         helpMenu);
     toolbarStandaloneIconFiles_.insert(helpButton, QStringLiteral("help.svg"));
+    desktopOnlyToolbarWidgets_.append(helpButton);
+    desktopOnlyToolbarWidgetActions_.append(toolbarWidgetAction(helpButton));
 
-    auto* spacer = new QWidget(toolBar);
-    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    toolBar->addWidget(spacer);
-
-    selectServerHintLabel_ = new QLabel(toolBar);
-    selectServerHintLabel_->setObjectName(QStringLiteral("selectServerHintLabel"));
-    AppTheme::applyCompactFont(selectServerHintLabel_);
-    selectServerHintLabel_->setFixedHeight(ToolbarWidgets::ControlHeight);
-    selectServerHintLabel_->setFixedWidth(
-        selectServerHintLabel_->fontMetrics().horizontalAdvance(tr("Add a server first")) + 18);
-    selectServerHintLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
-    applySemanticState(selectServerHintLabel_, QStringLiteral("error"));
-    selectServerHintLabel_->clear();
-    toolBar->addWidget(selectServerHintLabel_);
-    toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
+    toolbarFlexibleSpacer_ = new QWidget(toolBar);
+    toolbarFlexibleSpacer_->setObjectName(QStringLiteral("toolbarFlexibleSpacer"));
+    toolbarFlexibleSpacer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbarFlexibleSpacerAction_ = toolBar->addWidget(toolbarFlexibleSpacer_);
 
     auto* proxyToggleButton = ToolbarWidgets::createActionButton(
         toolBar,
@@ -838,9 +853,7 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
         tr("START"),
         QIcon(),
         proxyToggleAction_);
-    proxyToggleButton->setFixedWidth(ToolbarWidgets::textButtonWidth(
-        proxyToggleButton,
-        {tr("START"), tr("STOP")}));
+    proxyToggleButton->setFixedWidth(ProxyToggleButtonWidth);
     toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
     ToolbarWidgets::createActionButton(
         toolBar,
@@ -854,17 +867,22 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
     routingModeCombo_->setObjectName(QStringLiteral("routingModeCombo"));
     AppTheme::applyCompactFont(routingModeCombo_);
     routingModeCombo_->setFixedHeight(ToolbarWidgets::ControlHeight);
-    ToolbarWidgets::updateContentSizedComboBox(routingModeCombo_, InitialRoutingComboMinimumCharacters);
+    routingModeCombo_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    routingModeCombo_->setFixedWidth(RoutingModeComboWidth);
     ToolbarWidgets::configureStyledComboBox(routingModeCombo_);
     toolBar->addWidget(routingModeCombo_);
-    toolBar->addWidget(ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing));
+    QWidget* routingComboSpacing = ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing);
+    desktopOnlyToolbarWidgetActions_.append(toolBar->addWidget(routingComboSpacing));
+    desktopOnlyToolbarWidgets_.append(routingComboSpacing);
 
-    ToolbarWidgets::createActionButton(
+    QToolButton* qrButton = ToolbarWidgets::createActionButton(
         toolBar,
         QStringLiteral("qrCodeButton"),
         tr("Share"),
         QIcon(),
         toggleQrPanelAction_);
+    desktopOnlyToolbarWidgets_.append(qrButton);
+    desktopOnlyToolbarWidgetActions_.append(toolbarWidgetAction(qrButton));
 }
 
 void MainWindow::initializeToolbarControllers()
@@ -877,8 +895,8 @@ void MainWindow::initializeToolbarControllers()
         updateGeoResourcesAction_,
         updateCurrentSubscriptionShortcutAction_});
     proxyToolbarController_ = new ProxyToolbarController(proxyToggleAction_, tunToggleAction_);
-    routingModeController_ = new RoutingModeController(routingModeCombo_, [this](int mode) {
-        emit routingModeSelected(mode);
+    routingModeController_ = new RoutingModeController(routingModeCombo_, [this](const QString& routingModeId) {
+        emit routingModeSelected(routingModeId);
     }, this);
     routingModeController_->setup();
     syncProxyToolbarController();
@@ -950,6 +968,21 @@ void MainWindow::setupSubscriptionViewController()
                 return false;
             },
             [this]() { emit openSettingsAtSubscriptionsTabRequested(); }});
+    if (serverWorkspace_ != nullptr) {
+        serverWorkspace_->setCompactSelectionHandler([this](const QString&) {
+            if (serverListController_ != nullptr) {
+                serverListController_->handleSubscriptionFilterChanged();
+            }
+            if (serverWorkspace_ != nullptr) {
+                serverWorkspace_->syncCompactSections();
+            }
+        });
+        serverWorkspace_->setCompactContextMenuHandler([this](const QString& tabKey, const QPoint& globalPosition) {
+            if (subscriptionViewController_ != nullptr) {
+                subscriptionViewController_->showContextMenuForTabKey(tabKey, globalPosition);
+            }
+        });
+    }
 }
 
 void MainWindow::setupServerListController()
@@ -994,7 +1027,8 @@ void MainWindow::setupStatusBarController()
         this,
         statusBar(),
         [this]() { emit settingsRequested(); },
-        [this]() { showCurrentServerInTable(); });
+        [this]() { showCurrentServerInTable(); },
+        [this]() { emit downloadAppUpdateRequested(); });
 }
 
 void MainWindow::setupServerSelectionController()
@@ -1033,17 +1067,7 @@ void MainWindow::setupServerActionsController()
         [this]() { return ensureCanStartBackgroundTask(); },
         [this]() { updateActionState(); },
         [this](const QString& message) { appendLog(message); },
-        [this](const QString& message, int timeoutMs, int priority) {
-            showTransientStatus(
-                message,
-                timeoutMs,
-                priority == 1 ? TransientStatusPriority::Routine : TransientStatusPriority::Important);
-        },
-        [this]() {
-            return serverSelectionController_ == nullptr
-                ? QStringList()
-                : serverSelectionController_->selectedShareLinks(shareUrlByIndexId_);
-        });
+        [this]() { return selectedShareLinks(); });
     serverActionsController_->setup();
 }
 
@@ -1122,7 +1146,6 @@ void MainWindow::setupToggleConnections()
             emit enableSystemProxyRequested();
             return;
         case ProxyToggleCommand::PromoteSelectedServer:
-            clearSelectServerHint();
             emit setDefaultServerRequested(decision.selectedServerId);
             updateActionState();
             return;
@@ -1147,11 +1170,6 @@ void MainWindow::setupToggleConnections()
 
         emit tunEnabledChanged(checked);
     });
-    if (sharePanel_ != nullptr) {
-        connect(sharePanel_, &SharePanelWidget::transientStatusRequested, this, [this](const QString& message, int timeoutMs) {
-            showTransientStatus(message, timeoutMs, TransientStatusPriority::Routine);
-        });
-    }
     connect(toggleQrPanelAction_, &QAction::triggered, this, [this](bool checked) {
         if (windowLayoutStateController_ != nullptr) {
             windowLayoutStateController_->handleQrPreviewToggled(checked);
@@ -1172,6 +1190,9 @@ void MainWindow::setupSubscriptionViewConnections()
     connect(subscriptionTabBar_, &QTabBar::currentChanged, this, [this](int) {
         if (serverListController_ != nullptr) {
             serverListController_->handleSubscriptionFilterChanged();
+        }
+        if (serverWorkspace_ != nullptr) {
+            serverWorkspace_->syncCompactSections();
         }
     });
     connect(subscriptionTabBar_, &QTabBar::customContextMenuRequested, this, [this](const QPoint& position) {
@@ -1230,7 +1251,6 @@ void MainWindow::copyCurrentSubscriptionUrlToClipboard()
         ? QString()
         : subscriptionViewController_->currentSubscriptionUrl();
     if (url.isEmpty()) {
-        showTransientStatus(tr("Subscription URL unavailable for the current tab."), 4000);
         return;
     }
 
@@ -1239,10 +1259,6 @@ void MainWindow::copyCurrentSubscriptionUrlToClipboard()
     }
 
     appendLog(tr("Copied subscription URL to the clipboard."));
-    showTransientStatus(
-        tr("Copied subscription URL to the clipboard."),
-        3000,
-        TransientStatusPriority::Routine);
 }
 
 void MainWindow::triggerCurrentSubscriptionUpdate()
@@ -1265,13 +1281,11 @@ void MainWindow::testSubscriptionServers(const QString& subscriptionId)
 
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty() || serverModel_ == nullptr) {
-        showTransientStatus(tr("No servers available for this subscription."), 4000);
         return;
     }
 
     const QStringList indexIds = ServerSelection::subscriptionServerIndexIds(serverModel_, normalizedId);
     if (indexIds.isEmpty()) {
-        showTransientStatus(tr("No servers available for this subscription."), 4000);
         return;
     }
 
@@ -1324,6 +1338,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
+    applyCompactMode(width() < CompactMainWindowWidth);
     if (startupOverlay_ != nullptr) {
         startupOverlay_->updateGeometry(rect());
     }
@@ -1347,12 +1362,12 @@ void MainWindow::showEvent(QShowEvent* event)
     }
     QTimer::singleShot(0, this, [this]() {
         if (routingModeController_ != nullptr) {
-            routingModeController_->setRoutingOptions(configSnapshot_.routingItems, configSnapshot_.routingIndex);
+            routingModeController_->setRoutingOptions(configSnapshot_.routingItems, configSnapshot_.routingModeId);
         }
         updateQrPreview();
         updateQrPanelActionText();
         if (statusBarController_ != nullptr) {
-            statusBarController_->refreshTransientStatusLabel(isVisible());
+            statusBarController_->refreshBackgroundTaskStatusLabel(isVisible());
         }
     });
 }
@@ -1364,38 +1379,22 @@ const ServerTableRow* MainWindow::activeServer() const
 
 void MainWindow::showSelectServerHint()
 {
-    const bool hasServers = serverModel_ != nullptr && serverModel_->rowCount() > 0;
-
-    if (selectServerHintLabel_ != nullptr) {
-        selectServerHintLabel_->setText(tr("Select a server"));
-        QTimer::singleShot(4000, this, [this]() {
-            clearSelectServerHint();
-        });
-    }
-
     if (serverView_ != nullptr) {
         serverView_->flashAttention();
-    }
-
-    showTransientStatus(
-        hasServers ? tr("Please select a server first.") : tr("No available server. Add or import a server first."),
-        4000);
-}
-
-void MainWindow::clearSelectServerHint()
-{
-    if (selectServerHintLabel_ != nullptr) {
-        selectServerHintLabel_->clear();
     }
 }
 
 void MainWindow::refreshServerSelectionUi()
 {
-    if (activeServer() != nullptr) {
-        clearSelectServerHint();
-    }
     updateQrPreview();
     updateActionState();
+}
+
+QStringList MainWindow::selectedShareLinks() const
+{
+    return serverSelectionController_ == nullptr
+        ? QStringList()
+        : serverSelectionController_->selectedShareLinks(shareUrlResolver_);
 }
 
 void MainWindow::preserveServerSelectionPreference()
@@ -1413,12 +1412,15 @@ void MainWindow::preserveServerSelectionPreference()
 void MainWindow::syncConfigControllers(const Config& config)
 {
     if (routingModeController_ != nullptr) {
-        routingModeController_->setRoutingOptions(config.collection().routingItems, config.collection().routingIndex);
+        routingModeController_->setRoutingOptions(RoutingProfiles::routingItems(config.collection()), config.collection().routingModeId);
     }
     if (subscriptionViewController_ != nullptr) {
         subscriptionViewController_->setSubscriptions(config.collection().subscriptions);
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
         subscriptionViewController_->applyCurrentTabFilter();
+        if (serverWorkspace_ != nullptr) {
+            serverWorkspace_->syncCompactSections();
+        }
     }
 }
 
@@ -1448,7 +1450,10 @@ void MainWindow::syncStatusBarController()
         currentServerWarning_,
         listenSummary_,
         backgroundTaskRunning_,
-        backgroundTaskDescription_);
+        backgroundTaskDescription_,
+        appVersionStatusText_,
+        appUpdateStatusText_,
+        appUpdateAvailable_);
 }
 
 void MainWindow::syncProxyToolbarController()
@@ -1464,4 +1469,54 @@ void MainWindow::syncProxyToolbarController()
     snapshot.existingCoreTypes = existingCoreTypes_;
     snapshot.coreTypeItems = configSnapshot_.coreTypeItems;
     proxyToolbarController_->sync(snapshot, activeServer());
+}
+
+void MainWindow::applyCompactMode(bool compact)
+{
+    if (compactMode_ == compact) {
+        return;
+    }
+
+    compactMode_ = compact;
+    applyToolbarCompactMode(compactMode_);
+    applyServerTableCompactMode(compactMode_);
+    if (serverWorkspace_ != nullptr) {
+        serverWorkspace_->setCompactMode(compactMode_);
+    }
+    if (statusBarController_ != nullptr) {
+        statusBarController_->setCompactMode(compactMode_);
+    }
+    if (serverWorkspace_ != nullptr && serverWorkspace_->logPanel() != nullptr) {
+        serverWorkspace_->logPanel()->setCompactMode(compactMode_);
+    }
+}
+
+void MainWindow::applyToolbarCompactMode(bool compact)
+{
+    for (QWidget* widget : desktopOnlyToolbarWidgets_) {
+        if (widget != nullptr) {
+            widget->setVisible(!compact);
+        }
+    }
+    if (toolbarFlexibleSpacer_ != nullptr) {
+        toolbarFlexibleSpacer_->setVisible(true);
+    }
+    if (toolbarFlexibleSpacerAction_ != nullptr) {
+        toolbarFlexibleSpacerAction_->setVisible(true);
+    }
+    for (QAction* action : desktopOnlyToolbarWidgetActions_) {
+        if (action != nullptr) {
+            action->setVisible(!compact);
+        }
+    }
+}
+
+void MainWindow::applyServerTableCompactMode(bool compact)
+{
+    if (serverView_ == nullptr) {
+        return;
+    }
+
+    serverView_->setColumnHidden(ServerTypeColumn, compact);
+    serverView_->setColumnHidden(ServerAddressColumn, compact);
 }

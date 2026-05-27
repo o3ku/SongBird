@@ -134,14 +134,27 @@ SharePanelWidget::SharePanelWidget(QWidget* parent)
 
 void SharePanelWidget::setShareLinks(const QStringList& shareLinks)
 {
-    shareLinks_.clear();
+    QStringList normalizedShareLinks;
+    normalizedShareLinks.reserve(shareLinks.size());
     for (const QString& shareLink : shareLinks) {
         const QString trimmedShareLink = shareLink.trimmed();
         if (!trimmedShareLink.isEmpty()) {
-            shareLinks_.append(trimmedShareLink);
+            normalizedShareLinks.append(trimmedShareLink);
         }
     }
 
+    const QString nextShareText = normalizedShareLinks.join(QChar('\n'));
+    const QString nextFirstShareUrl = normalizedShareLinks.isEmpty()
+        ? QString()
+        : normalizedShareLinks.constFirst();
+    if (shareText_ == nextShareText && firstShareUrl_ == nextFirstShareUrl) {
+        refreshPreview();
+        return;
+    }
+
+    shareText_ = nextShareText;
+    firstShareUrl_ = nextFirstShareUrl;
+    clearPreviewPixmap();
     refreshPreview();
 }
 
@@ -151,6 +164,8 @@ void SharePanelWidget::setPreviewVisible(bool visible)
     setVisible(visible);
     if (previewVisible_) {
         refreshPreview();
+    } else {
+        clearPreviewPixmap();
     }
 }
 
@@ -168,7 +183,6 @@ bool SharePanelWidget::eventFilter(QObject* watched, QEvent* event)
             const QString shareUrl = block.text().trimmed();
             if (!shareUrl.isEmpty()) {
                 QApplication::clipboard()->setText(shareUrl);
-                emit transientStatusRequested(tr("Copied share URL to the clipboard."), 2000);
                 return true;
             }
         }
@@ -183,6 +197,11 @@ void SharePanelWidget::resizeEvent(QResizeEvent* event)
     refreshPreview();
 }
 
+bool SharePanelWidget::previewVisible() const
+{
+    return previewVisible_;
+}
+
 void SharePanelWidget::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
@@ -195,31 +214,29 @@ void SharePanelWidget::refreshPreview()
         return;
     }
 
-    if (shareLinks_.isEmpty()) {
-        shareLinkLabel_->clear();
+    if (shareText_.isEmpty()) {
+        if (!shareLinkLabel_->toPlainText().isEmpty()) {
+            shareLinkLabel_->clear();
+        }
         shareLinkLabel_->setToolTip(QString());
-        qrPlaceholder_->setPixmap(QPixmap());
+        clearPreviewPixmap();
         qrPlaceholder_->setText(tr("QR preview placeholder"));
         qrPlaceholder_->setToolTip(QString());
         return;
     }
 
-    const QString firstShareUrl = shareLinks_.constFirst();
-    if (shareLinks_.size() == 1) {
-        shareLinkLabel_->setPlainText(firstShareUrl);
-        shareLinkLabel_->setToolTip(firstShareUrl);
-    } else {
-        const QString shareText = shareLinks_.join(QChar('\n'));
-        shareLinkLabel_->setPlainText(shareText);
-        shareLinkLabel_->setToolTip(shareText);
+    if (shareLinkLabel_->toPlainText() != shareText_) {
+        shareLinkLabel_->setPlainText(shareText_);
     }
+    shareLinkLabel_->setToolTip(shareText_.contains(QChar('\n')) ? QString() : firstShareUrl_);
 
     if (!previewVisible_ || !isVisible()) {
+        clearPreviewPixmap();
         return;
     }
 
-    if (firstShareUrl.isEmpty()) {
-        qrPlaceholder_->setPixmap(QPixmap());
+    if (firstShareUrl_.isEmpty()) {
+        clearPreviewPixmap();
         qrPlaceholder_->setText(tr("QR preview unavailable for this server."));
         qrPlaceholder_->setToolTip(QString());
         return;
@@ -231,11 +248,28 @@ void SharePanelWidget::refreshPreview()
         qMax(0, qrPlaceholder_->height() - qrMargin));
     qrPlaceholder_->setText(QString());
     if (qrExtent <= 0) {
-        qrPlaceholder_->setPixmap(QPixmap());
-        qrPlaceholder_->setToolTip(firstShareUrl);
+        clearPreviewPixmap();
+        qrPlaceholder_->setToolTip(firstShareUrl_);
         return;
     }
 
-    qrPlaceholder_->setPixmap(QrCodeRenderer::render(firstShareUrl, qrExtent));
-    qrPlaceholder_->setToolTip(firstShareUrl);
+    if (cachedQrPixmap_.isNull()
+        || cachedQrShareUrl_ != firstShareUrl_
+        || cachedQrExtent_ != qrExtent) {
+        cachedQrPixmap_ = QrCodeRenderer::render(firstShareUrl_, qrExtent);
+        cachedQrShareUrl_ = firstShareUrl_;
+        cachedQrExtent_ = qrExtent;
+    }
+    qrPlaceholder_->setPixmap(cachedQrPixmap_);
+    qrPlaceholder_->setToolTip(firstShareUrl_);
+}
+
+void SharePanelWidget::clearPreviewPixmap()
+{
+    cachedQrPixmap_ = QPixmap();
+    cachedQrShareUrl_.clear();
+    cachedQrExtent_ = 0;
+    if (qrPlaceholder_ != nullptr) {
+        qrPlaceholder_->setPixmap(QPixmap());
+    }
 }

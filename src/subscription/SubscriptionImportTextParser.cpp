@@ -6,19 +6,28 @@
 QStringList SubscriptionImportTextParser::nonEmptyLines(const QString& text)
 {
     QStringList result;
-    const QStringList rawParts = text
-        .trimmed()
-        .replace(QStringLiteral("\r\n"), QStringLiteral("\n"))
-        .replace(QChar('\r'), QChar('\n'))
-        .split(QChar('\n'), Qt::SkipEmptyParts);
+    QString current;
+    current.reserve(256);
 
-    for (const QString& rawPart : rawParts) {
-        const QString line = rawPart.trimmed();
+    const auto flushCurrentLine = [&result, &current]() {
+        const QString line = current.trimmed();
         if (!line.isEmpty()) {
             result.append(line);
         }
+        current.clear();
+    };
+
+    for (QChar ch : text) {
+        if (ch == QChar('\n')) {
+            flushCurrentLine();
+        } else if (ch == QChar('\r')) {
+            flushCurrentLine();
+        } else {
+            current.append(ch);
+        }
     }
 
+    flushCurrentLine();
     return result;
 }
 

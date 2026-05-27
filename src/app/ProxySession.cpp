@@ -1342,7 +1342,6 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
     if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
         emit logMessage(restartDecision.message);
         if (!auxiliary) {
-            emit transientStatus(restartDecision.transientStatus, 0);
             clearProxyStateAfterStopped();
             emit statusSyncRequested();
         }

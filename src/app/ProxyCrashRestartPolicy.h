@@ -15,7 +15,6 @@ public:
     struct Decision {
         Action action = Action::ScheduleRestart;
         QString message;
-        QString transientStatus;
         int delayMs = 0;
         bool auxiliary = false;
         bool tunConflictRetry = false;

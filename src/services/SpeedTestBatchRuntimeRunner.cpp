@@ -13,7 +13,6 @@
 #include <optional>
 #include <vector>
 
-#include "common/ServerDisplayName.h"
 #include "runtime/ClientConfigWriter.h"
 #include "services/SpeedTestBatchConfig.h"
 #include "services/SpeedTestPortReservation.h"
@@ -52,7 +51,7 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
 
     for (int i = 0; i < groupItems.size(); ++i) {
         const SpeedTestRequestItem& item = groupItems[i];
-        if (item.server.configType == ConfigType::Custom) {
+        if (item.configType == ConfigType::Custom) {
             return false;
         }
 
@@ -86,8 +85,8 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         outbound.insert(QStringLiteral("tag"), outboundTag);
 
         BatchConfig::ProbeEntry entry;
-        entry.indexId = item.server.indexId;
-        entry.serverName = serverDisplayName(item.server);
+        entry.indexId = item.indexId;
+        entry.serverName = item.displayName;
         entry.outboundTag = outboundTag;
         entry.inboundTag = inboundTag;
         entry.outbound = outbound;

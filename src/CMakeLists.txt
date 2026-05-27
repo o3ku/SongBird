@@ -86,6 +86,8 @@ set(SONGBIRD_SOURCES
     common/UserAgent.h
     domain/models/Config.h
     domain/models/PolicyGroupItem.h
+    domain/models/RoutingProfiles.h
+    domain/models/RoutingProfiles.cpp
     domain/models/RoutingItem.h
     domain/models/RoutingRule.h
     domain/models/SubItem.h

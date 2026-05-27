@@ -10,6 +10,7 @@
 
 #include "ui/dialogs/RoutingBaseRouteCard.h"
 #include "ui/dialogs/RoutingCustomRuleSupport.h"
+#include "domain/models/RoutingProfiles.h"
 
 namespace {
 
@@ -37,9 +38,8 @@ RoutingSettingsPageWidget::RoutingSettingsPageWidget(QWidget* parent)
 
 void RoutingSettingsPageWidget::setConfig(const Config& config)
 {
-    config_ = config;
-    routingItems_ = config.collection().routingItems;
-    reloadRoutingPresentation(findInitialRouteIndex(routingItems_, config));
+    routingItems_ = RoutingProfiles::routingItems(config.collection());
+    reloadRoutingPresentation(findInitialRouteIndex(routingItems_, config.collection().routingModeId));
     loadRoutingCustomRules(config.collection().routingCustomRules);
     selectRoutingCustomRuleTab(config.ui().settingsRoutingRuleTabKey);
     updateRoutingActionState();
@@ -239,16 +239,19 @@ void RoutingSettingsPageWidget::updateRoutingActionState()
     }
 }
 
-int RoutingSettingsPageWidget::findInitialRouteIndex(const QList<RoutingItem>& items, const Config& config) const
+int RoutingSettingsPageWidget::findInitialRouteIndex(const QList<RoutingItem>& items, const QString& selectedRoutingModeId) const
 {
     if (items.isEmpty()) {
         return -1;
     }
 
-    if (config.collection().enableRoutingAdvanced
-        && config.collection().routingIndex >= 0
-        && config.collection().routingIndex < items.size()) {
-        return config.collection().routingIndex;
+    const QString routingModeId = selectedRoutingModeId.trimmed();
+    if (!routingModeId.isEmpty()) {
+        for (int index = 0; index < items.size(); ++index) {
+            if (items.at(index).id == routingModeId) {
+                return index;
+            }
+        }
     }
 
     for (int index = 0; index < items.size(); ++index) {

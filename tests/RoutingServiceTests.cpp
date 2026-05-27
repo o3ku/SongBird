@@ -78,9 +78,9 @@ void RoutingServiceTests::saveRoutingTrimsRemarksAndRemovesEmptyRules()
 
     const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
     QVERIFY(result.success);
-    QCOMPARE(mock.config_.collection().routingItems[0].remarks, QStringLiteral("proxy"));
-    QCOMPARE(mock.config_.collection().routingItems[0].rules.size(), 1);
-    QCOMPARE(mock.config_.collection().routingItems[0].rules[0].domain, QStringList{QStringLiteral("google.com")});
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].remarks, QStringLiteral("proxy"));
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].rules.size(), 1);
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].rules[0].domain, QStringList{QStringLiteral("google.com")});
 }
 
 void RoutingServiceTests::saveRoutingDeduplicatesValues()
@@ -97,7 +97,7 @@ void RoutingServiceTests::saveRoutingDeduplicatesValues()
     const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
     QVERIFY(result.success);
     const QStringList expected = {QStringLiteral("a.com"), QStringLiteral("b.com")};
-    QCOMPARE(mock.config_.collection().routingItems[0].rules[0].domain, expected);
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].rules[0].domain, expected);
 }
 
 void RoutingServiceTests::saveRoutingRemovesUnmeaningfulRules()
@@ -114,7 +114,7 @@ void RoutingServiceTests::saveRoutingRemovesUnmeaningfulRules()
 
     const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
     QVERIFY(result.success);
-    QVERIFY(mock.config_.collection().routingItems[0].rules.isEmpty());
+    QVERIFY(mock.config_.collection().customRoutingItems[0].rules.isEmpty());
 }
 
 void RoutingServiceTests::saveRoutingLocksSelectedIndex()
@@ -130,10 +130,10 @@ void RoutingServiceTests::saveRoutingLocksSelectedIndex()
 
     const OperationResult result = service.saveRouting(config, items, true, 1, {}, {});
     QVERIFY(result.success);
-    QCOMPARE(mock.config_.collection().routingItems[0].locked, false);
-    QCOMPARE(mock.config_.collection().routingItems[1].locked, true);
-    QCOMPARE(mock.config_.collection().routingItems[2].locked, false);
-    QCOMPARE(mock.config_.collection().routingIndex, 1);
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].locked, false);
+    QCOMPARE(mock.config_.collection().customRoutingItems[1].locked, false);
+    QCOMPARE(mock.config_.collection().customRoutingItems[2].locked, false);
+    QCOMPARE(mock.config_.collection().routingModeId, QStringLiteral("custom:2"));
 }
 
 void RoutingServiceTests::saveRoutingClampsInvalidSelectedIndex()
@@ -148,9 +148,9 @@ void RoutingServiceTests::saveRoutingClampsInvalidSelectedIndex()
 
     const OperationResult result = service.saveRouting(config, items, true, 99, {}, {});
     QVERIFY(result.success);
-    QCOMPARE(mock.config_.collection().routingItems[0].locked, true);
-    QCOMPARE(mock.config_.collection().routingItems[1].locked, false);
-    QCOMPARE(mock.config_.collection().routingIndex, 0);
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].locked, false);
+    QCOMPARE(mock.config_.collection().customRoutingItems[1].locked, false);
+    QCOMPARE(mock.config_.collection().routingModeId, QStringLiteral("custom:1"));
 }
 
 void RoutingServiceTests::saveRoutingReturnsFailWhenRepositorySaveFails()
@@ -170,61 +170,59 @@ void RoutingServiceTests::saveRoutingReturnsFailWhenRepositorySaveFails()
 void RoutingServiceTests::setRoutingModeBasicUnlocksAllItems()
 {
     MockConfigRepository mock;
-    mock.config_.collection().routingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B"))};
-    mock.config_.collection().routingItems[0].locked = true;
+    mock.config_.collection().customRoutingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B"))};
+    mock.config_.collection().customRoutingItems[0].locked = true;
     RoutingService service(mock);
 
     Config config = mock.config_;
-    const OperationResult result = service.setRoutingMode(config, false, 0);
+    const OperationResult result = service.setRoutingMode(config, QStringLiteral("builtin:whitelist"));
     QVERIFY(result.success);
-    QCOMPARE(config.collection().enableRoutingAdvanced, false);
-    QCOMPARE(config.collection().routingIndex, 0);
-    QVERIFY(!config.collection().routingItems[0].locked);
-    QVERIFY(!config.collection().routingItems[1].locked);
+    QVERIFY(!config.collection().customRoutingItems[0].locked);
+    QVERIFY(!config.collection().customRoutingItems[1].locked);
+    QCOMPARE(config.collection().routingModeId, QStringLiteral("builtin:whitelist"));
 }
 
 void RoutingServiceTests::setRoutingModeAdvancedLocksSelectedIndex()
 {
     MockConfigRepository mock;
-    mock.config_.collection().routingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B"))};
+    mock.config_.collection().customRoutingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B"))};
     RoutingService service(mock);
 
     Config config = mock.config_;
-    const OperationResult result = service.setRoutingMode(config, true, 1);
+    const OperationResult result = service.setRoutingMode(config, QStringLiteral("builtin:blacklist"));
     QVERIFY(result.success);
-    QCOMPARE(config.collection().enableRoutingAdvanced, true);
-    QCOMPARE(config.collection().routingIndex, 1);
-    QVERIFY(!config.collection().routingItems[0].locked);
-    QVERIFY(config.collection().routingItems[1].locked);
+    QVERIFY(!config.collection().customRoutingItems[0].locked);
+    QVERIFY(!config.collection().customRoutingItems[1].locked);
+    QCOMPARE(config.collection().routingModeId, QStringLiteral("builtin:blacklist"));
 }
 
 void RoutingServiceTests::setRoutingModeAdvancedClampsNegativeIndex()
 {
     MockConfigRepository mock;
-    mock.config_.collection().routingItems = {makeItem(QStringLiteral("A"))};
+    mock.config_.collection().customRoutingItems = {makeItem(QStringLiteral("A"))};
     RoutingService service(mock);
 
     Config config = mock.config_;
-    const OperationResult result = service.setRoutingMode(config, true, -5);
+    const OperationResult result = service.setRoutingMode(config, QStringLiteral("builtin:whitelist"));
     QVERIFY(result.success);
-    QCOMPARE(config.collection().routingIndex, 0);
-    QVERIFY(config.collection().routingItems[0].locked);
+    QVERIFY(!config.collection().customRoutingItems[0].locked);
+    QCOMPARE(config.collection().routingModeId, QStringLiteral("builtin:whitelist"));
 }
 
 void RoutingServiceTests::selectRoutingLocksOnlySelectedIndex()
 {
     MockConfigRepository mock;
-    mock.config_.collection().routingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B")), makeItem(QStringLiteral("C"))};
-    mock.config_.collection().routingItems[0].locked = true;
+    mock.config_.collection().customRoutingItems = {makeItem(QStringLiteral("A")), makeItem(QStringLiteral("B")), makeItem(QStringLiteral("C"))};
+    mock.config_.collection().customRoutingItems[0].locked = true;
     RoutingService service(mock);
 
     Config config = mock.config_;
-    const OperationResult result = service.selectRouting(config, 2);
+    const OperationResult result = service.selectRouting(config, QStringLiteral("custom:3"));
     QVERIFY(result.success);
-    QVERIFY(!config.collection().routingItems[0].locked);
-    QVERIFY(!config.collection().routingItems[1].locked);
-    QVERIFY(config.collection().routingItems[2].locked);
-    QCOMPARE(config.collection().routingIndex, 2);
+    QVERIFY(!config.collection().customRoutingItems[0].locked);
+    QVERIFY(!config.collection().customRoutingItems[1].locked);
+    QVERIFY(!config.collection().customRoutingItems[2].locked);
+    QCOMPARE(config.collection().routingModeId, QStringLiteral("custom:3"));
 }
 
 void RoutingServiceTests::selectRoutingFailsWithNoItems()
@@ -233,7 +231,7 @@ void RoutingServiceTests::selectRoutingFailsWithNoItems()
     RoutingService service(mock);
 
     Config config;
-    const OperationResult result = service.selectRouting(config, 0);
+    const OperationResult result = service.selectRouting(config, QStringLiteral("missing"));
     QVERIFY(!result.success);
 }
 
@@ -249,7 +247,7 @@ void RoutingServiceTests::normalizeValuesRemovesEmptyAndDuplicates()
         {QStringLiteral(""), QStringLiteral("  "), QStringLiteral("a.com"), QStringLiteral("a.com")}));
 
     service.saveRouting(config, items, true, 0, {}, {});
-    QCOMPARE(mock.config_.collection().routingItems[0].rules[0].domain, QStringList{QStringLiteral("a.com")});
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].rules[0].domain, QStringList{QStringLiteral("a.com")});
 }
 
 void RoutingServiceTests::isMeaningfulRuleRejectsEmptyRule()
@@ -265,7 +263,7 @@ void RoutingServiceTests::isMeaningfulRuleRejectsEmptyRule()
     items[0].rules.append(rule);
 
     service.saveRouting(config, items, true, 0, {}, {});
-    QVERIFY(mock.config_.collection().routingItems[0].rules.isEmpty());
+    QVERIFY(mock.config_.collection().customRoutingItems[0].rules.isEmpty());
 }
 
 void RoutingServiceTests::isMeaningfulRuleAcceptsRuleWithOnlyOutboundTag()
@@ -282,7 +280,7 @@ void RoutingServiceTests::isMeaningfulRuleAcceptsRuleWithOnlyOutboundTag()
     items[0].rules.append(rule);
 
     service.saveRouting(config, items, true, 0, {}, {});
-    QCOMPARE(mock.config_.collection().routingItems[0].rules.size(), 1);
+    QCOMPARE(mock.config_.collection().customRoutingItems[0].rules.size(), 1);
 }
 
 QTEST_MAIN(RoutingServiceTests)

@@ -61,6 +61,8 @@ private slots:
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void runtimeToolbarButtonsUseRoutingComboDefaultBorder();
+    void compactMainWindowShowsMobileToolbarAccordionAndTaskStatusOnly();
+    void compactMainWindowRestoresDesktopLayoutAtThreshold();
     void sharePanelShowsSelectedServerShareLink();
     void sharePanelClearsWhenSelectionIsCleared();
     void shareLinkTextEditDoesNotForceTallMinimumHeight();
@@ -76,9 +78,11 @@ private slots:
     void subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds();
     void windowLayoutStateSupportCapturesAndRestoresServerColumnWidths();
     void trayMenuSupportBuildsServerAndRoutingEntries();
+    void trayMenuSupportFiltersServersToCurrentSubscriptionGroup();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
+    void logListModelCapsRetainedLines();
     void enterOnServerTableSetsCurrentWithoutMovingSelection();
     void speedTestRefreshKeepsCurrentSelectionOnTriggeredRow();
     void defaultServerRefreshKeepsCurrentSelectionOnTriggeredRow();
@@ -103,10 +107,7 @@ private slots:
     void coreStatusRemainsStartingUntilStrictActivation();
     void runtimeStatusLabelsRemainVisibleInStatusBar();
     void serverSelectionDoesNotShowTransientStatusMessage();
-    void routineTransientStatusShowsWhenStatusBarIsIdle();
-    void routineTransientStatusDoesNotOverrideStatusLabel();
-    void transientStatusTemporarilyOverridesBackgroundTaskMessage();
-    void longTransientStatusUsesThreeDotsAndTooltip();
+    void longBackgroundTaskStatusUsesThreeDotsAndTooltip();
     void requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled();
     void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
@@ -286,6 +287,18 @@ QString shareUrlForServerRemarks(const Config& config, const QString& remarks)
     }
 
     return {};
+}
+
+std::function<QString(const QString&)> shareUrlResolverForConfig(const Config& config)
+{
+    return [config](const QString& indexId) {
+        for (const VmessItem& server : config.collection().servers) {
+            if (server.indexId == indexId) {
+                return ShareUrlBuilder::build(server);
+            }
+        }
+        return QString();
+    };
 }
 
 Config createGroupedServerSelectionConfig()
@@ -596,6 +609,8 @@ void MainWindowTests::toolbarUsesFullWidthLayoutAndCompactVerticalMargins()
     QVERIFY(tunButton != nullptr);
     QVERIFY(routingCombo != nullptr);
     QVERIFY(toolbarHost != nullptr);
+    QCOMPARE(window.minimumWidth(), 360);
+    QCOMPARE(window.minimumHeight(), 540);
     QCOMPARE(toolBar->sizePolicy().horizontalPolicy(), QSizePolicy::Expanding);
 
     auto* toolbarLayout = toolbarHost->layout();
@@ -635,7 +650,195 @@ void MainWindowTests::runtimeToolbarButtonsUseRoutingComboDefaultBorder()
     QVERIFY(lightStyle.contains(QStringLiteral(
         "QToolBar#mainToolBar QToolButton#proxyToggleButton, QToolBar#mainToolBar QToolButton#tunToggleButton { background: #f8fafc; border: 1px solid #c5ced8;")));
     QVERIFY(lightStyle.contains(QStringLiteral(
+        "QToolBar#mainToolBar QToolButton#proxyToggleButton:checked, QToolBar#mainToolBar QToolButton#tunToggleButton:checked { background: #2f6d56; color: #ffffff; border: 1px solid #2f6d56;")));
+    QVERIFY(lightStyle.contains(QStringLiteral(
+        "QTabBar#subscriptionTabBar::tab:selected { background: #b7dec9; border: 1px solid #2f6d56; color: #1f2328;")));
+    QVERIFY(lightStyle.contains(QStringLiteral(
         "QToolBar#mainToolBar QToolButton#qrCodeButton { background: #f8fafc; border: 1px solid #c5ced8;")));
+}
+
+void MainWindowTests::compactMainWindowShowsMobileToolbarAccordionAndTaskStatusOnly()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    window.resize(500, 640);
+    window.show();
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCoreApplication::processEvents();
+
+    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingButton"));
+    auto* subButton = window.findChild<QToolButton*>(QStringLiteral("subButton"));
+    auto* routingButton = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
+    auto* helpButton = window.findChild<QToolButton*>(QStringLiteral("helpButton"));
+    auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
+    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
+    auto* routingCombo = window.findChild<QComboBox*>(QStringLiteral("routingModeCombo"));
+    auto* qrButton = window.findChild<QToolButton*>(QStringLiteral("qrCodeButton"));
+    auto* toolbarFlexibleSpacer = window.findChild<QWidget*>(QStringLiteral("toolbarFlexibleSpacer"));
+    QVERIFY(settingsButton != nullptr);
+    QVERIFY(subButton != nullptr);
+    QVERIFY(routingButton != nullptr);
+    QVERIFY(helpButton != nullptr);
+    QVERIFY(proxyButton != nullptr);
+    QVERIFY(tunButton != nullptr);
+    QVERIFY(routingCombo != nullptr);
+    QVERIFY(qrButton != nullptr);
+    QVERIFY(toolbarFlexibleSpacer != nullptr);
+    QVERIFY(settingsButton->isVisible());
+    QVERIFY(toolbarFlexibleSpacer->isVisible());
+    QVERIFY(toolbarFlexibleSpacer->width() > 0);
+    QVERIFY(proxyButton->isVisible());
+    QVERIFY(tunButton->isVisible());
+    QVERIFY(routingCombo->isVisible());
+    QVERIFY(!subButton->isVisible());
+    QVERIFY(!routingButton->isVisible());
+    QVERIFY(!helpButton->isVisible());
+    QVERIFY(!qrButton->isVisible());
+
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
+    auto* backgroundTaskStatusLabel = window.findChild<QLabel*>(QStringLiteral("backgroundTaskStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+    QVERIFY(routingStatusLabel != nullptr);
+    QVERIFY(backgroundTaskStatusLabel != nullptr);
+    QVERIFY(currentServerStatusLabel->isVisible());
+    QVERIFY(!routingStatusLabel->isVisible());
+    QVERIFY(backgroundTaskStatusLabel->isVisible());
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(!serverView->isColumnHidden(0));
+    QVERIFY(serverView->isColumnHidden(1));
+    QVERIFY(!serverView->isColumnHidden(2));
+    QVERIFY(serverView->isColumnHidden(3));
+    QVERIFY(!serverView->isColumnHidden(4));
+    QCOMPARE(serverView->model()->rowCount(), 2);
+    QCOMPARE(serverView->property("compactServerTable").toBool(), true);
+
+    auto* compactPanel = window.findChild<QWidget*>(QStringLiteral("compactServerPanel"));
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    auto* sharePanel = window.findChild<QWidget*>(QStringLiteral("sharePanel"));
+    auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
+    QVERIFY(compactPanel != nullptr);
+    QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(logFilterEdit != nullptr);
+    QVERIFY(compactPanel->isVisible());
+    QCOMPARE(serverFilterEdit->parentWidget(), compactPanel);
+    QVERIFY(serverFilterEdit->isClearButtonEnabled());
+    const QMargins compactPanelMargins = compactPanel->layout()->contentsMargins();
+    QCOMPARE(compactPanelMargins.left(), 4);
+    QCOMPARE(compactPanelMargins.top(), 4);
+    QCOMPARE(compactPanelMargins.right(), 4);
+    QCOMPARE(compactPanelMargins.bottom(), 4);
+    QCOMPARE(compactPanel->layout()->spacing(), 4);
+    if (sharePanel != nullptr) {
+        QVERIFY(!sharePanel->isVisible());
+    }
+    QVERIFY(!logFilterEdit->isVisible());
+
+    const QList<QToolButton*> headers = window.findChildren<QToolButton*>(QStringLiteral("compactSubscriptionHeader"));
+    QList<QToolButton*> visibleHeaders;
+    for (QToolButton* header : headers) {
+        if (header->isVisible()) {
+            visibleHeaders.append(header);
+        }
+    }
+    QCOMPARE(visibleHeaders.size(), 3);
+    QToolButton* group1Header = nullptr;
+    QToolButton* group2Header = nullptr;
+    for (QToolButton* header : visibleHeaders) {
+        QVERIFY(header->text().contains(QStringLiteral("Group")) || header->text().contains(QStringLiteral("Ungrouped")));
+        QVERIFY(!header->text().startsWith(QStringLiteral(">")));
+        QVERIFY(!header->text().startsWith(QStringLiteral("v")));
+        if (header->property("tabKey").toString() == QStringLiteral("sub:sub-1")) {
+            group1Header = header;
+        }
+        if (header->property("tabKey").toString() == QStringLiteral("sub:sub-2")) {
+            group2Header = header;
+        }
+    }
+    QVERIFY(group1Header != nullptr);
+    QVERIFY(group2Header != nullptr);
+    QCOMPARE(group1Header->text(), QStringLiteral("Group 1"));
+    QCOMPARE(group1Header->property("expanded").toBool(), true);
+    QVERIFY(group1Header->isChecked());
+    QVERIFY(group1Header->font().bold());
+    QCOMPARE(group2Header->text(), QStringLiteral("Group 2"));
+    QCOMPARE(group2Header->property("expanded").toBool(), false);
+    QVERIFY(!group2Header->font().bold());
+    QVERIFY(group2Header->isEnabled());
+    QVERIFY(group2Header->width() > 0);
+    QVERIFY(group2Header->height() > 0);
+    QVERIFY(serverView->height() > group2Header->height());
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    QCoreApplication::processEvents();
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    QCOMPARE(serverView->model()->rowCount(), 1);
+    QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Third"));
+}
+
+void MainWindowTests::compactMainWindowRestoresDesktopLayoutAtThreshold()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    window.resize(500, 640);
+    window.show();
+    QCoreApplication::processEvents();
+    window.resize(520, 640);
+    QCoreApplication::processEvents();
+
+    auto* subButton = window.findChild<QToolButton*>(QStringLiteral("subButton"));
+    auto* routingButton = window.findChild<QToolButton*>(QStringLiteral("routingButton"));
+    auto* helpButton = window.findChild<QToolButton*>(QStringLiteral("helpButton"));
+    auto* qrButton = window.findChild<QToolButton*>(QStringLiteral("qrCodeButton"));
+    QVERIFY(subButton != nullptr);
+    QVERIFY(routingButton != nullptr);
+    QVERIFY(helpButton != nullptr);
+    QVERIFY(qrButton != nullptr);
+    QVERIFY(subButton->isVisible());
+    QVERIFY(routingButton->isVisible());
+    QVERIFY(helpButton->isVisible());
+    QVERIFY(qrButton->isVisible());
+
+    auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    auto* routingStatusLabel = window.findChild<QLabel*>(QStringLiteral("routingStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+    QVERIFY(routingStatusLabel != nullptr);
+    QVERIFY(currentServerStatusLabel->isVisible());
+    QVERIFY(routingStatusLabel->isVisible());
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    QCOMPARE(serverView->property("compactServerTable").toBool(), false);
+    for (int column = 0; column < serverView->model()->columnCount(); ++column) {
+        QVERIFY(!serverView->isColumnHidden(column));
+    }
+
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    auto* subscriptionTabBarContainer = window.findChild<QWidget*>(QStringLiteral("subscriptionTabBarContainer"));
+    auto* compactPanel = window.findChild<QWidget*>(QStringLiteral("compactServerPanel"));
+    auto* logFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("logFilterEdit"));
+    QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(subscriptionTabBarContainer != nullptr);
+    QVERIFY(compactPanel != nullptr);
+    QVERIFY(logFilterEdit != nullptr);
+    QCOMPARE(serverFilterEdit->parentWidget(), subscriptionTabBarContainer);
+    QVERIFY(serverFilterEdit->isClearButtonEnabled());
+    const QMargins compactPanelMargins = compactPanel->layout()->contentsMargins();
+    QCOMPARE(compactPanelMargins.left(), 0);
+    QCOMPARE(compactPanelMargins.top(), 0);
+    QCOMPARE(compactPanelMargins.right(), 0);
+    QCOMPARE(compactPanelMargins.bottom(), 0);
+    QVERIFY(!compactPanel->isVisible());
+    QVERIFY(logFilterEdit->isVisible());
 }
 
 void MainWindowTests::sharePanelShowsSelectedServerShareLink()
@@ -645,6 +848,7 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     Config config = createServerSelectionConfig();
     window.restoreUiState(config);
     window.setConfig(config);
+    window.setShareUrlResolver(shareUrlResolverForConfig(config));
     window.show();
     QCoreApplication::processEvents();
 
@@ -662,6 +866,8 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QVERIFY(qrPlaceholder != nullptr);
     QVERIFY(shareLinkLabel != nullptr);
     QVERIFY(serverView != nullptr);
+    selectServerRow(serverView, 0);
+    QCoreApplication::processEvents();
     shareAction->trigger();
     QCoreApplication::processEvents();
     auto* shareContentLayout = qobject_cast<QBoxLayout*>(shareContentPanel->layout());
@@ -697,6 +903,7 @@ void MainWindowTests::sharePanelClearsWhenSelectionIsCleared()
     Config config = createServerSelectionConfig();
     window.restoreUiState(config);
     window.setConfig(config);
+    window.setShareUrlResolver(shareUrlResolverForConfig(config));
     window.show();
     QCoreApplication::processEvents();
 
@@ -712,6 +919,8 @@ void MainWindowTests::sharePanelClearsWhenSelectionIsCleared()
     QVERIFY(serverView->selectionModel() != nullptr);
     QVERIFY(copyUrlAction != nullptr);
 
+    selectServerRow(serverView, 0);
+    QCoreApplication::processEvents();
     shareAction->trigger();
     QCoreApplication::processEvents();
 
@@ -1122,7 +1331,7 @@ void MainWindowTests::trayMenuSupportBuildsServerAndRoutingEntries()
     QCOMPARE(serverEntries.at(1).indexId, QStringLiteral("server-2"));
     QVERIFY(!serverEntries.at(1).displayName.trimmed().isEmpty());
     QCOMPARE(TrayMenuSupport::formatTestResult(serverEntries.at(0).testResult), QStringLiteral("42 ms"));
-    QCOMPARE(TrayMenuSupport::formatTestResult(serverEntries.at(1).testResult), QStringLiteral("unavailable"));
+    QCOMPARE(TrayMenuSupport::formatTestResult(serverEntries.at(1).testResult), QStringLiteral("Unavailable"));
 
     RoutingItem namedRouting;
     namedRouting.remarks = QStringLiteral("Direct");
@@ -1140,6 +1349,86 @@ void MainWindowTests::trayMenuSupportBuildsServerAndRoutingEntries()
     QCOMPARE(routingEntries.at(0).customIconPath, QStringLiteral("direct.svg"));
     QCOMPARE(routingEntries.at(1).displayName, QStringLiteral("Routing 2"));
     QCOMPARE(routingEntries.at(1).customIconPath, QStringLiteral("fallback.svg"));
+
+    const QString tooltip = TrayMenuSupport::buildToolTip(
+        nullptr,
+        QStringLiteral("2.2.1"),
+        QStringLiteral("First"),
+        ProxyUiState::Active,
+        true,
+        false,
+        true,
+        QStringLiteral("Direct (Advanced)"));
+    QCOMPARE(
+        tooltip,
+        QStringLiteral("SongBird 2.2.1\nCurrent: First\nAuto Run: OFF\nRouting: Direct\nCore Running | Proxy ON | Tun ON"));
+    QVERIFY(!tooltip.contains(QStringLiteral("Advanced")));
+
+    const QString advancedOnlyTooltip = TrayMenuSupport::buildToolTip(
+        nullptr,
+        QStringLiteral("2.2.1"),
+        QStringLiteral("First"),
+        ProxyUiState::Active,
+        true,
+        false,
+        false,
+        QStringLiteral("Advanced"));
+    QVERIFY(!advancedOnlyTooltip.contains(QStringLiteral("Routing: Advanced")));
+}
+
+void MainWindowTests::trayMenuSupportFiltersServersToCurrentSubscriptionGroup()
+{
+    SubItem firstSubscription;
+    firstSubscription.id = QStringLiteral("sub-a");
+    SubItem secondSubscription;
+    secondSubscription.id = QStringLiteral("sub-b");
+    SubItem disabledSubscription;
+    disabledSubscription.id = QStringLiteral("sub-disabled");
+    disabledSubscription.enabled = false;
+    const QList<SubItem> subscriptions{firstSubscription, secondSubscription, disabledSubscription};
+
+    VmessItem first = createServer(QStringLiteral("server-1"), QStringLiteral("First"), 1);
+    first.subId = QStringLiteral("sub-a");
+    VmessItem second = createServer(QStringLiteral("server-2"), QStringLiteral("Second"), 2);
+    second.subId = QStringLiteral("sub-b");
+    VmessItem sameSubscriptionWithSpaces = createServer(QStringLiteral("server-3"), QStringLiteral("Third"), 3);
+    sameSubscriptionWithSpaces.subId = QStringLiteral(" sub-a ");
+    VmessItem ungrouped = createServer(QStringLiteral("server-4"), QStringLiteral("Ungrouped"), 4);
+    VmessItem orphaned = createServer(QStringLiteral("server-5"), QStringLiteral("Orphaned"), 5);
+    orphaned.subId = QStringLiteral("sub-missing");
+    VmessItem disabledGroup = createServer(QStringLiteral("server-6"), QStringLiteral("Disabled"), 6);
+    disabledGroup.subId = QStringLiteral("sub-disabled");
+
+    const QList<VmessItem> servers{
+        first,
+        second,
+        sameSubscriptionWithSpaces,
+        ungrouped,
+        orphaned,
+        disabledGroup};
+
+    QList<VmessItem> filtered = TrayMenuSupport::serversInCurrentGroup(
+        servers,
+        subscriptions,
+        QStringLiteral("server-1"));
+    QCOMPARE(filtered.size(), 2);
+    QCOMPARE(filtered.at(0).indexId, QStringLiteral("server-1"));
+    QCOMPARE(filtered.at(1).indexId, QStringLiteral("server-3"));
+
+    filtered = TrayMenuSupport::serversInCurrentGroup(
+        servers,
+        subscriptions,
+        QStringLiteral("server-5"));
+    QCOMPARE(filtered.size(), 3);
+    QCOMPARE(filtered.at(0).indexId, QStringLiteral("server-4"));
+    QCOMPARE(filtered.at(1).indexId, QStringLiteral("server-5"));
+    QCOMPARE(filtered.at(2).indexId, QStringLiteral("server-6"));
+
+    filtered = TrayMenuSupport::serversInCurrentGroup(
+        servers,
+        subscriptions,
+        QStringLiteral("missing-current-server"));
+    QCOMPARE(filtered.size(), servers.size());
 }
 
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
@@ -1216,11 +1505,25 @@ void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
     QVERIFY(wideHint.height() < narrowHint.height());
 }
 
+void MainWindowTests::logListModelCapsRetainedLines()
+{
+    LogListModel model;
+
+    for (int index = 0; index < 1300; ++index) {
+        model.appendLine(QStringLiteral("line %1").arg(index));
+    }
+
+    QCOMPARE(model.rowCount(), 500);
+    QCOMPARE(model.index(0, 0).data(Qt::DisplayRole).toString(), QStringLiteral("line 800"));
+    QCOMPARE(model.index(model.rowCount() - 1, 0).data(Qt::DisplayRole).toString(), QStringLiteral("line 1299"));
+}
+
 void MainWindowTests::enterOnServerTableSetsCurrentWithoutMovingSelection()
 {
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setShareUrlResolver(shareUrlResolverForConfig(config));
     window.show();
     QCoreApplication::processEvents();
 
@@ -1261,6 +1564,7 @@ void MainWindowTests::speedTestRefreshKeepsCurrentSelectionOnTriggeredRow()
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setShareUrlResolver(shareUrlResolverForConfig(config));
     window.show();
     QCoreApplication::processEvents();
 
@@ -1415,6 +1719,7 @@ void MainWindowTests::serverTableDisablesDragReorderingAndKeepsMultiSelection()
     auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
     QVERIFY(serverView != nullptr);
     QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(serverFilterEdit->isClearButtonEnabled());
     QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
     QCOMPARE(serverView->model()->rowCount(), 2);
     QVERIFY(serverView->toolTip().isEmpty());
@@ -1490,9 +1795,7 @@ void MainWindowTests::serverContextMenuSelectsClickedUnselectedRow()
     QVERIFY(firstIndex.isValid());
     QVERIFY(secondIndex.isValid());
 
-    serverView->selectionModel()->select(
-        QItemSelection(firstIndex, firstIndex),
-        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    selectServerRow(serverView, firstIndex.row());
     QCoreApplication::processEvents();
 
     QVERIFY(serverView->selectionModel()->isRowSelected(0, QModelIndex()));
@@ -1525,6 +1828,7 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
     MainWindow window;
     Config config = createServerSelectionConfig();
     window.setConfig(config);
+    window.setShareUrlResolver(shareUrlResolverForConfig(config));
     window.show();
     QCoreApplication::processEvents();
 
@@ -1540,9 +1844,7 @@ void MainWindowTests::serverContextMenuCopyUrlActionSupportsSingleAndMultiSelect
 
     QStringList singleSelectionActions;
     QApplication::clipboard()->clear();
-    serverView->selectionModel()->select(
-        QItemSelection(firstIndex, firstIndex),
-        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    selectServerRow(serverView, firstIndex.row());
     QCoreApplication::processEvents();
 
     QVERIFY(triggerServerContextMenuAction(
@@ -1954,14 +2256,26 @@ void MainWindowTests::statusBarSupportFormatsLabelsAndTransientState()
     QCOMPARE(StatusBarSupport::routingStatusText(QString()), QStringLiteral("Listening: Unavailable"));
     QCOMPARE(StatusBarSupport::routingStatusText(QStringLiteral("127.0.0.1:2080")), QStringLiteral("Listening: 127.0.0.1:2080"));
     QCOMPARE(
-        StatusBarSupport::transientStatusText(QString(), true, QStringLiteral("Updating subscriptions")),
+        StatusBarSupport::backgroundTaskStatusText(
+            true,
+            QStringLiteral("Updating subscriptions"),
+            QStringLiteral("2.2.1"),
+            QString()),
         QStringLiteral("Task: Updating subscriptions"));
     QCOMPARE(
-        StatusBarSupport::transientStatusText(QStringLiteral("Copied"), true, QStringLiteral("Updating subscriptions")),
-        QStringLiteral("Copied"));
-    QVERIFY(StatusBarSupport::shouldSuppressRoutineStatus(QStringLiteral("Copied"), false, QString()));
-    QVERIFY(StatusBarSupport::shouldSuppressRoutineStatus(QString(), true, QStringLiteral("Updating subscriptions")));
-    QVERIFY(!StatusBarSupport::shouldSuppressRoutineStatus(QString(), false, QString()));
+        StatusBarSupport::backgroundTaskStatusText(
+            false,
+            QString(),
+            QStringLiteral("2.2.1"),
+            QString()),
+        QStringLiteral("2.2.1"));
+    QCOMPARE(
+        StatusBarSupport::backgroundTaskStatusText(
+            false,
+            QString(),
+            QStringLiteral("2.2.1"),
+            QStringLiteral("Update available: 2.2.2")),
+        QStringLiteral("Update available: 2.2.2"));
 
     const QString longText = QStringLiteral("A very long status message that must be elided");
     const QString elided = StatusBarSupport::elideTextWithThreeDots(fontMetrics, longText, 40);
@@ -2038,9 +2352,9 @@ void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
     window.show();
     QCoreApplication::processEvents();
 
-    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
+    auto* backgroundTaskStatusLabel = window.findChild<QLabel*>(QStringLiteral("backgroundTaskStatusLabel"));
     auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
-    QVERIFY(transientStatusLabel != nullptr);
+    QVERIFY(backgroundTaskStatusLabel != nullptr);
     QVERIFY(serverView != nullptr);
     QVERIFY(serverView->selectionModel() != nullptr);
 
@@ -2051,81 +2365,31 @@ void MainWindowTests::serverSelectionDoesNotShowTransientStatusMessage()
         QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     QCoreApplication::processEvents();
 
-    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
+    QVERIFY(!backgroundTaskStatusLabel->text().trimmed().isEmpty());
 }
 
-void MainWindowTests::routineTransientStatusShowsWhenStatusBarIsIdle()
-{
-    MainWindow window;
-
-    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
-    QVERIFY(transientStatusLabel != nullptr);
-    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
-
-    window.showTransientStatus(
-        QStringLiteral("Copied 1 URL(s) to the clipboard."),
-        50,
-        MainWindow::TransientStatusPriority::Routine);
-    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Copied 1 URL(s) to the clipboard."));
-
-    QTRY_COMPARE(transientStatusLabel->text(), QStringLiteral("Ready"));
-}
-
-void MainWindowTests::routineTransientStatusDoesNotOverrideStatusLabel()
-{
-    MainWindow window;
-    window.setBackgroundTaskRunning(true);
-    window.setBackgroundTaskDescription(QStringLiteral("Updating subscriptions"));
-
-    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
-    QVERIFY(transientStatusLabel != nullptr);
-    const QString backgroundText = transientStatusLabel->text();
-    QCOMPARE(backgroundText, QStringLiteral("Task: Updating subscriptions"));
-
-    window.showTransientStatus(
-        QStringLiteral("Copied 1 URL(s) to the clipboard."),
-        50,
-        MainWindow::TransientStatusPriority::Routine);
-    QCOMPARE(transientStatusLabel->text(), backgroundText);
-}
-
-void MainWindowTests::transientStatusTemporarilyOverridesBackgroundTaskMessage()
-{
-    MainWindow window;
-    window.setBackgroundTaskRunning(true);
-    window.setBackgroundTaskDescription(QStringLiteral("Updating subscriptions"));
-
-    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
-    QVERIFY(transientStatusLabel != nullptr);
-    const QString backgroundText = transientStatusLabel->text();
-    QCOMPARE(backgroundText, QStringLiteral("Task: Updating subscriptions"));
-
-    window.showTransientStatus(QStringLiteral("Copied 1 URL(s) to the clipboard."), 50);
-    QCOMPARE(transientStatusLabel->text(), QStringLiteral("Copied 1 URL(s) to the clipboard."));
-
-    QTRY_COMPARE(transientStatusLabel->text(), backgroundText);
-}
-
-void MainWindowTests::longTransientStatusUsesThreeDotsAndTooltip()
+void MainWindowTests::longBackgroundTaskStatusUsesThreeDotsAndTooltip()
 {
     MainWindow window;
     window.resize(360, 640);
     window.show();
     QCoreApplication::processEvents();
 
-    const QString longMessage =
-        QStringLiteral("This is a deliberately long transient status message that should not fit in the status bar.");
-    auto* transientStatusLabel = window.findChild<QLabel*>(QStringLiteral("transientStatusLabel"));
-    QVERIFY(transientStatusLabel != nullptr);
-    transientStatusLabel->setFixedWidth(140);
+    const QString longDescription =
+        QStringLiteral("Updating a deliberately long background task description that should not fit in the status bar.");
+    const QString expectedFullText = QStringLiteral("Task: %1").arg(longDescription);
+    auto* backgroundTaskStatusLabel = window.findChild<QLabel*>(QStringLiteral("backgroundTaskStatusLabel"));
+    QVERIFY(backgroundTaskStatusLabel != nullptr);
+    backgroundTaskStatusLabel->setFixedWidth(140);
     QCoreApplication::processEvents();
 
-    window.showTransientStatus(longMessage, 0);
+    window.setBackgroundTaskRunning(true);
+    window.setBackgroundTaskDescription(longDescription);
     QCoreApplication::processEvents();
 
-    QVERIFY(transientStatusLabel->text().endsWith(QStringLiteral("...")));
-    QVERIFY(transientStatusLabel->text().size() < longMessage.size());
-    QCOMPARE(transientStatusLabel->toolTip(), longMessage);
+    QVERIFY(backgroundTaskStatusLabel->text().endsWith(QStringLiteral("...")));
+    QVERIFY(backgroundTaskStatusLabel->text().size() < expectedFullText.size());
+    QCOMPARE(backgroundTaskStatusLabel->toolTip(), expectedFullText);
 }
 
 void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()
@@ -2193,8 +2457,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     Config config = createServerSelectionConfig();
     RoutingItem routing;
     routing.remarks = QStringLiteral("Bypass Mainland Route");
-    config.collection().routingItems = {routing};
-    config.collection().routingIndex = 0;
+    config.collection().customRoutingItems = {routing};
     window.setConfig(config);
     window.show();
     QCoreApplication::processEvents();
@@ -2234,7 +2497,7 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(serverHeaderRow->testAttribute(Qt::WA_StyledBackground));
     QCOMPARE(serverFilterEdit->parentWidget(), subscriptionTabBarContainer);
     const QMargins subscriptionTabBarMargins = subscriptionTabBarContainer->layout()->contentsMargins();
-    QCOMPARE(subscriptionTabBarMargins.left(), 6);
+    QCOMPARE(subscriptionTabBarMargins.left(), 4);
     QCOMPARE(subscriptionTabBarMargins.top(), 4);
     QCOMPARE(subscriptionTabBarMargins.right(), 4);
     QCOMPARE(subscriptionTabBarMargins.bottom(), 4);

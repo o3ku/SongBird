@@ -115,7 +115,7 @@ void DnsSettingsPageWidget::setupUi()
 
     directExpectedIpsEdit_ = new QLineEdit(this);
     directExpectedIpsEdit_->setObjectName(QStringLiteral("settingsDirectExpectedIpsEdit"));
-    directExpectedIpsEdit_->setPlaceholderText(QStringLiteral("Comma-separated IPs"));
+    directExpectedIpsEdit_->setPlaceholderText(tr("Comma-separated IPs"));
 
     dnsHostsEdit_ = new QTextEdit(this);
     dnsHostsEdit_->setObjectName(QStringLiteral("settingsDnsHostsEdit"));

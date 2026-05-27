@@ -22,7 +22,6 @@ struct RuntimeStateSnapshot {
     SystemProxyMode systemProxyMode = SystemProxyMode::ForcedClear;
     bool systemProxyApplied = false;
     bool autoRunEnabled = false;
-    bool routingAdvancedEnabled = false;
 };
 
 class RuntimeState final : public QObject {
@@ -40,7 +39,7 @@ signals:
     void proxyUiStateChanged(ProxyUiState state);
     void systemProxyStateChanged(int mode, bool enabled);
     void autoRunChanged(bool enabled);
-    void routingStatusChanged(const QString& routingText, const QString& listenText, bool advancedEnabled);
+    void routingStatusChanged(const QString& routingText, const QString& listenText);
 
 private:
     RuntimeStateSnapshot snapshot_;

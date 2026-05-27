@@ -14,14 +14,12 @@
 #include <QStyleOptionComboBox>
 #include <QToolBar>
 #include <QToolButton>
+#include <QVariant>
 #include <QtMath>
 
 #include "ui/theme/AppTheme.h"
 
 namespace {
-
-constexpr int ButtonHorizontalPadding = 8;
-constexpr int ButtonBorderWidth = 1;
 
 void paintChevron(QPainter& painter, const QRect& rect, bool enabled)
 {
@@ -212,7 +210,8 @@ QToolButton* createMenuButton(
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
     button->setFixedHeight(ControlHeight);
-    toolBar->addWidget(button);
+    QAction* widgetAction = toolBar->addWidget(button);
+    button->setProperty("toolbarWidgetAction", QVariant::fromValue<QObject*>(widgetAction));
     return button;
 }
 
@@ -237,7 +236,8 @@ QToolButton* createActionButton(
         syncActionButton(button, action);
     }
 
-    toolBar->addWidget(button);
+    QAction* widgetAction = toolBar->addWidget(button);
+    button->setProperty("toolbarWidgetAction", QVariant::fromValue<QObject*>(widgetAction));
     return button;
 }
 
@@ -247,21 +247,6 @@ QWidget* createSpacing(QWidget* parent, int width)
     spacer->setFixedWidth(width);
     spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     return spacer;
-}
-
-int textButtonWidth(const QWidget* widget, const QStringList& texts)
-{
-    if (widget == nullptr) {
-        return 0;
-    }
-
-    int textWidth = 0;
-    const QFontMetrics fontMetrics(widget->font());
-    for (const QString& text : texts) {
-        textWidth = qMax(textWidth, fontMetrics.horizontalAdvance(text));
-    }
-
-    return textWidth + (ButtonHorizontalPadding * 2) + (ButtonBorderWidth * 2);
 }
 
 void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)

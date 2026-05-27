@@ -61,6 +61,7 @@
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
+#include "domain/models/RoutingProfiles.h"
 #include "platform/windows/WindowsAutoRunService.h"
 #include "platform/windows/WindowsSystemProxyService.h"
 #include "persistence/JsonConfigRepository.h"
@@ -78,6 +79,7 @@
 #include "services/ServerService.h"
 #include "services/SpeedTestController.h"
 #include "services/SubscriptionService.h"
+#include "subscription/ShareUrlBuilder.h"
 #include "ui/dialogs/AboutDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/dialogs/UwpLoopbackDialog.h"
@@ -88,6 +90,7 @@
 namespace {
 
 constexpr auto AppReleaseDate = __DATE__;
+constexpr int AppUpdateCheckIntervalMs = 24 * 60 * 60 * 1000;
 
 bool isRoutineCoreLogLine(const QString& line)
 {
@@ -363,6 +366,10 @@ bool AppBootstrap::run()
                 QCoreApplication::translate("AppBootstrap", "Proxy startup is in progress.")));
         });
     objects_->mainWindow = std::make_unique<MainWindow>();
+    objects_->mainWindow->setShareUrlResolver([this](const QString& indexId) {
+        const VmessItem* server = findServerById(indexId);
+        return server == nullptr ? QString() : ShareUrlBuilder::build(*server).trimmed();
+    });
     objects_->trayController = std::make_unique<TrayController>(objects_->mainWindow.get());
     objects_->speedTestCoordinator = std::make_unique<SpeedTestCoordinator>(
         SpeedTestCoordinator::Dependencies{
@@ -386,14 +393,6 @@ bool AppBootstrap::run()
                     objects_->mainWindow->appendLog(message);
                 }
             },
-            [this](const QString& message, int timeoutMs) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->showTransientStatus(
-                        message,
-                        timeoutMs,
-                        MainWindow::TransientStatusPriority::Routine);
-                }
-            },
             [this](const QString& indexId, const QString& result) {
                 if (objects_->mainWindow != nullptr) {
                     objects_->mainWindow->updateServerTestResult(indexId, result);
@@ -408,6 +407,7 @@ bool AppBootstrap::run()
                 if (objects_->trayController != nullptr) {
                     objects_->trayController->setServers(
                         config_.collection().servers,
+                        config_.collection().subscriptions,
                         config_.currentIndexId);
                 }
             }
@@ -419,17 +419,6 @@ bool AppBootstrap::run()
     userFeedback->appendLogFn = [this](const QString& message) {
         if (objects_->mainWindow != nullptr) {
             objects_->mainWindow->appendLog(message);
-        }
-    };
-    userFeedback->showTransientStatusFn = [this](
-        const QString& message,
-        int timeoutMs,
-        IUserFeedback::TransientStatusPriority) {
-        if (objects_->mainWindow != nullptr) {
-            objects_->mainWindow->showTransientStatus(
-                message,
-                timeoutMs,
-                MainWindow::TransientStatusPriority::Routine);
         }
     };
     userFeedback->recordOperationResultFn = [this](const OperationResult& result) {
@@ -514,19 +503,6 @@ bool AppBootstrap::run()
                     objects_->mainWindow->appendLog(message);
                 }
             },
-            [this](const QString& message, int timeoutMs) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->showTransientStatus(
-                        message,
-                        timeoutMs,
-                        MainWindow::TransientStatusPriority::Routine);
-                }
-            },
-            [this](const QString& message, int timeoutMs) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->showTransientStatus(message, timeoutMs);
-                }
-            },
             [this](const QString& title, const OperationResult& result, QWidget* parent) {
                 showOperationMessage(title, result, parent);
             },
@@ -557,14 +533,6 @@ bool AppBootstrap::run()
             [this](const QString& message) {
                 if (objects_->mainWindow != nullptr) {
                     objects_->mainWindow->appendLog(message);
-                }
-            },
-            [this](const QString& message, int timeoutMs) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->showTransientStatus(
-                        message,
-                        timeoutMs,
-                        MainWindow::TransientStatusPriority::Routine);
                 }
             },
             [this](const OperationResult& result) { appendResult(result); },
@@ -710,12 +678,38 @@ bool AppBootstrap::run()
     QTimer::singleShot(3000, objects_->mainWindow.get(), [this]() {
         checkAppUpdates(false);
     });
+    auto* appUpdateTimer = new QTimer(objects_->mainWindow.get());
+    appUpdateTimer->setInterval(AppUpdateCheckIntervalMs);
+    QObject::connect(appUpdateTimer, &QTimer::timeout, objects_->mainWindow.get(), [this]() {
+        checkAppUpdates(false);
+    });
+    appUpdateTimer->start();
 
     return true;
 }
 
 void AppBootstrap::wireMainWindow()
 {
+    if (objects_->appUpdateCheckCoordinator != nullptr) {
+        QObject::connect(
+            objects_->appUpdateCheckCoordinator.get(),
+            &AppUpdateCheckCoordinator::updateAvailable,
+            objects_->mainWindow.get(),
+            [this](const AppUpdateCheckResult& result, const QString&) {
+                if (objects_->mainWindow != nullptr) {
+                    objects_->mainWindow->setAvailableAppUpdateVersion(result.latestVersion);
+                }
+            });
+        QObject::connect(
+            objects_->appUpdateCheckCoordinator.get(),
+            &AppUpdateCheckCoordinator::updateUnavailable,
+            objects_->mainWindow.get(),
+            [this]() {
+                if (objects_->mainWindow != nullptr) {
+                    objects_->mainWindow->clearAvailableAppUpdateVersion();
+                }
+            });
+    }
     wireProxySessionSignals();
     wireRuntimeStateSignals();
     wireBackgroundTaskSignals();
@@ -767,10 +761,6 @@ void AppBootstrap::wireProxySessionSignals()
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::logMessage,
                      objects_->mainWindow.get(), [this](const QString& msg) { appendResult(OperationResult::ok(msg)); });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::transientStatus,
-                     objects_->mainWindow.get(), [this](const QString& msg, int timeoutMs) {
-                         if (objects_->mainWindow) { objects_->mainWindow->showTransientStatus(msg, timeoutMs); }
-                     });
     QObject::connect(objects_->proxySession.get(), &ProxySession::coreUpdateResumeRequested,
                      objects_->mainWindow.get(), [this]() {
                          if (objects_->coreUpdateCoordinator != nullptr) {
@@ -818,9 +808,9 @@ void AppBootstrap::wireRuntimeStateSignals()
                          }
                      });
     QObject::connect(objects_->runtimeState.get(), &RuntimeState::routingStatusChanged,
-                     objects_->trayController.get(), [this](const QString& routingText, const QString&, bool advancedEnabled) {
+                     objects_->trayController.get(), [this](const QString& routingText, const QString&) {
                          if (objects_->trayController != nullptr) {
-                             objects_->trayController->setRoutingSummary(routingText, advancedEnabled);
+                             objects_->trayController->setRoutingSummary(routingText);
                          }
                      });
 }
@@ -914,11 +904,10 @@ void AppBootstrap::wireMainWindowCommands()
     QObject::connect(objects_->mainWindow.get(), &MainWindow::tunEnabledChanged, objects_->mainWindow.get(), [this](bool enabled) {
         setTunEnabled(enabled);
     });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::routingModeSelected, objects_->mainWindow.get(), [this](int mode) {
-        const bool previousAdvancedEnabled = config_.collection().enableRoutingAdvanced;
-        const int previousRoutingIndex = config_.collection().routingIndex;
-        const OperationResult result = objects_->routingService->setRoutingMode(config_, mode >= 0, mode);
-        handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::routingModeSelected, objects_->mainWindow.get(), [this](const QString& routingModeId) {
+        const QString previousRoutingModeId = config_.collection().routingModeId;
+        const OperationResult result = objects_->routingService->setRoutingMode(config_, routingModeId);
+        handleRoutingSelectionResult(result, previousRoutingModeId);
     });
 
     QObject::connect(objects_->mainWindow.get(), &MainWindow::settingsRequested, objects_->mainWindow.get(), [this]() {
@@ -939,6 +928,11 @@ void AppBootstrap::wireMainWindowCommands()
 
     QObject::connect(objects_->mainWindow.get(), &MainWindow::checkAppUpdateRequested, objects_->mainWindow.get(), [this]() {
         checkAppUpdates(true);
+    });
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::downloadAppUpdateRequested, objects_->mainWindow.get(), [this]() {
+        if (objects_->appUpdateCheckCoordinator != nullptr) {
+            objects_->appUpdateCheckCoordinator->downloadLatestAvailableUpdate(objects_->mainWindow.get());
+        }
     });
 
     QObject::connect(objects_->mainWindow.get(), &MainWindow::uwpLoopbackRequested, objects_->mainWindow.get(), [this]() {
@@ -992,11 +986,14 @@ void AppBootstrap::wireTraySignals()
         }
     });
 
-    QObject::connect(objects_->trayController.get(), &TrayController::routingRequested, objects_->mainWindow.get(), [this](int index) {
-        const int previousRoutingIndex = config_.collection().routingIndex;
-        const bool previousAdvancedEnabled = config_.collection().enableRoutingAdvanced;
-        const OperationResult result = objects_->routingService->selectRouting(config_, index);
-        handleRoutingSelectionResult(result, previousAdvancedEnabled, previousRoutingIndex);
+    QObject::connect(objects_->trayController.get(), &TrayController::routingRequested, objects_->mainWindow.get(), [this](const QString& routingModeId) {
+        const QString previousRoutingModeId = config_.collection().routingModeId;
+        const OperationResult result = objects_->routingService->selectRouting(config_, routingModeId);
+        handleRoutingSelectionResult(result, previousRoutingModeId);
+    });
+
+    QObject::connect(objects_->trayController.get(), &TrayController::autoRunToggled, objects_->mainWindow.get(), [this](bool enabled) {
+        setAutoRunEnabled(enabled);
     });
 
     QObject::connect(objects_->trayController.get(), &TrayController::quitRequested, objects_->mainWindow.get(), [this]() {
@@ -1017,11 +1014,12 @@ void AppBootstrap::syncWindow()
     if (objects_->trayController != nullptr) {
         objects_->trayController->setServers(
             config_.collection().servers,
+            config_.collection().subscriptions,
             config_.currentIndexId);
         objects_->trayController->setRoutings(
-            config_.collection().routingItems,
-            config_.collection().routingIndex,
-            config_.collection().enableRoutingAdvanced);
+            RoutingProfiles::routingItems(config_.collection()),
+            config_.collection().routingModeId);
+        objects_->trayController->setTunEnabled(config_.tun().tunModeItem.enableTun);
     }
 
     syncStatusIndicators();
@@ -1044,6 +1042,10 @@ void AppBootstrap::syncStatusIndicators()
 
     if (objects_->mainWindow != nullptr) {
         objects_->mainWindow->setExistingCoreTypes(existingCoreTypes_);
+    }
+    if (objects_->trayController != nullptr) {
+        objects_->trayController->setAutoRunEnabled(autoRunEnabled);
+        objects_->trayController->setTunEnabled(config_.tun().tunModeItem.enableTun);
     }
 
     if (objects_->runtimeState != nullptr && objects_->runtimeStateSnapshotBuilder != nullptr) {
@@ -1209,7 +1211,6 @@ void AppBootstrap::appendResult(const OperationResult& result)
         for (const QString& line : lines) {
             objects_->mainWindow->appendLog(line);
         }
-        objects_->mainWindow->showTransientStatus(lines.constFirst(), result.success ? 4000 : 8000);
     }
 }
 
@@ -1400,6 +1401,18 @@ void AppBootstrap::disableSystemProxy()
     }
 }
 
+void AppBootstrap::setAutoRunEnabled(bool enabled)
+{
+    if (config_.ui().autoRunEnabled == enabled) {
+        syncStatusIndicators();
+        return;
+    }
+
+    Config updatedConfig = config_;
+    updatedConfig.ui().autoRunEnabled = enabled;
+    applySettingsDialogResult(updatedConfig);
+}
+
 void AppBootstrap::setTunEnabled(bool enabled)
 {
     if (objects_->tunModeCoordinator == nullptr) {
@@ -1478,16 +1491,14 @@ void AppBootstrap::updateCurrentSubscriptionViaProxy(const QString& subscription
 
 void AppBootstrap::handleRoutingSelectionResult(
     const OperationResult& result,
-    bool previousAdvancedEnabled,
-    int previousRoutingIndex)
+    const QString& previousRoutingModeId)
 {
     appendResult(result);
     syncWindow();
 
     if (result.success
         && isCoreRunning()
-        && (previousAdvancedEnabled != config_.collection().enableRoutingAdvanced
-            || previousRoutingIndex != config_.collection().routingIndex)) {
+        && previousRoutingModeId != config_.collection().routingModeId) {
         restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."), true);
     }
 }

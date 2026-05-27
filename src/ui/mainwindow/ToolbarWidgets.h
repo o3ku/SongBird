@@ -1,11 +1,10 @@
 #pragma once
 
-#include <QStringList>
-
 class QAction;
 class QComboBox;
 class QIcon;
 class QMenu;
+class QString;
 class QToolBar;
 class QToolButton;
 class QWidget;
@@ -33,7 +32,6 @@ QToolButton* createActionButton(
     const QIcon& icon,
     QAction* action);
 QWidget* createSpacing(QWidget* parent, int width);
-int textButtonWidth(const QWidget* widget, const QStringList& texts);
 void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters);
 
 } // namespace ToolbarWidgets

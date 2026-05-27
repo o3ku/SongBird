@@ -40,16 +40,6 @@ void appendLog(const std::function<void(const QString&)>& appendLog, const QStri
     }
 }
 
-void showTransientStatus(
-    const std::function<void(const QString&, int)>& showTransientStatus,
-    const QString& message,
-    int timeout)
-{
-    if (showTransientStatus) {
-        showTransientStatus(message, timeout);
-    }
-}
-
 } // namespace
 
 CoreUpdateCoordinator::CoreUpdateCoordinator(Dependencies dependencies, QObject* parent)
@@ -224,7 +214,6 @@ void CoreUpdateCoordinator::runCoreUpdateTask(
             }
 
             appendLog(deps_.appendLog, message);
-            showTransientStatus(deps_.showRoutineTransientStatus, message, 0);
             if (progressObserver) {
                 progressObserver(message);
             }
@@ -276,9 +265,6 @@ void CoreUpdateCoordinator::finalizeCoreUpdate(
         return;
     }
 
-    if (fallbackUiContext() != nullptr && !result.message.trimmed().isEmpty()) {
-        showTransientStatus(deps_.showTransientStatus, result.message, 5000);
-    }
     if (result.success && deps_.refreshExistingCoreTypes) {
         deps_.refreshExistingCoreTypes();
     }
@@ -293,7 +279,6 @@ void CoreUpdateCoordinator::finalizeCoreUpdate(
                 "Restarting the updated core...");
             if (fallbackUiContext() != nullptr) {
                 appendLog(deps_.appendLog, message);
-                showTransientStatus(deps_.showRoutineTransientStatus, message, 0);
             }
             if (deps_.enableSystemProxy) {
                 deps_.enableSystemProxy(true);
@@ -304,7 +289,6 @@ void CoreUpdateCoordinator::finalizeCoreUpdate(
                 "Update failed. Restoring the previous running core...");
             if (fallbackUiContext() != nullptr) {
                 appendLog(deps_.appendLog, message);
-                showTransientStatus(deps_.showTransientStatus, message, 0);
             }
             if (deps_.enableSystemProxy) {
                 deps_.enableSystemProxy(false);
@@ -325,7 +309,6 @@ void CoreUpdateCoordinator::finalizeCoreUpdate(
             "Starting the downloaded core...");
         if (fallbackUiContext() != nullptr) {
             appendLog(deps_.appendLog, message);
-            showTransientStatus(deps_.showRoutineTransientStatus, message, 0);
         }
         if (deps_.enableSystemProxy) {
             deps_.enableSystemProxy(true);
@@ -359,7 +342,6 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
     const QString startupMessage = QCoreApplication::translate("AppBootstrap", "Starting %1 update...")
                                        .arg(coreTypeDisplayName(coreType));
     appendLog(deps_.appendLog, startupMessage);
-    showTransientStatus(deps_.showRoutineTransientStatus, startupMessage, 3000);
 
     const std::weak_ptr<char> lifetimeGuard = weakLifetimeGuard();
     auto task = [this,

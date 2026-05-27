@@ -14,11 +14,6 @@ class QWidget;
 
 class StatusBarController final {
 public:
-    enum class TransientStatusPriority {
-        Important,
-        Routine
-    };
-
     struct Snapshot {
         QString currentServerName;
         QString currentServerLocation;
@@ -26,13 +21,17 @@ public:
         QString listenSummary;
         bool backgroundTaskRunning = false;
         QString backgroundTaskDescription;
+        QString idleStatusText;
+        QString updateAvailableText;
+        bool updateAvailable = false;
     };
 
     StatusBarController(
         QWidget* owner,
         QStatusBar* statusBar,
         std::function<void()> settingsRequested,
-        std::function<void()> currentServerRequested);
+        std::function<void()> currentServerRequested,
+        std::function<void()> updateDownloadRequested);
 
     void refresh(
         const QString& currentServerName,
@@ -40,26 +39,28 @@ public:
         const QString& currentServerWarning,
         const QString& listenSummary,
         bool backgroundTaskRunning,
-        const QString& backgroundTaskDescription);
+        const QString& backgroundTaskDescription,
+        const QString& idleStatusText,
+        const QString& updateAvailableText,
+        bool updateAvailable);
     const Snapshot& snapshot() const;
 
-    void showTransientStatus(const QString& message, int timeoutMs, TransientStatusPriority priority);
-    void clearTransientStatus();
-    void refreshTransientStatusLabel(bool ownerVisible);
+    void refreshBackgroundTaskStatusLabel(bool ownerVisible);
+    void setCompactMode(bool compact);
     bool handleEvent(QObject* watched, QEvent* event);
 
 private:
     void updateStatusIndicators();
-    QString currentTransientStatusText() const;
-    bool shouldSuppressRoutineStatus() const;
+    QString currentBackgroundTaskStatusText() const;
+    void updateBackgroundTaskStatusInteraction();
 
     QWidget* owner_ = nullptr;
     class QLabel* currentServerStatusLabel_ = nullptr;
     class QLabel* routingStatusLabel_ = nullptr;
-    class QLabel* transientStatusLabel_ = nullptr;
-    class QTimer* transientStatusTimer_ = nullptr;
+    class QLabel* backgroundTaskStatusLabel_ = nullptr;
     std::function<void()> settingsRequested_;
     std::function<void()> currentServerRequested_;
+    std::function<void()> updateDownloadRequested_;
     Snapshot snapshot_;
-    QString transientStatusMessage_;
+    bool compactMode_ = false;
 };

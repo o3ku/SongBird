@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QString>
 
@@ -22,6 +23,16 @@ public:
     static void normalizeSubscriptionIds(QList<SubItem>& items);
 
 private:
+    struct ReusableServerState {
+        QString indexId;
+        QString testResult;
+    };
+
+    static QHash<QString, QList<ReusableServerState>> takeReusableServerStates(
+        QList<VmessItem>& servers,
+        const QString& subscriptionId,
+        const QString& currentIndexId,
+        bool* currentBelongedToUpdatedSubscription);
     static QString serverReuseKey(const VmessItem& item);
     static QString normalizedValue(const QString& value);
 

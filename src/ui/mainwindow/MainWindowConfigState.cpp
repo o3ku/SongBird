@@ -1,29 +1,16 @@
 #include "ui/mainwindow/MainWindowConfigState.h"
 
 #include "runtime/ProtocolCoreCompat.h"
-#include "subscription/ShareUrlBuilder.h"
+#include "domain/models/RoutingProfiles.h"
 
 MainWindowConfigSnapshot makeMainWindowConfigSnapshot(const Config& config)
 {
     return {
         config.currentIndexId,
         config.collection().subscriptions,
-        config.collection().routingItems,
-        config.collection().routingIndex,
+        RoutingProfiles::routingItems(config.collection()),
+        config.collection().routingModeId,
         config.policy().coreTypeItems};
-}
-
-QHash<QString, QString> buildMainWindowShareUrlCache(const QList<VmessItem>& servers)
-{
-    QHash<QString, QString> shareUrlByIndexId;
-    shareUrlByIndexId.reserve(servers.size());
-    for (const VmessItem& item : servers) {
-        const QString shareUrl = ShareUrlBuilder::build(item).trimmed();
-        if (!item.indexId.isEmpty() && !shareUrl.isEmpty()) {
-            shareUrlByIndexId.insert(item.indexId, shareUrl);
-        }
-    }
-    return shareUrlByIndexId;
 }
 
 QString currentCoreDisplayNameFromConfig(const Config& config, const QString& currentIndexId)
@@ -33,7 +20,7 @@ QString currentCoreDisplayNameFromConfig(const Config& config, const QString& cu
             return coreTypeDisplayName(resolveSelectedCoreType(config, item, availableCoreTypes()));
         }
     }
-    return QStringLiteral("Unknown");
+    return {};
 }
 
 QString subscriptionIdFromTabKey(const QString& tabKey)

@@ -102,9 +102,8 @@ struct RootConfigState {
 struct CollectionConfigState {
     QList<VmessItem> servers;
     QList<SubItem> subscriptions;
-    int routingIndex = 0;
-    bool enableRoutingAdvanced = false;
-    QList<RoutingItem> routingItems;
+    QString routingModeId = QStringLiteral("builtin:whitelist");
+    QList<RoutingItem> customRoutingItems;
     QList<RoutingRule> routingCustomRules;
 };
 

@@ -63,9 +63,9 @@ RoutingRule makeRule(const QString& action)
 QList<QPair<QString, QString>> RoutingCustomRuleSupport::customRuleTabs()
 {
     return {
-        {QStringLiteral("block"), QStringLiteral("Block")},
-        {QStringLiteral("direct"), QStringLiteral("Direct")},
-        {QStringLiteral("proxy"), QStringLiteral("Proxy")}};
+        {QStringLiteral("block"), QStringLiteral("BLOCK")},
+        {QStringLiteral("direct"), QStringLiteral("DIRECT")},
+        {QStringLiteral("proxy"), QStringLiteral("PROXY")}};
 }
 
 QStringList RoutingCustomRuleSupport::actionOrder()

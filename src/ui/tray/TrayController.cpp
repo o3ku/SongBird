@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QIcon>
 #include <QMenu>
+#include <QSignalBlocker>
 #include <QSystemTrayIcon>
 
 #include "ui/mainwindow/MainWindow.h"
@@ -57,12 +58,17 @@ bool TrayController::initialize()
     routingsMenu_ = trayMenu_->addMenu(trayText("Switch Routing"));
     routingsMenu_->setObjectName(QStringLiteral("trayRoutingsMenu"));
     trayMenu_->addSeparator();
+    autoRunAction_ = trayMenu_->addAction(trayText("Enable Auto Run"));
+    autoRunAction_->setObjectName(QStringLiteral("trayAutoRunAction"));
+    autoRunAction_->setCheckable(true);
+    trayMenu_->addSeparator();
     quitAction_ = trayMenu_->addAction(trayText("Quit"));
     quitAction_->setObjectName(QStringLiteral("trayQuitAction"));
 
     trayIcon_->setContextMenu(trayMenu_);
 
     connect(quitAction_, &QAction::triggered, this, &TrayController::quitRequested);
+    connect(autoRunAction_, &QAction::toggled, this, &TrayController::autoRunToggled);
     connect(trayMenu_, &QMenu::aboutToShow, this, &TrayController::updateMenuText);
     connect(trayIcon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
@@ -136,6 +142,10 @@ void TrayController::setBackgroundTaskDescription(const QString& description)
 
 void TrayController::setAutoRunEnabled(bool enabled)
 {
+    if (autoRunAction_ != nullptr) {
+        const QSignalBlocker blocker(autoRunAction_);
+        autoRunAction_->setChecked(enabled);
+    }
     if (autoRunEnabled_ == enabled) {
         return;
     }
@@ -144,15 +154,24 @@ void TrayController::setAutoRunEnabled(bool enabled)
     updateMenuText();
 }
 
-void TrayController::setRoutingSummary(const QString& value, bool advancedEnabled)
+void TrayController::setTunEnabled(bool enabled)
+{
+    if (tunEnabled_ == enabled) {
+        return;
+    }
+
+    tunEnabled_ = enabled;
+    updateToolTip();
+}
+
+void TrayController::setRoutingSummary(const QString& value)
 {
     const QString trimmed = value.trimmed();
-    if (routingSummary_ == trimmed && advancedRoutingEnabled_ == advancedEnabled) {
+    if (routingSummary_ == trimmed) {
         return;
     }
 
     routingSummary_ = trimmed;
-    advancedRoutingEnabled_ = advancedEnabled;
     updateMenuText();
 }
 
@@ -169,10 +188,17 @@ void TrayController::showMessage(const QString& title, const QString& message, b
         timeoutMs);
 }
 
-void TrayController::setServers(const QList<VmessItem>& servers, const QString& currentIndexId)
+void TrayController::setServers(
+    const QList<VmessItem>& servers,
+    const QList<SubItem>& subscriptions,
+    const QString& currentIndexId)
 {
-    servers_ = TrayMenuSupport::makeServerEntries(servers);
     currentServerId_ = currentIndexId.trimmed();
+    servers_ = TrayMenuSupport::makeServerEntries(
+        TrayMenuSupport::serversInCurrentGroup(
+            servers,
+            subscriptions,
+            currentServerId_));
     TrayMenuSupport::rebuildServerMenu(
         serversMenu_,
         servers_,
@@ -183,19 +209,17 @@ void TrayController::setServers(const QList<VmessItem>& servers, const QString& 
         });
 }
 
-void TrayController::setRoutings(const QList<RoutingItem>& routings, int currentRoutingIndex, bool advancedEnabled)
+void TrayController::setRoutings(const QList<RoutingItem>& routings, const QString& currentRoutingId)
 {
     routings_ = TrayMenuSupport::makeRoutingEntries(routings);
-    currentRoutingIndex_ = currentRoutingIndex;
-    advancedRoutingEnabled_ = advancedEnabled;
+    currentRoutingId_ = currentRoutingId.trimmed();
     TrayMenuSupport::rebuildRoutingMenu(
         routingsMenu_,
         routings_,
-        currentRoutingIndex_,
-        advancedRoutingEnabled_,
+        currentRoutingId_,
         this,
-        [this](int index) {
-            emit routingRequested(index);
+        [this](const QString& routingModeId) {
+            emit routingRequested(routingModeId);
         });
     updateMenuText();
 }
@@ -255,7 +279,11 @@ void TrayController::updateMenuText()
     }
 
     if (routingsMenu_ != nullptr) {
-        routingsMenu_->setEnabled(!advancedRoutingEnabled_ || !routings_.isEmpty());
+        routingsMenu_->setEnabled(!routings_.isEmpty());
+    }
+    if (autoRunAction_ != nullptr) {
+        const QSignalBlocker blocker(autoRunAction_);
+        autoRunAction_->setChecked(autoRunEnabled_);
     }
 
     updateToolTip();
@@ -270,13 +298,13 @@ void TrayController::updateToolTip()
 
     trayIcon_->setToolTip(TrayMenuSupport::buildToolTip(
         trayMenu_,
+        QCoreApplication::applicationVersion(),
         currentServerName_,
         proxyUiState_,
         systemProxyApplied_,
         autoRunEnabled_,
-        routingSummary_,
-        backgroundTaskRunning_,
-        backgroundTaskDescription_));
+        tunEnabled_,
+        routingSummary_));
 }
 
 void TrayController::updateTrayIcon()

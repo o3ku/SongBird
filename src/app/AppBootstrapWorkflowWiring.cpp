@@ -129,10 +129,6 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
     subscriptionCallbacks.ui.showStartupMessage = [this](const QString& message) {
         if (objects_->mainWindow != nullptr) {
             objects_->mainWindow->appendLog(message);
-            objects_->mainWindow->showTransientStatus(
-                message,
-                3000,
-                MainWindow::TransientStatusPriority::Routine);
         }
     };
     subscriptionCallbacks.ui.setSubscriptionUpdateRunning = [this](bool running) {

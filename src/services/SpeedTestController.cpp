@@ -5,6 +5,8 @@
 
 #include <utility>
 
+#include "services/SpeedTestRuntimeRunner.h"
+#include "services/SpeedTestServiceInternal.h"
 #include "services/SpeedTestWorker.h"
 
 SpeedTestController::SpeedTestController(QString customConfigDirectory, QObject* parent)
@@ -50,11 +52,14 @@ OperationResult SpeedTestController::start(const Config& config, const QList<Spe
     emit runningChanged(true);
     emit logGenerated(message);
 
+    const Config probeConfigTemplate = SpeedTestServiceInternal::makeUrlTestRuntimeConfig(config);
+    const QString urlTestUrl = SpeedTestRuntimeRunner::defaultUrlTestUrl(config);
+
     auto* worker = worker_;
     const bool invoked = QMetaObject::invokeMethod(
         worker,
-        [worker, config, items]() {
-            worker->runBatch(config, items);
+        [worker, probeConfigTemplate = std::move(probeConfigTemplate), urlTestUrl, items]() {
+            worker->runBatch(probeConfigTemplate, urlTestUrl, items);
         },
         Qt::QueuedConnection);
     if (!invoked) {

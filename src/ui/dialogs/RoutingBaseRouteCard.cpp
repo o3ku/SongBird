@@ -2,6 +2,7 @@
 
 #include <QAbstractButton>
 #include <QButtonGroup>
+#include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QPainter>
 #include <QSizePolicy>
@@ -56,22 +57,22 @@ QStringList routingRuleMatches(const RoutingRule& rule)
     QStringList matches;
     const QString port = rule.port.trimmed();
     if (!port.isEmpty()) {
-        matches.append(QStringLiteral("port: %1").arg(port));
+        matches.append(QCoreApplication::translate("RoutingBaseRouteCard", "Port: %1").arg(port));
     }
 
     const QString network = rule.network.trimmed();
     if (!network.isEmpty()) {
-        matches.append(QStringLiteral("network: %1").arg(network));
+        matches.append(QCoreApplication::translate("RoutingBaseRouteCard", "Network: %1").arg(network));
     }
 
     const QString protocols = compactRuleValues(rule.protocol);
     if (!protocols.isEmpty()) {
-        matches.append(QStringLiteral("protocol: %1").arg(protocols));
+        matches.append(QCoreApplication::translate("RoutingBaseRouteCard", "Protocol: %1").arg(protocols));
     }
 
     const QString processes = compactRuleValues(rule.process);
     if (!processes.isEmpty()) {
-        matches.append(QStringLiteral("process: %1").arg(processes));
+        matches.append(QCoreApplication::translate("RoutingBaseRouteCard", "Process: %1").arg(processes));
     }
 
     const QString ips = compactRuleValues(rule.ip);
@@ -103,7 +104,7 @@ QString routingRuleActionLabel(const RoutingRule& rule)
     if (!outbound.isEmpty()) {
         return outbound.toUpper();
     }
-    return QStringLiteral("RULE");
+    return QCoreApplication::translate("RoutingBaseRouteCard", "Rule");
 }
 
 void appendCardRuleLine(QStringList& lines, const RoutingRule& rule, const QFontMetrics* metrics = nullptr)
@@ -189,7 +190,7 @@ QString RoutingBaseRouteCard::collapsedText(const RoutingItem& item, int index, 
 {
     QStringList lines;
     const QString title = item.remarks.trimmed().isEmpty()
-        ? QStringLiteral("Route %1").arg(index + 1)
+        ? QCoreApplication::translate("RoutingBaseRouteCard", "Route %1").arg(index + 1)
         : item.remarks.trimmed();
     lines.append(elideCardLine(title, metrics));
     for (const RoutingRule& rule : item.rules) {
@@ -205,7 +206,7 @@ QString RoutingBaseRouteCard::fullText(const RoutingItem& item, int index)
 {
     QStringList lines;
     lines.append(item.remarks.trimmed().isEmpty()
-        ? QStringLiteral("Route %1").arg(index + 1)
+        ? QCoreApplication::translate("RoutingBaseRouteCard", "Route %1").arg(index + 1)
         : item.remarks.trimmed());
     for (const RoutingRule& rule : item.rules) {
         if (!rule.enabled) {

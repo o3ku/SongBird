@@ -10,13 +10,9 @@
 struct ServerTableRow {
     QString indexId;
     ConfigType configType = ConfigType::Unknown;
-    QString remarks;
     QString displayName;
     QString address;
     int port = 0;
-    QString security;
-    QString network;
-    QString streamSecurity;
     QString testResult;
     QString subId;
 };
@@ -31,7 +27,7 @@ public:
 
     explicit ServerTableModel(QObject* parent = nullptr);
 
-    void setItems(QList<VmessItem> items, QString currentIndexId = {});
+    void setItems(const QList<VmessItem>& items, QString currentIndexId = {});
     bool updateTestResult(const QString& indexId, const QString& result);
     const ServerTableRow* itemAt(int row) const;
     const ServerTableRow* itemByIndexId(const QString& indexId) const;

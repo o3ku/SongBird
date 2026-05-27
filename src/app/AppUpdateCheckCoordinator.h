@@ -50,6 +50,11 @@ public:
     bool isCheckRunning() const;
     void checkAppUpdates(bool manual);
     void downloadAppUpdate(const AppUpdateCheckResult& updateResult, QPointer<QWidget> dialogParent = {});
+    void downloadLatestAvailableUpdate(QPointer<QWidget> dialogParent = {});
+
+signals:
+    void updateAvailable(const AppUpdateCheckResult& result, const QString& message);
+    void updateUnavailable();
 
 private:
     void runInBackground(std::function<void()> task);
@@ -57,5 +62,6 @@ private:
     QWidget* resolveMessageParent(const QPointer<QWidget>& dialogParent) const;
 
     Dependencies deps_;
+    AppUpdateCheckResult latestAvailableUpdate_;
     bool checkRunning_ = false;
 };

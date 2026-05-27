@@ -53,9 +53,6 @@ void GeoResourceUpdateCoordinator::updateGeoResources()
     if (deps_.appendLog) {
         deps_.appendLog(message);
     }
-    if (deps_.showRoutineTransientStatus) {
-        deps_.showRoutineTransientStatus(message, 3000);
-    }
 
     const std::weak_ptr<char> lifetimeGuard = deps_.lifetimeGuard ? deps_.lifetimeGuard() : std::weak_ptr<char>();
     QThread* thread = QThread::create([this, targetDirectory, title, uiContext, token, lifetimeGuard]() {

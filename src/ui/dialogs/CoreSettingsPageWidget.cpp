@@ -15,7 +15,6 @@ CoreSettingsPageWidget::CoreSettingsPageWidget(QWidget* parent)
 
 void CoreSettingsPageWidget::setConfig(const Config& config)
 {
-    config_ = config;
     enableCacheFile4SboxCheck_->setChecked(config.dns().enableCacheFile4Sbox);
     const int muxProtocolIndex = mux4SboxProtocolCombo_->findText(config.mux4SboxProtocol);
     mux4SboxProtocolCombo_->setCurrentIndex(muxProtocolIndex >= 0 ? muxProtocolIndex : 0);

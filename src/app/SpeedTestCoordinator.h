@@ -28,7 +28,6 @@ public:
         std::function<OperationResult(const QString&, const QString&)> setTestResult;
         std::function<void(const OperationResult&)> appendResult;
         std::function<void(const QString&)> appendLog;
-        std::function<void(const QString&, int)> showTransientStatus;
         std::function<void(const QString&, const QString&)> updateServerTestResult;
         std::function<void(const QStringList&, const QString&)> updateServerTestResults;
         std::function<void()> refreshTrayServers;

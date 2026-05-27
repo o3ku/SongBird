@@ -49,8 +49,11 @@ public:
     bool isUngroupedTabSelected() const;
 
     void showTabContextMenu(const QPoint& position);
+    void showContextMenuForTabKey(const QString& tabKey, const QPoint& globalPosition);
 
 private:
+    void showContextMenu(const QString& tabKey, const QPoint& globalPosition, QWidget* parent);
+
     Context context_;
     MenuCallbacks callbacks_;
     QList<SubItem> subscriptions_;

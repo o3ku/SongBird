@@ -73,11 +73,16 @@ QWidget[sectionBody="true"] { background: @sectionBody@; }
 QTableView[serverTableStyle="true"], QTableWidget[serverTableStyle="true"] { background: @sectionBody@; alternate-background-color: @surfaceSubtle@; color: @text@; border: 1px solid @border@; font-size: 9pt; }
 QTableView[serverTableStyle="true"] QHeaderView::section, QTableWidget[serverTableStyle="true"] QHeaderView::section { background: @surface@; }
 QTableView#serverTableView[serverTableStyle="true"] { border: none; }
+QTableView#serverTableView[serverTableStyle="true"][compactServerTable="true"] { border-left: 1px solid @border@; border-right: 1px solid @border@; border-top: none; border-bottom: none; }
 QTableWidget#uwpLoopbackTable[serverTableStyle="true"] { border: 1px solid @border@; }
 QSplitter#rootSplitter { background: @surface@; }
 QWidget#settingsStackContainer { background: @surface@; border: none; }
 QWidget#settingsTabBarContainer { background: transparent; border: none; border-bottom: 1px solid @panelBorder@; }
 QWidget#subscriptionTabBarContainer { background: @sectionHeader@; border: none; border-top: 1px solid @borderMuted@; border-bottom: 1px solid @border@; }
+QToolButton#compactSubscriptionHeader { background: @surface@; border: 1px solid @border@; color: @textMuted@; text-align: left; padding: 4px 10px; }
+QToolButton#compactSubscriptionHeader:hover { background: @surfaceMuted@; border: 1px solid @inputBorderHover@; color: @text@; }
+QToolButton#compactSubscriptionHeader[expanded="true"] { background: @navigationSelectedBackground@; border: 1px solid @navigationSelectedBorder@; color: @navigationSelectedText@; font-weight: 700; }
+QToolButton#compactSubscriptionHeader[expanded="true"]:hover { background: @navigationSelectedBackground@; border: 1px solid @focus@; color: @navigationSelectedText@; }
 QWidget#settingsActionBar { background: @surface@; border: none; border-top: 1px solid @panelBorder@; }
 QTabWidget#routingCustomRuleTabs::pane { background: @surface@; border: none; }
 QTabWidget#coreDetailTabs::pane { background: @surface@; border: none; }
@@ -85,7 +90,7 @@ QTabBar#settingsTabBar, QTabBar#subscriptionTabBar, QTabWidget#routingCustomRule
 QTabBar#settingsTabBar::tab, QTabBar#subscriptionTabBar::tab { background: transparent; color: @textMuted@; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; outline: none; }
 QTabBar#subscriptionTabBar::tab { background: @surface@; border: 1px solid @border@; padding: 5px 16px; margin: 0px 2px 0px 0px; }
 QTabBar#settingsTabBar::tab:selected { background: @activeBackground@; color: @tabSelectedText@; }
-QTabBar#subscriptionTabBar::tab:selected { background: @activeBackground@; border: 1px solid @accent@; color: @tabSelectedText@; }
+QTabBar#subscriptionTabBar::tab:selected { background: @navigationSelectedBackground@; border: 1px solid @navigationSelectedBorder@; color: @navigationSelectedText@; }
 QTabBar#settingsTabBar::tab:hover:!selected, QTabBar#subscriptionTabBar::tab:hover:!selected { background: @surfaceMuted@; color: @text@; }
 QTabWidget#routingCustomRuleTabs QTabBar { background: transparent; border: 1px solid @border@; }
 QWidget[routingCustomRulePage="true"] { background: @surface@; border: none; border-left: 1px solid @border@; border-right: 1px solid @border@; border-bottom: 1px solid @border@; }
@@ -134,6 +139,7 @@ QLabel#aboutRepoUrlValueLabel { color: @link@; }
 QLabel#qrPlaceholder { border: none; background: @surface@; color: @textSubtle@; border-radius: 0px; }
 QPlainTextEdit#shareLinkLabel { border: none; color: @textMuted@; padding: 0px; border-radius: 0px; }
 QStatusBar { background: @surfaceMuted@; border: none; font-size: 9pt; }
+QStatusBar::item { border: none; }
 QStatusBar QLabel { color: @textMuted@; padding: 0 4px; font-size: 9pt; }
 QStatusBar QLabel#routingStatusLabel { color: @neutral@; font-weight: 400; }
 QLabel#selectServerHintLabel { padding: 0 8px; }

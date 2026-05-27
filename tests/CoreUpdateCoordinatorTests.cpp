@@ -29,8 +29,6 @@ struct Harness {
     int syncCount = 0;
     QList<bool> enableSystemProxyCalls;
     QStringList logs;
-    QStringList routineStatuses;
-    QStringList statuses;
     QList<OperationResult> appendedResults;
     QList<OperationResult> completions;
     QString installDirectory;
@@ -64,8 +62,6 @@ struct Harness {
         deps.confirmUpdate = [this](QWidget*, const QString&, const QString&) { return confirm; };
         deps.appendResult = [this](const OperationResult& result) { appendedResults.append(result); };
         deps.appendLog = [this](const QString& message) { logs.append(message); };
-        deps.showRoutineTransientStatus = [this](const QString& message, int) { routineStatuses.append(message); };
-        deps.showTransientStatus = [this](const QString& message, int) { statuses.append(message); };
         deps.showOperationMessage = [](const QString&, const OperationResult&, QWidget*) {};
         deps.stopForCoreUpdate = [this]() { ++stopCount; };
         deps.enableSystemProxy = [this](bool showOverlay) { enableSystemProxyCalls.append(showOverlay); };

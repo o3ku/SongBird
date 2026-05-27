@@ -1,11 +1,14 @@
 #include "app/SystemProxyCoordinator.h"
 
+#include <optional>
+
 #include <utility>
 
 #include <QStringList>
 
 #include "app/ProxySession.h"
 #include "platform/windows/WindowsSystemProxyService.h"
+#include "runtime/RoutingConfigFragments.h"
 #include "services/ServerService.h"
 
 namespace {
@@ -53,11 +56,9 @@ QStringList collectRouteDerivedProxyExceptions(const Config& config)
         }
     }
 
-    if (config.collection().enableRoutingAdvanced
-        && config.collection().routingIndex >= 0
-        && config.collection().routingIndex < config.collection().routingItems.size()) {
-        const RoutingItem& selectedRouting = config.collection().routingItems.at(config.collection().routingIndex);
-        for (const RoutingRule& rule : selectedRouting.rules) {
+    const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
+    if (selectedRouting.has_value()) {
+        for (const RoutingRule& rule : selectedRouting->rules) {
             if (rule.enabled) {
                 effectiveRules.append(rule);
             }

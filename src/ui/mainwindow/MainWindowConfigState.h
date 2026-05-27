@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QHash>
 #include <QList>
 #include <QString>
 
@@ -10,11 +9,10 @@ struct MainWindowConfigSnapshot {
     QString currentIndexId;
     QList<SubItem> subscriptions;
     QList<RoutingItem> routingItems;
-    int routingIndex = 0;
+    QString routingModeId;
     QList<CoreTypeItem> coreTypeItems;
 };
 
 MainWindowConfigSnapshot makeMainWindowConfigSnapshot(const Config& config);
-QHash<QString, QString> buildMainWindowShareUrlCache(const QList<VmessItem>& servers);
 QString currentCoreDisplayNameFromConfig(const Config& config, const QString& currentIndexId);
 QString subscriptionIdFromTabKey(const QString& tabKey);

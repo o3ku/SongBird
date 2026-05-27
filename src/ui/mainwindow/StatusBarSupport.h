@@ -22,14 +22,10 @@ QString currentServerToolTip(
 
 QString routingStatusText(const QString& listenSummary);
 
-QString transientStatusText(
-    const QString& transientStatusMessage,
+QString backgroundTaskStatusText(
     bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription);
-
-bool shouldSuppressRoutineStatus(
-    const QString& transientStatusMessage,
-    bool backgroundTaskRunning,
-    const QString& backgroundTaskDescription);
+    const QString& backgroundTaskDescription,
+    const QString& idleText,
+    const QString& updateAvailableText);
 
 } // namespace StatusBarSupport

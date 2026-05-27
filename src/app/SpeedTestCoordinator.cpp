@@ -83,7 +83,9 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
         const VmessItem runtimeServer = runtimeServerForLaunchCore(*server, launchCore);
 
         items.append(SpeedTestRequestItem{
-            *server,
+            server->indexId,
+            serverDisplayName(*server),
+            server->configType,
             runtimeServer,
             deps_.resolveCoreInfo ? deps_.resolveCoreInfo(runtimeServer) : CoreInfo{}});
     }
@@ -107,7 +109,7 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
     QStringList pendingIds;
     for (const auto& item : items) {
         auto it = std::find_if(config.collection().servers.begin(), config.collection().servers.end(),
-            [&item](const VmessItem& server) { return server.indexId == item.server.indexId; });
+            [&item](const VmessItem& server) { return server.indexId == item.indexId; });
         if (it != config.collection().servers.end()) {
             it->testResult = pending;
             pendingIds.append(it->indexId);
@@ -170,9 +172,6 @@ void SpeedTestCoordinator::handleLogGenerated(const QString& message)
     if (deps_.appendLog) {
         deps_.appendLog(message);
     }
-    if (deps_.showTransientStatus) {
-        deps_.showTransientStatus(message, 3000);
-    }
 }
 
 void SpeedTestCoordinator::handleTestResultReady(const QString& indexId, const QString& result)
@@ -210,7 +209,5 @@ void SpeedTestCoordinator::handleFinished(const QString& summary)
     if (deps_.backgroundTasks == nullptr || !deps_.backgroundTasks->isCurrent(speedTestTaskToken_)) {
         return;
     }
-    if (deps_.showTransientStatus) {
-        deps_.showTransientStatus(summary, 4000);
-    }
+    Q_UNUSED(summary);
 }

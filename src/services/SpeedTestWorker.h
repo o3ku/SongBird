@@ -14,7 +14,10 @@ class SpeedTestWorker final : public QObject {
 public:
     explicit SpeedTestWorker(QString customConfigDirectory, std::atomic_bool& cancelFlag, QObject* parent = nullptr);
 
-    void runBatch(const Config& config, const QList<SpeedTestRequestItem>& items);
+    void runBatch(
+        const Config& probeConfigTemplate,
+        const QString& urlTestUrl,
+        const QList<SpeedTestRequestItem>& items);
 
 signals:
     void logGenerated(const QString& message);

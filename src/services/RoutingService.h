@@ -19,8 +19,8 @@ public:
         int selectedIndex,
         const QString& domainStrategy,
         const QString& domainMatcher);
-    OperationResult setRoutingMode(Config& config, bool enableAdvanced, int selectedIndex);
-    OperationResult selectRouting(Config& config, int selectedIndex);
+    OperationResult setRoutingMode(Config& config, const QString& routingModeId);
+    OperationResult selectRouting(Config& config, const QString& routingModeId);
 
 private:
     static void normalizeRoutingItems(QList<RoutingItem>& items);

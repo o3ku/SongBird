@@ -27,7 +27,7 @@ ServerTableModel::ServerTableModel(QObject* parent)
 {
 }
 
-void ServerTableModel::setItems(QList<VmessItem> items, QString currentIndexId)
+void ServerTableModel::setItems(const QList<VmessItem>& items, QString currentIndexId)
 {
     beginResetModel();
     items_.clear();
@@ -36,13 +36,9 @@ void ServerTableModel::setItems(QList<VmessItem> items, QString currentIndexId)
         items_.append(ServerTableRow{
             item.indexId,
             item.configType,
-            item.remarks,
             serverDisplayName(item),
             item.address,
             item.port,
-            item.security,
-            item.network,
-            item.streamSecurity,
             item.testResult,
             item.subId});
     }
@@ -219,7 +215,7 @@ QVariant ServerTableModel::headerData(int section, Qt::Orientation orientation, 
 
     switch (section) {
     case DefaultColumn:
-        return QStringLiteral("No.");
+        return tr("No.");
     case TypeColumn:
         return tr("Type");
     case RemarksColumn:
