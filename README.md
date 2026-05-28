@@ -35,4 +35,6 @@ This project uses the same license terms as the upstream v2rayN project.
 ## Acknowledgements
 
 - [v2rayN](https://github.com/2dust/v2rayN)
+- [sing-box](https://github.com/SagerNet/sing-box)
+- [Xray](https://github.com/XTLS/Xray-core)
 - [linux.do](https://linux.do)
