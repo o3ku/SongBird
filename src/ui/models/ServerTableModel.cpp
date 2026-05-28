@@ -165,7 +165,10 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::DecorationRole && index.column() == DefaultColumn && isDefault) {
-        return QIcon(QStringLiteral(":/app/logo.svg"));
+        if (cachedDefaultRowIcon_.isNull()) {
+            cachedDefaultRowIcon_ = QIcon(QStringLiteral(":/app/logo.svg"));
+        }
+        return cachedDefaultRowIcon_;
     }
 
     if (role == Qt::TextAlignmentRole) {

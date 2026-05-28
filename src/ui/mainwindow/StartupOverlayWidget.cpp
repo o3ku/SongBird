@@ -164,6 +164,8 @@ void StartupOverlayWidget::showChecklist(const QString& title, const QStringList
 void StartupOverlayWidget::hideOverlay()
 {
     hide();
+    clearItems();
+    checklistFailed_ = false;
 }
 
 bool StartupOverlayWidget::isChecklistVisible() const

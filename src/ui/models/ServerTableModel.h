@@ -2,6 +2,7 @@
 
 #include <QAbstractTableModel>
 #include <QHash>
+#include <QIcon>
 #include <QList>
 #include <QString>
 
@@ -55,4 +56,5 @@ private:
     QHash<QString, int> rowByIndexId_;
     QList<ServerTableRow> items_;
     QString currentIndexId_;
+    mutable QIcon cachedDefaultRowIcon_;
 };

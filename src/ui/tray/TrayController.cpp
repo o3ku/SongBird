@@ -313,8 +313,16 @@ void TrayController::updateTrayIcon()
         return;
     }
 
-    const QIcon icon = TrayMenuSupport::trayIconForState(proxyUiState_, systemProxyApplied_);
+    const bool wantActive = proxyUiState_ == ProxyUiState::Active && systemProxyApplied_;
+    if (wantActive) {
+        if (cachedActiveIcon_.isNull()) {
+            cachedActiveIcon_ = TrayMenuSupport::trayIconForState(ProxyUiState::Active, true);
+        }
+    } else if (cachedDefaultIcon_.isNull()) {
+        cachedDefaultIcon_ = TrayMenuSupport::defaultTrayIcon();
+    }
 
+    const QIcon& icon = wantActive ? cachedActiveIcon_ : cachedDefaultIcon_;
     trayIcon_->setIcon(icon);
     TrayMenuSupport::applyWindowIcon(icon, mainWindow_);
 }

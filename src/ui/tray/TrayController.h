@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QIcon>
 #include <QList>
 #include <QObject>
 #include <QPointer>
@@ -77,4 +78,6 @@ private:
     bool autoRunEnabled_ = false;
     bool tunEnabled_ = false;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;
+    QIcon cachedDefaultIcon_;
+    QIcon cachedActiveIcon_;
 };
