@@ -31,3 +31,8 @@ SongBird is a lightweight native Windows proxy client built with Qt/C++. It supp
 ## License
 
 This project uses the same license terms as the upstream v2rayN project.
+
+## Acknowledgements
+
+- [v2rayN](https://github.com/2dust/v2rayN)
+- [linux.do](https://linux.do)
