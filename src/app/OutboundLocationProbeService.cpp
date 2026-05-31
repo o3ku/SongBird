@@ -1,6 +1,7 @@
 #include "app/OutboundLocationProbeService.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -36,20 +37,21 @@ QString countryCodeToFlag(const QString& countryCode)
     return QString::fromUcs4(flagCodePoints.constData(), flagCodePoints.size());
 }
 
-QString buildLocationSummaryFromPayload(const QByteArray& payload)
+OutboundLocationDetails buildLocationDetailsFromPayload(const QByteArray& payload)
 {
+    OutboundLocationDetails details;
     const QJsonDocument json = QJsonDocument::fromJson(payload);
     if (!json.isObject()) {
-        return {};
+        return details;
     }
 
     const QJsonObject object = json.object();
     const QString status = object.value(QStringLiteral("status")).toString().trimmed();
     if (status.compare(QStringLiteral("fail"), Qt::CaseInsensitive) == 0) {
-        return {};
+        return details;
     }
     if (object.contains(QStringLiteral("success")) && !object.value(QStringLiteral("success")).toBool(true)) {
-        return {};
+        return details;
     }
 
     QString city = object.value(QStringLiteral("city")).toString().trimmed();
@@ -76,27 +78,34 @@ QString buildLocationSummaryFromPayload(const QByteArray& payload)
     }
     if (countryCode.isEmpty() && country.size() == 2) {
         countryCode = country;
+        country.clear();
+    }
+
+    details.countryCode = countryCode.trimmed().toUpper();
+    details.countryName = country.trimmed();
+    details.city = city.trimmed();
+    details.ip = object.value(QStringLiteral("query")).toString().trimmed();
+    if (details.ip.isEmpty()) {
+        details.ip = object.value(QStringLiteral("ip")).toString().trimmed();
     }
 
     QStringList parts;
-    if (!country.isEmpty()) {
+    if (!details.countryName.isEmpty()) {
         const QString flag = countryCodeToFlag(countryCode);
-        parts.append(flag.isEmpty() ? country : QStringLiteral("%1 %2").arg(flag, country));
+        parts.append(flag.isEmpty() ? details.countryName : QStringLiteral("%1 %2").arg(flag, details.countryName));
     }
-    if (!city.isEmpty()) {
-        parts.append(city);
+    if (!details.city.isEmpty()) {
+        parts.append(details.city);
     }
 
     const QString summary = parts.join(QStringLiteral(", "));
     if (!summary.isEmpty()) {
-        return summary;
+        details.location = summary;
+        return details;
     }
 
-    QString ip = object.value(QStringLiteral("query")).toString().trimmed();
-    if (ip.isEmpty()) {
-        ip = object.value(QStringLiteral("ip")).toString().trimmed();
-    }
-    return ip;
+    details.location = details.ip;
+    return details;
 }
 
 QString locationProbeErrorMessage(const QUrl& url, const QString& error)
@@ -128,37 +137,40 @@ int OutboundLocationProbeService::resolveHttpPort(const Config& config, bool use
 
 OutboundLocationProbeResult OutboundLocationProbeService::probe(int httpPort) const
 {
-    QString location;
-    QString lastError;
+    const OutboundLocationDetails details = probeStructured(httpPort);
+    return OutboundLocationProbeResult{details.location, details.error};
+}
+
+OutboundLocationDetails OutboundLocationProbeService::probeStructured(int httpPort) const
+{
+    OutboundLocationDetails details;
     QElapsedTimer probeTimer;
     probeTimer.start();
     const QStringList urls = probeUrls();
     int attempt = 0;
 
-    while (location.isEmpty()
+    while (details.location.isEmpty()
         && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
         && attempt < LocationProbeMaxRounds) {
         ++attempt;
-        const OutboundLocationProbeResult probeResult = probeOnce(
+        const OutboundLocationDetails probeResult = probeOnce(
             urls,
             httpPort,
             qMin(LocationProbeTimeoutMs, static_cast<int>(LocationProbeTotalTimeoutMs - probeTimer.elapsed())));
-        location = probeResult.location;
-        if (location.isEmpty() && !probeResult.error.trimmed().isEmpty()) {
-            lastError = probeResult.error;
+        if (!probeResult.location.isEmpty()) {
+            details = probeResult;
+        } else if (!probeResult.error.trimmed().isEmpty()) {
+            details.error = probeResult.error;
         }
 
-        if (location.isEmpty()
+        if (details.location.isEmpty()
             && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
             && attempt < LocationProbeMaxRounds) {
             QThread::msleep(LocationProbeRetryDelayMs);
         }
     }
 
-    OutboundLocationProbeResult result;
-    result.location = location;
-    result.error = lastError;
-    return result;
+    return details;
 }
 
 QStringList OutboundLocationProbeService::probeUrls()
@@ -172,12 +184,12 @@ QStringList OutboundLocationProbeService::probeUrls()
     };
 }
 
-OutboundLocationProbeResult OutboundLocationProbeService::probeOnce(
+OutboundLocationDetails OutboundLocationProbeService::probeOnce(
     const QStringList& probeUrls,
     int httpPort,
     int timeoutMs)
 {
-    OutboundLocationProbeResult result;
+    OutboundLocationDetails result;
     if (probeUrls.isEmpty() || !isValidTcpPort(httpPort) || timeoutMs <= 0) {
         result.error = QStringLiteral("Outbound location probe is unavailable.");
         return result;
@@ -214,9 +226,9 @@ OutboundLocationProbeResult OutboundLocationProbeService::probeOnce(
             }
 
             if (reply->error() == QNetworkReply::NoError) {
-                const QString location = buildLocationSummaryFromPayload(reply->readAll());
-                if (!location.isEmpty()) {
-                    result.location = location;
+                const OutboundLocationDetails details = buildLocationDetailsFromPayload(reply->readAll());
+                if (!details.location.isEmpty()) {
+                    result = details;
                     completed = true;
                     loop.quit();
                     return;

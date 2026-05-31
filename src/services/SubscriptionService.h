@@ -21,6 +21,7 @@ public:
     OperationResult replaceSubscriptionServers(Config& config, const QString& subscriptionId, QList<VmessItem> items);
 
     static void normalizeSubscriptionIds(QList<SubItem>& items);
+    static QString serverReuseKey(const VmessItem& item);
 
 private:
     struct ReusableServerState {
@@ -33,7 +34,6 @@ private:
         const QString& subscriptionId,
         const QString& currentIndexId,
         bool* currentBelongedToUpdatedSubscription);
-    static QString serverReuseKey(const VmessItem& item);
     static QString normalizedValue(const QString& value);
 
     IConfigRepository& repository_;

@@ -10,8 +10,8 @@
 #include <QUrl>
 #include <QUuid>
 
+#include "common/UserAgent.h"
 #include "subscription/ShareUrlParser.h"
-#include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "subscription/SubscriptionContentParser.h"
 
 namespace {
@@ -21,7 +21,14 @@ QString subscriptionDisplayName(const SubItem& item)
 }
 
 constexpr int kSubscriptionDownloadTimeoutMs = 30000;
+constexpr int kCancellationPollIntervalMs = 100;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
+
+bool currentThreadInterruptionRequested()
+{
+    QThread* const currentThread = QThread::currentThread();
+    return currentThread != nullptr && currentThread->isInterruptionRequested();
+}
 }
 
 SubscriptionUpdateService::SubscriptionUpdateService(
@@ -79,6 +86,26 @@ OperationResult SubscriptionUpdateService::updateByIds(Config& config, const QSt
     return updateInternal(config, items, useProxy);
 }
 
+OperationResult SubscriptionUpdateService::updateAllWithProgress(
+    Config& config,
+    bool useProxy,
+    const ProgressCallback& progressCallback)
+{
+    QList<SubItem> items;
+    for (const SubItem& item : config.collection().subscriptions) {
+        if (!item.enabled || item.url.trimmed().isEmpty()) {
+            continue;
+        }
+        items.append(item);
+    }
+
+    if (items.isEmpty()) {
+        return OperationResult::ok(QStringLiteral("No enabled subscriptions needed updating."));
+    }
+
+    return updateInternal(config, items, useProxy, progressCallback);
+}
+
 OperationResult SubscriptionUpdateService::importFromText(Config& config, const QString& text)
 {
     QList<VmessItem> servers = SubscriptionContentParser::parseMany(text);
@@ -106,34 +133,45 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
     return OperationResult::ok(QStringLiteral("Imported %1 server(s) from text input.").arg(servers.size()));
 }
 
-OperationResult SubscriptionUpdateService::updateInternal(Config& config, const QList<SubItem>& items, bool useProxy)
+OperationResult SubscriptionUpdateService::updateInternal(
+    Config& config,
+    const QList<SubItem>& items,
+    bool useProxy,
+    const ProgressCallback& progressCallback)
 {
     int updatedCount = 0;
     int importedCount = 0;
     QStringList successLines;
     QStringList failureLines;
+    int completedCount = 0;
 
     for (const SubItem& item : items) {
         // Honor cancellation requested by AppBootstrap::waitForBackgroundThreads()
         // at shutdown so we don't keep downloading subscriptions while the app
         // is trying to exit. Per-request timeouts already bound the in-flight
         // call below; this just stops scheduling new ones.
-        QThread* const currentThread = QThread::currentThread();
-        if (currentThread != nullptr && currentThread->isInterruptionRequested()) {
+        if (currentThreadInterruptionRequested()) {
             failureLines.append(QStringLiteral("Subscription update cancelled by shutdown."));
             break;
         }
 
         int currentImportedCount = 0;
         const OperationResult result = updateSingle(config, item, &currentImportedCount, useProxy);
+        completedCount++;
         if (result.success) {
             updatedCount++;
             importedCount += currentImportedCount;
             successLines.append(result.message);
+            if (progressCallback) {
+                progressCallback(completedCount, items.size(), result.message);
+            }
             continue;
         }
 
         failureLines.append(result.message);
+        if (progressCallback) {
+            progressCallback(completedCount, items.size(), result.message);
+        }
     }
 
     QStringList lines;
@@ -169,6 +207,9 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     if (item.url.trimmed().isEmpty()) {
         return OperationResult::fail(QStringLiteral("%1 has an empty URL.").arg(displayName));
     }
+    if (currentThreadInterruptionRequested()) {
+        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
+    }
 
     QString content;
     const int proxyPort = useProxy ? config.localPort + 1 : 0;
@@ -176,10 +217,16 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     if (!downloadResult.success) {
         return OperationResult::fail(QStringLiteral("%1 download failed: %2").arg(displayName, downloadResult.message));
     }
+    if (currentThreadInterruptionRequested()) {
+        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
+    }
 
     const QList<VmessItem> servers = SubscriptionContentParser::parseMany(content);
     if (servers.isEmpty()) {
         return OperationResult::fail(QStringLiteral("%1 returned no supported servers.").arg(displayName));
+    }
+    if (currentThreadInterruptionRequested()) {
+        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
     }
 
     const OperationResult replaceResult = subscriptionService_.replaceSubscriptionServers(config, item.id, servers);
@@ -209,6 +256,9 @@ OperationResult SubscriptionUpdateService::downloadText(
     if (content == nullptr) {
         return OperationResult::fail(QStringLiteral("Download target buffer is null."));
     }
+    if (currentThreadInterruptionRequested()) {
+        return OperationResult::fail(QStringLiteral("Subscription download cancelled."));
+    }
 
     const QUrl parsedUrl = QUrl::fromUserInput(url.trimmed());
     if (!parsedUrl.isValid() || parsedUrl.scheme().trimmed().isEmpty()) {
@@ -217,7 +267,7 @@ OperationResult SubscriptionUpdateService::downloadText(
 
     QNetworkRequest request{parsedUrl};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    const QString resolvedUA = SubscriptionSettingsPageWidget::resolveUserAgent(userAgent);
+    const QString resolvedUA = resolveSubscriptionUserAgent(userAgent);
     request.setRawHeader("User-Agent", resolvedUA.toUtf8());
 
     const QNetworkProxy previousProxy = networkAccessManager_.proxy();
@@ -227,8 +277,11 @@ OperationResult SubscriptionUpdateService::downloadText(
 
     QEventLoop loop;
     QTimer timeoutTimer;
+    QTimer cancellationTimer;
     timeoutTimer.setSingleShot(true);
+    cancellationTimer.setInterval(kCancellationPollIntervalMs);
     bool timedOut = false;
+    bool cancelled = false;
     QNetworkReply* reply = networkAccessManager_.get(request);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
@@ -236,11 +289,27 @@ OperationResult SubscriptionUpdateService::downloadText(
         reply->abort();
         loop.quit();
     });
+    QObject::connect(&cancellationTimer, &QTimer::timeout, &loop, [&]() {
+        if (!currentThreadInterruptionRequested()) {
+            return;
+        }
+        cancelled = true;
+        reply->abort();
+        loop.quit();
+    });
     timeoutTimer.start(kSubscriptionDownloadTimeoutMs);
+    cancellationTimer.start();
     loop.exec();
     timeoutTimer.stop();
+    cancellationTimer.stop();
 
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (cancelled) {
+        networkAccessManager_.setProxy(previousProxy);
+        reply->deleteLater();
+        return OperationResult::fail(QStringLiteral("Subscription download cancelled."));
+    }
+
     if (timedOut) {
         networkAccessManager_.setProxy(previousProxy);
         reply->deleteLater();

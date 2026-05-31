@@ -1636,6 +1636,34 @@ The running core will be stopped before installation if needed.</source>
         <source>Subscription</source>
         <translation>订阅</translation>
     </message>
+    <message>
+        <source>Current</source>
+        <translation>当前</translation>
+    </message>
+    <message>
+        <source>Node</source>
+        <translation>节点</translation>
+    </message>
+    <message>
+        <source>Country</source>
+        <translation>国家/地区</translation>
+    </message>
+    <message>
+        <source>Location</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>State</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <source>Checked</source>
+        <translation>检测时间</translation>
+    </message>
 </context>
 <context>
     <name>RoutingBaseRouteCard</name>

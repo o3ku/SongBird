@@ -11,6 +11,16 @@ struct OutboundLocationProbeResult
     QString error;
 };
 
+struct OutboundLocationDetails
+{
+    QString location;
+    QString countryCode;
+    QString countryName;
+    QString city;
+    QString ip;
+    QString error;
+};
+
 class OutboundLocationProbeService
 {
 public:
@@ -23,8 +33,9 @@ public:
     static int resolveHttpPort(const Config& config, bool usesDedicatedProbe);
 
     OutboundLocationProbeResult probe(int httpPort) const;
+    OutboundLocationDetails probeStructured(int httpPort) const;
 
 private:
     static QStringList probeUrls();
-    static OutboundLocationProbeResult probeOnce(const QStringList& probeUrls, int httpPort, int timeoutMs);
+    static OutboundLocationDetails probeOnce(const QStringList& probeUrls, int httpPort, int timeoutMs);
 };

@@ -19,28 +19,12 @@
 
 namespace {
 
-struct UserAgentPreset {
-    const char* label;
-    const char* userAgent;
-};
-
-const UserAgentPreset kUserAgentPresets[] = {
-    {"nekobox", ""},
-    {"clash verge rev", "clash-verge/v2.4"},
-    {"v2rayn", "v2rayN/7.10.4"},
-    {"shadowrocket", "Shadowrocket/2.2.56"},
-    {"surge", "Surge/5.0"},
-    {"sing-box", "sing-box/1.11.0"},
-    {"hiddify", "Hiddify/2.5.7"},
-    {"loon", "Loon/3.2.4"},
-};
-
-const QString kLegacyUaNekobox = QStringLiteral("Nekobox");
-const QString kLegacyUaClashVerge = QStringLiteral("ClashVerge");
 constexpr int kEnabledColumn = 0;
 constexpr int kUrlColumn = 1;
 constexpr int kRemarksColumn = 2;
 constexpr int kUserAgentColumn = 3;
+const QString kLegacyUaNekobox = QStringLiteral("Nekobox");
+const QString kLegacyUaClashVerge = QStringLiteral("ClashVerge");
 
 int tableRowHeight(const QWidget* widget)
 {
@@ -66,8 +50,8 @@ QComboBox* createUserAgentCombo(QWidget* parent, const QString& storedValue)
     combo->setObjectName(QStringLiteral("uaCombo"));
     combo->setFrame(false);
     combo->addItem(QString());
-    for (const UserAgentPreset& preset : kUserAgentPresets) {
-        combo->addItem(QString::fromLatin1(preset.label));
+    for (const QString& label : subscriptionUserAgentPresetLabels()) {
+        combo->addItem(label);
     }
 
     const QString trimmed = storedValue.trimmed();
@@ -187,21 +171,7 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
 
 QString SubscriptionSettingsPageWidget::resolveUserAgent(const QString& storedValue)
 {
-    const QString trimmed = storedValue.trimmed();
-    if (trimmed.isEmpty()
-        || trimmed == kLegacyUaNekobox
-        || trimmed == QStringLiteral("nekobox")) {
-        return fallbackUserAgent();
-    }
-    if (trimmed == kLegacyUaClashVerge) {
-        return QString::fromLatin1(kUserAgentPresets[1].userAgent);
-    }
-    for (const UserAgentPreset& preset : kUserAgentPresets) {
-        if (trimmed == QString::fromLatin1(preset.label)) {
-            return QString::fromLatin1(preset.userAgent);
-        }
-    }
-    return trimmed;
+    return resolveSubscriptionUserAgent(storedValue);
 }
 
 void SubscriptionSettingsPageWidget::setSubscriptions(const QList<SubItem>& items)

@@ -830,6 +830,19 @@ songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+set(SONGBIRD_USER_AGENT_TEST_SOURCES
+    UserAgentTests.cpp
+    ../src/common/UserAgent.h
+)
+
+songbird_add_qt_test(songbird_user_agent_tests user-agent
+    SOURCES
+        ${SONGBIRD_USER_AGENT_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 
 set(SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES
     AppUpdateServiceTests.cpp
