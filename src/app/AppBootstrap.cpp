@@ -776,6 +776,27 @@ void AppBootstrap::wireProxySessionSignals()
                                  showOverlay);
                          }
                      });
+    objects_->proxySession->setCoreSwitchConfirmation([this](const CoreLaunchCompatDecision& decision) {
+        if (DialogUtils::askYesNoQuestion(
+                objects_->mainWindow.get(),
+                QObject::tr("Core Compatibility"),
+                coreLaunchCompatSwitchPrompt(decision),
+                QMessageBox::Yes)
+            != QMessageBox::Yes) {
+            return false;
+        }
+
+        // Persist the switch so the prompt does not reappear on every start.
+        for (CoreTypeItem& item : config_.policy().coreTypeItems) {
+            if (item.configType == static_cast<int>(decision.configType)) {
+                item.coreType = static_cast<int>(decision.resolvedCore);
+            }
+        }
+        if (objects_->serverService != nullptr) {
+            objects_->serverService->save(config_);
+        }
+        return true;
+    });
 }
 
 void AppBootstrap::wireRuntimeStateSignals()

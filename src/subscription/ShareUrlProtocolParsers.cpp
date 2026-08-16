@@ -65,11 +65,18 @@ VmessItem parseLegacySocks(const QString& shareUrl)
     item.configType = ConfigType::Socks;
 
     QString payload = shareUrl.trimmed();
-    if (!payload.startsWith(QStringLiteral("socks://"), Qt::CaseInsensitive)) {
+    const QString socksPrefix = QStringLiteral("socks://");
+    const QString socks5Prefix = QStringLiteral("socks5://");
+    int prefixLength = 0;
+    if (payload.startsWith(socksPrefix, Qt::CaseInsensitive)) {
+        prefixLength = socksPrefix.size();
+    } else if (payload.startsWith(socks5Prefix, Qt::CaseInsensitive)) {
+        prefixLength = socks5Prefix.size();
+    } else {
         return {};
     }
 
-    payload.remove(0, QStringLiteral("socks://").size());
+    payload.remove(0, prefixLength);
 
     const int fragmentIndex = payload.indexOf(QChar('#'));
     if (fragmentIndex >= 0) {

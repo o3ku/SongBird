@@ -303,6 +303,7 @@ private slots:
     void loadMissingFileBuildsDefaultSongBirdConfig();
     void loadReadsCanonicalSongBirdStructure();
     void loadTreatsMissingServerConfigTypeAsVmess();
+    void loadAndSavePreservesMihomoServerCoreType();
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
     void saveWritesCanonicalSongBirdStructure();
@@ -476,6 +477,38 @@ void JsonConfigRepositoryTests::loadTreatsMissingServerConfigTypeAsVmess()
 
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers.constFirst().configType, ConfigType::VMess);
+}
+
+void JsonConfigRepositoryTests::loadAndSavePreservesMihomoServerCoreType()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+
+    QJsonObject server;
+    server.insert(QStringLiteral("indexId"), QStringLiteral("mihomo-server"));
+    server.insert(QStringLiteral("configType"), static_cast<int>(ConfigType::VMess));
+    server.insert(QStringLiteral("coreType"), static_cast<int>(CoreType::Mihomo));
+    server.insert(QStringLiteral("address"), QStringLiteral("example.com"));
+    server.insert(QStringLiteral("port"), 443);
+    server.insert(QStringLiteral("id"), QStringLiteral("11111111-1111-1111-1111-111111111111"));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("servers"), QJsonArray{server});
+    QVERIFY(writeJsonFile(configPath, root));
+
+    JsonConfigRepository repository(configPath);
+    Config config = repository.load();
+
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers.constFirst().coreType, CoreType::Mihomo);
+
+    QVERIFY(repository.save(config));
+
+    const QJsonObject savedRoot = readJsonFile(configPath);
+    const QJsonObject savedServer = savedRoot.value(QStringLiteral("servers")).toArray().at(0).toObject();
+    QCOMPARE(savedServer.value(QStringLiteral("coreType")).toInt(), static_cast<int>(CoreType::Mihomo));
 }
 
 void JsonConfigRepositoryTests::loadMergesStateFileWithoutBlockingOnMissingOrInvalidState()

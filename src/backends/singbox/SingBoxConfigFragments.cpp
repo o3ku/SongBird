@@ -2,6 +2,7 @@
 
 #include "backends/singbox/SingBoxOutboundConfigFragments.h"
 #include "backends/singbox/SingBoxTunCompatConfigFragments.h"
+#include "runtime/TunAdapterNames.h"
 
 namespace TunCompatConfig = SingBoxTunCompatConfigFragments;
 
@@ -47,7 +48,7 @@ QJsonObject SingBoxConfigFragments::buildTunInbound(const Config& config)
     QJsonObject inbound;
     inbound.insert(QStringLiteral("type"), QStringLiteral("tun"));
     inbound.insert(QStringLiteral("tag"), QStringLiteral("tun-in"));
-    inbound.insert(QStringLiteral("interface_name"), QStringLiteral("singbox_tun"));
+    inbound.insert(QStringLiteral("interface_name"), songbirdTunAdapterName());
 
     QJsonArray addresses;
     if (tun.enableIPv6Address) {

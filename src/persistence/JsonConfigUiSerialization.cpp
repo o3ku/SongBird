@@ -44,6 +44,14 @@ void read(const QJsonObject& root, UiConfigState& config)
         normalizeSplitPercent(readInt(ui, QStringLiteral("mainServerQrSplitPercent"), 78), 78);
     config.ui().mainQrPreviewVisible = readBool(ui, QStringLiteral("mainQrPreviewVisible"), false);
     config.ui().mainProxyEnabled = readBool(ui, QStringLiteral("mainProxyEnabled"), false);
+    const QString autoSelectionStrategy = readString(
+        ui,
+        QStringLiteral("autoSelectionStrategy"),
+        QStringLiteral("lowestLatency")).trimmed();
+    config.ui().autoSelectionStrategy =
+        autoSelectionStrategy.compare(QStringLiteral("firstAvailable"), Qt::CaseInsensitive) == 0
+            ? QStringLiteral("firstAvailable")
+            : QStringLiteral("lowestLatency");
 
     const QJsonObject mainColumnWidths = readObject(ui, QStringLiteral("mainColumnWidths"));
     for (auto it = mainColumnWidths.constBegin(); it != mainColumnWidths.constEnd(); ++it) {
@@ -70,6 +78,9 @@ void write(QJsonObject& root, const UiConfigState& config)
             : QStringLiteral("Light");
     if (themeName != QStringLiteral("Light")) {
         ui.insert(QStringLiteral("themeName"), themeName);
+    }
+    if (config.ui().autoSelectionStrategy == QStringLiteral("firstAvailable")) {
+        ui.insert(QStringLiteral("autoSelectionStrategy"), QStringLiteral("firstAvailable"));
     }
     writeObjectIfNotEmpty(root, QStringLiteral("ui"), ui);
 }

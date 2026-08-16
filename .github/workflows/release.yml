@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VCPKG_TRIPLET: x64-windows-static-md
+  # Cache compiled vcpkg packages between runs; the first run builds Qt5 from
+  # source and is slow, later runs restore from this directory.
+  VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
+          restore-keys: |
+            vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
+
+      - name: Install Qt5 (static)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/vcpkg_cache" | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            "qt5-base:$env:VCPKG_TRIPLET" `
+            "qt5-svg:$env:VCPKG_TRIPLET"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_TEST=ON `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir build -LE smoke --output-on-failure
+
+      - name: Stage release asset
+        shell: pwsh
+        run: Copy-Item build/src/SongBird.exe songbird.exe -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: songbird-exe
+          path: songbird.exe
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          gh release create $tag songbird.exe --title "SongBird $version" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            gh release upload $tag songbird.exe --clobber
+          }

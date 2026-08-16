@@ -71,6 +71,8 @@ CoreType parseCoreType(const QJsonValue& value)
     case 22:
     case 24:
         return CoreType::SingBox;
+    case 25:
+        return CoreType::Mihomo;
     default:
         return CoreType::SingBox;
     }

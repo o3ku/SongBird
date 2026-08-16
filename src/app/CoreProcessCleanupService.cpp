@@ -25,11 +25,24 @@ bool isManagedCoreProcessName(const wchar_t* processName)
         L"xray.exe",
         L"sing-box-client.exe",
         L"sing-box.exe",
+        L"mihomo.exe",
+        L"clash-meta.exe",
         L"tuic.exe",
     };
 
     if (processName == nullptr) {
         return false;
+    }
+
+    constexpr const wchar_t* kMihomoWindowsPrefix = L"mihomo-windows-";
+    constexpr const wchar_t* kExeSuffix = L".exe";
+    const size_t processNameLength = std::wcslen(processName);
+    const size_t mihomoPrefixLength = std::wcslen(kMihomoWindowsPrefix);
+    const size_t exeSuffixLength = std::wcslen(kExeSuffix);
+    if (processNameLength > mihomoPrefixLength + exeSuffixLength
+        && _wcsnicmp(processName, kMihomoWindowsPrefix, mihomoPrefixLength) == 0
+        && _wcsicmp(processName + processNameLength - exeSuffixLength, kExeSuffix) == 0) {
+        return true;
     }
 
     for (const wchar_t* targetName : kCoreProcessNames) {

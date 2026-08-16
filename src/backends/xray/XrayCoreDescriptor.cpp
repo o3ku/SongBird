@@ -16,9 +16,7 @@ QList<ConfigType> supportedConfigTypes()
         ConfigType::HTTP,
         ConfigType::Hysteria2,
         ConfigType::TUIC,
-        ConfigType::WireGuard,
-        ConfigType::AnyTLS,
-        ConfigType::Naive
+        ConfigType::WireGuard
     };
 }
 

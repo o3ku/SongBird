@@ -21,6 +21,7 @@ private slots:
     void subscriptionBase64MissingPadding();
     void subscriptionSip008SkipsInvalidEntries();
     void subscriptionSip008RejectsOutOfRangePort();
+    void subscriptionRawSocks5ShareUrls();
     void subscriptionJsonStringArrayOfShareUrls();
     void subscriptionNestedBase64DecodesRepeatedly();
     void subscriptionSingBoxOutboundsJson();
@@ -28,10 +29,13 @@ private slots:
     void subscriptionClashYamlProxies();
     void subscriptionClashRejectsOutOfRangePort();
     void subscriptionClashYamlFlowStyleVlessReality();
+    void subscriptionClashYamlAnytls();
+    void subscriptionClashYamlWireguard();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
     void customSingBoxJson();
+    void customMihomoJson();
     void customEmptyInput();
     void customGarbageInput();
     void customHtmlRejected();
@@ -233,6 +237,22 @@ void SubscriptionParserTests::subscriptionSip008RejectsOutOfRangePort()
     QVERIFY(items.isEmpty());
 }
 
+void SubscriptionParserTests::subscriptionRawSocks5ShareUrls()
+{
+    const QString content = QStringLiteral(
+        "socks5://47.82.147.237:1080#SG-Hillcrest%20Park-8214723\n"
+        "vless://11111111-1111-1111-1111-111111111111@example.com:443?encryption=none&type=tcp#vless-node\n");
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(content);
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items[0].configType, ConfigType::Socks);
+    QCOMPARE(items[0].address, QStringLiteral("47.82.147.237"));
+    QCOMPARE(items[0].port, 1080);
+    QCOMPARE(items[0].remarks, QStringLiteral("SG-Hillcrest Park-8214723"));
+    QCOMPARE(items[1].configType, ConfigType::VLESS);
+    QCOMPARE(items[1].remarks, QStringLiteral("vless-node"));
+}
+
 void SubscriptionParserTests::subscriptionJsonStringArrayOfShareUrls()
 {
     const QString content = QStringLiteral(
@@ -386,6 +406,65 @@ void SubscriptionParserTests::subscriptionClashYamlFlowStyleVlessReality()
     QCOMPARE(items[0].shortId, QStringLiteral("7b2658c87841"));
 }
 
+void SubscriptionParserTests::subscriptionClashYamlAnytls()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: clash-anytls\n"
+        "    type: anytls\n"
+        "    server: anytls.example.com\n"
+        "    port: 8443\n"
+        "    password: anytls-pass\n"
+        "    sni: anytls.example.com\n"
+        "    client-fingerprint: chrome\n"
+        "    skip-cert-verify: true\n"
+        "    idle-session-check-interval: 30\n"
+        "    idle-session-timeout: 60\n"
+        "    min-idle-session: 2\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].configType, ConfigType::AnyTLS);
+    QCOMPARE(items[0].remarks, QStringLiteral("clash-anytls"));
+    QCOMPARE(items[0].address, QStringLiteral("anytls.example.com"));
+    QCOMPARE(items[0].port, 8443);
+    QCOMPARE(items[0].id, QStringLiteral("anytls-pass"));
+    QCOMPARE(items[0].streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(items[0].sni, QStringLiteral("anytls.example.com"));
+    QCOMPARE(items[0].fingerprint, QStringLiteral("chrome"));
+    QCOMPARE(items[0].allowInsecure, QStringLiteral("true"));
+    QCOMPARE(items[0].idleSessionCheckInterval, QStringLiteral("30"));
+    QCOMPARE(items[0].idleSessionTimeout, QStringLiteral("60"));
+    QCOMPARE(items[0].minIdleSession, QStringLiteral("2"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlWireguard()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: clash-wg\n"
+        "    type: wireguard\n"
+        "    server: wg.example.com\n"
+        "    port: 51820\n"
+        "    ip: 10.0.0.2\n"
+        "    private-key: cHJpdmF0ZS1rZXk=\n"
+        "    public-key: cHVibGljLWtleQ==\n"
+        "    mtu: 1408\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].configType, ConfigType::WireGuard);
+    QCOMPARE(items[0].remarks, QStringLiteral("clash-wg"));
+    QCOMPARE(items[0].address, QStringLiteral("wg.example.com"));
+    QCOMPARE(items[0].port, 51820);
+    QCOMPARE(items[0].localAddress, QStringLiteral("10.0.0.2"));
+    QCOMPARE(items[0].privateKey, QStringLiteral("cHJpdmF0ZS1rZXk="));
+    QCOMPARE(items[0].peerPublicKey, QStringLiteral("cHVibGljLWtleQ=="));
+    QCOMPARE(items[0].wireguardMtu, 1408);
+}
+
 // ---------------------------------------------------------------------------
 // CustomConfigTextParser tests
 // ---------------------------------------------------------------------------
@@ -426,6 +505,27 @@ void SubscriptionParserTests::customSingBoxJson()
     QCOMPARE(item.configType, ConfigType::Custom);
     QCOMPARE(item.coreType, CoreType::SingBox);
     QCOMPARE(item.remarks, QStringLiteral("singbox_custom"));
+}
+
+void SubscriptionParserTests::customMihomoJson()
+{
+    const QString json = QStringLiteral(
+        "{"
+        "  \"port\": 7890,"
+        "  \"socks-port\": 7891,"
+        "  \"proxies\": [{\"name\": \"node\", \"type\": \"vmess\", \"server\": \"example.com\", \"port\": 443}],"
+        "  \"proxy-groups\": [{\"name\": \"proxy\", \"type\": \"select\", \"proxies\": [\"node\"]}],"
+        "  \"rules\": [\"MATCH,proxy\"]"
+        "}"
+    );
+
+    bool ok = false;
+    const VmessItem item = CustomConfigTextParser::parse(json, nullptr, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(item.configType, ConfigType::Custom);
+    QCOMPARE(item.coreType, CoreType::Mihomo);
+    QCOMPARE(item.remarks, QStringLiteral("mihomo_custom"));
 }
 
 void SubscriptionParserTests::customEmptyInput()

@@ -10,6 +10,7 @@
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/core/ICoreBackend.h"
+#include "services/CoreUpdatePackageInstallation.h"
 #include "services/CoreUpdateService.h"
 #include "services/CoreUpdateVersion.h"
 
@@ -22,6 +23,7 @@ private slots:
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
     void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
+    void updateGzipInstallUsesInjectedExtractorAndRespectsCancellation();
 };
 
 void CoreUpdateServiceTests::backendMetadataMatchesCatalog()
@@ -201,6 +203,62 @@ void CoreUpdateServiceTests::updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInst
         [](const QString& url) {
             return url.contains(QStringLiteral("/releases/latest/download/"));
         }));
+}
+
+void CoreUpdateServiceTests::updateGzipInstallUsesInjectedExtractorAndRespectsCancellation()
+{
+    // The .gz install path must route through the injected ArchiveExtractor seam,
+    // just like .zip does, instead of always shelling out to PowerShell.
+    bool extractorInvoked = false;
+    QString extractorSourcePath;
+    QString extractorTargetPath;
+
+    CoreUpdateReleaseMetadata::GitHubReleaseAsset asset;
+    asset.name = QStringLiteral("mihomo-windows-amd64-v1-v1.19.25.gz");
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    const CoreUpdateService::ArchiveExtractor extractor =
+        [&](const QString& sourcePath, const QString& targetPath) {
+            extractorInvoked = true;
+            extractorSourcePath = sourcePath;
+            extractorTargetPath = targetPath;
+            return OperationResult::ok();
+        };
+
+    const OperationResult result = CoreUpdatePackageInstallation::installPackage(
+        targetDirectory.path(),
+        asset,
+        QByteArray("dummy-gzip-bytes"),
+        /*ignoreGeoUpdateCore=*/true,
+        extractor,
+        /*cancelCheck=*/{},
+        /*progressHandler=*/{});
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(extractorInvoked);
+    QVERIFY(extractorSourcePath.endsWith(asset.name));
+    QVERIFY(extractorTargetPath.contains(QStringLiteral("mihomo.exe")));
+
+    // A cancellation reported by the gzip extraction must propagate as cancelled
+    // rather than being flattened into a generic install failure.
+    const CoreUpdateService::ArchiveExtractor cancellingExtractor =
+        [](const QString&, const QString&) {
+            return OperationResult::cancel(QStringLiteral("Gzip extraction was canceled."));
+        };
+
+    const OperationResult cancelledResult = CoreUpdatePackageInstallation::installPackage(
+        targetDirectory.path(),
+        asset,
+        QByteArray("dummy-gzip-bytes"),
+        /*ignoreGeoUpdateCore=*/true,
+        cancellingExtractor,
+        /*cancelCheck=*/{},
+        /*progressHandler=*/{});
+
+    QVERIFY(!cancelledResult.success);
+    QVERIFY(cancelledResult.cancelled);
 }
 
 QTEST_MAIN(CoreUpdateServiceTests)

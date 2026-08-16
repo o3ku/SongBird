@@ -169,6 +169,39 @@ void applyTuicOptions(const QJsonObject& proxy, VmessItem* item)
     item->alpn = stringListValue(proxy.value(QStringLiteral("alpn")));
 }
 
+void applyAnytlsOptions(const QJsonObject& proxy, VmessItem* item)
+{
+    item->configType = ConfigType::AnyTLS;
+    item->id = firstNonEmpty(proxy, {"password"});
+    item->streamSecurity = QStringLiteral("tls");
+    item->sni = firstNonEmpty(proxy, {"sni", "servername"});
+    item->allowInsecure = firstNonEmpty(proxy, {"skip-cert-verify"});
+    item->fingerprint = firstNonEmpty(proxy, {"client-fingerprint", "fingerprint"});
+    item->alpn = stringListValue(proxy.value(QStringLiteral("alpn")));
+    item->idleSessionCheckInterval = firstNonEmpty(proxy, {"idle-session-check-interval", "idle_session_check_interval"});
+    item->idleSessionTimeout = firstNonEmpty(proxy, {"idle-session-timeout", "idle_session_timeout"});
+    item->minIdleSession = firstNonEmpty(proxy, {"min-idle-session", "min_idle_session"});
+}
+
+void applyWireguardOptions(const QJsonObject& proxy, VmessItem* item)
+{
+    item->configType = ConfigType::WireGuard;
+    item->privateKey = firstNonEmpty(proxy, {"private-key", "private_key"});
+    item->peerPublicKey = firstNonEmpty(proxy, {"public-key", "public_key"});
+    item->reserved = joinStringList(stringListValue(proxy.value(QStringLiteral("reserved"))));
+    item->localAddress = joinStringList(
+        QStringList{firstNonEmpty(proxy, {"ip"}), firstNonEmpty(proxy, {"ipv6"})});
+
+    const QString mtu = firstNonEmpty(proxy, {"mtu"});
+    if (!mtu.isEmpty()) {
+        bool okMtu = false;
+        const int parsedMtu = mtu.toInt(&okMtu);
+        if (okMtu && parsedMtu > 0) {
+            item->wireguardMtu = parsedMtu;
+        }
+    }
+}
+
 bool applyProtocolOptions(const QJsonObject& proxy, const QString& type, VmessItem* item)
 {
     if (type == QStringLiteral("vmess")) {
@@ -190,6 +223,10 @@ bool applyProtocolOptions(const QJsonObject& proxy, const QString& type, VmessIt
         applyHysteria2Options(proxy, item);
     } else if (type == QStringLiteral("tuic")) {
         applyTuicOptions(proxy, item);
+    } else if (type == QStringLiteral("anytls")) {
+        applyAnytlsOptions(proxy, item);
+    } else if (type == QStringLiteral("wireguard")) {
+        applyWireguardOptions(proxy, item);
     } else {
         return false;
     }

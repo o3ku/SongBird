@@ -103,9 +103,11 @@ set(SONGBIRD_SOURCES
     platform/windows/WindowsUwpLoopbackSupport.h
     platform/windows/WindowsUwpLoopbackSupport.cpp
     runtime/CoreInfo.h
+    runtime/CoreLaunchCompatDecision.h
     runtime/ProtocolCoreCompat.h
     runtime/CoreConfigPreflight.h
     runtime/CoreConfigPreflight.cpp
+    runtime/TunAdapterNames.h
     runtime/ClientConfigWriter.h
     runtime/ClientConfigWriter.cpp
     runtime/DnsAddressParser.h
@@ -140,6 +142,11 @@ set(SONGBIRD_SOURCES
     runtime/core/CoreCatalog.h
     runtime/core/CoreBackendRegistry.h
     backends/CoreBackendRegistry.cpp
+    backends/mihomo/MihomoCoreDescriptor.h
+    backends/mihomo/MihomoConfigFragments.h
+    backends/mihomo/MihomoConfigFragments.cpp
+    backends/mihomo/MihomoCoreBackend.h
+    backends/mihomo/MihomoCoreBackend.cpp
     backends/singbox/SingBoxCoreDescriptor.h
     backends/singbox/SingBoxConfigFragments.h
     backends/singbox/SingBoxConfigFragments.cpp
@@ -413,7 +420,7 @@ set(SONGBIRD_SOURCES
     ui/tray/TrayMenuSupport.cpp
 )
 
-if(WIN32)
+if(WIN32 AND MSVC)
     list(APPEND SONGBIRD_SOURCES
         resources/SongBird.rc
     )
@@ -422,6 +429,270 @@ endif()
 set(SONGBIRD_TRANSLATION_TS_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
 )
+
+set(SONGBIRD_AUTO_SOURCES
+    app/AppRuntimeResolver.h
+    app/AppRuntimeResolver.cpp
+    app/BackgroundTaskCoordinator.h
+    app/BackgroundTaskCoordinator.cpp
+    app/BackgroundThreadTracker.h
+    app/BackgroundThreadTracker.cpp
+    app/CoreDiscoveryService.h
+    app/CoreDiscoveryService.cpp
+    app/CoreProcessCleanupService.h
+    app/CoreProcessCleanupService.cpp
+    app/CoreStartupCheckpoint.h
+    app/CoreStartupChecklist.h
+    app/CoreStartupChecklist.cpp
+    app/FunctionRuntimeAdapters.h
+    app/FunctionRuntimeAdapters.cpp
+    app/OutboundLocationProbeService.h
+    app/OutboundLocationProbeService.cpp
+    app/PostStopAction.h
+    app/ProxyCrashRestartPolicy.h
+    app/ProxyCrashRestartPolicy.cpp
+    app/ProxyRuntimeInterfaces.h
+    app/ProxySession.h
+    app/ProxySession.cpp
+    app/TunRuntimeService.h
+    app/TunRuntimeService.cpp
+    auto/main.cpp
+    auto/AutoTypes.h
+    auto/AutoCountrySelection.h
+    auto/AutoCountrySelection.cpp
+    auto/AutoCountrySupport.h
+    auto/AutoCountrySupport.cpp
+    auto/AutoCountryInference.h
+    auto/AutoCountryInference.cpp
+    auto/AutoRuntimeDefaults.h
+    auto/AutoRuntimeDefaults.cpp
+    auto/AutoNodeEvaluationService.h
+    auto/AutoNodeEvaluationService.cpp
+    auto/SongBirdAutoCoordinator.h
+    auto/SongBirdAutoCoordinator.cpp
+    auto/SongBirdAutoWindow.h
+    auto/SongBirdAutoWindow.cpp
+    common/DialogUtils.h
+    common/CorePidFile.h
+    common/OperationResult.h
+    common/PortValidator.h
+    common/ServerDisplayName.h
+    common/SystemProxyMode.h
+    common/UserAgent.h
+    domain/models/Config.h
+    domain/models/PolicyGroupItem.h
+    domain/models/RoutingProfiles.h
+    domain/models/RoutingProfiles.cpp
+    domain/models/RoutingItem.h
+    domain/models/RoutingRule.h
+    domain/models/SubItem.h
+    domain/models/TunModeItem.h
+    domain/models/VmessItem.h
+    platform/windows/WindowsSystemProxyService.h
+    platform/windows/WindowsSystemProxyService.cpp
+    runtime/CoreConfigPreflight.h
+    runtime/CoreConfigPreflight.cpp
+    runtime/CoreInfo.h
+    runtime/CoreProcessOutputBuffer.h
+    runtime/CoreProcessOutputBuffer.cpp
+    runtime/TunAdapterNames.h
+    runtime/ClientConfigWriter.h
+    runtime/ClientConfigWriter.cpp
+    runtime/DnsAddressParser.h
+    runtime/DnsAddressParser.cpp
+    runtime/DnsConfigFragments.h
+    runtime/DnsConfigFragments.cpp
+    runtime/DnsHosts.h
+    runtime/DnsHosts.cpp
+    runtime/ICoreProcessHost.h
+    runtime/LegacyDnsConfigBuilder.h
+    runtime/LegacyDnsConfigBuilder.cpp
+    runtime/ProtocolConfigMapper.h
+    runtime/ProtocolConfigMapper.cpp
+    runtime/CoreLaunchCompatDecision.h
+    runtime/ProtocolCoreCompat.h
+    runtime/QtCoreProcessHost.h
+    runtime/QtCoreProcessHost.cpp
+    runtime/RoutingConfigFragments.h
+    runtime/RoutingConfigFragments.cpp
+    runtime/RoutingRuleJsonMapper.h
+    runtime/RoutingRuleJsonMapper.cpp
+    runtime/RoutingRuleJsonSupport.h
+    runtime/RoutingRuleJsonSupport.cpp
+    runtime/SingBoxDnsConfigBuilder.h
+    runtime/SingBoxDnsConfigBuilder.cpp
+    runtime/SingBoxDnsConfigSupport.h
+    runtime/SingBoxDnsConfigSupport.cpp
+    runtime/SingBoxDnsRuleConfig.h
+    runtime/SingBoxDnsRuleConfig.cpp
+    runtime/SingBoxFakeIpFilter.h
+    runtime/SingBoxFakeIpFilter.cpp
+    runtime/SingBoxRoutingRuleMapper.h
+    runtime/SingBoxRoutingRuleMapper.cpp
+    runtime/TunCompatCoreRequirement.h
+    runtime/core/CoreBackendRegistry.h
+    runtime/core/CoreCatalog.h
+    runtime/core/CoreDescriptor.h
+    runtime/core/CoreDescriptorRegistry.h
+    runtime/core/ICoreBackend.h
+    backends/CoreBackendRegistry.cpp
+    backends/mihomo/MihomoConfigFragments.h
+    backends/mihomo/MihomoConfigFragments.cpp
+    backends/mihomo/MihomoCoreBackend.h
+    backends/mihomo/MihomoCoreBackend.cpp
+    backends/singbox/SingBoxConfigFragments.h
+    backends/singbox/SingBoxConfigFragments.cpp
+    backends/singbox/SingBoxCoreBackend.h
+    backends/singbox/SingBoxCoreBackend.cpp
+    backends/singbox/SingBoxOutboundConfigFragments.h
+    backends/singbox/SingBoxOutboundConfigFragments.cpp
+    backends/singbox/SingBoxOutboundConfigSupport.h
+    backends/singbox/SingBoxOutboundConfigSupport.cpp
+    backends/singbox/SingBoxRoutingConfigFragments.h
+    backends/singbox/SingBoxRoutingConfigFragments.cpp
+    backends/singbox/SingBoxTlsConfigFragments.h
+    backends/singbox/SingBoxTlsConfigFragments.cpp
+    backends/singbox/SingBoxTransportConfigFragments.h
+    backends/singbox/SingBoxTransportConfigFragments.cpp
+    backends/singbox/SingBoxTunCompatConfigFragments.h
+    backends/singbox/SingBoxTunCompatConfigFragments.cpp
+    backends/xray/XrayConfigFragments.h
+    backends/xray/XrayConfigFragments.cpp
+    backends/xray/XrayCoreBackend.h
+    backends/xray/XrayCoreBackend.cpp
+    backends/xray/XrayOutboundConfigFragments.h
+    backends/xray/XrayOutboundConfigFragments.cpp
+    backends/xray/XraySecurityConfigFragments.h
+    backends/xray/XraySecurityConfigFragments.cpp
+    backends/xray/XrayStreamConfigFragments.h
+    backends/xray/XrayStreamConfigFragments.cpp
+    backends/xray/XrayTransportConfigFragments.h
+    backends/xray/XrayTransportConfigFragments.cpp
+    persistence/IConfigRepository.h
+    persistence/JsonConfigCollectionSerialization.h
+    persistence/JsonConfigCollectionSerialization.cpp
+    persistence/JsonConfigPolicySerialization.h
+    persistence/JsonConfigPolicySerialization.cpp
+    persistence/JsonConfigRepository.h
+    persistence/JsonConfigRepository.cpp
+    persistence/JsonConfigRootSerialization.h
+    persistence/JsonConfigRootSerialization.cpp
+    persistence/JsonConfigRoutingSerialization.h
+    persistence/JsonConfigRoutingSerialization.cpp
+    persistence/JsonConfigSerialization.h
+    persistence/JsonConfigSerialization.cpp
+    persistence/JsonConfigServerSerialization.h
+    persistence/JsonConfigServerSerialization.cpp
+    persistence/JsonConfigStateSerialization.h
+    persistence/JsonConfigStateSerialization.cpp
+    persistence/JsonConfigSubscriptionSerialization.h
+    persistence/JsonConfigSubscriptionSerialization.cpp
+    persistence/JsonConfigTunSerialization.h
+    persistence/JsonConfigTunSerialization.cpp
+    persistence/JsonConfigUiSerialization.h
+    persistence/JsonConfigUiSerialization.cpp
+    services/ProxyAvailabilityCheckService.h
+    services/ProxyAvailabilityCheckService.cpp
+    services/CoreUpdateOperations.h
+    services/CoreUpdateOperations.cpp
+    services/CoreUpdateService.h
+    services/CoreUpdateService.cpp
+    services/CoreUpdateInstallFiles.h
+    services/CoreUpdateInstallFiles.cpp
+    services/CoreUpdatePackageDownload.h
+    services/CoreUpdatePackageDownload.cpp
+    services/CoreUpdatePackageInstallation.h
+    services/CoreUpdatePackageInstallation.cpp
+    services/CoreUpdateReleaseMetadata.h
+    services/CoreUpdateReleaseMetadata.cpp
+    services/CoreUpdateReleaseResolution.h
+    services/CoreUpdateReleaseResolution.cpp
+    services/CoreUpdateVersion.h
+    services/CoreUpdateVersion.cpp
+    services/GeoResourceUpdateService.h
+    services/GeoResourceUpdateService.cpp
+    services/GeoResourceDownload.h
+    services/GeoResourceDownload.cpp
+    services/ServerCustomConfigStore.h
+    services/ServerCustomConfigStore.cpp
+    services/ServerListOperations.h
+    services/ServerListOperations.cpp
+    services/ServerService.h
+    services/ServerService.cpp
+    services/SpeedTestBatchConfig.h
+    services/SpeedTestBatchConfig.cpp
+    services/SpeedTestBatchRuntimeRunner.h
+    services/SpeedTestBatchRuntimeRunner.cpp
+    services/SpeedTestPortReservation.h
+    services/SpeedTestPortReservation.cpp
+    services/SpeedTestRequestItem.h
+    services/SpeedTestRuntimeProcess.h
+    services/SpeedTestRuntimeProcess.cpp
+    services/SpeedTestRuntimeRunner.h
+    services/SpeedTestRuntimeRunner.cpp
+    services/SpeedTestServiceInternal.h
+    services/SpeedTestUrlProbe.h
+    services/SpeedTestUrlProbe.cpp
+    services/SubscriptionService.h
+    services/SubscriptionService.cpp
+    services/SubscriptionUpdateService.h
+    services/SubscriptionUpdateService.cpp
+    subscription/ClashProxyItemParser.h
+    subscription/ClashProxyItemParser.cpp
+    subscription/ClashSubscriptionParser.h
+    subscription/ClashSubscriptionParser.cpp
+    subscription/ClashYamlProxyParser.h
+    subscription/ClashYamlProxyParser.cpp
+    subscription/CustomConfigTextParser.h
+    subscription/CustomConfigTextParser.cpp
+    subscription/ShareUrlParser.h
+    subscription/ShareUrlParser.cpp
+    subscription/ShareUrlParserSupport.h
+    subscription/ShareUrlParserSupport.cpp
+    subscription/ShareUrlProtocolParsers.h
+    subscription/ShareUrlProtocolParsers.cpp
+    subscription/ShareUrlSingBoxProtocolParsers.cpp
+    subscription/ShareUrlVmessParser.h
+    subscription/ShareUrlVmessParser.cpp
+    subscription/SubscriptionContentParser.h
+    subscription/SubscriptionContentParser.cpp
+    subscription/SubscriptionImportTextParser.h
+    subscription/SubscriptionImportTextParser.cpp
+    subscription/SubscriptionJsonSupport.h
+    subscription/SubscriptionJsonSupport.cpp
+    subscription/SubscriptionSingBoxParser.h
+    subscription/SubscriptionSingBoxParser.cpp
+    subscription/SubscriptionYamlFlowValueParser.h
+    subscription/SubscriptionYamlFlowValueParser.cpp
+    subscription/SubscriptionYamlParser.h
+    subscription/SubscriptionYamlParser.cpp
+    subscription/SubscriptionYamlScalarValueParser.h
+    subscription/SubscriptionYamlScalarValueParser.cpp
+    ui/dialogs/RoutingBaseRouteCard.h
+    ui/dialogs/RoutingBaseRouteCard.cpp
+    ui/dialogs/RoutingCustomRuleSupport.h
+    ui/dialogs/RoutingCustomRuleSupport.cpp
+    ui/dialogs/RoutingSettingsPageWidget.h
+    ui/dialogs/RoutingSettingsPageWidget.cpp
+    ui/dialogs/RoutingSettingsPageWidgetUi.cpp
+    ui/theme/AppTheme.h
+    ui/theme/AppTheme.cpp
+    ui/theme/AppThemePalette.h
+    ui/theme/AppThemePalette.cpp
+    ui/theme/AppThemeStyle.h
+    ui/theme/AppThemeStyle.cpp
+    ui/theme/ServerTableTheme.h
+    ui/theme/ServerTableTheme.cpp
+    resources/auto_resources.qrc
+    resources/app_icons.qrc
+    resources/themes.qrc
+)
+
+if(WIN32)
+    list(APPEND SONGBIRD_AUTO_SOURCES
+        resources/SongBirdAuto.rc
+    )
+endif()
 
 set(SONGBIRD_QT_TRANSLATION_QM_FILES)
 if(TARGET Qt${QT_VERSION_MAJOR}::qmake)
@@ -490,6 +761,8 @@ add_library(songbird_core_descriptors OBJECT
     runtime/core/CoreDescriptorRegistry.cpp
     backends/singbox/SingBoxCoreDescriptor.h
     backends/singbox/SingBoxCoreDescriptor.cpp
+    backends/mihomo/MihomoCoreDescriptor.h
+    backends/mihomo/MihomoCoreDescriptor.cpp
     backends/xray/XrayCoreDescriptor.h
     backends/xray/XrayCoreDescriptor.cpp
 )
@@ -518,7 +791,22 @@ else()
     add_executable(songbird WIN32 ${SONGBIRD_SOURCES})
 endif()
 
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    qt_add_executable(songbird_auto
+        MANUAL_FINALIZATION
+        WIN32
+        ${SONGBIRD_AUTO_SOURCES}
+    )
+else()
+    add_executable(songbird_auto WIN32 ${SONGBIRD_AUTO_SOURCES})
+endif()
+
 target_include_directories(songbird
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_include_directories(songbird_auto
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -527,6 +815,15 @@ target_compile_definitions(songbird
     PRIVATE
         SONGBIRD_APP_VERSION="${PROJECT_VERSION}"
 )
+
+target_compile_definitions(songbird_auto
+    PRIVATE
+        SONGBIRD_APP_VERSION="${PROJECT_VERSION}"
+)
+
+if(MSVC)
+    target_compile_options(songbird_auto PRIVATE /utf-8)
+endif()
 
 target_link_libraries(songbird
     PRIVATE
@@ -538,8 +835,22 @@ target_link_libraries(songbird
         Qt${QT_VERSION_MAJOR}::Svg
 )
 
+target_link_libraries(songbird_auto
+    PRIVATE
+        songbird_core_descriptors
+        Qt${QT_VERSION_MAJOR}::Core
+        Qt${QT_VERSION_MAJOR}::Gui
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+        Qt${QT_VERSION_MAJOR}::Svg
+)
+
 set_target_properties(songbird PROPERTIES
     OUTPUT_NAME "SongBird"
+)
+
+set_target_properties(songbird_auto PROPERTIES
+    OUTPUT_NAME "SongBirdAuto"
 )
 
 option(SONGBIRD_ENABLE_UPX "Compress release SongBird executable with UPX when upx is available" ON)
@@ -564,24 +875,32 @@ endif()
 
 if(TARGET songbird_translations)
     add_dependencies(songbird songbird_translations)
+    add_dependencies(songbird_auto songbird_translations)
 endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird)
+    qt_finalize_executable(songbird_auto)
 endif()
 
 if(WIN32)
     target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi)
+    target_link_libraries(songbird_auto PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi)
 endif()
 
-if(WIN32 AND MSVC)
-    # The Windows manifest is embedded via resources/SongBird.rc (RT_MANIFEST).
-    # Disable the linker's auto-generated manifest to avoid LNK4078 conflicts
-    # and to keep dpiAwareness=PerMonitorV2 authoritative.
-    target_link_options(songbird PRIVATE /MANIFEST:NO)
+if(WIN32)
+    # Feed the app manifests to the linker instead of embedding them in .rc files.
+    # /MANIFEST:EMBED is required alongside /MANIFESTINPUT: so MSVC actually embeds
+    # the supplied manifest into the executable instead of falling back to its default.
+    target_link_options(songbird PRIVATE
+        LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBird.exe.manifest
+        LINKER:/MANIFEST:EMBED)
+    target_link_options(songbird_auto PRIVATE
+        LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBirdAuto.exe.manifest
+        LINKER:/MANIFEST:EMBED)
 endif()
 
-install(TARGETS songbird
+install(TARGETS songbird songbird_auto
     RUNTIME DESTINATION .
 )
 

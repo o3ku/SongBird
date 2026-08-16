@@ -1,0 +1,4 @@
+interface:
+  display_name: "SongBird Release"
+  short_description: "Run the SongBird repository release workflow."
+  default_prompt: "Use $songbird-release to publish a new SongBird version."

@@ -1,5 +1,7 @@
 #include "app/ProxySession.h"
 
+#include <utility>
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -148,6 +150,11 @@ ProxySession::~ProxySession()
     lifetimeGuard_.reset();
     cancelPendingCoreRestarts();
     backgroundThreads_.waitForAll();
+}
+
+void ProxySession::setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation)
+{
+    coreSwitchConfirmation_ = std::move(confirmation);
 }
 
 void ProxySession::start(const StartRequest& request)
@@ -588,6 +595,30 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
         return std::nullopt;
     }
     currentServer_ = *server;
+
+    const CoreLaunchCompatDecision compat = evaluateCoreLaunchCompat(
+        currentRequest_.config, *server, currentRequest_.existingCoreTypes);
+    if (compat.outcome == CoreLaunchCompatOutcome::NoCompatibleCore) {
+        const QString message = coreLaunchCompatFailureMessage(compat);
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig, message);
+        failStartup(OperationResult::fail(message));
+        return std::nullopt;
+    }
+    if (compat.requiresUserDecision()) {
+        if (coreSwitchConfirmation_ && !coreSwitchConfirmation_(compat)) {
+            const QString message = tr("Startup canceled: %1 cannot run %2 servers.")
+                .arg(coreTypeDisplayName(compat.storedCore))
+                .arg(configTypeDisplayName(compat.configType));
+            setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig, message);
+            failStartup(OperationResult::fail(message));
+            return std::nullopt;
+        }
+
+        emit logMessage(tr("%1 cannot run %2 servers. Using %3 instead.")
+            .arg(coreTypeDisplayName(compat.storedCore))
+            .arg(configTypeDisplayName(compat.configType))
+            .arg(coreTypeDisplayName(compat.resolvedCore)));
+    }
 
     const CoreType launchCore = deps_.profileResolver.resolveLaunchCoreType(*server);
     const CoreInfo coreInfo = deps_.profileResolver.resolveCoreInfo(*server);

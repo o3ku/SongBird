@@ -7,6 +7,7 @@
 enum class CoreType {
     Xray = 2,
     SingBox = 24,
+    Mihomo = 25,
     Unknown = 999
 };
 
@@ -17,6 +18,8 @@ inline QString coreTypeDisplayName(CoreType type)
         return QStringLiteral("Xray");
     case CoreType::SingBox:
         return QStringLiteral("sing-box");
+    case CoreType::Mihomo:
+        return QStringLiteral("Mihomo");
     case CoreType::Unknown:
     default:
         return QStringLiteral("Unknown");
@@ -30,6 +33,8 @@ inline CoreType resolveRuntimeCoreType(CoreType type)
         return CoreType::Xray;
     case CoreType::SingBox:
         return CoreType::SingBox;
+    case CoreType::Mihomo:
+        return CoreType::Mihomo;
     case CoreType::Unknown:
         return CoreType::Unknown;
     default:

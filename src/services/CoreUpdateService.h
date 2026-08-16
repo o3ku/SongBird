@@ -42,8 +42,13 @@ public:
     OperationResult update(
         CoreType coreType,
         const CoreUpdateConfig& config,
+        const QString& targetDirectory) const;
+
+    OperationResult update(
+        CoreType coreType,
+        const CoreUpdateConfig& config,
         const QString& targetDirectory,
-        const UpdateOptions& options = {}) const;
+        const UpdateOptions& options) const;
 
 private:
     DownloadHandler downloadHandler_;

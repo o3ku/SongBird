@@ -152,8 +152,11 @@ void AddServerDialogTests::newDialogDefaultsToSingBoxCore()
     const VmessItem server = dialog.server();
     QCOMPARE(server.configType, ConfigType::HTTP);
     QCOMPARE(server.coreType, CoreType::SingBox);
-    QCOMPARE(coreCombo->count(), 2);
+    QCOMPARE(coreCombo->count(), 3);
     QCOMPARE(coreCombo->currentData().toInt(), static_cast<int>(CoreType::SingBox));
+    QVERIFY(coreCombo->findData(static_cast<int>(CoreType::Xray)) >= 0);
+    QVERIFY(coreCombo->findData(static_cast<int>(CoreType::SingBox)) >= 0);
+    QVERIFY(coreCombo->findData(static_cast<int>(CoreType::Mihomo)) >= 0);
     QCOMPARE(coreCombo->findData(0), -1);
 }
 

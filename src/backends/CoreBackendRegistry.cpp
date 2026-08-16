@@ -2,6 +2,7 @@
 
 #include <QFileInfo>
 
+#include "backends/mihomo/MihomoCoreBackend.h"
 #include "backends/singbox/SingBoxCoreBackend.h"
 #include "backends/xray/XrayCoreBackend.h"
 #include "runtime/core/ICoreBackend.h"
@@ -10,6 +11,7 @@ namespace {
 
 const XrayCoreBackend kXrayCoreBackend;
 const SingBoxCoreBackend kSingBoxCoreBackend;
+const MihomoCoreBackend kMihomoCoreBackend;
 
 } // namespace
 
@@ -17,7 +19,8 @@ QList<const ICoreBackend*> coreBackends()
 {
     return {
         &kXrayCoreBackend,
-        &kSingBoxCoreBackend
+        &kSingBoxCoreBackend,
+        &kMihomoCoreBackend
     };
 }
 

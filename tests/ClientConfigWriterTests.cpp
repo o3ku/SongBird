@@ -10,6 +10,7 @@
 #include <QTemporaryDir>
 
 #include "runtime/ClientConfigWriter.h"
+#include "runtime/TunAdapterNames.h"
 
 class ClientConfigWriterTests : public QObject {
     Q_OBJECT
@@ -20,10 +21,12 @@ private slots:
     void generateClientConfigsDoesNotEmitSingBoxSocksPasswordWithoutUsername();
     void generateClientConfigsBuildsSingBoxHttpOutbound();
     void generateClientConfigsDefaultsHttpAutoCoreToSingBox();
+    void generateClientConfigsBuildsMihomoVmessProxy();
     void generateClientConfigsUsesWarnSingBoxLogLevelByDefault();
     void generateClientConfigsMapsConfiguredSingBoxWarningLogLevel();
     void validateServerRejectsInvalidXhttpExtraJson();
     void validateServerRejectsInvalidFinalmaskJson();
+    void validateServerRejectsMihomoTcpHttpHeaderType();
     void generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled();
     void generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled();
     void generateClientConfigsUsesDefaultAllowInsecureForLegacyTlsWhenServerValueMissing();
@@ -408,6 +411,47 @@ void ClientConfigWriterTests::generateClientConfigsDefaultsHttpAutoCoreToSingBox
     QVERIFY(generated.auxiliary.isEmpty());
 }
 
+void ClientConfigWriterTests::generateClientConfigsBuildsMihomoVmessProxy()
+{
+    Config config = baseConfig();
+    config.localHttpPort = 18080;
+    setProtocolCore(config, ConfigType::VMess, CoreType::Mihomo);
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Mihomo;
+    server.network = QStringLiteral("ws");
+    server.streamSecurity = QStringLiteral("tls");
+    server.requestHost = QStringLiteral("cdn.example.com");
+    server.path = QStringLiteral("/ws");
+    server.sni = QStringLiteral("tls.example.com");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    QCOMPARE(generated.primary.root.value(QStringLiteral("socks-port")).toInt(), 10808);
+    QCOMPARE(generated.primary.root.value(QStringLiteral("port")).toInt(), 18080);
+    QCOMPARE(
+        generated.primary.root.value(QStringLiteral("tun")).toObject().value(QStringLiteral("device")).toString(),
+        songbirdTunAdapterName());
+
+    const QJsonArray proxies = generated.primary.root.value(QStringLiteral("proxies")).toArray();
+    QCOMPARE(proxies.size(), 1);
+    const QJsonObject proxy = proxies.at(0).toObject();
+    QCOMPARE(proxy.value(QStringLiteral("type")).toString(), QStringLiteral("vmess"));
+    QCOMPARE(proxy.value(QStringLiteral("server")).toString(), QStringLiteral("example.com"));
+    QCOMPARE(proxy.value(QStringLiteral("port")).toInt(), 443);
+    QCOMPARE(proxy.value(QStringLiteral("uuid")).toString(), QStringLiteral("11111111-1111-1111-1111-111111111111"));
+    QCOMPARE(proxy.value(QStringLiteral("cipher")).toString(), QStringLiteral("auto"));
+    QCOMPARE(proxy.value(QStringLiteral("network")).toString(), QStringLiteral("ws"));
+    QCOMPARE(proxy.value(QStringLiteral("servername")).toString(), QStringLiteral("tls.example.com"));
+
+    const QJsonObject wsOptions = proxy.value(QStringLiteral("ws-opts")).toObject();
+    QCOMPARE(wsOptions.value(QStringLiteral("path")).toString(), QStringLiteral("/ws"));
+    QCOMPARE(
+        wsOptions.value(QStringLiteral("headers")).toObject().value(QStringLiteral("Host")).toString(),
+        QStringLiteral("cdn.example.com"));
+}
+
 void ClientConfigWriterTests::generateClientConfigsUsesWarnSingBoxLogLevelByDefault()
 {
     Config config = baseConfig();
@@ -474,6 +518,29 @@ void ClientConfigWriterTests::validateServerRejectsInvalidFinalmaskJson()
 
     QVERIFY2(!result.success, qPrintable(result.message));
     QVERIFY(result.message.contains(QStringLiteral("Finalmask")));
+}
+
+void ClientConfigWriterTests::validateServerRejectsMihomoTcpHttpHeaderType()
+{
+    Config config = baseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::Mihomo);
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Mihomo;
+    server.network = QStringLiteral("tcp");
+    server.headerType = QStringLiteral("http");
+
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    ClientConfigWriter writer;
+    const OperationResult result = writer.writeClientConfig(
+        config,
+        server,
+        tempDir.filePath(QStringLiteral("config.json")));
+
+    QVERIFY2(!result.success, qPrintable(result.message));
+    QVERIFY(result.message.contains(QStringLiteral("headerType")));
 }
 
 void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled()
@@ -1273,6 +1340,7 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
     const QJsonObject proxyOutbound = findObjectByTag(outbounds, QStringLiteral("proxy"));
 
     QCOMPARE(tunInbound.value(QStringLiteral("type")).toString(), QStringLiteral("tun"));
+    QCOMPARE(tunInbound.value(QStringLiteral("interface_name")).toString(), songbirdTunAdapterName());
     QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("socks"));
     QCOMPARE(proxyOutbound.value(QStringLiteral("server")).toString(), QStringLiteral("127.0.0.1"));
     QCOMPARE(proxyOutbound.value(QStringLiteral("server_port")).toInt(), config.localPort);
@@ -1296,6 +1364,7 @@ void ClientConfigWriterTests::generateClientConfigsCreatesTunCompatSingBoxRelayF
     const QJsonObject proxyOutbound = findObjectByTag(outbounds, QStringLiteral("proxy"));
 
     QCOMPARE(tunInbound.value(QStringLiteral("type")).toString(), QStringLiteral("tun"));
+    QCOMPARE(tunInbound.value(QStringLiteral("interface_name")).toString(), songbirdTunAdapterName());
     QCOMPARE(proxyOutbound.value(QStringLiteral("type")).toString(), QStringLiteral("socks"));
     QCOMPARE(proxyOutbound.value(QStringLiteral("server")).toString(), QStringLiteral("127.0.0.1"));
     QCOMPARE(proxyOutbound.value(QStringLiteral("server_port")).toInt(), config.localPort);
@@ -1450,8 +1519,12 @@ void ClientConfigWriterTests::generateClientConfigsAddsTunRoutePackForNativeSing
     const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
     const QJsonObject route = generated.primary.root.value(QStringLiteral("route")).toObject();
+    const QJsonObject tunInbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("inbounds")).toArray(),
+        QStringLiteral("tun-in"));
     const QJsonArray rules = route.value(QStringLiteral("rules")).toArray();
 
+    QCOMPARE(tunInbound.value(QStringLiteral("interface_name")).toString(), songbirdTunAdapterName());
     QCOMPARE(route.value(QStringLiteral("auto_detect_interface")).toBool(), true);
 
     bool foundUdpRejectRule = false;

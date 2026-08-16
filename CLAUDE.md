@@ -40,7 +40,7 @@ CMake target 名为 `songbird`，`OUTPUT_NAME` 设为 `SongBird`，所以打包�
 
 每个测试是独立的 QtTest 可执行文件。当前 CTest 名称（用于 `-R` 过滤）：
 
-`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`app-bootstrap-ui-command-plan`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`routing-service`、`system-proxy-mode`、`app-update-service`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`。
+`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`。
 
 特别注意：
 
@@ -93,7 +93,7 @@ CMake target 名为 `songbird`，`OUTPUT_NAME` 设为 `SongBird`，所以打包�
 
 ### TUN 边车模式
 
-启用 TUN 模式且使用 Xray 核心时，会用 sing-box 边车进程处理 TUN 网卡（`singbox_tun` Wintun 设备）。`AppBootstrap` 为此辅助核心管理第二组 `QtCoreProcessHost`/`CoreLifecycleService`。决策逻辑见 [TunCompatCoreRequirement.h](src/runtime/TunCompatCoreRequirement.h)。
+启用 TUN 模式且使用 Xray 核心时，会用 sing-box 边车进程处理 TUN 网卡（`songbird_tun` Wintun 设备；`singbox_tun` 是改名前的遗留名称，仍保留在清理列表中）。`AppBootstrap` 为此辅助核心管理第二组 `QtCoreProcessHost`/`CoreLifecycleService`。决策逻辑见 [TunCompatCoreRequirement.h](src/runtime/TunCompatCoreRequirement.h)。
 
 ### 关键模式
 

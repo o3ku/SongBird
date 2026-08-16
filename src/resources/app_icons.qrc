@@ -2,6 +2,9 @@
     <qresource prefix="/app">
         <file alias="logo.ico">logo.ico</file>
         <file alias="logo.svg">logo.svg</file>
+        <file alias="logo-auto.ico">logo-auto.ico</file>
+        <file alias="logo-auto.svg">logo-auto.svg</file>
+        <file alias="logo-auto-active.svg">logo-auto-active.svg</file>
         <file alias="logo-fire.svg">logo-fire.svg</file>
 
         <file alias="down.svg">down.svg</file>

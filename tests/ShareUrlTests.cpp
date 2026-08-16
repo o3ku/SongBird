@@ -29,6 +29,7 @@ private slots:
     void parseVlessRealityVisionShareUrlKeepsPacketEncoding();
     void parseAnytlsShareUrlKeepsIdleSessionSettings();
     void parseTrojanShareUrlKeepsAllowInsecure();
+    void parseSocks5ShareUrlWithoutCredentials();
     void parseSocksUrlWithEmptyBase64Credentials();
     void parseLegacyVmessShareUrlKeepsVmessType();
 };
@@ -429,6 +430,22 @@ void ShareUrlTests::parseTrojanShareUrlKeepsAllowInsecure()
     QCOMPARE(parsed.streamSecurity, QStringLiteral("tls"));
     QCOMPARE(parsed.sni, QStringLiteral("www.cloudflare.com"));
     QCOMPARE(parsed.allowInsecure, QStringLiteral("true"));
+}
+
+void ShareUrlTests::parseSocks5ShareUrlWithoutCredentials()
+{
+    const QString url = QStringLiteral("socks5://47.82.147.237:1080#SG-Hillcrest%20Park-8214723");
+
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(url, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.configType, ConfigType::Socks);
+    QCOMPARE(parsed.address, QStringLiteral("47.82.147.237"));
+    QCOMPARE(parsed.port, 1080);
+    QCOMPARE(parsed.remarks, QStringLiteral("SG-Hillcrest Park-8214723"));
+    QVERIFY(parsed.id.isEmpty());
+    QVERIFY(parsed.security.isEmpty());
 }
 
 void ShareUrlTests::buildAndParseRealityMldsa65VerifyRoundTrips()

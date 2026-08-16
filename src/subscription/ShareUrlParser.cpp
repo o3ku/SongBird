@@ -21,7 +21,8 @@ VmessItem ShareUrlParser::parse(const QString& shareUrl, bool* ok)
     if (text.startsWith(QStringLiteral("ss://"), Qt::CaseInsensitive)) {
         return ShareUrlProtocolParsers::parseShadowsocks(text, ok);
     }
-    if (text.startsWith(QStringLiteral("socks://"), Qt::CaseInsensitive)) {
+    if (text.startsWith(QStringLiteral("socks://"), Qt::CaseInsensitive)
+        || text.startsWith(QStringLiteral("socks5://"), Qt::CaseInsensitive)) {
         return ShareUrlProtocolParsers::parseSocks(text, ok);
     }
     if (text.startsWith(QStringLiteral("trojan://"), Qt::CaseInsensitive)) {

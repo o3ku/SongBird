@@ -64,6 +64,7 @@ struct UiConfigState {
     int mainServerQrSplitPercent = 78;
     bool mainQrPreviewVisible = false;
     bool mainProxyEnabled = false;
+    QString autoSelectionStrategy = QStringLiteral("lowestLatency");
 };
 
 struct RootConfigState {

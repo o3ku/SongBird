@@ -149,7 +149,7 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
         resolveAuxiliaryTunCompatCoreTypes(config, server, effectiveExistingCoreTypes());
     for (const CoreType auxiliaryCoreType : auxiliaryCoreTypes) {
         // The local rewrite has not split upstream's non-legacy Xray TUN relay path yet.
-        // Keep emitting the sing-box sidecar whenever Xray runs with TUN so `singbox_tun`
+        // Keep emitting the sing-box sidecar whenever Xray runs with TUN so the TUN adapter
         // can still be created instead of silently starting Xray alone with no TUN inbound.
         const ICoreBackend* backend = coreBackend(auxiliaryCoreType);
         if (backend == nullptr) {
@@ -195,6 +195,10 @@ OperationResult ClientConfigWriter::validateServer(const Config& config, const V
         return OperationResult::fail(QStringLiteral("Finalmask must be a valid JSON object."));
     }
 
+    if (server.configType == ConfigType::Custom) {
+        return OperationResult::ok();
+    }
+
     const ICoreBackend* backend = coreBackend(runtimeCore);
     return backend != nullptr
         ? backend->validateServer(server)
@@ -222,11 +226,8 @@ OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& 
 
 QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem& server) const
 {
-    const bool requiresSingBox = server.configType == ConfigType::AnyTLS
-        || server.configType == ConfigType::Naive;
     const CoreType effectiveCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
-    const CoreType rootCore = requiresSingBox ? CoreType::SingBox : effectiveCore;
-    const ICoreBackend* backend = coreBackend(rootCore);
+    const ICoreBackend* backend = coreBackend(effectiveCore);
     return backend != nullptr ? backend->buildClientRoot(config, server) : QJsonObject{};
 }
 

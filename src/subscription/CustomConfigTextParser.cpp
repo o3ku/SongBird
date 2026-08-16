@@ -22,10 +22,14 @@ VmessItem CustomConfigTextParser::parse(const QString& text, QString* fileExtens
     const QJsonObject root = document.object();
     const QJsonArray inbounds = root.value(QStringLiteral("inbounds")).toArray();
     const QJsonArray outbounds = root.value(QStringLiteral("outbounds")).toArray();
+    const QJsonArray proxies = root.value(QStringLiteral("proxies")).toArray();
     VmessItem item;
     item.configType = ConfigType::Custom;
 
-    if (!inbounds.isEmpty() && !outbounds.isEmpty() && outbounds.at(0).isObject()
+    if (!proxies.isEmpty()) {
+        item.coreType = CoreType::Mihomo;
+        item.remarks = QStringLiteral("mihomo_custom");
+    } else if (!inbounds.isEmpty() && !outbounds.isEmpty() && outbounds.at(0).isObject()
         && outbounds.at(0).toObject().contains(QStringLiteral("protocol"))) {
         item.coreType = CoreType::Xray;
         item.remarks = QStringLiteral("xray_custom");

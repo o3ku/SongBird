@@ -243,6 +243,10 @@ set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
@@ -336,6 +340,10 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
@@ -453,6 +461,10 @@ set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
@@ -638,6 +650,10 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
     ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
@@ -830,6 +846,67 @@ songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+set(SONGBIRD_AUTO_COUNTRY_SELECTION_TEST_SOURCES
+    AutoCountrySelectionTests.cpp
+    ../src/auto/AutoCountrySelection.h
+    ../src/auto/AutoCountrySelection.cpp
+    ../src/auto/AutoCountrySupport.h
+    ../src/auto/AutoCountrySupport.cpp
+    ../src/auto/AutoTypes.h
+)
+
+songbird_add_qt_test(songbird_auto_country_selection_tests auto-country-selection
+    SOURCES
+        ${SONGBIRD_AUTO_COUNTRY_SELECTION_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+if(MSVC)
+    target_compile_options(songbird_auto_country_selection_tests PRIVATE /utf-8)
+endif()
+
+set(SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES
+    AutoCountryInferenceTests.cpp
+    ../src/auto/AutoCountryInference.h
+    ../src/auto/AutoCountryInference.cpp
+    ../src/auto/AutoCountrySupport.h
+    ../src/auto/AutoCountrySupport.cpp
+    ../src/auto/AutoTypes.h
+    ../src/services/SpeedTestRequestItem.h
+    ../src/common/ServerDisplayName.h
+)
+
+songbird_add_qt_test(songbird_auto_country_inference_tests auto-country-inference
+    SOURCES
+        ${SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+if(MSVC)
+    target_compile_options(songbird_auto_country_inference_tests PRIVATE /utf-8)
+endif()
+
+set(SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES
+    AutoRuntimeDefaultsTests.cpp
+    ../src/auto/AutoRuntimeDefaults.h
+    ../src/auto/AutoRuntimeDefaults.cpp
+    ../src/app/OutboundLocationProbeService.h
+    ../src/common/PortValidator.h
+    ../src/common/SystemProxyMode.h
+)
+
+songbird_add_qt_test(songbird_auto_runtime_defaults_tests auto-runtime-defaults
+    SOURCES
+        ${SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
     ../src/common/UserAgent.h
@@ -947,6 +1024,10 @@ set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
     ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
@@ -1138,6 +1219,10 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/runtime/core/CoreCatalog.h
     ../src/runtime/core/CoreBackendRegistry.h
     ../src/backends/CoreBackendRegistry.cpp
+    ../src/backends/mihomo/MihomoConfigFragments.h
+    ../src/backends/mihomo/MihomoConfigFragments.cpp
+    ../src/backends/mihomo/MihomoCoreBackend.h
+    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxConfigFragments.h
     ../src/backends/singbox/SingBoxConfigFragments.cpp
     ../src/backends/singbox/SingBoxTunCompatConfigFragments.h

@@ -55,6 +55,14 @@ CoreUpdateService::CoreUpdateService(
 OperationResult CoreUpdateService::update(
     CoreType coreType,
     const CoreUpdateConfig& config,
+    const QString& targetDirectory) const
+{
+    return update(coreType, config, targetDirectory, UpdateOptions{});
+}
+
+OperationResult CoreUpdateService::update(
+    CoreType coreType,
+    const CoreUpdateConfig& config,
     const QString& targetDirectory,
     const UpdateOptions& options) const
 {

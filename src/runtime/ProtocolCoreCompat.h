@@ -127,8 +127,31 @@ inline CoreType configuredCoreTypeForProtocol(const Config& config, ConfigType c
     return CoreType::Unknown;
 }
 
+// Same lookup as configuredCoreTypeForProtocol but without the compatibility
+// filter, so callers can tell "user picked nothing" apart from "user picked a
+// core that cannot run this protocol".
+inline CoreType storedCoreTypeForProtocol(const Config& config, ConfigType configType)
+{
+    for (const CoreTypeItem& item : config.policy().coreTypeItems) {
+        if (item.configType != static_cast<int>(configType)) {
+            continue;
+        }
+
+        return resolveRuntimeCoreType(static_cast<CoreType>(item.coreType));
+    }
+
+    return CoreType::Unknown;
+}
+
 inline CoreType resolvePreferredCoreType(const Config& config, const VmessItem& server)
 {
+    if (server.configType == ConfigType::Custom) {
+        const CoreType customCore = resolveRuntimeCoreType(server.coreType);
+        if (customCore != CoreType::Unknown && protocolSupportsCore(ConfigType::Custom, customCore)) {
+            return customCore;
+        }
+    }
+
     const CoreType configuredCore = configuredCoreTypeForProtocol(config, server.configType);
     if (configuredCore != CoreType::Unknown) {
         return configuredCore;
@@ -142,6 +165,13 @@ inline CoreType resolveSelectedCoreType(
     const VmessItem& server,
     const QList<CoreType>& existingCoreTypes)
 {
+    if (server.configType == ConfigType::Custom) {
+        const CoreType customCore = resolveRuntimeCoreType(server.coreType);
+        if (customCore != CoreType::Unknown && protocolSupportsCore(ConfigType::Custom, customCore)) {
+            return customCore;
+        }
+    }
+
     const CoreType configuredCore = configuredCoreTypeForProtocol(config, server.configType);
     if (configuredCore != CoreType::Unknown) {
         return configuredCore;

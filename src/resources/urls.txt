@@ -1,0 +1,1 @@
+# Add one subscription URL per line. Lines starting with # are ignored.

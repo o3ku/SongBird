@@ -93,7 +93,7 @@ void CustomServerDialog::setupUi()
             this,
             tr("Select Custom Config"),
             filePathEdit_->text().trimmed(),
-            QStringLiteral("Config Files (*.json);;All Files (*.*)"));
+            QStringLiteral("Config Files (*.json *.yaml *.yml);;All Files (*.*)"));
         if (!filePath.trimmed().isEmpty()) {
             filePathEdit_->setText(filePath);
         }

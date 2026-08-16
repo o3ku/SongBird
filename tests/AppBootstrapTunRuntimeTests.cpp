@@ -7,6 +7,7 @@
 #include "app/CoreStartupCheckpoint.h"
 #include "app/TunRuntimeState.h"
 #include "runtime/CoreConfigPreflight.h"
+#include "runtime/TunAdapterNames.h"
 
 class AppBootstrapTunRuntimeTests : public QObject {
     Q_OBJECT
@@ -16,6 +17,7 @@ private slots:
     void coreStartupChecklistItemOmitsDetailText();
     void cleanupRequiredWhenCoreStartedWithTun();
     void cleanupSkippedWhenCoreStartedWithoutTun();
+    void tunAdapterCleanupNamesCoverCurrentAndLegacyNames();
     void startAfterTunCleanupRequiresSuccessfulCleanup();
     void postStopActionAfterTunCleanupRequiresSuccessfulCleanup();
     void tunAdapterConflictOutputIsDetected();
@@ -73,6 +75,16 @@ void AppBootstrapTunRuntimeTests::cleanupSkippedWhenCoreStartedWithoutTun()
 {
     QVERIFY(!shouldCleanupTunAfterCoreStop(true, false));
     QVERIFY(!shouldCleanupTunAfterCoreStop(false, false));
+}
+
+void AppBootstrapTunRuntimeTests::tunAdapterCleanupNamesCoverCurrentAndLegacyNames()
+{
+    const QStringList cleanupNames = tunAdapterCleanupNames();
+
+    QCOMPARE(songbirdTunAdapterName(), QStringLiteral("songbird_tun"));
+    QCOMPARE(legacySingBoxTunAdapterName(), QStringLiteral("singbox_tun"));
+    QVERIFY(cleanupNames.contains(songbirdTunAdapterName()));
+    QVERIFY(cleanupNames.contains(legacySingBoxTunAdapterName()));
 }
 
 void AppBootstrapTunRuntimeTests::startAfterTunCleanupRequiresSuccessfulCleanup()

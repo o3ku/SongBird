@@ -22,6 +22,7 @@
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
+#include "runtime/CoreLaunchCompatDecision.h"
 #include "runtime/ICoreProcessHost.h"
 
 class ClientConfigWriter;
@@ -66,8 +67,15 @@ public:
         bool warnOnFailure = false;
     };
 
+    // Asks the user whether to launch a protocol on a core other than the one
+    // stored in settings. Returning false aborts the startup. Headless hosts
+    // leave this unset, which accepts the switch without prompting.
+    using CoreSwitchConfirmation = std::function<bool(const CoreLaunchCompatDecision&)>;
+
     explicit ProxySession(Dependencies deps, QObject* parent = nullptr);
     ~ProxySession() override;
+
+    void setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation);
 
     void start(const StartRequest& request);
     void stop(bool immediate = false);
@@ -234,6 +242,7 @@ private:
     Phase phase_ = Phase::Stopped;
     PostStopAction postStopAction_;
     TunCleanupState tunCleanupState_ = TunCleanupState::Idle;
+    CoreSwitchConfirmation coreSwitchConfirmation_;
 
     StartRequest currentRequest_;
     VmessItem currentServer_;

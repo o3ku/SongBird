@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -16,6 +17,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -53,6 +55,7 @@ class EndToEndSmokeTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void mihomoLocalHttpProxySmoke();
     void subscriptionToGoogleSmoke();
 };
 
@@ -62,6 +65,7 @@ constexpr auto kSmokeEnabledEnv = "SONGBIRD_RUN_E2E_SMOKE";
 constexpr auto kSmokeSubscriptionUrlEnv = "SONGBIRD_SMOKE_SUB_URL";
 constexpr auto kSmokeTargetUrlEnv = "SONGBIRD_SMOKE_TARGET_URL";
 constexpr auto kSmokeSpeedUrlEnv = "SONGBIRD_SMOKE_SPEED_URL";
+constexpr auto kMihomoExecutableEnv = "SONGBIRD_MIHOMO_EXE";
 constexpr auto kSmokeMaxServersEnv = "SONGBIRD_SMOKE_MAX_SERVERS";
 constexpr auto kSmokeServerOffsetEnv = "SONGBIRD_SMOKE_SERVER_OFFSET";
 constexpr auto kSmokeReportPathEnv = "SONGBIRD_SMOKE_REPORT_PATH";
@@ -165,6 +169,17 @@ CoreInfo makeSingBoxCoreInfo(const QString& program)
     return info;
 }
 
+CoreInfo makeMihomoCoreInfo(const QString& program)
+{
+    CoreInfo info;
+    info.type = CoreType::Mihomo;
+    info.program = program;
+    info.workingDirectory = QFileInfo(program).absolutePath();
+    info.arguments = QStringList{QStringLiteral("-f"), info.configPlaceholder};
+    info.appendConfigArgument = false;
+    return info;
+}
+
 QString findSingBoxExecutable(const QString& directoryPath)
 {
     const QStringList names{
@@ -178,6 +193,109 @@ QString findSingBoxExecutable(const QString& directoryPath)
     }
     return {};
 }
+
+QString findMihomoExecutable()
+{
+    const QString envPath = envString(kMihomoExecutableEnv);
+    if (!envPath.isEmpty() && QFileInfo::exists(envPath)) {
+        return QFileInfo(envPath).absoluteFilePath();
+    }
+
+    const QStringList directories{
+        QCoreApplication::applicationDirPath(),
+        QDir::currentPath(),
+        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../src")),
+        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../msvc-release/src")
+    };
+    const QStringList names{
+        QStringLiteral("mihomo.exe"),
+        QStringLiteral("clash-meta.exe")};
+    for (const QString& directory : directories) {
+        const QDir dir(directory);
+        for (const QString& name : names) {
+            const QString path = dir.filePath(name);
+            if (QFileInfo::exists(path)) {
+                return QFileInfo(path).absoluteFilePath();
+            }
+        }
+        const QStringList matches = dir.entryList({QStringLiteral("mihomo-windows-*.exe")}, QDir::Files);
+        if (!matches.isEmpty()) {
+            return QFileInfo(dir.filePath(matches.constFirst())).absoluteFilePath();
+        }
+    }
+    return {};
+}
+
+class LocalHttpProxyServer final : public QObject
+{
+public:
+    explicit LocalHttpProxyServer(QObject* parent = nullptr)
+        : QObject(parent)
+    {
+        connect(&server_, &QTcpServer::newConnection, this, [this]() {
+            while (server_.hasPendingConnections()) {
+                QTcpSocket* socket = server_.nextPendingConnection();
+                socket->setParent(this);
+                connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+                    buffers_[socket].append(socket->readAll());
+                    if (!buffers_.value(socket).contains("\r\n\r\n")) {
+                        return;
+                    }
+                    const QByteArray request = buffers_.value(socket);
+                    if (!tunnelEstablished_.contains(socket) && request.startsWith("CONNECT ")) {
+                        ++requestCount_;
+                        lastRequest_ = QString::fromLatin1(request);
+                        tunnelEstablished_.insert(socket);
+                        buffers_[socket].clear();
+                        socket->write("HTTP/1.1 200 Connection Established\r\n\r\n");
+                        return;
+                    }
+                    ++requestCount_;
+                    lastRequest_ = QString::fromLatin1(buffers_.take(socket));
+                    const QByteArray body("songbird-mihomo-smoke");
+                    const QByteArray response = QByteArray("HTTP/1.1 200 OK\r\n")
+                        + "Content-Type: text/plain\r\n"
+                        + "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                        + "Connection: close\r\n\r\n"
+                        + body;
+                    socket->write(response);
+                    socket->disconnectFromHost();
+                });
+                connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
+                    tunnelEstablished_.remove(socket);
+                    socket->deleteLater();
+                });
+            }
+        });
+    }
+
+    bool listen()
+    {
+        return server_.listen(QHostAddress::LocalHost, 0);
+    }
+
+    int port() const
+    {
+        return server_.serverPort();
+    }
+
+    int requestCount() const
+    {
+        return requestCount_;
+    }
+
+    QString lastRequest() const
+    {
+        return lastRequest_;
+    }
+
+private:
+    QTcpServer server_;
+    QHash<QTcpSocket*, QByteArray> buffers_;
+    QSet<QTcpSocket*> tunnelEstablished_;
+    int requestCount_ = 0;
+    QString lastRequest_;
+};
 
 void addSingBoxPolicy(Config& config)
 {
@@ -702,6 +820,76 @@ SmokeLatencyResult testServerLatency(
 }
 
 } // namespace
+
+void EndToEndSmokeTests::mihomoLocalHttpProxySmoke()
+{
+    const QString mihomoPath = findMihomoExecutable();
+    if (mihomoPath.isEmpty()) {
+        QSKIP("Set SONGBIRD_MIHOMO_EXE to run the local Mihomo proxy smoke test.");
+    }
+
+    QTemporaryDir workDir;
+    QVERIFY2(workDir.isValid(), "Failed to create Mihomo smoke test directory.");
+
+    LocalHttpProxyServer upstreamProxy;
+    QVERIFY2(upstreamProxy.listen(), "Failed to start the local upstream HTTP proxy.");
+
+    Config config;
+    config.localPort = takeAvailableSmokePortBase();
+    QVERIFY2(config.localPort > 0, "Failed to reserve local Mihomo inbound ports.");
+    config.localHttpPort = config.localPort + 1;
+    config.tun().tunModeItem.enableTun = false;
+    config.logLevel = QStringLiteral("debug");
+    config.collection().routingModeId = QStringLiteral("builtin:global");
+    config.policy().coreTypeItems.append(CoreTypeItem{
+        static_cast<int>(ConfigType::HTTP),
+        static_cast<int>(CoreType::Mihomo)});
+
+    VmessItem server;
+    server.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    server.configType = ConfigType::HTTP;
+    server.coreType = CoreType::Mihomo;
+    server.address = kLoopbackAddress;
+    server.port = upstreamProxy.port();
+    server.remarks = QStringLiteral("local-http-upstream");
+
+    const QString runtimeConfigPath = workDir.filePath(QStringLiteral("mihomo-local-smoke.json"));
+    ClientConfigWriter writer(workDir.path());
+    writer.setExistingCoreTypes(QList<CoreType>{CoreType::Mihomo});
+    const OperationResult writeResult = writer.writeClientConfig(config, server, runtimeConfigPath);
+    QVERIFY2(writeResult.success, qPrintable(writeResult.message));
+
+    QtCoreProcessHost processHost;
+    CoreLifecycleService coreLifecycle(processHost);
+    QStringList coreOutput;
+    QObject::connect(&coreLifecycle, &CoreLifecycleService::outputReceived, &coreLifecycle, [&coreOutput](const QString& line) {
+        if (coreOutput.size() >= 12) {
+            coreOutput.removeFirst();
+        }
+        coreOutput.append(line);
+    });
+
+    QSignalSpy coreStartedSpy(&coreLifecycle, SIGNAL(started(QString)));
+    const OperationResult startResult = coreLifecycle.start(makeMihomoCoreInfo(mihomoPath), runtimeConfigPath);
+    QVERIFY2(startResult.success, qPrintable(startResult.message));
+    ScopedCoreStop stopCore(coreLifecycle);
+    if (coreStartedSpy.isEmpty()) {
+        QVERIFY2(coreStartedSpy.wait(kCoreReadyTimeoutMs), "Timed out while waiting for Mihomo to start.");
+    }
+    QVERIFY2(
+        waitForLocalPortReady(config.localHttpPort, kPortReadyTimeoutMs),
+        qPrintable(QStringLiteral("Mihomo HTTP inbound did not become ready. Output: %1").arg(coreOutput.join(QStringLiteral(" | ")))));
+
+    const QString targetUrl = QStringLiteral("http://songbird-mihomo-smoke.invalid/ping");
+    const OperationResult probeResult = probeUrlViaHttpProxy(targetUrl, config.localHttpPort, kHttpProbeTimeoutMs);
+    QVERIFY2(
+        probeResult.success,
+        qPrintable(QStringLiteral("%1 Output: %2").arg(probeResult.message, coreOutput.join(QStringLiteral(" | ")))));
+    QTRY_VERIFY_WITH_TIMEOUT(upstreamProxy.requestCount() > 0, 3000);
+    QVERIFY2(
+        upstreamProxy.lastRequest().contains(QStringLiteral("songbird-mihomo-smoke.invalid")),
+        qPrintable(upstreamProxy.lastRequest()));
+}
 
 void EndToEndSmokeTests::subscriptionToGoogleSmoke()
 {
