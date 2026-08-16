@@ -23,13 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache vcpkg binary packages
-        uses: actions/cache@v4
+      - name: Restore vcpkg cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
           restore-keys: |
             vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
+
+      - name: Install ripgrep
+        # scripts/check-backend-boundaries.ps1 shells out to rg, which is not
+        # preinstalled on the runner.
+        run: choco install ripgrep -y --no-progress
 
       - name: Install Qt5 (static)
         shell: pwsh
@@ -38,6 +44,15 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
             "qt5-base:$env:VCPKG_TRIPLET" `
             "qt5-svg:$env:VCPKG_TRIPLET"
+
+      - name: Save vcpkg cache
+        # Save right after the expensive Qt5 build, and even when a later step
+        # fails, so a failed run does not discard hours of compilation.
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
