@@ -15,6 +15,24 @@
 
 using SubscriptionJsonSupport::parsePortValue;
 
+QString SubscriptionParseReport::skippedSummary() const
+{
+    if (skippedTypes.isEmpty()) {
+        return {};
+    }
+
+    QStringList distinctTypes;
+    for (const QString& type : skippedTypes) {
+        if (!distinctTypes.contains(type)) {
+            distinctTypes.append(type);
+        }
+    }
+
+    return QStringLiteral("skipped %1 node(s): %2")
+        .arg(skippedTypes.size())
+        .arg(distinctTypes.join(QStringLiteral(", ")));
+}
+
 QList<VmessItem> SubscriptionContentParser::parseMany(const QString& content)
 {
     return parseManyWithReport(content).items;
@@ -43,19 +61,29 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
             return report;
         }
 
-        const QList<VmessItem> singBoxItems = tryParseSingBox(current);
+        QStringList singBoxSkipped;
+        const QList<VmessItem> singBoxItems = tryParseSingBox(current, &singBoxSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 sing-box count=%2").arg(iteration).arg(singBoxItems.size()));
         if (!singBoxItems.isEmpty()) {
             report.items = singBoxItems;
+            report.skippedTypes = singBoxSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=sing-box"));
+            if (report.hasSkippedNodes()) {
+                report.notes.append(QStringLiteral("Subscription parse: %1").arg(report.skippedSummary()));
+            }
             return report;
         }
 
-        const QList<VmessItem> clashItems = tryParseClash(current);
+        QStringList clashSkipped;
+        const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 clash count=%2").arg(iteration).arg(clashItems.size()));
         if (!clashItems.isEmpty()) {
             report.items = clashItems;
+            report.skippedTypes = clashSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=clash"));
+            if (report.hasSkippedNodes()) {
+                report.notes.append(QStringLiteral("Subscription parse: %1").arg(report.skippedSummary()));
+            }
             return report;
         }
 
@@ -114,7 +142,7 @@ QList<VmessItem> SubscriptionContentParser::tryParseSip008(const QString& conten
     return items;
 }
 
-QList<VmessItem> SubscriptionContentParser::tryParseJsonArray(const QJsonArray& array)
+QList<VmessItem> SubscriptionContentParser::tryParseJsonArray(const QJsonArray& array, QStringList* skippedTypes)
 {
     QList<VmessItem> items;
 
@@ -141,14 +169,14 @@ QList<VmessItem> SubscriptionContentParser::tryParseJsonArray(const QJsonArray& 
         }
     }
 
-    return tryParseClashProxyArray(array);
+    return ClashSubscriptionParser::parseProxyArray(array, skippedTypes);
 }
 
-QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& content)
+QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& content, QStringList* skippedTypes)
 {
     const QJsonDocument document = QJsonDocument::fromJson(content.trimmed().toUtf8());
     if (document.isArray()) {
-        return tryParseJsonArray(document.array());
+        return tryParseJsonArray(document.array(), skippedTypes);
     }
 
     if (!document.isObject()) {
@@ -157,8 +185,13 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& conte
 
     const QJsonObject root = document.object();
     if (root.contains(QStringLiteral("proxies")) && root.value(QStringLiteral("proxies")).isArray()) {
-        QList<VmessItem> clashItems = tryParseClashProxyArray(root.value(QStringLiteral("proxies")).toArray());
+        QStringList proxiesSkipped;
+        QList<VmessItem> clashItems =
+            ClashSubscriptionParser::parseProxyArray(root.value(QStringLiteral("proxies")).toArray(), &proxiesSkipped);
         if (!clashItems.isEmpty()) {
+            if (skippedTypes != nullptr) {
+                skippedTypes->append(proxiesSkipped);
+            }
             return clashItems;
         }
     }
@@ -179,7 +212,8 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& conte
 
     QList<VmessItem> parsed;
     for (const QJsonValue& value : items) {
-        QList<VmessItem> current = SubscriptionSingBoxParser::parseOutboundObject(value.toObject());
+        QList<VmessItem> current =
+            SubscriptionSingBoxParser::parseOutboundObject(value.toObject(), skippedTypes);
         for (const VmessItem& item : current) {
             parsed.append(item);
         }
@@ -188,9 +222,9 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& conte
     return parsed;
 }
 
-QList<VmessItem> SubscriptionContentParser::tryParseClash(const QString& content)
+QList<VmessItem> SubscriptionContentParser::tryParseClash(const QString& content, QStringList* skippedTypes)
 {
-    return ClashSubscriptionParser::parseContent(content);
+    return ClashSubscriptionParser::parseContent(content, skippedTypes);
 }
 
 QList<VmessItem> SubscriptionContentParser::tryParseClashProxyArray(const QJsonArray& proxies)

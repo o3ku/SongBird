@@ -9,9 +9,9 @@
 
 namespace ClashSubscriptionParser {
 
-QList<VmessItem> parseContent(const QString& content)
+QList<VmessItem> parseContent(const QString& content, QStringList* skippedTypes)
 {
-    QList<VmessItem> items = ClashYamlProxyParser::parseProxyItems(content);
+    QList<VmessItem> items = ClashYamlProxyParser::parseProxyItems(content, skippedTypes);
     if (!items.isEmpty()) {
         return items;
     }
@@ -20,16 +20,16 @@ QList<VmessItem> parseContent(const QString& content)
     if (document.isObject()) {
         const QJsonValue proxies = document.object().value(QStringLiteral("proxies"));
         if (proxies.isArray()) {
-            return parseProxyArray(proxies.toArray());
+            return parseProxyArray(proxies.toArray(), skippedTypes);
         }
     }
 
     return {};
 }
 
-QList<VmessItem> parseProxyArray(const QJsonArray& proxies)
+QList<VmessItem> parseProxyArray(const QJsonArray& proxies, QStringList* skippedTypes)
 {
-    return ClashProxyItemParser::parseProxyArray(proxies);
+    return ClashProxyItemParser::parseProxyArray(proxies, skippedTypes);
 }
 
 } // namespace ClashSubscriptionParser

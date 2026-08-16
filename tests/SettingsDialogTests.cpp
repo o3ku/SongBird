@@ -47,6 +47,7 @@ private slots:
     void mux4SboxProtocolComboRoundTripsConfig();
     void updateTabDoesNotExposeRemovedTls13Option();
     void coreTypeTableIncludesHttpProtocol();
+    void coreTypeTableUsesComboForSingleCoreProtocol();
     void coreTypeTableDefaultsUseConfiguredValue();
     void corePageUsesPlainContentWithoutGroupBoxes();
     void corePageShowsProtocolAndCoreSectionTitles();
@@ -498,6 +499,28 @@ void SettingsDialogTests::coreTypeTableIncludesHttpProtocol()
         [](const CoreTypeItem& item) { return item.configType == static_cast<int>(ConfigType::HTTP); });
     QVERIFY(it != updated.policy().coreTypeItems.cend());
     QCOMPARE(it->coreType, static_cast<int>(CoreType::Xray));
+}
+
+void SettingsDialogTests::coreTypeTableUsesComboForSingleCoreProtocol()
+{
+    // AnyTLS is supported by sing-box only, but it must still render as a
+    // combo box so every protocol row uses the same control type.
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* anytlsCombo = dialog.findChild<QComboBox*>(
+        QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(ConfigType::AnyTLS)));
+    QVERIFY(anytlsCombo != nullptr);
+    QCOMPARE(anytlsCombo->count(), 1);
+    QCOMPARE(anytlsCombo->currentText(), QStringLiteral("sing-box"));
+
+    const Config updated = dialog.config();
+    auto it = std::find_if(
+        updated.policy().coreTypeItems.cbegin(),
+        updated.policy().coreTypeItems.cend(),
+        [](const CoreTypeItem& item) { return item.configType == static_cast<int>(ConfigType::AnyTLS); });
+    QVERIFY(it != updated.policy().coreTypeItems.cend());
+    QCOMPARE(it->coreType, static_cast<int>(CoreType::SingBox));
 }
 
 void SettingsDialogTests::coreTypeTableDefaultsUseConfiguredValue()

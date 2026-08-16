@@ -1,5 +1,7 @@
 #include "subscription/SubscriptionSingBoxParser.h"
 
+#include <QSet>
+
 #include "common/PortValidator.h"
 #include "subscription/SubscriptionJsonSupport.h"
 
@@ -9,11 +11,38 @@ using SubscriptionJsonSupport::joinStringList;
 using SubscriptionJsonSupport::parsePortValue;
 using SubscriptionJsonSupport::stringListValue;
 
-QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(const QJsonObject& object)
+namespace {
+
+// Built-in outbounds and policy groups carry no proxy protocol, so dropping
+// them is expected and must not be reported as a skipped node.
+bool isNonProxyOutboundType(const QString& type)
+{
+    static const QSet<QString> nonProxyTypes{
+        QStringLiteral("direct"),
+        QStringLiteral("block"),
+        QStringLiteral("dns"),
+        QStringLiteral("selector"),
+        QStringLiteral("urltest")};
+    return nonProxyTypes.contains(type);
+}
+
+void recordSkipped(QStringList* skippedTypes, const QString& type)
+{
+    if (skippedTypes != nullptr && !isNonProxyOutboundType(type)) {
+        skippedTypes->append(type.trimmed().isEmpty() ? QStringLiteral("(no type)") : type);
+    }
+}
+
+} // namespace
+
+QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(
+    const QJsonObject& object,
+    QStringList* skippedTypes)
 {
     QList<VmessItem> items;
     const QString type = object.value(QStringLiteral("type")).toString().trimmed().toLower();
     if (type.isEmpty()) {
+        recordSkipped(skippedTypes, type);
         return items;
     }
 
@@ -97,6 +126,7 @@ QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(const QJsonObjec
         item.id = firstNonEmpty(object, {"password"});
         item.streamSecurity = QStringLiteral("tls");
     } else {
+        recordSkipped(skippedTypes, type);
         return items;
     }
 
@@ -125,6 +155,8 @@ QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(const QJsonObjec
 
     if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
         items.append(item);
+    } else {
+        recordSkipped(skippedTypes, type);
     }
     return items;
 }

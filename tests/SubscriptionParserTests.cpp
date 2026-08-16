@@ -31,6 +31,9 @@ private slots:
     void subscriptionClashYamlFlowStyleVlessReality();
     void subscriptionClashYamlAnytls();
     void subscriptionClashYamlWireguard();
+    void subscriptionReportsSkippedUnknownClashType();
+    void subscriptionReportsNoSkipsForFullySupportedContent();
+    void subscriptionDoesNotReportSingBoxNonProxyOutbounds();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -463,6 +466,71 @@ void SubscriptionParserTests::subscriptionClashYamlWireguard()
     QCOMPARE(items[0].privateKey, QStringLiteral("cHJpdmF0ZS1rZXk="));
     QCOMPARE(items[0].peerPublicKey, QStringLiteral("cHVibGljLWtleQ=="));
     QCOMPARE(items[0].wireguardMtu, 1408);
+}
+
+void SubscriptionParserTests::subscriptionReportsSkippedUnknownClashType()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: good\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: secret\n"
+        "  - name: future-proto\n"
+        "    type: someproto\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+        "    password: secret\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QVERIFY(report.hasSkippedNodes());
+    QCOMPARE(report.skippedTypes.size(), 1);
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("someproto"));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("someproto")));
+
+    // parseMany keeps its existing contract: items only, no diagnostics.
+    QCOMPARE(SubscriptionContentParser::parseMany(yaml).size(), 1);
+}
+
+void SubscriptionParserTests::subscriptionReportsNoSkipsForFullySupportedContent()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: good\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: secret\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QVERIFY(!report.hasSkippedNodes());
+    QVERIFY(report.skippedSummary().isEmpty());
+}
+
+void SubscriptionParserTests::subscriptionDoesNotReportSingBoxNonProxyOutbounds()
+{
+    // direct/block/selector carry no proxy protocol; dropping them is expected
+    // and must not be reported as skipped nodes.
+    const QString json = QStringLiteral(
+        "{"
+        "\"outbounds\":["
+        "  {\"type\":\"trojan\",\"tag\":\"sb-trojan\",\"server\":\"trojan.example.com\","
+        "   \"server_port\":443,\"password\":\"pass\"},"
+        "  {\"type\":\"direct\",\"tag\":\"direct\"},"
+        "  {\"type\":\"block\",\"tag\":\"block\"},"
+        "  {\"type\":\"selector\",\"tag\":\"proxy\",\"outbounds\":[\"sb-trojan\"]}"
+        "]"
+        "}"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QCOMPARE(report.items.size(), 1);
+    QVERIFY(!report.hasSkippedNodes());
 }
 
 // ---------------------------------------------------------------------------

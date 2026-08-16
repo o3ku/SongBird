@@ -250,15 +250,28 @@ VmessItem baseItemFromProxy(const QJsonObject& proxy)
     return item;
 }
 
+QString skippedTypeLabel(const QString& type)
+{
+    return type.trimmed().isEmpty() ? QStringLiteral("(no type)") : type;
+}
+
+void recordSkipped(QStringList* skippedTypes, const QString& type)
+{
+    if (skippedTypes != nullptr) {
+        skippedTypes->append(skippedTypeLabel(type));
+    }
+}
+
 } // namespace
 
 namespace ClashProxyItemParser {
 
-QList<VmessItem> parseProxyArray(const QJsonArray& proxies)
+QList<VmessItem> parseProxyArray(const QJsonArray& proxies, QStringList* skippedTypes)
 {
     QList<VmessItem> items;
     for (const QJsonValue& value : proxies) {
         if (!value.isObject()) {
+            recordSkipped(skippedTypes, {});
             continue;
         }
 
@@ -266,6 +279,7 @@ QList<VmessItem> parseProxyArray(const QJsonArray& proxies)
         VmessItem item = baseItemFromProxy(proxy);
         const QString type = firstNonEmpty(proxy, {"type"}).toLower();
         if (!applyProtocolOptions(proxy, type, &item)) {
+            recordSkipped(skippedTypes, type);
             continue;
         }
 
@@ -275,6 +289,8 @@ QList<VmessItem> parseProxyArray(const QJsonArray& proxies)
         }
         if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
             items.append(item);
+        } else {
+            recordSkipped(skippedTypes, type);
         }
     }
 

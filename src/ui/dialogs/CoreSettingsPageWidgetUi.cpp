@@ -88,7 +88,7 @@ void CoreSettingsPageWidget::setupUi()
         auto* protocolLabel = new QLabel(entry.name, coreTypeWidget);
         protocolLabel->setMinimumWidth(protocolLabelWidth);
         AppTheme::applyCompactFont(protocolLabel);
-        if (cores.size() > 1) {
+        if (!cores.isEmpty()) {
             auto* coreCombo = new QComboBox(coreTypeWidget);
             for (const CoreType core : cores) {
                 coreCombo->addItem(coreTypeDisplayName(core), static_cast<int>(core));
@@ -98,13 +98,6 @@ void CoreSettingsPageWidget::setupUi()
             coreTypeGrid->addWidget(protocolLabel, row, column);
             coreTypeGrid->addWidget(coreCombo, row, column + 1);
             coreTypeCombos_.append(coreCombo);
-        } else if (cores.size() == 1) {
-            auto* fixedLabel = new QLabel(coreTypeDisplayName(cores.first()), coreTypeWidget);
-            fixedLabel->setObjectName(QStringLiteral("coreTypeCombo_%1").arg(static_cast<int>(entry.configType)));
-            AppTheme::applyCompactFont(fixedLabel);
-            coreTypeGrid->addWidget(protocolLabel, row, column);
-            coreTypeGrid->addWidget(fixedLabel, row, column + 1);
-            coreTypeCombos_.append(nullptr);
         }
     }
 

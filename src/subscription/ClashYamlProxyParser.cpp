@@ -11,7 +11,7 @@
 
 namespace ClashYamlProxyParser {
 
-QList<VmessItem> parseProxyItems(const QString& content)
+QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTypes)
 {
     QList<VmessItem> items;
     const QStringList lines = content.split(QRegularExpression(QStringLiteral("[\r\n]+")), Qt::KeepEmptyParts);
@@ -20,14 +20,14 @@ QList<VmessItem> parseProxyItems(const QString& content)
     int proxiesIndent = -1;
     QJsonObject current;
 
-    const auto flushCurrent = [&items, &current]() {
+    const auto flushCurrent = [&items, &current, skippedTypes]() {
         if (current.isEmpty()) {
             return;
         }
 
         QJsonArray proxyArray;
         proxyArray.append(current);
-        const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray);
+        const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray, skippedTypes);
         for (const VmessItem& item : parsed) {
             items.append(item);
         }

@@ -29,6 +29,15 @@ bool currentThreadInterruptionRequested()
     QThread* const currentThread = QThread::currentThread();
     return currentThread != nullptr && currentThread->isInterruptionRequested();
 }
+
+// Surfaces nodes the parser had to drop, so a shrinking server count is
+// traceable instead of silent.
+QString appendSkippedSummary(const QString& message, const SubscriptionParseReport& report)
+{
+    return report.hasSkippedNodes()
+        ? QStringLiteral("%1 (%2)").arg(message, report.skippedSummary())
+        : message;
+}
 }
 
 SubscriptionUpdateService::SubscriptionUpdateService(
@@ -108,7 +117,8 @@ OperationResult SubscriptionUpdateService::updateAllWithProgress(
 
 OperationResult SubscriptionUpdateService::importFromText(Config& config, const QString& text)
 {
-    QList<VmessItem> servers = SubscriptionContentParser::parseMany(text);
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(text);
+    QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
         servers = ShareUrlParser::parseMany(text);
     }
@@ -130,7 +140,8 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
         return OperationResult::fail(QStringLiteral("Failed to save imported servers."));
     }
 
-    return OperationResult::ok(QStringLiteral("Imported %1 server(s) from text input.").arg(servers.size()));
+    return OperationResult::ok(
+        appendSkippedSummary(QStringLiteral("Imported %1 server(s) from text input.").arg(servers.size()), report));
 }
 
 OperationResult SubscriptionUpdateService::updateInternal(
@@ -221,7 +232,8 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
     }
 
-    const QList<VmessItem> servers = SubscriptionContentParser::parseMany(content);
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
+    const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
         return OperationResult::fail(QStringLiteral("%1 returned no supported servers.").arg(displayName));
     }
@@ -244,7 +256,8 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     }
 
     const int finalImportedCount = importedCount == nullptr ? servers.size() : *importedCount;
-    return OperationResult::ok(QStringLiteral("%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount));
+    return OperationResult::ok(appendSkippedSummary(
+        QStringLiteral("%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount), report));
 }
 
 OperationResult SubscriptionUpdateService::downloadText(
