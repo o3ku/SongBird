@@ -616,8 +616,7 @@ songbird_add_qt_test(songbird_main_window_tests main-window-log-scroll
         Qt${QT_VERSION_MAJOR}::Svg
 )
 
-set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
-    ClientConfigWriterTests.cpp
+set(SONGBIRD_BACKEND_STACK_SOURCES
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -684,9 +683,27 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ../src/backends/xray/XrayCoreBackend.cpp
 )
 
+set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
+    ClientConfigWriterTests.cpp
+    ${SONGBIRD_BACKEND_STACK_SOURCES}
+)
+
+set(SONGBIRD_BACKEND_CONTRACT_TEST_SOURCES
+    BackendContractTests.cpp
+    ${SONGBIRD_BACKEND_STACK_SOURCES}
+)
+
 songbird_add_qt_test(songbird_client_config_writer_tests client-config-writer-tun-compat
     SOURCES
         ${SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+songbird_add_qt_test(songbird_backend_contract_tests backend-contract
+    SOURCES
+        ${SONGBIRD_BACKEND_CONTRACT_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

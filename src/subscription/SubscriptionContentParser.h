@@ -26,7 +26,6 @@ class SubscriptionContentParser {
 public:
     static QList<VmessItem> parseMany(const QString& content);
     static SubscriptionParseReport parseManyWithReport(const QString& content);
-    static QList<VmessItem> tryParseClashProxyArray(const QJsonArray& proxies);
 
 private:
     static QList<VmessItem> tryParseClash(const QString& content, QStringList* skippedTypes);

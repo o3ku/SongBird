@@ -227,11 +227,6 @@ QList<VmessItem> SubscriptionContentParser::tryParseClash(const QString& content
     return ClashSubscriptionParser::parseContent(content, skippedTypes);
 }
 
-QList<VmessItem> SubscriptionContentParser::tryParseClashProxyArray(const QJsonArray& proxies)
-{
-    return ClashSubscriptionParser::parseProxyArray(proxies);
-}
-
 QString SubscriptionContentParser::tryDecodeBase64(const QString& content)
 {
     QByteArray normalized = content.trimmed().toUtf8();

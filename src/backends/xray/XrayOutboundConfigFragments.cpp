@@ -26,7 +26,6 @@ QJsonObject buildPrimaryOutbound(const Config& config, const VmessItem& server)
         && server.configType != ConfigType::Custom
         && server.configType != ConfigType::Unknown
         && server.configType != ConfigType::Hysteria2
-        && server.configType != ConfigType::TUIC
         && server.configType != ConfigType::WireGuard) {
         outbound.insert(QStringLiteral("targetStrategy"), config.dns().domainStrategyForProxy.trimmed());
     }
@@ -174,7 +173,7 @@ QJsonObject buildPrimaryOutbound(const Config& config, const VmessItem& server)
         if (!server.packetEncoding.trimmed().isEmpty()) {
             user.insert(QStringLiteral("packetEncoding"), server.packetEncoding.trimmed());
         }
-    } else {
+    } else if (server.configType == ConfigType::VMess) {
         outbound.insert(QStringLiteral("protocol"), QStringLiteral("vmess"));
         user.insert(QStringLiteral("alterId"), server.alterId);
         user.insert(QStringLiteral("security"), server.security.trimmed().isEmpty() ? QStringLiteral("auto") : server.security);
@@ -183,6 +182,11 @@ QJsonObject buildPrimaryOutbound(const Config& config, const VmessItem& server)
         mux.insert(QStringLiteral("enabled"), muxEnabled);
         mux.insert(QStringLiteral("concurrency"), muxEnabled ? 8 : -1);
         outbound.insert(QStringLiteral("mux"), mux);
+    } else {
+        // This core has no outbound implementation for the protocol. Returning
+        // an empty object makes the caller fail with a clear message instead of
+        // silently emitting a VMess outbound for an unrelated protocol.
+        return {};
     }
 
     users.append(user);

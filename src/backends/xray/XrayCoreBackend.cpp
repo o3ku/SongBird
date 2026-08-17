@@ -87,10 +87,15 @@ OperationResult XrayCoreBackend::validateServer(const VmessItem& server) const
 
 QJsonObject XrayCoreBackend::buildClientRoot(const Config& config, const VmessItem& server) const
 {
+    const QJsonArray outbounds = buildOutbounds(config, server);
+    if (outbounds.isEmpty()) {
+        return {};
+    }
+
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildLog(config));
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
-    root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
+    root.insert(QStringLiteral("outbounds"), outbounds);
 
     const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
     const RoutingItem* selectedRoutingPtr = selectedRouting.has_value() ? &*selectedRouting : nullptr;
@@ -175,6 +180,11 @@ QJsonArray XrayCoreBackend::buildOutbounds(const Config& config, const VmessItem
 {
     QJsonArray outbounds;
     QJsonObject primaryOutbound = XrayConfigFragments::buildPrimaryOutbound(config, server);
+    if (primaryOutbound.isEmpty()) {
+        // No proxy outbound could be produced for this protocol; emitting only
+        // direct/blackhole would silently route everything around the proxy.
+        return {};
+    }
     if (config.dns().enableFragment) {
         const QJsonObject streamSettings = primaryOutbound.value(QStringLiteral("streamSettings")).toObject();
         if (!streamSettings.value(QStringLiteral("security")).toString().trimmed().isEmpty()) {

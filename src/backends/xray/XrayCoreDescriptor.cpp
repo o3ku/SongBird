@@ -15,7 +15,6 @@ QList<ConfigType> supportedConfigTypes()
         ConfigType::Trojan,
         ConfigType::HTTP,
         ConfigType::Hysteria2,
-        ConfigType::TUIC,
         ConfigType::WireGuard
     };
 }

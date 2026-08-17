@@ -2,12 +2,24 @@ name: Release
 
 on:
   push:
+    # Tags publish a release. main builds do not publish; they exist so the
+    # vcpkg cache is written under the default branch scope, which is the only
+    # scope every tag ref can read from. Without this, each tag build starts
+    # from a cold cache and recompiles Qt5 from source (~1.5h).
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# One build per ref. Never cancel in progress: a killed run loses the vcpkg
+# cache save, which costs ~1.5h of Qt5 compilation on the next run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   VCPKG_TRIPLET: x64-windows-static-md

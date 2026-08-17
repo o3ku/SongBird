@@ -86,7 +86,6 @@ void ProtocolCoreCompatTests::hysteria2SupportsBothCores()
 void ProtocolCoreCompatTests::singBoxFirstProtocolsSupportBothCoresForSelection()
 {
     const QList<ConfigType> protocols = {
-        ConfigType::TUIC,
         ConfigType::WireGuard
     };
 
@@ -100,9 +99,13 @@ void ProtocolCoreCompatTests::singBoxFirstProtocolsSupportBothCoresForSelection(
 
 void ProtocolCoreCompatTests::singBoxOnlyProtocolsExcludeXray()
 {
+    // Xray has no outbound implementation for these, so declaring support
+    // would make buildOutbound fall through to its VMess default and emit a
+    // silently wrong config.
     const QList<ConfigType> protocols = {
         ConfigType::AnyTLS,
-        ConfigType::Naive
+        ConfigType::Naive,
+        ConfigType::TUIC
     };
 
     for (const ConfigType configType : protocols) {
@@ -135,7 +138,9 @@ void ProtocolCoreCompatTests::protocolSupportsCoreQuery()
     QVERIFY(!protocolSupportsCore(ConfigType::TUIC, CoreType::Mihomo));
     QVERIFY(!protocolSupportsCore(ConfigType::AnyTLS, CoreType::Xray));
     QVERIFY(!protocolSupportsCore(ConfigType::Naive, CoreType::Xray));
+    QVERIFY(!protocolSupportsCore(ConfigType::TUIC, CoreType::Xray));
     QVERIFY(protocolSupportsCore(ConfigType::AnyTLS, CoreType::SingBox));
+    QVERIFY(protocolSupportsCore(ConfigType::TUIC, CoreType::SingBox));
 }
 
 void ProtocolCoreCompatTests::availableCoreTypesList()

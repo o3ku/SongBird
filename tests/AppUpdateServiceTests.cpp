@@ -30,7 +30,7 @@ void AppUpdateServiceTests::checkFindsNewerStableRelease()
     QCOMPARE(result.latestVersion, QStringLiteral("v1.2.0"));
     QCOMPARE(result.releaseName, QStringLiteral("SongBird 1.2.0"));
     QCOMPARE(result.releaseUrl.toString(), QStringLiteral("https://github.com/o3ku/songbird/releases/tag/v1.2.0"));
-    QVERIFY(requestedUrl.contains(QStringLiteral("api.github.com/repos/o3ku/songbird/releases")));
+    QVERIFY(requestedUrl.contains(QStringLiteral("api.github.com/repos/o3ku/SongBird/releases")));
 }
 
 void AppUpdateServiceTests::checkSkipsPrereleaseWhenDisabled()

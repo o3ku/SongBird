@@ -46,7 +46,7 @@ inline QUrl githubRawContentUrl(const QString& repositoryPath, const QString& br
 
 inline QString songbirdRepositoryPath()
 {
-    return QStringLiteral("o3ku/songbird");
+    return QStringLiteral("o3ku/SongBird");
 }
 
 inline QString xrayRepositoryPath()

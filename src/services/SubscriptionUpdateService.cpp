@@ -38,6 +38,15 @@ QString appendSkippedSummary(const QString& message, const SubscriptionParseRepo
         ? QStringLiteral("%1 (%2)").arg(message, report.skippedSummary())
         : message;
 }
+
+// When nothing could be parsed at all, the per-pass notes are the only clue as
+// to why, so attach them to the failure instead of discarding them.
+QString appendParseNotes(const QString& message, const SubscriptionParseReport& report)
+{
+    return report.notes.isEmpty()
+        ? message
+        : QStringLiteral("%1 [%2]").arg(message, report.notes.join(QStringLiteral(" | ")));
+}
 }
 
 SubscriptionUpdateService::SubscriptionUpdateService(
@@ -124,7 +133,8 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
     }
 
     if (servers.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No supported share URL or subscription payload was detected."));
+        return OperationResult::fail(appendParseNotes(
+            QStringLiteral("No supported share URL or subscription payload was detected."), report));
     }
 
     for (VmessItem& item : servers) {
@@ -235,7 +245,8 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
     const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("%1 returned no supported servers.").arg(displayName));
+        return OperationResult::fail(appendParseNotes(
+            QStringLiteral("%1 returned no supported servers.").arg(displayName), report));
     }
     if (currentThreadInterruptionRequested()) {
         return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));

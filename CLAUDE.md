@@ -40,7 +40,7 @@ ctest --test-dir build -R subscription-parser --output-on-failure
 
 CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，搜 `songbird_add_qt_test`；增删测试时**同步更新本节**）：
 
-`backend-boundaries`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
+`backend-boundaries`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
 
 两个特殊测试：
 
@@ -49,6 +49,8 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
   pwsh -NoProfile -File scripts/check-backend-boundaries.ps1 -SourceRoot src
   ```
 - **`end-to-end-smoke`** 带 `LABELS "smoke"` 且 `TIMEOUT 7200`，会真实下载核心/订阅并启动进程，**不要包含在常规跑测里**。
+
+**`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。
 
 ## 发布
 

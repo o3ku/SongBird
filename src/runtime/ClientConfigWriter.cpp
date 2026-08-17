@@ -86,6 +86,13 @@ OperationResult ClientConfigWriter::writeClientConfigs(
     }
 
     const GeneratedConfigSet generated = generateClientConfigs(config, server);
+    if (generated.primary.root.isEmpty()) {
+        return OperationResult::fail(
+            QStringLiteral("%1 cannot generate a runtime config for %2 servers.")
+                .arg(coreTypeDisplayName(resolveSelectedCoreType(config, server, effectiveExistingCoreTypes())))
+                .arg(configTypeDisplayName(server.configType)));
+    }
+
     const OperationResult primaryWriteResult = writeGeneratedConfig(generated.primary, filePath);
     if (!primaryWriteResult.success) {
         return primaryWriteResult;
