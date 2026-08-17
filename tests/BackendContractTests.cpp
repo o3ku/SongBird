@@ -50,7 +50,7 @@ QString wireProtocolOf(const QJsonObject& root)
 
     const QJsonArray proxies = root.value(QStringLiteral("proxies")).toArray();
     if (!proxies.isEmpty()) {
-        return proxies.constFirst().toObject().value(QStringLiteral("type")).toString();
+        return proxies.at(0).toObject().value(QStringLiteral("type")).toString();
     }
 
     return {};
