@@ -1,4 +1,5 @@
 #include "app/GeoResourceUpdateCoordinator.h"
+#include "app/UiThreadInvocation.h"
 
 #include <utility>
 
@@ -8,25 +9,6 @@
 #include <QThread>
 
 #include "services/GeoResourceUpdateService.h"
-
-namespace {
-
-template <typename Callback>
-void invokeOnUiThread(QObject* context, Callback&& callback)
-{
-    if (context == nullptr) {
-        return;
-    }
-
-    if (QThread::currentThread() == context->thread()) {
-        callback();
-        return;
-    }
-
-    QMetaObject::invokeMethod(context, std::forward<Callback>(callback), Qt::QueuedConnection);
-}
-
-} // namespace
 
 GeoResourceUpdateCoordinator::GeoResourceUpdateCoordinator(Dependencies dependencies, QObject* parent)
     : QObject(parent)

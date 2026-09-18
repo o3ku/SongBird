@@ -9,7 +9,7 @@
 #include <QTableView>
 
 #include "common/DialogUtils.h"
-#include "services/ServerService.h"
+#include "services/ServerListOperations.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/models/ServerTableModel.h"
 

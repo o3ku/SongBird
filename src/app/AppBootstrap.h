@@ -13,7 +13,7 @@
 #include "app/BackgroundTaskCoordinator.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 
@@ -77,6 +77,16 @@ public:
     bool run();
 
 private:
+    // Composition phases of run(), split by domain. Each one only constructs
+    // objects_ entries and injects callbacks; none of them touch the UI or
+    // start work. See the corresponding *Wiring.cpp files.
+    void wireCoreServices();
+    void wireProxyStack();
+    void wireUiObjects();
+    void wireUpdateCoordinators(const std::function<void(QThread*)>& trackBackgroundThread);
+    void wireServerCoordinators();
+    void wireShutdownHooks();
+
     void wireMainWindow();
     void wireProxySessionSignals();
     void wireRuntimeStateSignals();
@@ -111,7 +121,6 @@ private:
         bool showStartupOverlay = false);
     void setAutoRunEnabled(bool enabled);
     void clearProxyStateAfterCoreStopped();
-    void applySystemProxyModeOnExit(bool windowsShutdown);
     void cleanupRuntimeForExit(bool windowsShutdown);
     void enableSystemProxy(bool showStartupOverlay = false);
     void retryCoreStartup(bool showStartupOverlay = true);

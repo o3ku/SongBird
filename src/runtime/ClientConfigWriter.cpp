@@ -10,6 +10,7 @@
 
 #include <utility>
 
+#include "common/JsonFile.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/TunCompatCoreRequirement.h"
@@ -214,18 +215,24 @@ OperationResult ClientConfigWriter::validateServer(const Config& config, const V
 
 OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& generatedConfig, const QString& filePath) const
 {
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return OperationResult::fail(QStringLiteral("Failed to open runtime config file for writing."));
-    }
-
     const QJsonDocument document(generatedConfig.root);
-    if (file.write(document.toJson(QJsonDocument::Indented)) < 0) {
-        return OperationResult::fail(QStringLiteral("Failed to write runtime config file."));
-    }
+    const JsonFile::WriteResult written = JsonFile::writeFileAtomically(
+        filePath,
+        document.toJson(QJsonDocument::Indented),
+        QIODevice::Text);
 
-    if (!file.commit()) {
-        return OperationResult::fail(QStringLiteral("Failed to commit runtime config file."));
+    if (!written.ok) {
+        switch (written.stage) {
+        case JsonFile::WriteFailureStage::Open:
+            return OperationResult::fail(QStringLiteral("Failed to open runtime config file for writing."));
+        case JsonFile::WriteFailureStage::Write:
+            return OperationResult::fail(QStringLiteral("Failed to write runtime config file."));
+        case JsonFile::WriteFailureStage::Commit:
+            return OperationResult::fail(QStringLiteral("Failed to commit runtime config file."));
+        case JsonFile::WriteFailureStage::None:
+            break;
+        }
+        return OperationResult::fail(QStringLiteral("Failed to write runtime config file."));
     }
 
     return OperationResult::ok(QStringLiteral("Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));

@@ -4,6 +4,7 @@
 #include <QRegularExpression>
 #include <QString>
 
+#include "common/UrlProbeLatency.h"
 #include "domain/models/Config.h"
 
 #include <functional>
@@ -163,22 +164,7 @@ inline QString formatUrlProbeResult(const UrlProbeResult& result)
 
 inline bool tryParseUrlProbeLatency(const QString& value, double& latencyMs)
 {
-    static const QRegularExpression expression(
-        QStringLiteral("^(?:accessible\\s+)?([+-]?\\d+(?:\\.\\d+)?)\\s*ms$"),
-        QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch match = expression.match(value.trimmed());
-    if (!match.hasMatch()) {
-        return false;
-    }
-
-    bool ok = false;
-    const double parsed = match.captured(1).toDouble(&ok);
-    if (!ok) {
-        return false;
-    }
-
-    latencyMs = parsed;
-    return true;
+    return UrlProbeLatency::tryParseLatencyMs(value, latencyMs);
 }
 
 } // namespace SpeedTestServiceInternal

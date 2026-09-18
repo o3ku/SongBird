@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 
+#include "common/ProcessRunner.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 
@@ -29,11 +30,6 @@ QString normalizeProcessOutput(QString output)
     }
 
     return output;
-}
-
-QString processOutput(QProcess& process)
-{
-    return normalizeProcessOutput(QString::fromUtf8(process.readAll()));
 }
 
 } // namespace
@@ -92,26 +88,25 @@ OperationResult validateCoreConfigBeforeStart(
                 .arg(QFileInfo(coreInfo.program).fileName()));
     }
 
-    QProcess process;
-    process.setProgram(coreInfo.program);
-    process.setArguments(arguments);
-    process.setWorkingDirectory(
-        coreInfo.workingDirectory.trimmed().isEmpty()
-            ? QFileInfo(coreInfo.program).absolutePath()
-            : coreInfo.workingDirectory);
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start();
+    ProcessRunner::Request request;
+    request.program = coreInfo.program;
+    request.arguments = arguments;
+    request.workingDirectory = coreInfo.workingDirectory;
+    request.startTimeoutMs = kStartTimeoutMs;
+    request.finishTimeoutMs = timeoutMs;
+    request.stopTimeoutMs = kStopTimeoutMs;
 
-    if (!process.waitForStarted(kStartTimeoutMs)) {
+    const ProcessRunner::Outcome outcome = ProcessRunner::runToCompletion(request);
+
+    if (outcome.status == ProcessRunner::Status::FailedToStart) {
         return OperationResult::fail(
             QStringLiteral("Core config preflight failed to start: %1")
-                .arg(process.errorString()));
+                .arg(outcome.errorText));
     }
 
-    if (!process.waitForFinished(timeoutMs)) {
-        process.kill();
-        process.waitForFinished(kStopTimeoutMs);
-        const QString output = processOutput(process);
+    const QString output = normalizeProcessOutput(outcome.output);
+
+    if (outcome.status == ProcessRunner::Status::TimedOut) {
         QString message = QStringLiteral("Core config preflight timed out after %1 ms.").arg(timeoutMs);
         if (!output.isEmpty()) {
             message += QStringLiteral("\n%1").arg(output);
@@ -119,13 +114,12 @@ OperationResult validateCoreConfigBeforeStart(
         return OperationResult::fail(message);
     }
 
-    const QString output = processOutput(process);
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    if (!outcome.completedNormally() || outcome.exitCode != 0) {
         QString message = QStringLiteral("Core config preflight failed");
-        if (process.exitStatus() == QProcess::CrashExit) {
+        if (outcome.exitStatus == QProcess::CrashExit) {
             message += QStringLiteral(" because the check process crashed");
         } else {
-            message += QStringLiteral(" with exit code %1").arg(process.exitCode());
+            message += QStringLiteral(" with exit code %1").arg(outcome.exitCode);
         }
         message += QStringLiteral(".");
         if (!output.isEmpty()) {

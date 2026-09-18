@@ -5,7 +5,7 @@
 
 #include <QString>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 

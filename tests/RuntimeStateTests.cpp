@@ -1,6 +1,6 @@
 #include <QtTest>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 
 class RuntimeStateTests : public QObject {
     Q_OBJECT

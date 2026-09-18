@@ -5,6 +5,13 @@ set(SONGBIRD_SOURCES
     app/AppBootstrapObjects.h
     app/AppBootstrapObjects.cpp
     app/AppBootstrapWorkflowWiring.cpp
+    app/AppBootstrapServiceWiring.cpp
+    app/AppBootstrapProxyWiring.cpp
+    app/AppBootstrapUiWiring.cpp
+    app/AppBootstrapUpdateWiring.cpp
+    app/AppBootstrapServerWiring.cpp
+    app/AppBootstrapShutdownWiring.cpp
+    app/UiThreadInvocation.h
     app/FunctionRuntimeAdapters.h
     app/FunctionRuntimeAdapters.cpp
     app/AppUpdateCheckCoordinator.h
@@ -52,8 +59,8 @@ set(SONGBIRD_SOURCES
     app/PostStopAction.h
     app/ProxyCrashRestartPolicy.h
     app/ProxyCrashRestartPolicy.cpp
-    app/RuntimeState.h
-    app/RuntimeState.cpp
+    domain/models/RuntimeState.h
+    domain/models/RuntimeState.cpp
     app/AppRuntimeResolver.h
     app/AppRuntimeResolver.cpp
     app/RuntimeStateSnapshotBuilder.h
@@ -78,11 +85,19 @@ set(SONGBIRD_SOURCES
     app/TunModeCoordinator.cpp
     common/OperationResult.h
     common/DataSizeFormatter.h
+    common/EndpointParser.h
     common/GitHubMirrorHelper.h
     common/GitHubUrls.h
+    common/GitHubReleaseParsing.h
+    common/GitHubReleaseParsing.cpp
+    common/JsonFile.h
     common/PortValidator.h
+    common/ProcessRunner.h
+    common/ProcessRunner.cpp
     common/ServerDisplayName.h
     common/SystemProxyMode.h
+    common/TextElision.h
+    common/UrlProbeLatency.h
     common/UserAgent.h
     domain/models/Config.h
     domain/models/PolicyGroupItem.h
@@ -219,6 +234,7 @@ set(SONGBIRD_SOURCES
     services/AppUpdateService.cpp
     services/AppUpdateReleaseMetadata.h
     services/AppUpdateReleaseMetadata.cpp
+    services/ServiceTimeouts.h
     services/CoreUpdateOperations.h
     services/CoreUpdateOperations.cpp
     services/CoreUpdateService.h
@@ -299,6 +315,8 @@ set(SONGBIRD_SOURCES
     subscription/SubscriptionYamlScalarValueParser.cpp
     subscription/SubscriptionYamlFlowValueParser.h
     subscription/SubscriptionYamlFlowValueParser.cpp
+    subscription/SubscriptionYamlEscape.h
+    subscription/SubscriptionYamlEscape.cpp
     subscription/SubscriptionImportTextParser.h
     subscription/SubscriptionImportTextParser.cpp
     subscription/SubscriptionUrlImportService.h
@@ -462,6 +480,8 @@ set(SONGBIRD_AUTO_SOURCES
     auto/AutoCountrySelection.cpp
     auto/AutoCountrySupport.h
     auto/AutoCountrySupport.cpp
+    auto/AutoCoordinatorLogic.h
+    auto/AutoCoordinatorLogic.cpp
     auto/AutoCountryInference.h
     auto/AutoCountryInference.cpp
     auto/AutoRuntimeDefaults.h
@@ -474,10 +494,17 @@ set(SONGBIRD_AUTO_SOURCES
     auto/SongBirdAutoWindow.cpp
     common/DialogUtils.h
     common/CorePidFile.h
+    common/JsonFile.h
+    common/EndpointParser.h
+    common/GitHubReleaseParsing.h
+    common/GitHubReleaseParsing.cpp
     common/OperationResult.h
     common/PortValidator.h
+    common/ProcessRunner.h
+    common/ProcessRunner.cpp
     common/ServerDisplayName.h
     common/SystemProxyMode.h
+    common/TextElision.h
     common/UserAgent.h
     domain/models/Config.h
     domain/models/PolicyGroupItem.h
@@ -487,6 +514,8 @@ set(SONGBIRD_AUTO_SOURCES
     domain/models/RoutingRule.h
     domain/models/SubItem.h
     domain/models/TunModeItem.h
+    domain/models/RuntimeState.h
+    domain/models/RuntimeState.cpp
     domain/models/VmessItem.h
     platform/windows/WindowsSystemProxyService.h
     platform/windows/WindowsSystemProxyService.cpp
@@ -593,6 +622,7 @@ set(SONGBIRD_AUTO_SOURCES
     persistence/JsonConfigUiSerialization.cpp
     services/ProxyAvailabilityCheckService.h
     services/ProxyAvailabilityCheckService.cpp
+    services/ServiceTimeouts.h
     services/CoreUpdateOperations.h
     services/CoreUpdateOperations.cpp
     services/CoreUpdateService.h
@@ -664,6 +694,8 @@ set(SONGBIRD_AUTO_SOURCES
     subscription/SubscriptionSingBoxParser.cpp
     subscription/SubscriptionYamlFlowValueParser.h
     subscription/SubscriptionYamlFlowValueParser.cpp
+    subscription/SubscriptionYamlEscape.h
+    subscription/SubscriptionYamlEscape.cpp
     subscription/SubscriptionYamlParser.h
     subscription/SubscriptionYamlParser.cpp
     subscription/SubscriptionYamlScalarValueParser.h
@@ -884,8 +916,9 @@ if(QT_VERSION_MAJOR GREATER_EQUAL 6)
 endif()
 
 if(WIN32)
-    target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi)
-    target_link_libraries(songbird_auto PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi)
+    # Ws2_32 provides ntohs, used when decoding TCP port numbers from GetExtendedTcpTable.
+    target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
+    target_link_libraries(songbird_auto PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
 endif()
 
 if(WIN32)
@@ -898,6 +931,45 @@ if(WIN32)
     target_link_options(songbird_auto PRIVATE
         LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBirdAuto.exe.manifest
         LINKER:/MANIFEST:EMBED)
+endif()
+
+# QtNetwork's TLS backend on Windows loads OpenSSL DLLs from beside the
+# executable. Without them HTTPS downloads (subscription updates, core/geo
+# updates, app updates) fail with "TLS initialization failed". The Qt installer
+# ships the matching OpenSSL 1.1.1 DLLs under Tools/QtCreator/bin, so deploy
+# them next to each executable when they can be located. Override
+# SONGBIRD_OPENSSL_DLL_DIR to point at a different OpenSSL bin directory.
+if(WIN32)
+    set(SONGBIRD_OPENSSL_DLL_DIR "" CACHE PATH
+        "Directory containing OpenSSL DLLs (libssl/libcrypto) for QtNetwork; empty for auto-detection.")
+    if(NOT SONGBIRD_OPENSSL_DLL_DIR)
+        get_filename_component(SONGBIRD_QT_PREFIX "${Qt${QT_VERSION_MAJOR}_DIR}/../../.." ABSOLUTE)
+        foreach(SONGBIRD_OPENSSL_CANDIDATE IN ITEMS
+                "${SONGBIRD_QT_PREFIX}/../Tools/QtCreator/bin"
+                "${SONGBIRD_QT_PREFIX}/../../Tools/QtCreator/bin"
+                "${SONGBIRD_QT_PREFIX}")
+            if(EXISTS "${SONGBIRD_OPENSSL_CANDIDATE}/libssl-1_1-x64.dll"
+               AND EXISTS "${SONGBIRD_OPENSSL_CANDIDATE}/libcrypto-1_1-x64.dll")
+                set(SONGBIRD_OPENSSL_DLL_DIR "${SONGBIRD_OPENSSL_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(SONGBIRD_OPENSSL_DLL_DIR)
+        set(SONGBIRD_OPENSSL_DLLS
+            "${SONGBIRD_OPENSSL_DLL_DIR}/libssl-1_1-x64.dll"
+            "${SONGBIRD_OPENSSL_DLL_DIR}/libcrypto-1_1-x64.dll")
+        foreach(SONGBIRD_OPENSSL_TARGET IN ITEMS songbird songbird_auto)
+            add_custom_command(TARGET ${SONGBIRD_OPENSSL_TARGET} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${SONGBIRD_OPENSSL_DLLS}
+                    "$<TARGET_FILE_DIR:${SONGBIRD_OPENSSL_TARGET}>"
+                COMMENT "Deploying OpenSSL DLLs for ${SONGBIRD_OPENSSL_TARGET}"
+                VERBATIM)
+        endforeach()
+    else()
+        message(WARNING "OpenSSL DLLs not found next to SongBird executables. HTTPS downloads will fail with 'TLS initialization failed' until SONGBIRD_OPENSSL_DLL_DIR is set.")
+    endif()
 endif()
 
 install(TARGETS songbird songbird_auto

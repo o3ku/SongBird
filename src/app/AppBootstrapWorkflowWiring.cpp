@@ -121,7 +121,14 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
     subscriptionCallbacks.config.customConfigDirectory = [this]() { return resolveCustomConfigDirectory(); };
     subscriptionCallbacks.config.reloadConfig = [this]() {
         if (objects_->repository != nullptr) {
-            config_ = objects_->repository->load();
+            Config loadedConfig = objects_->repository->load();
+            // A corrupt config parses to an empty Config; keep the current
+            // in-memory config instead of replacing it with an empty one.
+            if (objects_->repository->lastLoadError().trimmed().isEmpty()) {
+                config_ = loadedConfig;
+            } else {
+                appendResult(OperationResult::fail(objects_->repository->lastLoadError()));
+            }
         }
     };
     subscriptionCallbacks.ui.context = [this]() -> QObject* { return objects_->mainWindow.get(); };

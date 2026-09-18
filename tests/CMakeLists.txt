@@ -16,6 +16,13 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-backend-boundaries.ps1
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
+    add_test(
+        NAME appbootstrap-member-order
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-appbootstrap-member-order.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
 endif()
 
 function(songbird_add_qt_test target_name test_name)
@@ -96,6 +103,7 @@ set(SONGBIRD_SHARE_URL_TEST_SOURCES
     ../src/subscription/ShareUrlParserSupport.cpp
     ../src/subscription/SubscriptionImportTextParser.h
     ../src/subscription/SubscriptionImportTextParser.cpp
+    ../src/common/EndpointParser.h
     ../src/common/PortValidator.h
 )
 
@@ -208,7 +216,10 @@ songbird_add_qt_test(songbird_startup_admin_elevation_tests startup-admin-elevat
 
 set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     AppBootstrapTunRuntimeTests.cpp
+    TestSupport.h
     ../src/app/CoreStartupCheckpoint.h
+    ../src/common/ProcessRunner.h
+    ../src/common/ProcessRunner.cpp
     ../src/runtime/CoreConfigPreflight.h
     ../src/runtime/CoreConfigPreflight.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -289,6 +300,8 @@ songbird_add_qt_test(songbird_app_bootstrap_tun_runtime_tests app-bootstrap-tun-
 
 set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ProxySessionTests.cpp
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/app/BackgroundTaskCoordinator.h
     ../src/app/BackgroundTaskCoordinator.cpp
     ../src/app/BackgroundThreadTracker.h
@@ -303,8 +316,11 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/app/ProxySession.h
     ../src/app/ProxySession.cpp
     ../src/app/ProxyRuntimeInterfaces.h
+    ../src/common/JsonFile.h
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
+    ../src/common/ProcessRunner.h
+    ../src/common/ProcessRunner.cpp
     ../src/runtime/CoreConfigPreflight.h
     ../src/runtime/CoreConfigPreflight.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -376,6 +392,7 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/backends/xray/XrayCoreBackend.cpp
     ../src/services/CoreUpdateService.h
     ../src/services/CoreUpdateService.cpp
+    ../src/common/JsonFile.h
     ../src/services/CoreUpdateInstallFiles.h
     ../src/services/CoreUpdateInstallFiles.cpp
     ../src/services/CoreUpdatePackageDownload.h
@@ -386,10 +403,12 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/services/CoreUpdateReleaseMetadata.cpp
     ../src/services/CoreUpdateReleaseResolution.h
     ../src/services/CoreUpdateReleaseResolution.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateOperations.h
     ../src/services/CoreUpdateOperations.cpp
     ../src/services/CoreUpdateVersion.h
     ../src/services/CoreUpdateVersion.cpp
+    ../src/common/JsonFile.h
     ../src/services/GeoResourceUpdateService.h
     ../src/services/GeoResourceUpdateService.cpp
     ../src/services/GeoResourceDownload.h
@@ -407,6 +426,8 @@ songbird_add_qt_test(songbird_proxy_session_tests proxy-session-state
 
 set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     CoreUpdateCoordinatorTests.cpp
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/app/BackgroundTaskCoordinator.h
     ../src/app/BackgroundTaskCoordinator.cpp
     ../src/app/CoreUpdateCoordinator.h
@@ -415,6 +436,7 @@ set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     ../src/app/CoreUpdatePendingState.cpp
     ../src/services/CoreUpdateService.h
     ../src/services/CoreUpdateService.cpp
+    ../src/common/JsonFile.h
     ../src/services/CoreUpdateInstallFiles.h
     ../src/services/CoreUpdateInstallFiles.cpp
     ../src/services/CoreUpdatePackageDownload.h
@@ -425,6 +447,7 @@ set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     ../src/services/CoreUpdateReleaseMetadata.cpp
     ../src/services/CoreUpdateReleaseResolution.h
     ../src/services/CoreUpdateReleaseResolution.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateOperations.h
     ../src/services/CoreUpdateOperations.cpp
     ../src/services/CoreUpdateVersion.h
@@ -508,8 +531,8 @@ songbird_add_qt_test(songbird_core_update_coordinator_tests core-update-coordina
 
 set(SONGBIRD_RUNTIME_STATE_TEST_SOURCES
     RuntimeStateTests.cpp
-    ../src/app/RuntimeState.h
-    ../src/app/RuntimeState.cpp
+    ../src/domain/models/RuntimeState.h
+    ../src/domain/models/RuntimeState.cpp
 )
 
 songbird_add_qt_test(songbird_runtime_state_tests runtime-state
@@ -521,12 +544,15 @@ songbird_add_qt_test(songbird_runtime_state_tests runtime-state
 
 set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     MainWindowTests.cpp
+    TestSupport.h
     ../src/subscription/ShareUrlBuilder.h
     ../src/subscription/ShareUrlBuilder.cpp
     ../src/subscription/ShareUrlProtocolBuilders.h
     ../src/subscription/ShareUrlProtocolBuilders.cpp
     ../src/subscription/ShareUrlBuilderSupport.h
     ../src/subscription/ShareUrlBuilderSupport.cpp
+    ../src/subscription/ShareUrlParserSupport.h
+    ../src/subscription/ShareUrlParserSupport.cpp
     ../src/third_party/qrcodegen/qrcodegen.hpp
     ../src/third_party/qrcodegen/qrcodegen.cpp
     ../src/ui/mainwindow/MainWindow.h
@@ -617,6 +643,7 @@ songbird_add_qt_test(songbird_main_window_tests main-window-log-scroll
 )
 
 set(SONGBIRD_BACKEND_STACK_SOURCES
+    ../src/common/JsonFile.h
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -723,6 +750,7 @@ songbird_add_qt_test(songbird_tun_compat_core_requirement_tests tun-compat-core-
 
 set(SONGBIRD_JSON_CONFIG_REPOSITORY_TEST_SOURCES
     JsonConfigRepositoryTests.cpp
+    ../src/common/JsonFile.h
     ../src/persistence/JsonConfigRepository.h
     ../src/persistence/JsonConfigRepository.cpp
     ../src/persistence/JsonConfigCollectionSerialization.h
@@ -757,6 +785,7 @@ songbird_add_qt_test(songbird_json_config_repository_tests json-config-repositor
 
 set(SONGBIRD_CONFIG_BACKUP_STATE_DOCUMENT_TEST_SOURCES
     ConfigBackupStateDocumentTests.cpp
+    ../src/common/JsonFile.h
     ../src/services/ConfigBackupStateDocument.h
     ../src/services/ConfigBackupStateDocument.cpp
 )
@@ -924,6 +953,27 @@ songbird_add_qt_test(songbird_auto_runtime_defaults_tests auto-runtime-defaults
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+set(SONGBIRD_AUTO_COORDINATOR_LOGIC_TEST_SOURCES
+    AutoCoordinatorLogicTests.cpp
+    ../src/auto/AutoCoordinatorLogic.h
+    ../src/auto/AutoCoordinatorLogic.cpp
+    ../src/auto/AutoTypes.h
+    ../src/services/SubscriptionService.h
+    ../src/services/SubscriptionService.cpp
+)
+
+songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logic
+    SOURCES
+        ${SONGBIRD_AUTO_COORDINATOR_LOGIC_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+if(MSVC)
+    target_compile_options(songbird_auto_coordinator_logic_tests PRIVATE /utf-8)
+endif()
+
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
     ../src/common/UserAgent.h
@@ -944,10 +994,13 @@ set(SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES
     ../src/services/AppUpdateService.cpp
     ../src/services/AppUpdateReleaseMetadata.h
     ../src/services/AppUpdateReleaseMetadata.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateVersion.h
     ../src/services/CoreUpdateVersion.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/common/OperationResult.h
     ../src/common/UserAgent.h
 )
@@ -974,10 +1027,13 @@ set(SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES
     ../src/services/AppUpdateService.cpp
     ../src/services/AppUpdateReleaseMetadata.h
     ../src/services/AppUpdateReleaseMetadata.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateVersion.h
     ../src/services/CoreUpdateVersion.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/common/OperationResult.h
     ../src/common/UserAgent.h
 )
@@ -995,8 +1051,11 @@ songbird_add_qt_test(songbird_app_update_check_coordinator_tests app-update-chec
 
 set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     CoreUpdateServiceTests.cpp
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/services/CoreUpdateService.h
     ../src/services/CoreUpdateService.cpp
+    ../src/common/JsonFile.h
     ../src/services/CoreUpdateInstallFiles.h
     ../src/services/CoreUpdateInstallFiles.cpp
     ../src/services/CoreUpdatePackageDownload.h
@@ -1007,6 +1066,7 @@ set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     ../src/services/CoreUpdateReleaseMetadata.cpp
     ../src/services/CoreUpdateReleaseResolution.h
     ../src/services/CoreUpdateReleaseResolution.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateOperations.h
     ../src/services/CoreUpdateOperations.cpp
     ../src/services/CoreUpdateVersion.h
@@ -1086,6 +1146,7 @@ songbird_add_qt_test(songbird_core_update_service_tests core-update-service
 
 set(SONGBIRD_GEO_RESOURCE_UPDATE_SERVICE_TEST_SOURCES
     GeoResourceUpdateServiceTests.cpp
+    ../src/common/JsonFile.h
     ../src/services/GeoResourceUpdateService.h
     ../src/services/GeoResourceUpdateService.cpp
     ../src/services/GeoResourceDownload.h
@@ -1121,6 +1182,8 @@ set(SONGBIRD_SUBSCRIPTION_PARSER_TEST_SOURCES
     ../src/subscription/SubscriptionYamlScalarValueParser.cpp
     ../src/subscription/SubscriptionYamlFlowValueParser.h
     ../src/subscription/SubscriptionYamlFlowValueParser.cpp
+    ../src/subscription/SubscriptionYamlEscape.h
+    ../src/subscription/SubscriptionYamlEscape.cpp
     ../src/subscription/CustomConfigTextParser.h
     ../src/subscription/CustomConfigTextParser.cpp
     ../src/subscription/ShareUrlParser.h
@@ -1134,6 +1197,7 @@ set(SONGBIRD_SUBSCRIPTION_PARSER_TEST_SOURCES
     ../src/subscription/ShareUrlParserSupport.cpp
     ../src/subscription/SubscriptionImportTextParser.h
     ../src/subscription/SubscriptionImportTextParser.cpp
+    ../src/common/EndpointParser.h
     ../src/common/PortValidator.h
 )
 
@@ -1180,7 +1244,10 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     EndToEndSmokeTests.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
+    ../src/common/GitHubReleaseParsing.h
+    ../src/common/GitHubReleaseParsing.cpp
     ../src/common/SystemProxyMode.h
+    ../src/common/JsonFile.h
     ../src/persistence/IConfigRepository.h
     ../src/persistence/JsonConfigRepository.h
     ../src/persistence/JsonConfigRepository.cpp
@@ -1204,6 +1271,7 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/persistence/JsonConfigTunSerialization.cpp
     ../src/persistence/JsonConfigUiSerialization.h
     ../src/persistence/JsonConfigUiSerialization.cpp
+    ../src/common/JsonFile.h
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -1279,6 +1347,7 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/runtime/TunCompatCoreRequirement.h
     ../src/services/CoreUpdateService.h
     ../src/services/CoreUpdateService.cpp
+    ../src/common/JsonFile.h
     ../src/services/CoreUpdateInstallFiles.h
     ../src/services/CoreUpdateInstallFiles.cpp
     ../src/services/CoreUpdatePackageDownload.h
@@ -1289,10 +1358,12 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/services/CoreUpdateReleaseMetadata.cpp
     ../src/services/CoreUpdateReleaseResolution.h
     ../src/services/CoreUpdateReleaseResolution.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/CoreUpdateOperations.h
     ../src/services/CoreUpdateOperations.cpp
     ../src/services/CoreUpdateVersion.h
     ../src/services/CoreUpdateVersion.cpp
+    ../src/common/JsonFile.h
     ../src/services/GeoResourceUpdateService.h
     ../src/services/GeoResourceUpdateService.cpp
     ../src/services/GeoResourceDownload.h
@@ -1306,6 +1377,7 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/services/SpeedTestUrlProbe.cpp
     ../src/services/SubscriptionService.h
     ../src/services/SubscriptionService.cpp
+    ../src/services/ServiceTimeouts.h
     ../src/services/SubscriptionUpdateService.h
     ../src/services/SubscriptionUpdateService.cpp
     ../src/subscription/CustomConfigTextParser.h
@@ -1337,6 +1409,9 @@ set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     ../src/subscription/SubscriptionYamlScalarValueParser.cpp
     ../src/subscription/SubscriptionYamlFlowValueParser.h
     ../src/subscription/SubscriptionYamlFlowValueParser.cpp
+    ../src/subscription/SubscriptionYamlEscape.h
+    ../src/subscription/SubscriptionYamlEscape.cpp
+    ../src/common/EndpointParser.h
     ../src/subscription/SubscriptionImportTextParser.h
     ../src/subscription/SubscriptionImportTextParser.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h

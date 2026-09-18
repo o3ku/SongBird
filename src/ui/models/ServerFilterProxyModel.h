@@ -17,7 +17,6 @@ public:
 
     void setKnownSubscriptionIds(const QSet<QString>& subscriptionIds);
     void setSubscriptionFilterMode(SubscriptionFilterMode mode, QString subscriptionId = {});
-    SubscriptionFilterMode subscriptionFilterMode() const;
     QString subscriptionId() const;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 

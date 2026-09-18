@@ -45,8 +45,9 @@ jobs:
             vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
 
       - name: Install ripgrep
-        # scripts/check-backend-boundaries.ps1 shells out to rg, which is not
-        # preinstalled on the runner.
+        # Optional: scripts/check-backend-boundaries.ps1 uses rg when it is
+        # available and otherwise falls back to an equivalent pure-PowerShell
+        # scan, so this only speeds the boundary check up on the runner.
         run: choco install ripgrep -y --no-progress
 
       - name: Install Qt5 (static)

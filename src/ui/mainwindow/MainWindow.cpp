@@ -1,7 +1,7 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -51,7 +51,6 @@
 #include <QAbstractItemView>
 
 #include "domain/models/RoutingProfiles.h"
-#include "services/ServerService.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/LogPanelWidget.h"
 #include "ui/mainwindow/BackgroundTaskActionsController.h"
@@ -88,7 +87,7 @@ constexpr int MinimumMainWindowWidth = 360;
 constexpr int MinimumMainWindowHeight = 540;
 constexpr int CompactMainWindowWidth = 520;
 constexpr int ProxyToggleButtonWidth = 64;
-constexpr int RoutingModeComboWidth = 87;
+constexpr int RoutingModeComboWidth = 90;
 constexpr int WindowTitleServerNameMaximumWidth = 300;
 constexpr int ServerTypeColumn = 1;
 constexpr int ServerAddressColumn = 3;
@@ -121,9 +120,7 @@ void applySemanticState(QLabel* label, const QString& state)
     }
 
     label->setProperty("semanticState", state);
-    label->style()->unpolish(label);
-    label->style()->polish(label);
-    label->update();
+    AppTheme::refreshStyle(label);
 }
 
 QAction* toolbarWidgetAction(QWidget* widget)
@@ -225,7 +222,20 @@ MainWindow::~MainWindow()
     delete backgroundTaskActionsController_;
 }
 
+void MainWindow::initialize(const MainWindowInit& init)
+{
+    // Set the core list first so the single updateActionState() inside
+    // applyConfig() already sees it.
+    existingCoreTypes_ = init.existingCoreTypes;
+    applyConfig(init.config);
+}
+
 void MainWindow::setConfig(const Config& config)
+{
+    applyConfig(config);
+}
+
+void MainWindow::applyConfig(const Config& config)
 {
     refreshToolbarIcons();
     configSnapshot_ = makeMainWindowConfigSnapshot(config);

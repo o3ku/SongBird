@@ -1,4 +1,5 @@
 #include "app/CoreUpdateCoordinator.h"
+#include "app/UiThreadInvocation.h"
 
 #include <utility>
 
@@ -8,21 +9,6 @@
 #include <QWidget>
 
 namespace {
-
-template <typename Callback>
-void invokeOnUiThread(QObject* context, Callback&& callback)
-{
-    if (context == nullptr) {
-        return;
-    }
-
-    if (QThread::currentThread() == context->thread()) {
-        callback();
-        return;
-    }
-
-    QMetaObject::invokeMethod(context, std::forward<Callback>(callback), Qt::QueuedConnection);
-}
 
 void appendResult(
     const std::function<void(const OperationResult&)>& appendResult,

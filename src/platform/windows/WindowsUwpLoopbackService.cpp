@@ -9,9 +9,9 @@
 #include <QTemporaryDir>
 #include <QObject>
 #include <QIODevice>
-#include <QProcess>
 #include <QThread>
 
+#include "common/ProcessRunner.h"
 #include "platform/windows/WindowsUwpLoopbackSupport.h"
 
 #if defined(Q_OS_WIN)
@@ -26,11 +26,6 @@ namespace {
 
 constexpr int kProcessTimeoutMs = 30000;
 constexpr int kElevatedScriptWaitMs = 180000;
-
-QString processText(const QByteArray& data)
-{
-    return QString::fromUtf8(data);
-}
 
 } // namespace
 
@@ -243,27 +238,34 @@ OperationResult WindowsUwpLoopbackService::runProcess(
     const QStringList& arguments,
     QString* output) const
 {
-    QProcess process;
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start(program, arguments);
-    if (!process.waitForStarted(kProcessTimeoutMs)) {
+    ProcessRunner::Request request;
+    request.program = program;
+    request.arguments = arguments;
+    // netsh and the other helpers are resolved from PATH, so the child keeps the
+    // parent's working directory instead of the program's own folder.
+    request.inheritWorkingDirectory = true;
+    request.startTimeoutMs = kProcessTimeoutMs;
+    request.finishTimeoutMs = kProcessTimeoutMs;
+    request.stopTimeoutMs = 3000;
+
+    const ProcessRunner::Outcome outcome = ProcessRunner::runToCompletion(request);
+
+    if (outcome.status == ProcessRunner::Status::FailedToStart) {
         return OperationResult::fail(QObject::tr("Failed to start %1.").arg(program));
     }
-    if (!process.waitForFinished(kProcessTimeoutMs)) {
-        process.kill();
-        process.waitForFinished(3000);
+    if (outcome.status == ProcessRunner::Status::TimedOut) {
         return OperationResult::fail(QObject::tr("%1 timed out.").arg(program));
     }
 
-    const QString mergedOutput = processText(process.readAll());
+    const QString mergedOutput = outcome.output;
     if (output != nullptr) {
         *output = mergedOutput;
     }
 
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    if (!outcome.completedNormally() || outcome.exitCode != 0) {
         const QString detail = mergedOutput.trimmed();
         return OperationResult::fail(detail.isEmpty()
-                ? QObject::tr("%1 failed with exit code %2.").arg(program).arg(process.exitCode())
+                ? QObject::tr("%1 failed with exit code %2.").arg(program).arg(outcome.exitCode)
                 : detail);
     }
 

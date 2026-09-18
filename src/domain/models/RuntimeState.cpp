@@ -1,4 +1,4 @@
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 
 RuntimeState::RuntimeState(QObject* parent)
     : QObject(parent)

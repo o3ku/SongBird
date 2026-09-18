@@ -40,14 +40,19 @@ ctest --test-dir build -R subscription-parser --output-on-failure
 
 CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，搜 `songbird_add_qt_test`；增删测试时**同步更新本节**）：
 
-`backend-boundaries`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
+`backend-boundaries`、`appbootstrap-member-order`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`auto-coordinator-logic`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
 
-两个特殊测试：
+三个特殊测试（均非 QtTest，是 PowerShell 脚本，不需要编译、无 Qt 环境也能单独跑）：
 
-- **`backend-boundaries`** 不是 QtTest，而是 PowerShell 脚本 [scripts/check-backend-boundaries.ps1](scripts/check-backend-boundaries.ps1)，**依赖 `rg`（ripgrep）在 PATH 上**，缺失会失败。它不需要编译，无 Qt 环境时也能单独跑：
+- **`backend-boundaries`** — [scripts/check-backend-boundaries.ps1](scripts/check-backend-boundaries.ps1)，检查分层规则（见 [AGENTS.md](AGENTS.md)）。有 `rg` 时用它加速，没有则回退到等价的纯 PowerShell 扫描，**不再依赖 `rg` 在 PATH 上**。
   ```powershell
   pwsh -NoProfile -File scripts/check-backend-boundaries.ps1 -SourceRoot src
   ```
+- **`appbootstrap-member-order`** — [scripts/check-appbootstrap-member-order.ps1](scripts/check-appbootstrap-member-order.ps1)，检查 `AppBootstrapObjects.h` 的成员声明顺序是否满足析构顺序要求（构造时借用另一个成员的对象必须声明在其**之后**）。lambda 体内的引用是延迟使用，有意忽略。
+  ```powershell
+  pwsh -NoProfile -File scripts/check-appbootstrap-member-order.ps1 -SourceRoot src
+  ```
+  注意：这两个脚本都以 `exit 1` 结束，**在当前 PowerShell 会话里直接 `& script.ps1` 会把会话一起退出**（输出还没落盘）。要在会话内验证，用 [.workbuddy-ai/tools/run-check-in-runspace.ps1](.workbuddy-ai/tools/run-check-in-runspace.ps1) 把它跑在子 runspace 里。
 - **`end-to-end-smoke`** 带 `LABELS "smoke"` 且 `TIMEOUT 7200`，会真实下载核心/订阅并启动进程，**不要包含在常规跑测里**。
 
 **`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。

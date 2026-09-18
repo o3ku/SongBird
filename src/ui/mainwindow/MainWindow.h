@@ -10,7 +10,7 @@
 #include <QStringList>
 
 #include "domain/models/Config.h"
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "ui/mainwindow/MainWindowConfigState.h"
 class QAction;
 class QComboBox;
@@ -49,6 +49,16 @@ class QWidget;
 struct ServerTableRow;
 struct SubItem;
 
+// Everything the window needs to render one configuration. Passing the config
+// and the installed core set together removes the implicit
+// "setConfig() must run before setExistingCoreTypes()" ordering the separate
+// setters used to require: a caller that got the order wrong rendered the
+// toolbar against a stale core list without any visible error.
+struct MainWindowInit {
+    Config config;
+    QList<CoreType> existingCoreTypes;
+};
+
 class MainWindow final : public QMainWindow {
     Q_OBJECT
 
@@ -56,6 +66,10 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    // Single entry point for applying a configuration together with the
+    // installed core set; action state is updated once, against both values.
+    void initialize(const MainWindowInit& init);
+    // Config-only update that reuses the previously applied core set.
     void setConfig(const Config& config);
     void setShareUrlResolver(std::function<QString(const QString&)> resolver);
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
@@ -126,6 +140,7 @@ private:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void setupUi();
+    void applyConfig(const Config& config);
     void setupToolbar();
     void createToolbarActions();
     void createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu);

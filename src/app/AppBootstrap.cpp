@@ -1,5 +1,6 @@
 #include "app/AppBootstrap.h"
 #include "app/AppBootstrapObjects.h"
+#include "app/UiThreadInvocation.h"
 #include "app/FunctionRuntimeAdapters.h"
 #include "app/AppUpdateInstallService.h"
 #include "app/AppUpdateCheckCoordinator.h"
@@ -19,7 +20,7 @@
 #include "app/OutboundLocationProbeService.h"
 #include "app/ProxyRuntimeInterfaces.h"
 #include "app/ProxySession.h"
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
 #include "app/SubscriptionWorkflowCoordinator.h"
@@ -155,43 +156,6 @@ ProxySession::StartRequest makeProxySessionStartRequest(
     return request;
 }
 
-template <typename Callback>
-void invokeOnUiThread(QObject* context, Callback&& callback)
-{
-    if (context == nullptr) {
-        return;
-    }
-
-    if (QThread::currentThread() == context->thread()) {
-        callback();
-        return;
-    }
-
-    QMetaObject::invokeMethod(context, std::forward<Callback>(callback), Qt::QueuedConnection);
-}
-
-template <typename Callback>
-auto invokeOnUiThreadBlocking(QObject* context, Callback&& callback) -> decltype(callback())
-{
-    using Result = decltype(callback());
-    if (context == nullptr) {
-        return Result();
-    }
-
-    if (QThread::currentThread() == context->thread()) {
-        return callback();
-    }
-
-    Result result{};
-    QMetaObject::invokeMethod(
-        context,
-        [&]() {
-            result = callback();
-        },
-        Qt::BlockingQueuedConnection);
-    return result;
-}
-
 } // namespace
 
 AppBootstrap::AppBootstrap(
@@ -220,236 +184,9 @@ AppBootstrap::~AppBootstrap()
 
 bool AppBootstrap::run()
 {
-    objects_->repository = std::make_unique<JsonConfigRepository>(resolveConfigPath());
-    objects_->serverService = std::make_unique<ServerService>(*objects_->repository, resolveCustomConfigDirectory());
-    objects_->configBackupService = std::make_unique<ConfigBackupService>(resolveConfigPath());
-    objects_->configBackupCoordinator = std::make_unique<ConfigBackupCoordinator>(
-        *objects_->configBackupService,
-        ConfigBackupCoordinator::Dependencies{
-            [this]() -> QWidget* { return objects_->mainWindow.get(); },
-            [this]() { return resolveConfigPath(); },
-            [this]() { return config_; },
-            [this](const OperationResult& result) { appendResult(result); },
-            [this]() { return isCoreRunning(); },
-            [this]() { objects_->proxySession->stop(true); },
-            [this]() { uiStateRestored_ = false; },
-            [this]() { return reloadConfig(); },
-            [this]() { return resolveActiveServer() != nullptr; },
-            [this]() { enableSystemProxy(true); },
-            [this]() { clearProxyStateAfterCoreStopped(); },
-            [this]() { syncStatusIndicators(); }
-        });
-    objects_->routingService = std::make_unique<RoutingService>(*objects_->repository);
-    objects_->speedTestController = std::make_unique<SpeedTestController>(resolveCustomConfigDirectory());
-    objects_->subscriptionService = std::make_unique<SubscriptionService>(*objects_->repository);
-    objects_->geoResourceUpdateService = std::make_unique<GeoResourceUpdateService>(
-        QFileInfo(resolveConfigPath()).dir().absolutePath());
-    objects_->clientConfigWriter = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
-    objects_->coreProcessHost = std::make_unique<QtCoreProcessHost>();
-    objects_->backgroundTasks = std::make_unique<BackgroundTaskCoordinator>();
-    objects_->backgroundThreadTracker = std::make_unique<BackgroundThreadTracker>();
-    objects_->coreProcessCleanupService = std::make_unique<CoreProcessCleanupService>();
-    objects_->coreDiscoveryService = std::make_unique<CoreDiscoveryService>();
-    objects_->appRuntimeResolver = std::make_unique<AppRuntimeResolver>(
-        resolveConfigPath(),
-        config_,
-        existingCoreTypes_,
-        objects_->coreDiscoveryService.get());
-    RuntimeStateSnapshotBuilder::Callbacks runtimeStatusCallbacks;
-    runtimeStatusCallbacks.appendLog = [this](const QString& message) {
-        if (objects_->mainWindow != nullptr) {
-            objects_->mainWindow->appendLog(message);
-        }
-    };
-    objects_->runtimeStateSnapshotBuilder = std::make_unique<RuntimeStateSnapshotBuilder>(std::move(runtimeStatusCallbacks));
-    objects_->outboundLocationProbeService = std::make_unique<OutboundLocationProbeService>();
-    objects_->appUpdateInstallService = std::make_unique<AppUpdateInstallService>(
-        [](const QString& program, const QStringList& arguments) {
-            return restartProcessAsAdministrator(program, arguments);
-        });
-    ApplicationRestartCoordinator::Callbacks restartCallbacks;
-    restartCallbacks.dialogParent = [this]() -> QWidget* { return objects_->mainWindow.get(); };
-    restartCallbacks.isWindowsPlatform = []() { return isWindowsPlatform(); };
-    restartCallbacks.isProcessElevated = []() { return isProcessElevated(); };
-    restartCallbacks.tunEnabled = [this]() { return config_.tun().tunModeItem.enableTun; };
-    restartCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    restartCallbacks.persistUiState = [this]() { persistUiState(); };
-    restartCallbacks.cleanupRuntimeForExit = [this](bool windowsShutdown) {
-        cleanupRuntimeForExit(windowsShutdown);
-    };
-    restartCallbacks.setMainWindowAllowClose = [this](bool allowClose) {
-        if (objects_->mainWindow != nullptr) {
-            objects_->mainWindow->setAllowClose(allowClose);
-        }
-    };
-    restartCallbacks.setShutdownUiStatePersisted = [this](bool persisted) {
-        shutdownUiStatePersisted_ = persisted;
-    };
-    objects_->applicationRestartCoordinator = std::make_unique<ApplicationRestartCoordinator>(
-        ApplicationRestartCoordinator::Dependencies{objects_->appUpdateInstallService.get()},
-        std::move(restartCallbacks));
-    objects_->tunRuntimeService = std::make_unique<TunRuntimeService>();
-    objects_->auxiliaryCoreProcessHost = std::make_unique<QtCoreProcessHost>();
-    objects_->autoRunService = std::make_unique<WindowsAutoRunService>();
-    objects_->systemProxyService = std::make_unique<WindowsSystemProxyService>();
-    auto runtimeEnvironment = std::make_unique<FunctionRuntimeEnvironment>();
-    runtimeEnvironment->cleanupPortProcessesFn = [this]() { cleanupCoreProcessesUsingConfiguredPorts(); };
-    runtimeEnvironment->removeStaleTunAdapterFn = [this]() { return removeStaleTunAdapterIfPresent(); };
-    runtimeEnvironment->skipCoreChecksFn = [this]() { return skipCoreChecks_; };
-    runtimeEnvironment->isWindowsPlatformFn = []() { return isWindowsPlatform(); };
-    runtimeEnvironment->isProcessElevatedFn = []() { return isProcessElevated(); };
-    objects_->runtimeEnvironment = std::move(runtimeEnvironment);
-
-    auto proxyActivationCoordinator = std::make_unique<FunctionProxyActivationCoordinator>();
-    proxyActivationCoordinator->cancelBackgroundTasksForStartupFn = [this]() { cancelBackgroundTasksForProxyStartup(); };
-    proxyActivationCoordinator->refreshExistingCoreTypesFn = [this]() { refreshExistingCoreTypes(); };
-    proxyActivationCoordinator->isSystemProxyEnabledFn = [this]() {
-        return objects_->systemProxyService != nullptr && objects_->systemProxyService->isEnabled();
-    };
-    proxyActivationCoordinator->updateSystemProxyModeFn = [this](SystemProxyMode mode) {
-        return updateSystemProxyMode(mode);
-    };
-    objects_->proxyActivationCoordinator = std::move(proxyActivationCoordinator);
-
-    objects_->proxySession = std::make_unique<ProxySession>(ProxySession::Dependencies{
-        *objects_->coreProcessHost,
-        *objects_->auxiliaryCoreProcessHost,
-        *objects_->clientConfigWriter,
-        *objects_->outboundLocationProbeService,
-        *objects_->backgroundTasks,
-        *objects_->appRuntimeResolver,
-        *objects_->runtimeEnvironment,
-        *objects_->proxyActivationCoordinator
-    });
-    objects_->runtimeState = std::make_unique<RuntimeState>();
-    SystemProxyCoordinator::Callbacks systemProxyCallbacks;
-    systemProxyCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    systemProxyCallbacks.syncStatusIndicators = [this]() { syncStatusIndicators(); };
-    systemProxyCallbacks.startManagedProxyCore = [this](bool skipTunCleanup, bool showStartupOverlay) {
-        startManagedProxyCoreInternal(skipTunCleanup, showStartupOverlay);
-    };
-    objects_->systemProxyCoordinator = std::make_unique<SystemProxyCoordinator>(
-        SystemProxyCoordinator::Dependencies{
-            config_,
-            *objects_->serverService,
-            objects_->systemProxyService.get(),
-            objects_->proxySession.get()},
-        std::move(systemProxyCallbacks));
-    TunModeCoordinator::Callbacks tunModeCallbacks;
-    tunModeCallbacks.isWindowsPlatform = []() { return isWindowsPlatform(); };
-    tunModeCallbacks.isProcessElevated = []() { return isProcessElevated(); };
-    tunModeCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
-    tunModeCallbacks.resolveActiveServer = [this]() { return resolveActiveServerSnapshot(); };
-    tunModeCallbacks.askRestartAsAdministratorForTun = [this]() { return askRestartAsAdministratorForTun(); };
-    tunModeCallbacks.restartApplication = [this](bool requireAdministrator) {
-        return restartApplication(requireAdministrator);
-    };
-    tunModeCallbacks.persistUiState = [this]() { persistUiState(); };
-    tunModeCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    tunModeCallbacks.syncWindow = [this]() { syncWindow(); };
-    tunModeCallbacks.syncStatusIndicators = [this]() { syncStatusIndicators(); };
-    tunModeCallbacks.restartCoreIfRunning = [this](const QString& reason, bool showOverlay) {
-        restartCoreIfRunning(reason, showOverlay);
-    };
-    tunModeCallbacks.enableSystemProxy = [this](bool showOverlay) { enableSystemProxy(showOverlay); };
-    objects_->tunModeCoordinator = std::make_unique<TunModeCoordinator>(
-        TunModeCoordinator::Dependencies{
-            config_,
-            *objects_->serverService},
-        std::move(tunModeCallbacks));
-    objects_->backgroundTasks->setBlockingPredicate([this]() {
-        return isProxyActivationInProgress();
-    });
-    QObject::connect(objects_->backgroundTasks.get(), &BackgroundTaskCoordinator::blockedByCoreStartup,
-        objects_->backgroundTasks.get(), [this]() {
-            appendResult(OperationResult::fail(
-                QCoreApplication::translate("AppBootstrap", "Proxy startup is in progress.")));
-        });
-    objects_->mainWindow = std::make_unique<MainWindow>();
-    objects_->mainWindow->setShareUrlResolver([this](const QString& indexId) {
-        const VmessItem* server = findServerById(indexId);
-        return server == nullptr ? QString() : ShareUrlBuilder::build(*server).trimmed();
-    });
-    objects_->trayController = std::make_unique<TrayController>(objects_->mainWindow.get());
-    objects_->speedTestCoordinator = std::make_unique<SpeedTestCoordinator>(
-        SpeedTestCoordinator::Dependencies{
-            objects_->backgroundTasks.get(),
-            objects_->speedTestController.get(),
-            [this]() -> Config& { return config_; },
-            [this](Config& config) {
-                return objects_->serverService != nullptr && objects_->serverService->save(config);
-            },
-            [this](const QString& indexId) { return findServerById(indexId); },
-            [this](const VmessItem& server) { return resolveLaunchCoreType(server); },
-            [this](const VmessItem& server) { return resolveCoreInfo(server); },
-            [this](const QString& indexId, const QString& result) {
-                return objects_->serverService == nullptr
-                    ? OperationResult::fail(QStringLiteral("Speed test result service is unavailable."))
-                    : objects_->serverService->setTestResult(config_, indexId, result);
-            },
-            [this](const OperationResult& result) { appendResult(result); },
-            [this](const QString& message) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->appendLog(message);
-                }
-            },
-            [this](const QString& indexId, const QString& result) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->updateServerTestResult(indexId, result);
-                }
-            },
-            [this](const QStringList& indexIds, const QString& result) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->updateServerTestResults(indexIds, result);
-                }
-            },
-            [this]() {
-                if (objects_->trayController != nullptr) {
-                    objects_->trayController->setServers(
-                        config_.collection().servers,
-                        config_.collection().subscriptions,
-                        config_.currentIndexId);
-                }
-            }
-        },
-        objects_->mainWindow.get());
-    auto userFeedback = std::make_unique<FunctionUserFeedback>();
-    userFeedback->uiContextFn = [this]() -> QObject* { return objects_->mainWindow.get(); };
-    userFeedback->dialogParentFn = [this]() -> QWidget* { return objects_->mainWindow.get(); };
-    userFeedback->appendLogFn = [this](const QString& message) {
-        if (objects_->mainWindow != nullptr) {
-            objects_->mainWindow->appendLog(message);
-        }
-    };
-    userFeedback->recordOperationResultFn = [this](const OperationResult& result) {
-        appendResult(result);
-    };
-    userFeedback->showOperationMessageFn = [this](const QString& title, const OperationResult& result, QWidget* parent) {
-        showOperationMessage(title, result, parent);
-    };
-    userFeedback->askYesNoFn = [](QWidget* parent, const QString& title, const QString& text, IUserFeedback::YesNoDefault defaultButton) {
-        return DialogUtils::askYesNoQuestion(
-            parent,
-            title,
-            text,
-            defaultButton == IUserFeedback::YesNoDefault::Yes ? QMessageBox::Yes : QMessageBox::No)
-            == QMessageBox::Yes;
-    };
-    userFeedback->showInformationFn = [](QWidget* parent, const QString& title, const QString& text) {
-        DialogUtils::showInformation(parent, title, text);
-    };
-    userFeedback->showTrayMessageFn = [this](const QString& title, const QString& message, bool critical, int timeoutMs) {
-        if (objects_->trayController != nullptr && objects_->trayController->isAvailable()) {
-            objects_->trayController->showMessage(title, message, critical, timeoutMs);
-        }
-    };
-    userFeedback->openExternalUrlFn = [this](const QString& url) {
-        openExternalUrl(url);
-    };
-    userFeedback->promptRestartForDownloadedAppUpdateFn = [this](const QString& path, QWidget* parent) {
-        return promptRestartForDownloadedAppUpdate(path, parent);
-    };
-    objects_->userFeedback = std::move(userFeedback);
+    wireCoreServices();
+    wireProxyStack();
+    wireUiObjects();
 
     const auto trackBackgroundThread = [this](QThread* thread) {
         if (objects_->backgroundThreadTracker != nullptr) {
@@ -457,194 +194,10 @@ bool AppBootstrap::run()
         }
     };
 
-    objects_->appUpdateCheckCoordinator = std::make_unique<AppUpdateCheckCoordinator>(
-        AppUpdateCheckCoordinator::Dependencies{
-            objects_->backgroundTasks.get(),
-            objects_->userFeedback.get(),
-            []() { return QCoreApplication::applicationVersion(); },
-            [this]() { return config_.checkPreReleaseUpdate; },
-            []() { return QCoreApplication::applicationDirPath(); },
-            [this]() { return shuttingDown_.load(); },
-            trackBackgroundThread,
-            {},
-            {},
-            {},
-            [](QObject* context, std::function<void()> callback) {
-                invokeOnUiThread(context, std::move(callback));
-            }
-        },
-        objects_->mainWindow.get());
-
-    objects_->coreUpdateCoordinator = std::make_unique<CoreUpdateCoordinator>(
-        CoreUpdateCoordinator::Dependencies{
-            objects_->backgroundTasks.get(),
-            lifetimeGuard_,
-            [this]() { return shuttingDown_.load(); },
-            [this]() -> QObject* { return objects_->mainWindow.get(); },
-            [this]() -> QWidget* { return objects_->mainWindow.get(); },
-            [this]() -> QObject* { return objects_->mainWindow.get(); },
-            [](CoreType coreType) { return resolveRuntimeCoreType(coreType); },
-            [this](CoreType coreType) { return resolveCoreInstallDirectory(coreType); },
-            [this]() {
-                return CoreUpdateConfig{config_.checkPreReleaseUpdate, config_.ignoreGeoUpdateCore};
-            },
-            [this](CoreType coreType) {
-                const std::optional<VmessItem> activeServer = resolveActiveServerSnapshot();
-                return isCoreRunning()
-                    && activeServer.has_value()
-                    && resolveRuntimeCoreType(activeServer->coreType) == coreType;
-            },
-            [](QWidget* parent, const QString& title, const QString& prompt) {
-                return DialogUtils::askYesNoQuestion(parent, title, prompt, QMessageBox::Yes) == QMessageBox::Yes;
-            },
-            [this](const OperationResult& result) { appendResult(result); },
-            [this](const QString& message) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->appendLog(message);
-                }
-            },
-            [this](const QString& title, const OperationResult& result, QWidget* parent) {
-                showOperationMessage(title, result, parent);
-            },
-            [this]() {
-                if (objects_->proxySession != nullptr) {
-                    objects_->proxySession->stopForCoreUpdate();
-                }
-            },
-            [this](bool showOverlay) { enableSystemProxy(showOverlay); },
-            [this]() { clearProxyStateAfterCoreStopped(); },
-            [this]() { syncStatusIndicators(); },
-            [this]() { refreshExistingCoreTypes(); },
-            trackBackgroundThread,
-            {},
-            {}
-        },
-        objects_->mainWindow.get());
-
-    objects_->geoResourceUpdateCoordinator = std::make_unique<GeoResourceUpdateCoordinator>(
-        GeoResourceUpdateCoordinator::Dependencies{
-            objects_->backgroundTasks.get(),
-            [this]() { return QFileInfo(resolveConfigPath()).dir().absolutePath(); },
-            [this]() -> QObject* { return objects_->mainWindow.get(); },
-            [this]() -> QWidget* { return objects_->mainWindow.get(); },
-            [this]() { return std::weak_ptr<char>(lifetimeGuard_); },
-            [this]() { return objects_->geoResourceUpdateService != nullptr && objects_->mainWindow != nullptr; },
-            trackBackgroundThread,
-            [this](const QString& message) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->appendLog(message);
-                }
-            },
-            [this](const OperationResult& result) { appendResult(result); },
-            [](QWidget* parent, const QString& title, const QString& message) {
-                DialogUtils::showWarning(parent, title, message);
-            },
-            [](QWidget* parent, const QString& title, const QString& message) {
-                DialogUtils::showInformation(parent, title, message);
-            },
-            [this](const QString& reason) { restartCoreIfRunning(reason); }
-        },
-        objects_->mainWindow.get());
-
+    wireUpdateCoordinators(trackBackgroundThread);
     wireWorkflowCoordinators(trackBackgroundThread);
-
-    DefaultServerSwitchCoordinator::Callbacks defaultServerCallbacks;
-    defaultServerCallbacks.currentIndexId = [this]() { return config_.currentIndexId; };
-    defaultServerCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
-    defaultServerCallbacks.isTunEnabled = [this]() { return config_.tun().tunModeItem.enableTun; };
-    defaultServerCallbacks.isShuttingDown = [this]() { return shuttingDown_.load(); };
-    defaultServerCallbacks.uiContext = [this]() -> QObject* { return objects_->mainWindow.get(); };
-    defaultServerCallbacks.lifetimeGuard = [this]() { return std::weak_ptr<char>(lifetimeGuard_); };
-    defaultServerCallbacks.setDefaultServer = [this](const QString& indexId) {
-        return objects_->serverService != nullptr
-            ? objects_->serverService->setDefaultServer(config_, indexId)
-            : OperationResult::fail(QStringLiteral("Server service is unavailable."));
-    };
-    defaultServerCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    defaultServerCallbacks.syncWindow = [this]() { syncWindow(); };
-    defaultServerCallbacks.clearServerWarning = [this]() {
-        if (objects_->proxySession != nullptr) {
-            objects_->proxySession->setServerWarning({});
-        }
-    };
-    defaultServerCallbacks.setCurrentActivationPending = [this](bool pending) {
-        setCurrentActivationPending_ = pending;
-    };
-    defaultServerCallbacks.switchRunningCoreToServer = [this](const QString& indexId, bool enableTun) {
-        if (objects_->proxySession != nullptr) {
-            objects_->proxySession->switchServer(indexId, enableTun, true);
-        }
-    };
-    defaultServerCallbacks.restartCoreIfRunning = [this](const QString& reason, bool showOverlay) {
-        restartCoreIfRunning(reason, showOverlay);
-    };
-    defaultServerCallbacks.enableSystemProxy = [this](bool showOverlay) { enableSystemProxy(showOverlay); };
-    defaultServerCallbacks.setTunEnabled = [this](bool enabled) { setTunEnabled(enabled); };
-    defaultServerCallbacks.startProxyAfterSwitch = [this](bool showOverlay) {
-        startManagedProxyCoreInternal(false, showOverlay);
-    };
-    objects_->defaultServerSwitchCoordinator = std::make_unique<DefaultServerSwitchCoordinator>(
-        std::move(defaultServerCallbacks),
-        objects_->mainWindow.get());
-
-    ServerCollectionCoordinator::Callbacks serverCollectionCallbacks;
-    serverCollectionCallbacks.resolveActiveServer = [this]() { return resolveActiveServerSnapshot(); };
-    serverCollectionCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
-    serverCollectionCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    serverCollectionCallbacks.syncWindow = [this]() { syncWindow(); };
-    serverCollectionCallbacks.stopCore = [this](bool immediate) { stopCore(immediate); };
-    serverCollectionCallbacks.restartCoreIfRunning = [this](const QString& reason, bool showOverlay) {
-        restartCoreIfRunning(reason, showOverlay);
-    };
-    objects_->serverCollectionCoordinator = std::make_unique<ServerCollectionCoordinator>(
-        ServerCollectionCoordinator::Dependencies{
-            config_,
-            *objects_->serverService,
-            *objects_->subscriptionService},
-        std::move(serverCollectionCallbacks));
-
-    ServerEditorCoordinator::Callbacks serverEditorCallbacks;
-    serverEditorCallbacks.dialogParent = [this]() -> QWidget* { return objects_->mainWindow.get(); };
-    serverEditorCallbacks.findServer = [this](const QString& indexId) {
-        return findServerSnapshotById(indexId);
-    };
-    serverEditorCallbacks.resolveActiveServer = [this]() { return resolveActiveServerSnapshot(); };
-    serverEditorCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
-    serverEditorCallbacks.appendLog = [this](const QString& message) {
-        if (objects_->mainWindow != nullptr) {
-            objects_->mainWindow->appendLog(message);
-        }
-    };
-    serverEditorCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
-    serverEditorCallbacks.syncWindow = [this]() { syncWindow(); };
-    serverEditorCallbacks.restartCoreIfRunning = [this](const QString& reason, bool showOverlay) {
-        restartCoreIfRunning(reason, showOverlay);
-    };
-    objects_->serverEditorCoordinator = std::make_unique<ServerEditorCoordinator>(
-        ServerEditorCoordinator::Dependencies{
-            config_,
-            *objects_->serverService},
-        std::move(serverEditorCallbacks));
-
-    QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, objects_->mainWindow.get(), [this]() {
-        shuttingDown_.store(true);
-        cleanupRuntimeForExit(windowsShutdownRequested_);
-        if (!shutdownUiStatePersisted_) {
-            persistUiState();
-            shutdownUiStatePersisted_ = true;
-        }
-    });
-    if (QGuiApplication* guiApplication = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
-        QObject::connect(guiApplication, &QGuiApplication::commitDataRequest, objects_->mainWindow.get(), [this](QSessionManager&) {
-            windowsShutdownRequested_ = true;
-            shuttingDown_.store(true);
-            cleanupRuntimeForExit(true);
-            if (!shutdownUiStatePersisted_) {
-                persistUiState();
-                shutdownUiStatePersisted_ = true;
-            }
-        });
-    }
+    wireServerCoordinators();
+    wireShutdownHooks();
 
     cleanupOrphanCoreProcesses();
     wireMainWindow();
@@ -793,7 +346,12 @@ void AppBootstrap::wireProxySessionSignals()
             }
         }
         if (objects_->serverService != nullptr) {
-            objects_->serverService->save(config_);
+            const OperationResult saveResult = objects_->serverService->save(config_);
+            if (!saveResult.success) {
+                appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+                    QCoreApplication::translate("AppBootstrap", "Failed to save settings."),
+                    saveResult.message)));
+            }
         }
         return true;
     });
@@ -1029,7 +587,10 @@ void AppBootstrap::syncWindow()
     }
 
     if (objects_->mainWindow) {
-        objects_->mainWindow->setConfig(config_);
+        MainWindowInit init;
+        init.config = config_;
+        init.existingCoreTypes = existingCoreTypes_;
+        objects_->mainWindow->initialize(init);
     }
 
     if (objects_->trayController != nullptr) {
@@ -1100,7 +661,7 @@ bool AppBootstrap::reloadConfig()
         appendResult(OperationResult::fail(loadError));
         DialogUtils::showCritical(
             objects_->mainWindow.get(),
-            QStringLiteral("Failed to Load Configuration"),
+            QCoreApplication::translate("AppBootstrap", "Failed to Load Configuration"),
             loadError);
         return false;
     }
@@ -1112,7 +673,8 @@ bool AppBootstrap::reloadConfig()
         uiStateRestored_ = true;
         syncStatusIndicators();
     }
-    appendResult(OperationResult::ok(QStringLiteral("Configuration reloaded from disk.")));
+    appendResult(OperationResult::ok(
+        QCoreApplication::translate("AppBootstrap", "Configuration reloaded from disk.")));
     appendStartupResourceCheckResults();
     if (uiReady_ && isCoreRunning()) {
         restartCoreIfRunning(
@@ -1126,7 +688,8 @@ void AppBootstrap::applyStartupSystemProxyPreference()
 {
     if (config_.ui().mainProxyEnabled) {
         if (skipCoreChecks_) {
-            appendResult(OperationResult::ok(QStringLiteral("Startup core checks skipped by command line.")));
+            appendResult(OperationResult::ok(QCoreApplication::translate(
+                "AppBootstrap", "Startup core checks skipped by command line.")));
         }
         enableSystemProxy();
         return;
@@ -1142,7 +705,12 @@ void AppBootstrap::persistUiState()
     }
 
     objects_->mainWindow->captureUiState(config_);
-    objects_->serverService->save(config_);
+    const OperationResult saveResult = objects_->serverService->save(config_);
+    if (!saveResult.success) {
+        appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+            QCoreApplication::translate("AppBootstrap", "Failed to save settings."),
+            saveResult.message)));
+    }
 }
 
 void AppBootstrap::appendStartupResourceCheckResults()
@@ -1152,7 +720,7 @@ void AppBootstrap::appendStartupResourceCheckResults()
     if (!config_.currentIndexId.trimmed().isEmpty()
         && findServerById(config_.currentIndexId) == nullptr
         && !config_.collection().servers.isEmpty()) {
-        lines.append(QStringLiteral(
+        lines.append(QCoreApplication::translate("AppBootstrap",
             "Startup check: The configured default server does not exist. The first available server will be used."));
     }
 
@@ -1173,7 +741,8 @@ void AppBootstrap::appendStartupResourceCheckResults()
         if (activeServer->configType == ConfigType::Custom) {
             const QString customConfigPath = resolveCustomConfigPath(activeServer->address);
             if (customConfigPath.trimmed().isEmpty() || !QFileInfo::exists(customConfigPath)) {
-                lines.append(QStringLiteral("Startup check: Custom config file is missing for default server: %1")
+                lines.append(QCoreApplication::translate("AppBootstrap",
+                                 "Startup check: Custom config file is missing for default server: %1")
                                  .arg(QDir::toNativeSeparators(customConfigPath)));
             }
         }
@@ -1183,7 +752,8 @@ void AppBootstrap::appendStartupResourceCheckResults()
             if (coreInfo.program.trimmed().isEmpty()) {
                 const CoreType runtimeCore = resolveLaunchCoreType(*activeServer);
                 const QStringList candidates = resolveCoreCandidates(runtimeCore);
-                lines.append(QStringLiteral("Startup check: No compatible core executable was found for default server \"%1\". Expected one of: %2.")
+                lines.append(QCoreApplication::translate("AppBootstrap",
+                                 "Startup check: No compatible core executable was found for default server \"%1\". Expected one of: %2.")
                                  .arg(elidedServerDisplayName(*activeServer, 64))
                                  .arg(objects_->coreDiscoveryService->expectedCoreFilesText(candidates)));
             }
@@ -1191,7 +761,8 @@ void AppBootstrap::appendStartupResourceCheckResults()
             for (const CoreType auxiliaryCoreType : resolveAuxiliaryTunCompatCoreTypes(config_, *activeServer, existingCoreTypes_)) {
                 const QStringList candidates = resolveCoreCandidates(auxiliaryCoreType);
                 if (locateFirstExistingFile(candidates).isEmpty()) {
-                    lines.append(QStringLiteral("Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.")
+                    lines.append(QCoreApplication::translate("AppBootstrap",
+                                     "Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.")
                                      .arg(elidedServerDisplayName(*activeServer, 64))
                                      .arg(coreTypeDisplayName(auxiliaryCoreType))
                                      .arg(objects_->coreDiscoveryService->expectedCoreFilesText(candidates)));
@@ -1201,7 +772,8 @@ void AppBootstrap::appendStartupResourceCheckResults()
     }
 
     if (missingCustomConfigCount > 0) {
-        lines.append(QStringLiteral("Startup check: %1 custom server config file(s) are missing.").arg(missingCustomConfigCount));
+        lines.append(QCoreApplication::translate("AppBootstrap",
+            "Startup check: %1 custom server config file(s) are missing.").arg(missingCustomConfigCount));
     }
 
     for (const QString& line : lines) {
@@ -1279,7 +851,8 @@ void AppBootstrap::stopCore(bool immediate)
 OperationResult AppBootstrap::removeStaleTunAdapterIfPresent() const
 {
     if (objects_->tunRuntimeService == nullptr) {
-        return OperationResult::fail(QStringLiteral("TUN runtime service is unavailable."));
+        return OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap", "TUN runtime service is unavailable."));
     }
     return objects_->tunRuntimeService->removeStaleAdapterIfPresent();
 }
@@ -1362,7 +935,8 @@ void AppBootstrap::restartCoreIfRunning(const QString& reason, bool showStartupO
 bool AppBootstrap::saveSystemProxyMode(SystemProxyMode mode)
 {
     if (objects_->systemProxyCoordinator == nullptr) {
-        appendResult(OperationResult::fail(QStringLiteral("System proxy mode cannot be changed before the configuration service is ready.")));
+        appendResult(OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap", "System proxy mode cannot be changed before the configuration service is ready.")));
         return false;
     }
 
@@ -1384,13 +958,6 @@ void AppBootstrap::clearProxyStateAfterCoreStopped()
 {
     if (objects_->systemProxyCoordinator != nullptr) {
         objects_->systemProxyCoordinator->clearStateAfterCoreStopped();
-    }
-}
-
-void AppBootstrap::applySystemProxyModeOnExit(bool windowsShutdown)
-{
-    if (objects_->systemProxyCoordinator != nullptr) {
-        objects_->systemProxyCoordinator->applyModeOnExit(windowsShutdown);
     }
 }
 
@@ -1437,7 +1004,8 @@ void AppBootstrap::setAutoRunEnabled(bool enabled)
 void AppBootstrap::setTunEnabled(bool enabled)
 {
     if (objects_->tunModeCoordinator == nullptr) {
-        appendResult(OperationResult::fail(QStringLiteral("TUN mode cannot be changed before the configuration service is ready.")));
+        appendResult(OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap", "TUN mode cannot be changed before the configuration service is ready.")));
         syncStatusIndicators();
         return;
     }
@@ -1520,7 +1088,8 @@ void AppBootstrap::handleRoutingSelectionResult(
     if (result.success
         && isCoreRunning()
         && previousRoutingModeId != config_.collection().routingModeId) {
-        restartCoreIfRunning(QStringLiteral("Reloading core to apply routing changes."), true);
+        restartCoreIfRunning(QCoreApplication::translate(
+            "AppBootstrap", "Reloading core to apply routing changes."), true);
     }
 }
 

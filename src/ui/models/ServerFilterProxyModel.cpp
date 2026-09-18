@@ -3,7 +3,7 @@
 #include <QAbstractItemModel>
 #include <QRegularExpression>
 
-#include "services/SpeedTestServiceInternal.h"
+#include "common/UrlProbeLatency.h"
 #include "ui/models/ServerTableModel.h"
 
 namespace {
@@ -60,7 +60,7 @@ bool tryParseTestResultMetric(const QString& value, QString& family, double& num
     }
 
     double parsedLatencyMs = 0.0;
-    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, parsedLatencyMs)) {
+    if (UrlProbeLatency::tryParseLatencyMs(normalized, parsedLatencyMs)) {
         family = QStringLiteral("latency");
         numericValue = parsedLatencyMs;
         return true;
@@ -144,11 +144,6 @@ void ServerFilterProxyModel::setSubscriptionFilterMode(SubscriptionFilterMode mo
     subscriptionFilterMode_ = mode;
     subscriptionId_ = std::move(subscriptionId);
     invalidateFilter();
-}
-
-ServerFilterProxyModel::SubscriptionFilterMode ServerFilterProxyModel::subscriptionFilterMode() const
-{
-    return subscriptionFilterMode_;
 }
 
 QString ServerFilterProxyModel::subscriptionId() const

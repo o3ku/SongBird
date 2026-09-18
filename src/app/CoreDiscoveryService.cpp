@@ -3,8 +3,8 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QProcess>
 
+#include "common/ProcessRunner.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/core/ICoreBackend.h"
@@ -104,22 +104,20 @@ QString CoreDiscoveryService::detectCoreVersion(CoreType coreType, const QString
         return {};
     }
 
-    QProcess process;
-    process.setProgram(program);
-    process.setArguments(arguments);
-    process.setWorkingDirectory(QFileInfo(program).absolutePath());
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start();
+    ProcessRunner::Request request;
+    request.program = program;
+    request.arguments = arguments;
+    request.workingDirectory = QFileInfo(program).absolutePath();
+    request.startTimeoutMs = 1500;
+    request.finishTimeoutMs = 5000;
 
-    if (!process.waitForStarted(1500)) {
+    // A probe that cannot start or overruns simply means "no version". The exit
+    // code stays unchecked on purpose: some cores print the version and exit
+    // non-zero.
+    const ProcessRunner::Outcome outcome = ProcessRunner::runToCompletion(request);
+    if (outcome.status != ProcessRunner::Status::Completed) {
         return {};
     }
 
-    if (!process.waitForFinished(5000)) {
-        process.kill();
-        process.waitForFinished(1500);
-        return {};
-    }
-
-    return backend->extractVersionFromOutput(QString::fromUtf8(process.readAll()));
+    return backend->extractVersionFromOutput(outcome.output);
 }

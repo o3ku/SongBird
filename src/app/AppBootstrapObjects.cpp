@@ -16,7 +16,7 @@
 #include "app/OutboundLocationProbeService.h"
 #include "app/ProxyRuntimeInterfaces.h"
 #include "app/ProxySession.h"
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "app/RuntimeStateSnapshotBuilder.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
@@ -42,4 +42,7 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/tray/TrayController.h"
 
+// Defined out of line because the header only forward declares the member
+// types, and std::unique_ptr<T> requires T to be complete where its destructor
+// is instantiated.
 AppBootstrapObjects::~AppBootstrapObjects() = default;
