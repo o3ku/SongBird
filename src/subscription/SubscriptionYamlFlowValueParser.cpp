@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "subscription/SubscriptionYamlEscape.h"
 #include "subscription/SubscriptionYamlScalarValueParser.h"
 
 namespace {
@@ -31,22 +32,37 @@ QString parseFlowQuotedString(const QString& text, int* position, bool* ok)
         return {};
     }
 
+    const bool doubleQuoted = quote == QChar('"');
+
     ++(*position);
     QString result;
     while (*position < text.size()) {
         const QChar current = text.at(*position);
         if (current == quote) {
+            // YAML folds a doubled quote into a single literal quote; a doubled
+            // double quote is never an escape continuation, so check the next
+            // character before closing.
+            if (*position + 1 < text.size() && text.at(*position + 1) == quote) {
+                result.append(quote);
+                *position += 2;
+                continue;
+            }
             ++(*position);
             if (ok != nullptr) {
                 *ok = true;
             }
-            return result;
+            // Only double-quoted scalars honor YAML escapes so flow-style
+            // entries resolve "\U0001F1EF" and friends the same way block-style
+            // ones do; single-quoted text keeps backslashes verbatim.
+            return doubleQuoted ? SubscriptionYamlEscape::unescape(result) : result;
         }
 
-        if (current == QChar('\\') && *position + 1 < text.size()) {
-            ++(*position);
-            result.append(text.at(*position));
-            ++(*position);
+        // Keep the full escape sequence, backslash included, so the shared
+        // decoder can resolve it afterwards.
+        if (doubleQuoted && current == QChar('\\') && *position + 1 < text.size()) {
+            result.append(current);
+            result.append(text.at(*position + 1));
+            *position += 2;
             continue;
         }
 

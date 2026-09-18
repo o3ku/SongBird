@@ -31,6 +31,11 @@ private slots:
     void subscriptionClashYamlFlowStyleVlessReality();
     void subscriptionClashYamlAnytls();
     void subscriptionClashYamlWireguard();
+    void subscriptionClashYamlDecodesLongUnicodeEscapeInName();
+    void subscriptionClashYamlDecodesSurrogatePairEscapeInName();
+    void subscriptionClashYamlDecodesUnicodeEscapeInName();
+    void subscriptionClashYamlKeepsUnknownEscapesVerbatim();
+    void subscriptionClashYamlFlowStyleDecodesEscapedName();
     void subscriptionReportsSkippedUnknownClashType();
     void subscriptionReportsNoSkipsForFullySupportedContent();
     void subscriptionDoesNotReportSingBoxNonProxyOutbounds();
@@ -466,6 +471,91 @@ void SubscriptionParserTests::subscriptionClashYamlWireguard()
     QCOMPARE(items[0].privateKey, QStringLiteral("cHJpdmF0ZS1rZXk="));
     QCOMPARE(items[0].peerPublicKey, QStringLiteral("cHVibGljLWtleQ=="));
     QCOMPARE(items[0].wireguardMtu, 1408);
+}
+
+// Subscription feeds commonly emit node names with YAML escape sequences. The
+// feed used to surface literal "\U0001F1E7\U0001F1EDHK_1" as the row label.
+void SubscriptionParserTests::subscriptionClashYamlDecodesLongUnicodeEscapeInName()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"\\U0001F1E7\\U0001F1EDHK_1\"\n"
+        "    type: socks5\n"
+        "    server: 1.2.3.4\n"
+        "    port: 10808\n"
+        "  - name: \"\\U0001F1E8\\U0001F1F4CO_1\"\n"
+        "    type: http\n"
+        "    server: 5.6.7.8\n"
+        "    port: 8080\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 2);
+    QCOMPARE(items[0].remarks, QString::fromUtf8("\xF0\x9F\x87\xA7\xF0\x9F\x87\xAD")
+                                 + QStringLiteral("HK_1"));
+    QCOMPARE(items[1].remarks, QString::fromUtf8("\xF0\x9F\x87\xA8\xF0\x9F\x87\xB4")
+                                 + QStringLiteral("CO_1"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlDecodesSurrogatePairEscapeInName()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"\\uD83C\\uDDE7\\uD83C\\uDDF4\\u4e2d\\u6587\"\n"
+        "    type: socks5\n"
+        "    server: 1.2.3.4\n"
+        "    port: 10808\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QString::fromUtf8("\xF0\x9F\x87\xA7\xF0\x9F\x87\xB4")
+                                 + QString::fromUtf8("\xE4\xB8\xAD\xE6\x96\x87"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlDecodesUnicodeEscapeInName()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"\\u4e2d\\u6587\\u8282\\u70b9\"\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: secret\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QString::fromUtf8("\xE4\xB8\xAD\xE6\x96\x87\xE8\x8A\x82\xE7\x82\xB9"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlKeepsUnknownEscapesVerbatim()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"C:\\\\path\\q9\"\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: secret\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QStringLiteral("C:\\path\\q9"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlFlowStyleDecodesEscapedName()
+{
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - { name: \"\\U0001F1EF\\U0001F1F5JP_1\", type: trojan, server: 1.2.3.4, port: 443, password: secret }\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QString::fromUtf8("\xF0\x9F\x87\xAF\xF0\x9F\x87\xB5")
+                                 + QStringLiteral("JP_1"));
 }
 
 void SubscriptionParserTests::subscriptionReportsSkippedUnknownClashType()

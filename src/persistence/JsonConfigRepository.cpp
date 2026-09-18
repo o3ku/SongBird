@@ -5,12 +5,43 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonParseError>
-#include <QSaveFile>
-
+#include <QStringList>
+#include "common/JsonFile.h"
 #include "persistence/JsonConfigSerialization.h"
 #include "persistence/JsonConfigStateSerialization.h"
 
 #include <utility>
+
+namespace {
+
+// Turns a JsonFile::WriteResult failure into a message that names both the file
+// and the step, so a caller reporting lastSaveError() can say which of the two
+// files failed and why instead of just "save failed".
+QString describeWriteFailure(
+    const QString& label,
+    const QString& path,
+    JsonFile::WriteFailureStage stage)
+{
+    QString step = QStringLiteral("write");
+    switch (stage) {
+    case JsonFile::WriteFailureStage::Open:
+        step = QStringLiteral("open");
+        break;
+    case JsonFile::WriteFailureStage::Write:
+        step = QStringLiteral("write");
+        break;
+    case JsonFile::WriteFailureStage::Commit:
+        step = QStringLiteral("commit");
+        break;
+    case JsonFile::WriteFailureStage::None:
+        break;
+    }
+
+    return QStringLiteral("Failed to %1 %2: %3")
+        .arg(step, label, QDir::toNativeSeparators(path));
+}
+
+} // namespace
 
 JsonConfigRepository::JsonConfigRepository(QString configPath)
     : configPath_(std::move(configPath))
@@ -34,7 +65,28 @@ Config JsonConfigRepository::load()
 
 bool JsonConfigRepository::save(const Config& config)
 {
-    return savePrimaryConfig(config) && saveStateConfig(config);
+    lastSaveError_.clear();
+
+    // Write both files even if one fails, so a state-file problem never hides
+    // that the primary config was persisted (or vice versa). The return value
+    // stays a single boolean, but lastSaveError() records which write failed --
+    // without it a state-file failure was indistinguishable from losing the
+    // primary config.
+    const JsonFile::WriteResult primaryResult = savePrimaryConfig(config);
+    const JsonFile::WriteResult stateResult = saveStateConfig(config);
+
+    QStringList failures;
+    if (!primaryResult.ok) {
+        failures.append(describeWriteFailure(
+            QStringLiteral("configuration file"), configPath_, primaryResult.stage));
+    }
+    if (!stateResult.ok) {
+        failures.append(describeWriteFailure(
+            QStringLiteral("configuration state file"), stateConfigPath(), stateResult.stage));
+    }
+
+    lastSaveError_ = failures.join(QLatin1Char(' '));
+    return failures.isEmpty();
 }
 
 QString JsonConfigRepository::configPath() const
@@ -45,6 +97,11 @@ QString JsonConfigRepository::configPath() const
 QString JsonConfigRepository::lastLoadError() const
 {
     return lastLoadError_;
+}
+
+QString JsonConfigRepository::lastSaveError() const
+{
+    return lastSaveError_;
 }
 
 QString JsonConfigRepository::stateConfigPath() const
@@ -113,30 +170,24 @@ bool JsonConfigRepository::loadStateInto(Config& config)
     return true;
 }
 
-bool JsonConfigRepository::savePrimaryConfig(const Config& config)
+JsonFile::WriteResult JsonConfigRepository::savePrimaryConfig(const Config& config)
 {
     QJsonObject root;
     JsonConfigSerialization::applyConfig(root, config);
 
     const QFileInfo fileInfo(configPath_);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
-        return false;
-    }
-
-    QSaveFile file(configPath_);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return false;
+        return {false, JsonFile::WriteFailureStage::Open};
     }
 
     const QJsonDocument document(root);
-    if (file.write(document.toJson(QJsonDocument::Compact)) < 0) {
-        return false;
-    }
-
-    return file.commit();
+    return JsonFile::writeFileAtomically(
+        configPath_,
+        document.toJson(QJsonDocument::Compact),
+        QIODevice::Text);
 }
 
-bool JsonConfigRepository::saveStateConfig(const Config& config)
+JsonFile::WriteResult JsonConfigRepository::saveStateConfig(const Config& config)
 {
     QJsonObject root;
     JsonConfigStateSerialization::write(root, config);
@@ -144,25 +195,21 @@ bool JsonConfigRepository::saveStateConfig(const Config& config)
     const QString path = stateConfigPath();
     const QFileInfo fileInfo(path);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
-        return false;
+        return {false, JsonFile::WriteFailureStage::Open};
     }
 
     if (root.isEmpty()) {
+        // Removing a stale state file is part of committing this state, so a
+        // failed removal is reported at the commit stage.
         if (QFileInfo::exists(path) && !QFile::remove(path)) {
-            return false;
+            return {false, JsonFile::WriteFailureStage::Commit};
         }
-        return true;
-    }
-
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return false;
+        return {true, JsonFile::WriteFailureStage::None};
     }
 
     const QJsonDocument document(root);
-    if (file.write(document.toJson(QJsonDocument::Compact)) < 0) {
-        return false;
-    }
-
-    return file.commit();
+    return JsonFile::writeFileAtomically(
+        path,
+        document.toJson(QJsonDocument::Compact),
+        QIODevice::Text);
 }

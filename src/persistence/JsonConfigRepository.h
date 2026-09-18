@@ -2,6 +2,7 @@
 
 #include <QString>
 
+#include "common/JsonFile.h"
 #include "persistence/IConfigRepository.h"
 
 class JsonConfigRepository final : public IConfigRepository {
@@ -12,15 +13,17 @@ public:
     bool save(const Config& config) override;
 
     QString configPath() const;
-    QString lastLoadError() const;
+    QString lastLoadError() const override;
+    QString lastSaveError() const override;
 
 private:
     QString stateConfigPath() const;
     Config loadPrimaryConfig();
     bool loadStateInto(Config& config);
-    bool savePrimaryConfig(const Config& config);
-    bool saveStateConfig(const Config& config);
+    JsonFile::WriteResult savePrimaryConfig(const Config& config);
+    JsonFile::WriteResult saveStateConfig(const Config& config);
 
     QString configPath_;
     QString lastLoadError_;
+    QString lastSaveError_;
 };

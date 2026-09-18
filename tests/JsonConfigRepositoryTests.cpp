@@ -1,5 +1,6 @@
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -309,6 +310,8 @@ private slots:
     void saveWritesCanonicalSongBirdStructure();
     void saveRemovesEmptyStateFile();
     void saveReplacesExistingRootInsteadOfMerging();
+    void saveReportsPrimaryConfigWriteFailure();
+    void saveReportsStateWriteFailure();
 };
 
 void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
@@ -817,6 +820,54 @@ void JsonConfigRepositoryTests::saveReplacesExistingRootInsteadOfMerging()
 
     const QJsonObject savedState = readJsonFile(makeStatePath(tempDir));
     QCOMPARE(savedState.value(QStringLiteral("ui")).toObject().value(QStringLiteral("mainProxyEnabled")).toBool(), true);
+}
+
+void JsonConfigRepositoryTests::saveReportsPrimaryConfigWriteFailure()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+
+    // A directory where the config file belongs makes QSaveFile::open fail, the
+    // same failure a read-only or locked target produces.
+    QVERIFY(QDir().mkpath(configPath));
+
+    JsonConfigRepository repository(configPath);
+    Config config;
+    config.ui().languageCode = QStringLiteral("en-US");
+
+    QVERIFY(!repository.save(config));
+
+    // The caller can tell which of the two files failed, which the merged
+    // boolean alone could not express.
+    QVERIFY(repository.lastSaveError().contains(QStringLiteral("configuration file")));
+    QVERIFY(!repository.lastSaveError().contains(QStringLiteral("configuration state file")));
+}
+
+void JsonConfigRepositoryTests::saveReportsStateWriteFailure()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+
+    // Block only the companion state file; the primary config write must still
+    // succeed and be reported as such.
+    QVERIFY(QDir().mkpath(makeStatePath(tempDir)));
+
+    JsonConfigRepository repository(configPath);
+    Config config;
+    config.collection().servers = {makeServer()};
+    config.collection().servers[0].testResult = QStringLiteral("123 ms");
+
+    QVERIFY(!repository.save(config));
+    QVERIFY(repository.lastSaveError().contains(QStringLiteral("configuration state file")));
+
+    // The primary config really did land, so a state-file failure is not
+    // reported as losing the user's servers.
+    QVERIFY(QFileInfo::exists(configPath));
+    QVERIFY(!QFileInfo(configPath).isDir());
 }
 
 QTEST_MAIN(JsonConfigRepositoryTests)
