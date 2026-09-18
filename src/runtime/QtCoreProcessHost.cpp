@@ -12,7 +12,20 @@ QtCoreProcessHost::QtCoreProcessHost() = default;
 
 QtCoreProcessHost::~QtCoreProcessHost()
 {
-    stop(true);
+    const OperationResult stopResult = stop(true);
+    if (!stopResult.success && process_ && process_->state() != QProcess::NotRunning) {
+        // Terminate and kill both timed out: the child may still be running.
+        // Keep its PID recorded so CoreProcessCleanupService can reap the
+        // orphan on the next startup, and do not synchronously delete the
+        // QProcess bookkeeping that could drop the handle.
+        if (const qint64 orphanPid = process_->processId(); orphanPid > 0) {
+            recordCorePid(orphanPid);
+        }
+        resetProcessState(ProcessCleanupMode::DeleteLater);
+        processHandle_.reset();
+        return;
+    }
+
     resetProcessState();
     processHandle_.reset();
 }

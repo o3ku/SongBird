@@ -22,6 +22,10 @@ void clearLayout(QLayout* layout)
 
     while (QLayoutItem* item = layout->takeAt(0)) {
         if (QWidget* widget = item->widget()) {
+            // hide() first: the widget stays alive until DeferredDelete runs,
+            // and without hiding it would still paint at its old geometry
+            // while the replacement cards are already visible.
+            widget->hide();
             widget->deleteLater();
         }
         delete item;

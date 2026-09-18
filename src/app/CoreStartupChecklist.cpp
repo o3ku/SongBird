@@ -2,7 +2,6 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QEventLoop>
 #include <QTimer>
 
 #include <utility>
@@ -61,11 +60,14 @@ CoreStartupCheckpointStatus CoreStartupChecklist::status(const QString& step) co
 void CoreStartupChecklist::prepare(bool tunEnabled, bool showOverlay)
 {
     steps_.clear();
+    // Keep this order in sync with ProxySession::startInternal, which validates
+    // the core config (generating the runtime config) before validating the
+    // runtime resources (rule sets are read from that generated config).
     steps_
         << proxySessionText("Environment cleanup")
         << proxySessionText("Validate core application")
-        << proxySessionText("Validate runtime resources")
-        << proxySessionText("Validate core config");
+        << proxySessionText("Validate core config")
+        << proxySessionText("Validate runtime resources");
     if (tunEnabled) {
         steps_.append(proxySessionText("Start TUN runtime"));
     }
@@ -83,8 +85,16 @@ void CoreStartupChecklist::prepare(bool tunEnabled, bool showOverlay)
     }
 
     if (showOverlay) {
-        syncOverlay();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        // Defer the first overlay sync to the event loop. Pumping queued
+        // events here (processEvents) re-entered the startup flow while
+        // prepare() was still on the stack; a queued sync renders at the
+        // next event loop iteration without that re-entrancy. syncOverlay()
+        // itself is a no-op once clear() has reset overlayRequested_.
+        if (timerContext_ != nullptr) {
+            QTimer::singleShot(0, timerContext_, [this]() { syncOverlay(); });
+        } else {
+            syncOverlay();
+        }
     }
 }
 

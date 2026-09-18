@@ -47,6 +47,18 @@ class WindowsSystemProxyService;
 struct AppBootstrapObjects {
     ~AppBootstrapObjects();
 
+    // Members are destroyed in REVERSE declaration order, so declaration order
+    // is load bearing:
+    //   * `repository` stays first because the services below hold references
+    //     to it and must be destroyed before it.
+    //   * `mainWindow` must be declared before everything it is used as a
+    //     QObject parent for (see the coordinators below). Those objects are
+    //     owned twice — by a unique_ptr here and by mainWindow's child list —
+    //     so if mainWindow were destroyed first, ~QObject would delete them and
+    //     the unique_ptrs would then free the same pointers again.
+    // Adding new members at the end is safe; inserting one above `mainWindow`
+    // requires re-checking this order.
+
     std::unique_ptr<JsonConfigRepository> repository;
     std::unique_ptr<ServerService> serverService;
     std::unique_ptr<ConfigBackupService> configBackupService;
@@ -75,6 +87,9 @@ struct AppBootstrapObjects {
     std::unique_ptr<ProxySession> proxySession;
     std::unique_ptr<IUserFeedback> userFeedback;
     std::unique_ptr<ApplicationRestartCoordinator> applicationRestartCoordinator;
+    // Declared here, before the coordinators that are parented to it, so it is
+    // destroyed after them. See the ordering note at the top of this struct.
+    std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<AppUpdateCheckCoordinator> appUpdateCheckCoordinator;
     std::unique_ptr<CoreUpdateCoordinator> coreUpdateCoordinator;
     std::unique_ptr<DefaultServerSwitchCoordinator> defaultServerSwitchCoordinator;
@@ -88,5 +103,4 @@ struct AppBootstrapObjects {
     std::unique_ptr<SubscriptionWorkflowCoordinator> subscriptionWorkflowCoordinator;
     std::unique_ptr<TunModeCoordinator> tunModeCoordinator;
     std::unique_ptr<TrayController> trayController;
-    std::unique_ptr<MainWindow> mainWindow;
 };

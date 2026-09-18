@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 
+#include "common/CorePidFile.h"
 #include "runtime/CoreProcessOutputBuffer.h"
 #include "runtime/ICoreProcessHost.h"
 

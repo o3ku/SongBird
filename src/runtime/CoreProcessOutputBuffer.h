@@ -22,6 +22,10 @@ private:
     void emitCompleteLines(QString& buffer, const OutputCallback& outputReceived);
     void flushBuffer(QString& buffer, bool flushPartialLines, const OutputCallback& outputReceived);
 
+    // Holds raw bytes until a complete UTF-8 sequence has arrived, so a
+    // multi-byte character split across readAll() chunks decodes correctly.
+    QByteArray standardOutputRaw_;
+    QByteArray standardErrorRaw_;
     QString standardOutput_;
     QString standardError_;
 };
