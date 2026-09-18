@@ -32,6 +32,5 @@ QToolButton* createActionButton(
     const QIcon& icon,
     QAction* action);
 QWidget* createSpacing(QWidget* parent, int width);
-void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters);
 
 } // namespace ToolbarWidgets

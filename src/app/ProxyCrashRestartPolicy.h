@@ -17,7 +17,6 @@ public:
         QString message;
         int delayMs = 0;
         bool auxiliary = false;
-        bool tunConflictRetry = false;
     };
 
     void resetTunConflictRetries();

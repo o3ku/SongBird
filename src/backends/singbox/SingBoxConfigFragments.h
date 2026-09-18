@@ -33,6 +33,4 @@ public:
     static void appendTunIcmpRouteRule(QJsonArray& rules, const TunModeItem& tun);
     static void appendTunUdpRouteRule(QJsonArray& rules, const TunModeItem& tun);
     static void appendSniffRules(QJsonArray& rules, const Config& config);
-    static QStringList buildTunCompatDnsProcessNames();
-    static QStringList buildTunCompatDirectProcessNames();
 };

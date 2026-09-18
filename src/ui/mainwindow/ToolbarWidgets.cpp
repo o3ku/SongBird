@@ -149,18 +149,6 @@ void syncActionButton(QToolButton* button, QAction* action)
     QObject::connect(action, &QAction::changed, button, syncState);
 }
 
-int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
-{
-    if (widget == nullptr) {
-        return 0;
-    }
-
-    const QFontMetrics metrics(widget->font());
-    const int textWidth = metrics.horizontalAdvance(text);
-    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
-    return qMax(textWidth, characterWidth) + chromeWidth;
-}
-
 } // namespace
 
 namespace ToolbarWidgets {
@@ -247,36 +235,6 @@ QWidget* createSpacing(QWidget* parent, int width)
     spacer->setFixedWidth(width);
     spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     return spacer;
-}
-
-void updateContentSizedComboBox(QComboBox* comboBox, int minimumCharacters)
-{
-    if (comboBox == nullptr) {
-        return;
-    }
-
-    // Always set the policy so tests can verify it before the window is shown.
-    comboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-
-    // Defer the actual width calculation until after the first show; font
-    // metrics differ before the style has fully resolved.
-    if (!comboBox->window()->isVisible()) {
-        return;
-    }
-
-    QString widestText = comboBox->currentText();
-    for (int index = 0; index < comboBox->count(); ++index) {
-        if (comboBox->fontMetrics().horizontalAdvance(comboBox->itemText(index))
-            > comboBox->fontMetrics().horizontalAdvance(widestText)) {
-            widestText = comboBox->itemText(index);
-        }
-    }
-
-    const int comboWidth = textControlMinimumWidth(comboBox, widestText, minimumCharacters, 16);
-    comboBox->setProperty("contentSizedWidth", comboWidth);
-    comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    comboBox->setFixedWidth(comboWidth);
-    comboBox->updateGeometry();
 }
 
 } // namespace ToolbarWidgets

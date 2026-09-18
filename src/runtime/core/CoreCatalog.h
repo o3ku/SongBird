@@ -34,12 +34,6 @@ inline const CoreDescriptor* coreDescriptor(CoreType coreType)
     return nullptr;
 }
 
-inline bool coreDescriptorSupportsConfigType(CoreType coreType, ConfigType configType)
-{
-    const CoreDescriptor* descriptor = coreDescriptor(coreType);
-    return descriptor != nullptr && descriptor->supportedConfigTypes.contains(configType);
-}
-
 inline QList<CoreType> catalogCoreTypes()
 {
     const QList<CoreDescriptor> descriptors = coreDescriptors();

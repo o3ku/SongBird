@@ -219,9 +219,3 @@ std::optional<RoutingItem> RoutingProfiles::selectedRouting(const Config& config
     }
     return items.at(index);
 }
-
-QString RoutingProfiles::selectedRoutingName(const Config& config)
-{
-    const std::optional<RoutingItem> routing = selectedRouting(config);
-    return routing.has_value() ? routing->remarks.trimmed() : QString();
-}

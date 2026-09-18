@@ -3,7 +3,7 @@
 #include <QList>
 #include <QString>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "domain/models/Config.h"
 
 class QAction;

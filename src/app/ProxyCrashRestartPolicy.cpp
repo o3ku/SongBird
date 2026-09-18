@@ -52,8 +52,7 @@ ProxyCrashRestartPolicy::Decision ProxyCrashRestartPolicy::decide(
             QStringLiteral("TUN adapter conflict detected (code=%1). Cleaning up and retrying core startup...")
                 .arg(exitCode),
             1000,
-            false,
-            true};
+            false};
     }
 
     if (!auxiliary && tunAdapterConflictDetected) {
@@ -61,7 +60,6 @@ ProxyCrashRestartPolicy::Decision ProxyCrashRestartPolicy::decide(
             Action::DisableAfterTunConflict,
             QStringLiteral("TUN adapter conflict persisted after cleanup retry. Auto-restart disabled."),
             0,
-            false,
             false};
     }
 
@@ -77,7 +75,7 @@ ProxyCrashRestartPolicy::Decision ProxyCrashRestartPolicy::decide(
                 .arg(coreLabel(auxiliary), exitKind(exitStatus))
                 .arg(exitCode)
                 .arg(kMaxCrashRestarts);
-        return Decision{Action::DisableRestart, message, 0, auxiliary, false};
+        return Decision{Action::DisableRestart, message, 0, auxiliary};
     }
 
     const int delayMs = std::min(3000 * count, 30000);
@@ -88,7 +86,7 @@ ProxyCrashRestartPolicy::Decision ProxyCrashRestartPolicy::decide(
             .arg(delayMs / 1000)
             .arg(count)
             .arg(kMaxCrashRestarts);
-    return Decision{Action::ScheduleRestart, message, delayMs, auxiliary, false};
+    return Decision{Action::ScheduleRestart, message, delayMs, auxiliary};
 }
 
 int ProxyCrashRestartPolicy::crashCount(bool auxiliary) const

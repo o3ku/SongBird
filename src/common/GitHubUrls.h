@@ -89,21 +89,6 @@ inline QUrl songbirdReleasesApiUrl()
     return githubReleasesApiUrl(songbirdRepositoryPath(), 10);
 }
 
-inline QString xrayReleasePageUrl()
-{
-    return githubReleasesPageUrl(xrayRepositoryPath());
-}
-
-inline QString singBoxReleasePageUrl()
-{
-    return githubReleasesPageUrl(singBoxRepositoryPath());
-}
-
-inline QString v2rayRulesDatReleasePageUrl()
-{
-    return githubReleasesPageUrl(v2rayRulesDatRepositoryPath());
-}
-
 inline QUrl singRuleSetDownloadUrl(const QString& repositoryPath, const QString& tag)
 {
     return githubRawContentUrl(repositoryPath, QStringLiteral("rule-set"), QStringLiteral("%1.srs").arg(tag));

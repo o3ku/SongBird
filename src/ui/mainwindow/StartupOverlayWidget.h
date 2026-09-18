@@ -16,7 +16,6 @@ public:
 
     void showChecklist(const QString& title, const QStringList& items);
     void hideOverlay();
-    bool isChecklistVisible() const;
     bool isChecklistFailed() const;
     void updateGeometry(const QRect& parentRect);
 

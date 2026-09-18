@@ -6,10 +6,6 @@
 struct PolicyGroupItem {
     enum class Strategy {
         LeastPing = 0,
-        LeastLoad = 1,
-        Fallback = 2,
-        Random = 3,
-        RoundRobin = 4,
         UrlTest = 5
     };
 

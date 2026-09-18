@@ -16,12 +16,6 @@ OperationResult CoreLifecycleService::start(const CoreInfo& coreInfo, const QStr
         },
         [this](const QString& message) {
             emit started(message);
-        },
-        [this](const QString& message) {
-            emit startFailed(message);
-        },
-        [this](int exitCode, QProcess::ExitStatus status, bool stopRequested) {
-            emit exited(exitCode, status, stopRequested);
         });
 }
 

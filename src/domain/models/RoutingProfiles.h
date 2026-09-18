@@ -19,6 +19,5 @@ void normalizeCustomRoutingItems(QList<RoutingItem>& items);
 void normalizeRoutingConfig(CollectionConfigState& config);
 int selectedRoutingIndex(const CollectionConfigState& config);
 std::optional<RoutingItem> selectedRouting(const Config& config);
-QString selectedRoutingName(const Config& config);
 
 } // namespace RoutingProfiles

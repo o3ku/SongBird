@@ -124,23 +124,4 @@ inline QString getOpenFileName(
     return dialog.selectedFiles().constFirst();
 }
 
-inline QString getSaveFileName(
-    QWidget* parent,
-    const QString& title,
-    const QString& initialPath,
-    const QString& filter)
-{
-    QFileDialog dialog(parent, title, QString(), filter);
-    dialog.setAcceptMode(QFileDialog::AcceptSave);
-    dialog.setFileMode(QFileDialog::AnyFile);
-    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
-    if (!initialPath.trimmed().isEmpty()) {
-        dialog.selectFile(initialPath);
-    }
-    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
-        return {};
-    }
-    return dialog.selectedFiles().constFirst();
-}
-
 } // namespace DialogUtils

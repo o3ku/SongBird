@@ -15,10 +15,6 @@ PolicyGroupItem::Strategy parsePolicyGroupStrategy(const QJsonObject& object)
     const int value = readInt(object, QStringLiteral("strategy"), 0);
     switch (value) {
     case 0:
-    case 1:
-    case 2:
-    case 3:
-    case 4:
     case 5:
         return static_cast<PolicyGroupItem::Strategy>(value);
     default:

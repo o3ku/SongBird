@@ -174,13 +174,3 @@ void SingBoxConfigFragments::appendSniffRules(QJsonArray& rules, const Config& c
 {
     TunCompatConfig::appendSniffRules(rules, config);
 }
-
-QStringList SingBoxConfigFragments::buildTunCompatDnsProcessNames()
-{
-    return TunCompatConfig::buildDnsProcessNames();
-}
-
-QStringList SingBoxConfigFragments::buildTunCompatDirectProcessNames()
-{
-    return TunCompatConfig::buildDirectProcessNames();
-}

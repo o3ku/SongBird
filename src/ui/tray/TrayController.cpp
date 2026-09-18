@@ -64,6 +64,7 @@ bool TrayController::initialize()
     trayMenu_->addSeparator();
     quitAction_ = trayMenu_->addAction(trayText("Quit"));
     quitAction_->setObjectName(QStringLiteral("trayQuitAction"));
+    TrayMenuSupport::reserveMenuIconColumn(trayMenu_);
 
     trayIcon_->setContextMenu(trayMenu_);
 

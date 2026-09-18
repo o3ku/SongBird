@@ -48,28 +48,6 @@ inline bool protocolSupportsCore(ConfigType configType, CoreType coreType)
     return supportedCoreTypes(configType).contains(coreType);
 }
 
-inline bool prefersInstalledCoreForProtocol(ConfigType configType)
-{
-    switch (configType) {
-    case ConfigType::VMess:
-    case ConfigType::Shadowsocks:
-    case ConfigType::Socks:
-    case ConfigType::VLESS:
-    case ConfigType::Trojan:
-    case ConfigType::HTTP:
-    case ConfigType::Hysteria2:
-    case ConfigType::TUIC:
-    case ConfigType::WireGuard:
-    case ConfigType::AnyTLS:
-    case ConfigType::Naive:
-        return true;
-    case ConfigType::Custom:
-    case ConfigType::Unknown:
-    default:
-        return false;
-    }
-}
-
 inline QList<CoreType> prioritizedCoreTypesForProtocol(ConfigType configType)
 {
     QList<CoreDescriptor> matchingDescriptors;

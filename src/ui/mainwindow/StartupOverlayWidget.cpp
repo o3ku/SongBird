@@ -168,11 +168,6 @@ void StartupOverlayWidget::hideOverlay()
     checklistFailed_ = false;
 }
 
-bool StartupOverlayWidget::isChecklistVisible() const
-{
-    return isVisible();
-}
-
 bool StartupOverlayWidget::isChecklistFailed() const
 {
     return checklistFailed_;

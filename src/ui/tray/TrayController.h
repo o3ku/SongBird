@@ -6,7 +6,7 @@
 #include <QPointer>
 #include <QString>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/VmessItem.h"
