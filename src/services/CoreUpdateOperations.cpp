@@ -12,9 +12,11 @@
 
 #include <memory>
 
+#include "services/ServiceTimeouts.h"
+
 namespace {
 
-constexpr int kCancellationPollIntervalMs = 100;
+constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 
 QString quotePowerShellLiteral(QString value)
 {

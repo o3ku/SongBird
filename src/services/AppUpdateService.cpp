@@ -17,15 +17,17 @@
 
 #include "common/GitHubMirrorHelper.h"
 #include "common/GitHubUrls.h"
+#include "common/JsonFile.h"
 #include "common/UserAgent.h"
 #include "services/AppUpdateReleaseMetadata.h"
 #include "services/CoreUpdateVersion.h"
+#include "services/ServiceTimeouts.h"
 
 namespace {
 
-constexpr int kAppUpdateMetadataTimeoutMs = 30000;
-constexpr int kAppUpdateDownloadTimeoutMs = 180000;
-constexpr int kCancellationPollIntervalMs = 100;
+constexpr int kAppUpdateMetadataTimeoutMs = ServiceTimeouts::kDefaultNetworkTimeoutMs;
+constexpr int kAppUpdateDownloadTimeoutMs = ServiceTimeouts::kLargeDownloadTimeoutMs;
+constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 
 OperationResult downloadBytesWithNetwork(const QUrl& url, QByteArray* content, int timeoutMs)
 {
@@ -109,14 +111,7 @@ OperationResult downloadBytesWithNetwork(const QUrl& url, QByteArray* content, i
 
 bool writeBytesToFile(const QString& path, const QByteArray& content)
 {
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) {
-        return false;
-    }
-    if (file.write(content) != content.size()) {
-        return false;
-    }
-    return file.commit();
+    return JsonFile::writeFileAtomically(path, content).ok;
 }
 
 } // namespace

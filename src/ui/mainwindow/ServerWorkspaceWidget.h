@@ -6,6 +6,7 @@
 
 #include <functional>
 
+class QHBoxLayout;
 class QLineEdit;
 class QSplitter;
 class QTabBar;
@@ -61,7 +62,7 @@ private:
     QWidget* serverPanel_ = nullptr;
     QVBoxLayout* serverPanelLayout_ = nullptr;
     QWidget* serverHeaderRow_ = nullptr;
-    class QHBoxLayout* subscriptionTabBarLayout_ = nullptr;
+    QHBoxLayout* subscriptionTabBarLayout_ = nullptr;
     bool compactMode_ = false;
     std::function<void(const QString&)> compactSelectionHandler_;
     std::function<void(const QString&, const QPoint&)> compactContextMenuHandler_;

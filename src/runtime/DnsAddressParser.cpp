@@ -21,6 +21,15 @@ QStringList splitDnsAddresses(const QString& value)
     return result;
 }
 
+// Parses a DNS authority ("host", "host:port", "[ipv6]", "[ipv6]:port").
+//
+// Deliberately not EndpointParser::tryParseAddressAndPort: that helper requires
+// a port and returns a bare host, whereas DNS authorities may omit the port
+// (port 0 means "absent") and a bracketed IPv6 host is returned *with* its
+// brackets. The brackets matter because the result is written into generated
+// core config, where "[::1]:53" has to stay bracketed to be valid. Merging the
+// two parsers would need a flag for each of those differences, so they are kept
+// separate on purpose.
 QPair<QString, int> parseAuthority(QString authority)
 {
     authority = authority.trimmed();

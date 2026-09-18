@@ -3,6 +3,8 @@
 #include <QFontMetrics>
 #include <QObject>
 
+#include "common/TextElision.h"
+
 QString MainWindowTitleSupport::formatWindowTitle(
     const QString& coreName,
     const QString& serverName,
@@ -16,10 +18,7 @@ QString MainWindowTitleSupport::formatWindowTitle(
         : coreName.trimmed();
     const QString displayedServerName = serverName.trimmed().isEmpty()
         ? QObject::tr("None")
-        : fontMetrics.elidedText(
-            serverName.trimmed(),
-            Qt::ElideRight,
-            serverNameMaximumWidth);
+        : TextElision::elideRight(fontMetrics, serverName.trimmed(), serverNameMaximumWidth);
     const QString proxyState = proxyUiState == ProxyUiState::Active
         ? QObject::tr("Proxy ON")
         : QObject::tr("Proxy OFF");

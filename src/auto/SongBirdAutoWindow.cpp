@@ -34,7 +34,9 @@
 #include "app/StartupAdminElevation.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
+#include "common/TextElision.h"
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
+#include "ui/theme/AppTheme.h"
 
 namespace {
 
@@ -695,8 +697,7 @@ void SongBirdAutoWindow::applyCompactStyle()
         }
     )"));
     runButton_->setObjectName(QStringLiteral("primaryAction"));
-    style()->unpolish(runButton_);
-    style()->polish(runButton_);
+    AppTheme::refreshStyle(runButton_);
 }
 
 void SongBirdAutoWindow::showSubscriptionEditor()
@@ -1022,7 +1023,7 @@ void SongBirdAutoWindow::refreshLogStatusLabel()
     }
     const int availableWidth = logsStatusLabel_->contentsRect().width();
     const QString visibleText = availableWidth > 0
-        ? logsStatusLabel_->fontMetrics().elidedText(logStatusText_, Qt::ElideRight, availableWidth)
+        ? TextElision::elideRight(logsStatusLabel_->fontMetrics(), logStatusText_, availableWidth)
         : logStatusText_;
     logsStatusLabel_->setText(visibleText);
     logsStatusLabel_->setToolTip(logStatusText_.isEmpty()
@@ -1053,8 +1054,7 @@ void SongBirdAutoWindow::updateRunButtonState()
         runButton_->setEnabled(!busy_);
     }
 
-    style()->unpolish(runButton_);
-    style()->polish(runButton_);
+    AppTheme::refreshStyle(runButton_);
 }
 
 void SongBirdAutoWindow::startRunButtonAnimation()
@@ -1199,6 +1199,5 @@ void SongBirdAutoWindow::updateTunButtonState()
     tunButton_->setEnabled(!blocked);
     tunButton_->setChecked(tunEnabled_);
     tunButton_->setToolTip(tunEnabled_ ? tr("Disable TUN") : tr("Enable TUN"));
-    style()->unpolish(tunButton_);
-    style()->polish(tunButton_);
+    AppTheme::refreshStyle(tunButton_);
 }

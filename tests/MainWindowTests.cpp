@@ -38,6 +38,7 @@
 #include "ui/mainwindow/MainWindowTitleSupport.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/StatusBarSupport.h"
+#include "TestSupport.h"
 #include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/mainwindow/WindowLayoutStateSupport.h"
 #include "ui/models/LogListModel.h"
@@ -79,6 +80,7 @@ private slots:
     void windowLayoutStateSupportCapturesAndRestoresServerColumnWidths();
     void trayMenuSupportBuildsServerAndRoutingEntries();
     void trayMenuSupportFiltersServersToCurrentSubscriptionGroup();
+    void trayMenuSupportReservesIconColumnForPlainItems();
     void logDelegateUsesViewportWidthForSingleLineHeight();
     void logDelegateKeepsReportedSingleLineAtWideWidth();
     void logViewRelayoutsItemHeightAfterResize();
@@ -116,10 +118,7 @@ private slots:
 
 namespace {
 
-QString emojiMark(ushort codePoint)
-{
-    return QString(QChar(codePoint));
-}
+using TestSupport::emojiMark;
 
 QString checklistItem(ushort mark, const QString& text)
 {
@@ -1429,6 +1428,51 @@ void MainWindowTests::trayMenuSupportFiltersServersToCurrentSubscriptionGroup()
         subscriptions,
         QStringLiteral("missing-current-server"));
     QCOMPARE(filtered.size(), servers.size());
+}
+
+void MainWindowTests::trayMenuSupportReservesIconColumnForPlainItems()
+{
+    QMenu menu;
+    menu.setObjectName(QStringLiteral("trayMenu"));
+    QAction* currentServer = menu.addAction(QStringLiteral("Current: example"));
+    currentServer->setEnabled(false);
+    QAction* separator = menu.addSeparator();
+    QMenu* serversMenu = menu.addMenu(QStringLiteral("Switch Server"));
+    menu.addMenu(QStringLiteral("Switch Routing"));
+    QAction* autoRun = menu.addAction(QStringLiteral("Enable Auto Run"));
+    autoRun->setCheckable(true);
+    menu.addSeparator();
+    QAction* quit = menu.addAction(QStringLiteral("Quit"));
+
+    TrayMenuSupport::reserveMenuIconColumn(&menu);
+
+    const QStyle* style = menu.style();
+    const int checkMarkWidth = style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr, &menu);
+    const int iconColumnWidth = style->pixelMetric(QStyle::PM_SmallIconSize, nullptr, &menu) + 4;
+
+    // Plain rows are indented by the icon column, checkable rows by
+    // max(icon column, check mark width). Both offsets match while the icon
+    // column covers the check mark.
+    QVERIFY(iconColumnWidth >= checkMarkWidth);
+
+    for (QAction* action : menu.actions()) {
+        if (action->isSeparator() || action->isCheckable()) {
+            continue;
+        }
+
+        QVERIFY(!action->icon().isNull());
+        const QList<QSize> sizes = action->icon().availableSizes();
+        QVERIFY(!sizes.isEmpty());
+        QVERIFY(sizes.first().width() >= checkMarkWidth);
+    }
+
+    // The checkable row keeps its check mark, so it must stay icon free.
+    QVERIFY(autoRun->icon().isNull());
+    QVERIFY(!currentServer->icon().isNull());
+    QVERIFY(!serversMenu->menuAction()->icon().isNull());
+    QVERIFY(!quit->icon().isNull());
+    QVERIFY(separator->isSeparator());
+    QVERIFY(separator->icon().isNull());
 }
 
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()

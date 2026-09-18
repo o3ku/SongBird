@@ -6,15 +6,16 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "common/EndpointParser.h"
 #include "common/PortValidator.h"
 #include "subscription/ShareUrlParserSupport.h"
 
+using EndpointParser::tryParseAddressAndPort;
 using ShareUrlParserSupport::decodeBase64;
 using ShareUrlParserSupport::normalizeJsonText;
 using ShareUrlParserSupport::parseInt;
 using ShareUrlParserSupport::splitCsv;
 using ShareUrlParserSupport::tryAssignUserInfo;
-using ShareUrlParserSupport::tryParseAddressAndPort;
 
 namespace {
 

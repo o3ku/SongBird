@@ -33,11 +33,6 @@ bool DnsConfigFragments::isDomainName(const QString& value)
     return DnsHosts::isDomainName(value);
 }
 
-QString DnsConfigFragments::mapDnsRcode(int code)
-{
-    return DnsSupport::mapRcode(code);
-}
-
 QMap<QString, QStringList> DnsConfigFragments::parseHostsToDictionary(const QString& hosts)
 {
     return DnsHosts::parseConfigured(hosts);
@@ -46,11 +41,6 @@ QMap<QString, QStringList> DnsConfigFragments::parseHostsToDictionary(const QStr
 QMap<QString, QString> DnsConfigFragments::loadSystemHosts()
 {
     return DnsHosts::loadSystem();
-}
-
-QJsonObject DnsConfigFragments::buildSingBoxFakeIpFilterRule()
-{
-    return DnsSupport::fakeIpFilterRule();
 }
 
 bool DnsConfigFragments::appendSingBoxDomainField(QJsonObject& rule, const QString& value, bool plainAsDomain)

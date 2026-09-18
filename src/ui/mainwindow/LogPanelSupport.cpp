@@ -1,7 +1,6 @@
 #include "ui/mainwindow/LogPanelSupport.h"
 
 #include <QAbstractItemModel>
-#include <QFontMetrics>
 #include <QItemSelection>
 #include <QItemSelectionModel>
 #include <QLineEdit>
@@ -10,32 +9,13 @@
 #include <QSizePolicy>
 #include <QStyle>
 
-namespace {
-
-int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
-{
-    if (widget == nullptr) {
-        return 0;
-    }
-
-    const QFontMetrics metrics(widget->font());
-    const int textWidth = metrics.horizontalAdvance(text);
-    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
-    return qMax(textWidth, characterWidth) + chromeWidth;
-}
-
-} // namespace
+#include "ui/theme/AppTheme.h"
 
 namespace LogPanelSupport {
 
 void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
 {
-    if (edit == nullptr) {
-        return;
-    }
-
-    edit->setMinimumWidth(textControlMinimumWidth(edit, edit->placeholderText(), minimumCharacters, 40));
-    edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    AppTheme::configureContentSizedLineEdit(edit, minimumCharacters);
 }
 
 void setLineEditValidationState(QLineEdit* edit, const QString& value)
@@ -45,9 +25,7 @@ void setLineEditValidationState(QLineEdit* edit, const QString& value)
     }
 
     edit->setProperty("validationState", value);
-    edit->style()->unpolish(edit);
-    edit->style()->polish(edit);
-    edit->update();
+    AppTheme::refreshStyle(edit);
 }
 
 bool viewAtBottom(const QListView* view)

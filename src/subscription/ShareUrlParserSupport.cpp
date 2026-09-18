@@ -104,34 +104,6 @@ bool tryAssignUserInfo(QString credentials, QString& first, QString& second, boo
     return allowEmpty || !first.isEmpty() || !second.isEmpty();
 }
 
-bool tryParseAddressAndPort(const QString& endpoint, QString& address, int& port)
-{
-    const QString trimmed = endpoint.trimmed();
-    if (trimmed.isEmpty()) {
-        return false;
-    }
-
-    if (trimmed.startsWith(QStringLiteral("["))) {
-        const int closingIndex = trimmed.indexOf(QStringLiteral("]:"));
-        if (closingIndex <= 0) {
-            return false;
-        }
-
-        address = trimmed.mid(1, closingIndex - 1);
-        port = parseInt(trimmed.mid(closingIndex + 2));
-        return !address.isEmpty() && isValidTcpPort(port);
-    }
-
-    const int separatorIndex = trimmed.lastIndexOf(QChar(':'));
-    if (separatorIndex <= 0) {
-        return false;
-    }
-
-    address = trimmed.left(separatorIndex);
-    port = parseInt(trimmed.mid(separatorIndex + 1));
-    return !address.isEmpty() && isValidTcpPort(port);
-}
-
 void resolveStandardTransport(const QUrlQuery& query, VmessItem& item)
 {
     const auto decodedQueryValue = [&query](const QString& key) {

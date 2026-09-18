@@ -6,7 +6,7 @@
 #include <QList>
 #include <QString>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/SubItem.h"
 #include "domain/models/VmessItem.h"
@@ -58,6 +58,10 @@ QList<int> visibleServerIndexes(
     const QString& currentServerId,
     int maximumCount);
 QString describeRouting(const RoutingItem& item, int index);
+// Keeps the text of plain menu rows aligned with checkable rows. Qt indents a
+// checkable row by the check mark width but indents the other rows only by the
+// menu wide icon column, which stays 0 while no action carries an icon.
+void reserveMenuIconColumn(QMenu* menu);
 void rebuildServerMenu(
     QMenu* menu,
     const QList<TrayServerEntry>& servers,

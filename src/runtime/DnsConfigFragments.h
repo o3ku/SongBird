@@ -18,8 +18,6 @@ public:
     static QString mapDomainStrategyToSingBox(const QString& strategy);
     static bool usesDirectDnsAsFinalServer(const RoutingItem* routing);
     static bool appendSingBoxDomainField(QJsonObject& rule, const QString& value, bool plainAsDomain);
-    static QJsonObject buildSingBoxFakeIpFilterRule();
-    static QString mapDnsRcode(int code);
     static bool isIpAddress(const QString& value);
     static bool isDomainName(const QString& value);
     static QMap<QString, QStringList> parseHostsToDictionary(const QString& hosts);

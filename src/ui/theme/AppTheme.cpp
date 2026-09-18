@@ -3,14 +3,18 @@
 #include <QApplication>
 #include <QFile>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHash>
 #include <QIcon>
 #include <QIODevice>
+#include <QLineEdit>
 #include <QMetaObject>
 #include <QPainter>
 #include <QPixmap>
 #include <QRegularExpression>
+#include <QSizePolicy>
 #include <QStringView>
+#include <QStyle>
 #include <QSvgRenderer>
 #include <QWidget>
 
@@ -71,6 +75,17 @@ void AppTheme::applyCompactFont(const QList<QWidget*>& widgets)
     for (QWidget* widget : widgets) {
         applyCompactFont(widget);
     }
+}
+
+void AppTheme::refreshStyle(QWidget* widget)
+{
+    if (widget == nullptr) {
+        return;
+    }
+
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
 }
 
 void AppTheme::applyServerTableStyle(QTableView* tableView)
@@ -186,4 +201,30 @@ QString AppTheme::iconColor(bool enabled)
 {
     const ThemePalette& palette = currentPalette();
     return enabled ? color(palette.text) : color(palette.textSubtle);
+}
+
+int AppTheme::textControlMinimumWidth(
+    const QWidget* widget,
+    const QString& text,
+    int minimumCharacters,
+    int chromeWidth)
+{
+    if (widget == nullptr) {
+        return 0;
+    }
+
+    const QFontMetrics metrics(widget->font());
+    const int textWidth = metrics.horizontalAdvance(text);
+    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
+    return qMax(textWidth, characterWidth) + chromeWidth;
+}
+
+void AppTheme::configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
+{
+    if (edit == nullptr) {
+        return;
+    }
+
+    edit->setMinimumWidth(textControlMinimumWidth(edit, edit->placeholderText(), minimumCharacters, 40));
+    edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }

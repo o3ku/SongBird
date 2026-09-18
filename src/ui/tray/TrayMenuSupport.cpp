@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QMenu>
 #include <QObject>
+#include <QPixmap>
 #include <QSet>
 #include <QStyle>
 #include <QStringList>
@@ -15,10 +16,14 @@
 
 #include "common/AppPlatform.h"
 #include "common/ServerDisplayName.h"
-#include "services/SpeedTestServiceInternal.h"
+#include "common/TextElision.h"
+#include "common/UrlProbeLatency.h"
 
 namespace {
 
+// Elide width budgets are per context (server rows, current-server label,
+// tooltips) because each surface has its own layout constraints; they are not
+// shared so a change to one surface does not silently shift the others.
 constexpr int TrayServerNameTextMaxWidth = 300;
 constexpr int TrayCurrentServerNameTextMaxWidth = 260;
 constexpr int TrayCurrentServerTooltipNameTextMaxWidth = 360;
@@ -41,10 +46,7 @@ QString elidedText(QMenu* menu, const QString& text, int maximumWidth)
         return text;
     }
 
-    return menu->fontMetrics().elidedText(
-        text,
-        Qt::ElideRight,
-        maximumWidth);
+    return TextElision::elideRight(menu->fontMetrics(), text, maximumWidth);
 }
 
 QString coreStatusText(ProxyUiState state)
@@ -69,7 +71,7 @@ TrayServerSortKey makeTrayServerSortKey(const TrayServerEntry& item)
     }
 
     double latencyMs = -1;
-    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, latencyMs)) {
+    if (UrlProbeLatency::tryParseLatencyMs(normalized, latencyMs)) {
         return TrayServerSortKey{0, latencyMs};
     }
 
@@ -123,7 +125,7 @@ QString TrayMenuSupport::formatTestResult(const QString& value)
     }
 
     double latencyMs = -1;
-    if (SpeedTestServiceInternal::tryParseUrlProbeLatency(normalized, latencyMs)) {
+    if (UrlProbeLatency::tryParseLatencyMs(normalized, latencyMs)) {
         return QStringLiteral("%1 ms").arg(qRound(latencyMs));
     }
 
@@ -347,6 +349,38 @@ QString TrayMenuSupport::describeRouting(const RoutingItem& item, int index)
     return remarks.isEmpty()
         ? trayText("Routing %1").arg(index + 1)
         : remarks;
+}
+
+void TrayMenuSupport::reserveMenuIconColumn(QMenu* menu)
+{
+    if (menu == nullptr) {
+        return;
+    }
+
+    // QStyleSheetStyle indents a checkable row by the check mark width
+    // (PM_IndicatorWidth) but indents every other row only by the menu wide icon
+    // column (QMenu::maxIconWidth, which stays 0 while no action carries an
+    // icon). A menu that mixes checkable and plain rows - the tray menu with
+    // "Enable Auto Run" - therefore renders the checkable row's text further
+    // right than its neighbours. A transparent spacer icon on the plain rows
+    // reserves the same column for all rows and keeps every text left aligned.
+    // The spacer is at least as wide as the check mark so maxIconWidth covers it.
+    QStyle* style = menu->style();
+    const int spacerSize = qMax(
+        style->pixelMetric(QStyle::PM_SmallIconSize, nullptr, menu),
+        style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr, menu));
+
+    QPixmap spacer(spacerSize, spacerSize);
+    spacer.fill(Qt::transparent);
+    const QIcon spacerIcon(spacer);
+
+    for (QAction* action : menu->actions()) {
+        if (action == nullptr || action->isSeparator() || action->isCheckable()
+            || !action->icon().isNull()) {
+            continue;
+        }
+        action->setIcon(spacerIcon);
+    }
 }
 
 void TrayMenuSupport::rebuildServerMenu(

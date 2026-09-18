@@ -12,6 +12,7 @@
 
 #include <utility>
 
+#include "common/JsonFile.h"
 #include "persistence/JsonConfigRepository.h"
 #include "services/ConfigBackupStateDocument.h"
 
@@ -114,17 +115,14 @@ OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) 
         return OperationResult::fail(QStringLiteral("Failed to create the configuration directory."));
     }
 
-    QSaveFile targetFile(configPath_);
-    if (!targetFile.open(QIODevice::WriteOnly)) {
-        return OperationResult::fail(QStringLiteral("Failed to open the configuration file for restore."));
-    }
-
-    if (targetFile.write(QJsonDocument(primaryRoot).toJson(QJsonDocument::Compact)) < 0) {
-        return OperationResult::fail(QStringLiteral("Failed to write the restored configuration file."));
-    }
-
-    if (!targetFile.commit()) {
-        return OperationResult::fail(QStringLiteral("Failed to commit the restored configuration file."));
+    const JsonFile::WriteResult written = JsonFile::writeFileAtomically(
+        configPath_,
+        QJsonDocument(primaryRoot).toJson(QJsonDocument::Compact));
+    if (!written.ok) {
+        return OperationResult::fail(
+            written.stage == JsonFile::WriteFailureStage::Open
+                ? QStringLiteral("Failed to open the configuration file for restore.")
+                : QStringLiteral("Failed to commit the restored configuration file."));
     }
 
     const QString statePath = ConfigBackupStateDocument::stateConfigPathFor(configPath_);

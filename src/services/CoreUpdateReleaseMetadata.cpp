@@ -1,12 +1,10 @@
 #include "services/CoreUpdateReleaseMetadata.h"
 
 #include <QCoreApplication>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 
 #include <utility>
 
+#include "common/GitHubReleaseParsing.h"
 #include "common/GitHubUrls.h"
 #include "runtime/core/ICoreBackend.h"
 
@@ -48,65 +46,38 @@ bool parseGitHubReleasePayload(
         return false;
     }
 
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
+    const GitHubReleaseParsing::ParseResult parsed = GitHubReleaseParsing::parseGitHubReleaseList(payload);
+    if (parsed.status == GitHubReleaseParsing::ParseStatus::ParseError) {
         if (errorMessage != nullptr) {
-            *errorMessage = parseError.errorString();
+            *errorMessage = parsed.parseError;
+        }
+        return false;
+    }
+    if (parsed.status == GitHubReleaseParsing::ParseStatus::NotArray) {
+        if (errorMessage != nullptr) {
+            *errorMessage = parsed.objectMessage.isEmpty()
+                ? QCoreApplication::translate("CoreUpdateService", "Release metadata is invalid.")
+                : parsed.objectMessage;
         }
         return false;
     }
 
-    if (!document.isArray()) {
-        if (document.isObject()) {
-            const QString message = document.object().value(QStringLiteral("message")).toString().trimmed();
-            if (errorMessage != nullptr) {
-                *errorMessage = message.isEmpty()
-                    ? QCoreApplication::translate("CoreUpdateService", "Release metadata is invalid.")
-                    : message;
-            }
-        } else if (errorMessage != nullptr) {
-            *errorMessage = QCoreApplication::translate("CoreUpdateService", "Release metadata is invalid.");
-        }
-        return false;
-    }
-
-    const QJsonArray releases = document.array();
     bool skippedOnlyPrerelease = false;
-    for (const QJsonValue& value : releases) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        const QJsonObject object = value.toObject();
-        const bool prerelease = object.value(QStringLiteral("prerelease")).toBool(false);
-        if (!allowPrerelease && prerelease) {
+    for (const GitHubReleaseParsing::Release& parsedRelease : parsed.releases) {
+        if (!allowPrerelease && parsedRelease.prerelease) {
             skippedOnlyPrerelease = true;
             continue;
         }
 
-        GitHubRelease parsedRelease;
-        parsedRelease.tagName = object.value(QStringLiteral("tag_name")).toString().trimmed();
-        parsedRelease.prerelease = prerelease;
-        const QJsonArray assets = object.value(QStringLiteral("assets")).toArray();
-        for (const QJsonValue& assetValue : assets) {
-            if (!assetValue.isObject()) {
-                continue;
-            }
-
-            const QJsonObject assetObject = assetValue.toObject();
-            const QUrl downloadUrl(assetObject.value(QStringLiteral("browser_download_url")).toString().trimmed());
-            if (!downloadUrl.isValid()) {
-                continue;
-            }
-
-            parsedRelease.assets.append(GitHubReleaseAsset{
-                assetObject.value(QStringLiteral("name")).toString().trimmed(),
-                downloadUrl});
+        GitHubRelease convertedRelease;
+        convertedRelease.tagName = parsedRelease.tagName;
+        convertedRelease.prerelease = parsedRelease.prerelease;
+        for (const GitHubReleaseParsing::ReleaseAsset& asset : parsedRelease.assets) {
+            convertedRelease.assets.append(GitHubReleaseAsset{asset.name, asset.downloadUrl});
         }
 
-        if (!parsedRelease.tagName.isEmpty()) {
-            *release = std::move(parsedRelease);
+        if (!convertedRelease.tagName.isEmpty()) {
+            *release = std::move(convertedRelease);
             return true;
         }
     }

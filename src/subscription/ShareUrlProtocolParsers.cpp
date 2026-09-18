@@ -4,13 +4,13 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "common/EndpointParser.h"
 #include "common/PortValidator.h"
 #include "subscription/ShareUrlParserSupport.h"
 
 using ShareUrlParserSupport::decodeBase64;
 using ShareUrlParserSupport::decodedPassword;
 using ShareUrlParserSupport::decodedUserName;
-using ShareUrlParserSupport::parseInt;
 using ShareUrlParserSupport::resolveStandardTransport;
 using ShareUrlParserSupport::tryAssignUserInfo;
 
@@ -46,16 +46,21 @@ VmessItem parseLegacyShadowsocks(const QString& shareUrl)
 
     const QString decoded = decodeBase64(payload).trimmed();
     const int atIndex = decoded.lastIndexOf(QChar('@'));
-    const int colonIndex = decoded.lastIndexOf(QChar(':'));
     const int methodSeparator = decoded.indexOf(QChar(':'));
-    if (atIndex <= 0 || colonIndex <= atIndex || methodSeparator <= 0 || methodSeparator >= atIndex) {
+    if (atIndex <= 0 || methodSeparator <= 0 || methodSeparator >= atIndex) {
+        return {};
+    }
+
+    QString address;
+    int port = 0;
+    if (!EndpointParser::tryParseAddressAndPort(decoded.mid(atIndex + 1), address, port)) {
         return {};
     }
 
     item.security = decoded.left(methodSeparator);
     item.id = decoded.mid(methodSeparator + 1, atIndex - methodSeparator - 1);
-    item.address = decoded.mid(atIndex + 1, colonIndex - atIndex - 1);
-    item.port = parseInt(decoded.mid(colonIndex + 1));
+    item.address = address;
+    item.port = port;
     return item;
 }
 
@@ -95,8 +100,7 @@ VmessItem parseLegacySocks(const QString& shareUrl)
     }
 
     const int atIndex = payload.indexOf(QChar('@'));
-    const int portIndex = payload.lastIndexOf(QChar(':'));
-    if (atIndex <= 0 || portIndex <= atIndex) {
+    if (atIndex <= 0) {
         return {};
     }
 
@@ -106,10 +110,16 @@ VmessItem parseLegacySocks(const QString& shareUrl)
         return {};
     }
 
+    QString address;
+    int port = 0;
+    if (!EndpointParser::tryParseAddressAndPort(payload.mid(atIndex + 1), address, port)) {
+        return {};
+    }
+
     item.id = first;
     item.security = second;
-    item.address = payload.mid(atIndex + 1, portIndex - atIndex - 1);
-    item.port = parseInt(payload.mid(portIndex + 1));
+    item.address = address;
+    item.port = port;
     return item;
 }
 

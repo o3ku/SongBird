@@ -14,6 +14,7 @@
 #include <QTableView>
 #include <QWidget>
 
+#include "ui/theme/AppTheme.h"
 #include "ui/theme/AppThemePalette.h"
 
 namespace {
@@ -221,8 +222,7 @@ void ServerTableTheme::apply(QTableView* tableView)
         tableView->setItemDelegate(new ServerTableStyleDelegate(tableView));
     }
 
-    tableView->style()->unpolish(tableView);
-    tableView->style()->polish(tableView);
+    AppTheme::refreshStyle(tableView);
 
     QPalette palette = tableView->palette();
     palette.setColor(QPalette::Base, QColor(color(theme.surface)));

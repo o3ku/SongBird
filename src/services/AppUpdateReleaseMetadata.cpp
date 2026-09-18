@@ -1,9 +1,8 @@
 #include "services/AppUpdateReleaseMetadata.h"
 
 #include <QCoreApplication>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
+
+#include "common/GitHubReleaseParsing.h"
 
 const AppUpdateReleaseAsset* selectBestAppUpdateAsset(const QList<AppUpdateReleaseAsset>& assets)
 {
@@ -53,66 +52,48 @@ bool parseLatestAppRelease(
         return false;
     }
 
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
+    const GitHubReleaseParsing::ParseResult parsed = GitHubReleaseParsing::parseGitHubReleaseList(payload);
+    if (parsed.status == GitHubReleaseParsing::ParseStatus::ParseError) {
         if (errorMessage != nullptr) {
-            *errorMessage = parseError.errorString();
+            *errorMessage = parsed.parseError;
         }
         return false;
     }
-    if (!document.isArray()) {
+    if (parsed.status == GitHubReleaseParsing::ParseStatus::NotArray) {
         if (errorMessage != nullptr) {
-            const QString message = document.isObject()
-                ? document.object().value(QStringLiteral("message")).toString().trimmed()
-                : QString();
-            *errorMessage = message.isEmpty()
+            *errorMessage = parsed.objectMessage.isEmpty()
                 ? QCoreApplication::translate("AppUpdateService", "Release metadata is invalid.")
-                : message;
+                : parsed.objectMessage;
         }
         return false;
     }
 
     bool skippedOnlyPrerelease = false;
-    for (const QJsonValue& value : document.array()) {
-        if (!value.isObject()) {
+    for (const GitHubReleaseParsing::Release& parsedRelease : parsed.releases) {
+        if (parsedRelease.draft) {
             continue;
         }
-
-        const QJsonObject object = value.toObject();
-        const bool draft = object.value(QStringLiteral("draft")).toBool(false);
-        const bool prerelease = object.value(QStringLiteral("prerelease")).toBool(false);
-        if (draft) {
-            continue;
-        }
-        if (!allowPrerelease && prerelease) {
+        if (!allowPrerelease && parsedRelease.prerelease) {
             skippedOnlyPrerelease = true;
             continue;
         }
-
-        const QString tagName = object.value(QStringLiteral("tag_name")).toString().trimmed();
-        const QUrl htmlUrl(object.value(QStringLiteral("html_url")).toString().trimmed());
-        if (tagName.isEmpty()) {
+        if (parsedRelease.tagName.isEmpty()) {
             continue;
         }
 
-        AppUpdateRelease parsedRelease{
-            tagName,
-            object.value(QStringLiteral("name")).toString().trimmed(),
-            htmlUrl,
-            prerelease,
-            draft,
-            {}};
-        const QJsonArray assets = object.value(QStringLiteral("assets")).toArray();
-        for (const QJsonValue& assetValue : assets) {
-            const QJsonObject assetObject = assetValue.toObject();
-            const QString assetName = assetObject.value(QStringLiteral("name")).toString().trimmed();
-            const QUrl downloadUrl(assetObject.value(QStringLiteral("browser_download_url")).toString().trimmed());
-            if (!assetName.isEmpty() && downloadUrl.isValid()) {
-                parsedRelease.assets.append(AppUpdateReleaseAsset{assetName, downloadUrl});
+        AppUpdateRelease convertedRelease;
+        convertedRelease.tagName = parsedRelease.tagName;
+        convertedRelease.name = parsedRelease.name;
+        convertedRelease.htmlUrl = parsedRelease.htmlUrl;
+        convertedRelease.prerelease = parsedRelease.prerelease;
+        convertedRelease.draft = parsedRelease.draft;
+        for (const GitHubReleaseParsing::ReleaseAsset& asset : parsedRelease.assets) {
+            if (asset.name.isEmpty()) {
+                continue;
             }
+            convertedRelease.assets.append(AppUpdateReleaseAsset{asset.name, asset.downloadUrl});
         }
-        *release = parsedRelease;
+        *release = convertedRelease;
         return true;
     }
 

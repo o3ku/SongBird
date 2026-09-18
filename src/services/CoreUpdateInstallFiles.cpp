@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 
+#include "common/JsonFile.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 
@@ -94,23 +95,24 @@ OperationResult CoreUpdateInstallFiles::writeBytesToFile(const QString& filePath
                 .arg(QDir::toNativeSeparators(filePath)));
     }
 
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
+    const JsonFile::WriteResult written = JsonFile::writeFileAtomically(filePath, content);
+    if (!written.ok) {
+        const QString path = QDir::toNativeSeparators(filePath);
+        switch (written.stage) {
+        case JsonFile::WriteFailureStage::Open:
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "Failed to open %1 for writing.").arg(path));
+        case JsonFile::WriteFailureStage::Write:
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "Failed to write %1.").arg(path));
+        case JsonFile::WriteFailureStage::Commit:
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "Failed to save %1.").arg(path));
+        case JsonFile::WriteFailureStage::None:
+            break;
+        }
         return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "Failed to open %1 for writing.")
-                .arg(QDir::toNativeSeparators(filePath)));
-    }
-
-    if (file.write(content) < 0) {
-        return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "Failed to write %1.")
-                .arg(QDir::toNativeSeparators(filePath)));
-    }
-
-    if (!file.commit()) {
-        return OperationResult::fail(
-            QCoreApplication::translate("CoreUpdateService", "Failed to save %1.")
-                .arg(QDir::toNativeSeparators(filePath)));
+            QCoreApplication::translate("CoreUpdateService", "Failed to save %1.").arg(path));
     }
 
     return OperationResult::ok();

@@ -8,6 +8,7 @@
 #include "app/TunRuntimeState.h"
 #include "runtime/CoreConfigPreflight.h"
 #include "runtime/TunAdapterNames.h"
+#include "TestSupport.h"
 
 class AppBootstrapTunRuntimeTests : public QObject {
     Q_OBJECT
@@ -32,14 +33,7 @@ private slots:
     void xrayGeoFileCheckPassesWhenDatFilesExist();
 };
 
-namespace {
-
-QString emojiMark(ushort codePoint)
-{
-    return QString(QChar(codePoint));
-}
-
-} // namespace
+using TestSupport::emojiMark;
 
 void AppBootstrapTunRuntimeTests::coreStartupChecklistMarksUseEmoji()
 {

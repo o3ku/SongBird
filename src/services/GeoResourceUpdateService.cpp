@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "common/GitHubUrls.h"
+#include "common/JsonFile.h"
 #include "services/GeoResourceDownload.h"
 
 namespace {
@@ -131,23 +132,24 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
             QCoreApplication::translate("GeoResourceUpdateService", "Failed to create the geo file directory."));
     }
 
-    QSaveFile file(targetPath);
-    if (!file.open(QIODevice::WriteOnly)) {
+    const JsonFile::WriteResult written = JsonFile::writeFileAtomically(targetPath, content);
+    if (!written.ok) {
+        const QString path = QDir::toNativeSeparators(targetPath);
+        switch (written.stage) {
+        case JsonFile::WriteFailureStage::Open:
+            return OperationResult::fail(
+                QCoreApplication::translate("GeoResourceUpdateService", "Failed to open %1 for writing.").arg(path));
+        case JsonFile::WriteFailureStage::Write:
+            return OperationResult::fail(
+                QCoreApplication::translate("GeoResourceUpdateService", "Failed to write %1.").arg(path));
+        case JsonFile::WriteFailureStage::Commit:
+            return OperationResult::fail(
+                QCoreApplication::translate("GeoResourceUpdateService", "Failed to save %1.").arg(path));
+        case JsonFile::WriteFailureStage::None:
+            break;
+        }
         return OperationResult::fail(
-            QCoreApplication::translate("GeoResourceUpdateService", "Failed to open %1 for writing.")
-                .arg(QDir::toNativeSeparators(targetPath)));
-    }
-
-    if (file.write(content) < 0) {
-        return OperationResult::fail(
-            QCoreApplication::translate("GeoResourceUpdateService", "Failed to write %1.")
-                .arg(QDir::toNativeSeparators(targetPath)));
-    }
-
-    if (!file.commit()) {
-        return OperationResult::fail(
-            QCoreApplication::translate("GeoResourceUpdateService", "Failed to save %1.")
-                .arg(QDir::toNativeSeparators(targetPath)));
+            QCoreApplication::translate("GeoResourceUpdateService", "Failed to save %1.").arg(path));
     }
 
     return OperationResult::ok(

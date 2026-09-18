@@ -17,6 +17,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "common/TextElision.h"
 #include "ui/mainwindow/LogPanelWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/SharePanelWidget.h"
@@ -90,9 +91,7 @@ public:
         setFont(titleFont);
         refreshThemeAssets();
         setText(label_);
-        style()->unpolish(this);
-        style()->polish(this);
-        update();
+        AppTheme::refreshStyle(this);
     }
 
     void setLabel(const QString& label)
@@ -140,7 +139,7 @@ protected:
         painter.drawText(
             textRect,
             Qt::AlignLeft | Qt::AlignVCenter,
-            fontMetrics().elidedText(text(), Qt::ElideRight, textRect.width()));
+            TextElision::elideRight(fontMetrics(), text(), textRect.width()));
     }
 
 private:
@@ -148,37 +147,9 @@ private:
     QString label_;
 };
 
-int textControlMinimumWidth(const QWidget* widget, const QString& text, int minimumCharacters, int chromeWidth)
-{
-    if (widget == nullptr) {
-        return 0;
-    }
-
-    const QFontMetrics metrics(widget->font());
-    const int textWidth = metrics.horizontalAdvance(text);
-    const int characterWidth = metrics.horizontalAdvance(QString(minimumCharacters, QLatin1Char('M')));
-    return qMax(textWidth, characterWidth) + chromeWidth;
-}
-
 void configureContentSizedLineEdit(QLineEdit* edit, int minimumCharacters)
 {
-    if (edit == nullptr) {
-        return;
-    }
-
-    edit->setMinimumWidth(textControlMinimumWidth(edit, edit->placeholderText(), minimumCharacters, 40));
-    edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-}
-
-void refreshStyle(QWidget* widget)
-{
-    if (widget == nullptr) {
-        return;
-    }
-
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
+    AppTheme::configureContentSizedLineEdit(edit, minimumCharacters);
 }
 
 } // namespace
@@ -518,7 +489,7 @@ void ServerWorkspaceWidget::moveServerViewToDesktop()
 
     serverView_->setParent(serverPanel_);
     serverView_->setProperty("compactServerTable", false);
-    refreshStyle(serverView_);
+    AppTheme::refreshStyle(serverView_);
     serverPanelLayout_->addWidget(serverView_, 1);
     serverView_->show();
 }
@@ -531,6 +502,6 @@ void ServerWorkspaceWidget::moveServerViewToCompact()
 
     serverView_->setParent(compactSectionsWidget_);
     serverView_->setProperty("compactServerTable", true);
-    refreshStyle(serverView_);
+    AppTheme::refreshStyle(serverView_);
     serverView_->show();
 }

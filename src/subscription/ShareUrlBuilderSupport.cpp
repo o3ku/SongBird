@@ -1,31 +1,12 @@
 #include "subscription/ShareUrlBuilderSupport.h"
 
 #include <QHostAddress>
-#include <QJsonDocument>
-#include <QJsonParseError>
 #include <QStringList>
 #include <QUrl>
 
-namespace {
+#include "subscription/ShareUrlParserSupport.h"
 
-QString normalizeJsonText(const QString& value)
-{
-    const QString trimmed = value.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(trimmed.toUtf8(), &parseError);
-    if (parseError.error != QJsonParseError::NoError
-        || (!document.isObject() && !document.isArray())) {
-        return trimmed;
-    }
-
-    return QString::fromUtf8(document.toJson(QJsonDocument::Compact));
-}
-
-} // namespace
+using ShareUrlParserSupport::normalizeJsonText;
 
 namespace ShareUrlBuilderSupport {
 

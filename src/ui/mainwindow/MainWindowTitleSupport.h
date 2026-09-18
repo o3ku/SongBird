@@ -2,7 +2,7 @@
 
 #include <QString>
 
-#include "app/RuntimeState.h"
+#include "domain/models/RuntimeState.h"
 
 class QFontMetrics;
 

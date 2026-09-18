@@ -10,6 +10,8 @@
 #include <QStringList>
 #include <QJsonValue>
 
+#include "common/JsonFile.h"
+
 QString ConfigBackupStateDocument::stateConfigPathFor(const QString& configPath)
 {
     const QFileInfo fileInfo(configPath);
@@ -32,16 +34,11 @@ QJsonObject ConfigBackupStateDocument::readJsonObject(const QString& path)
 
 bool ConfigBackupStateDocument::writeJsonObject(const QString& path, const QJsonObject& root)
 {
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return false;
-    }
-
-    if (file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) < 0) {
-        return false;
-    }
-
-    return file.commit();
+    return JsonFile::writeFileAtomically(
+               path,
+               QJsonDocument(root).toJson(QJsonDocument::Compact),
+               QIODevice::Text)
+        .ok;
 }
 
 void ConfigBackupStateDocument::mergeStateIntoPrimary(QJsonObject& primaryRoot, const QJsonObject& stateRoot)

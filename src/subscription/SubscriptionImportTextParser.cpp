@@ -76,6 +76,10 @@ QString SubscriptionImportTextParser::extractHostOrIpFromUrl(const QString& url)
         }
     }
 
+    // Strip the port from the authority. The port is optional here -- a bare
+    // "example.com" must still yield "example.com" -- so
+    // EndpointParser::tryParseAddressAndPort does not apply: it rejects an
+    // endpoint with no port. Bracketed IPv6 already returned above.
     const int colonIndex = host.lastIndexOf(QChar(':'));
     if (colonIndex > 0) {
         host = host.left(colonIndex);

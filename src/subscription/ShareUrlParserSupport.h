@@ -18,7 +18,6 @@ QStringList splitCsv(const QString& value);
 int parseInt(const QString& value);
 
 bool tryAssignUserInfo(QString credentials, QString& first, QString& second, bool allowEmpty = false);
-bool tryParseAddressAndPort(const QString& endpoint, QString& address, int& port);
 void resolveStandardTransport(const QUrlQuery& query, VmessItem& item);
 
 } // namespace ShareUrlParserSupport
