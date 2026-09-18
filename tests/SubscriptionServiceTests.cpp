@@ -13,6 +13,8 @@ public:
         saveCount++;
         return true;
     }
+    QString lastLoadError() const override { return {}; }
+    QString lastSaveError() const override { return {}; }
 
     Config config_;
     int saveCount = 0;

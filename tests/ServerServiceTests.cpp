@@ -15,9 +15,12 @@ class MockConfigRepository : public IConfigRepository {
 public:
     Config load() override { return config_; }
     bool save(const Config& config) override { config_ = config; return saveSucceeds_; }
+    QString lastLoadError() const override { return {}; }
+    QString lastSaveError() const override { return saveSucceeds_ ? QString() : lastSaveError_; }
 
     Config config_;
     bool saveSucceeds_ = true;
+    QString lastSaveError_;
 };
 
 VmessItem makeServer(const QString& indexId, const QString& address, int port,
@@ -119,7 +122,10 @@ private slots:
 
     // save
     void saveDelegatesToRepository();
-    void saveReturnsFalseWhenRepositoryFails();
+    void saveReturnsFailureWhenRepositoryFails();
+    void saveReportsRepositoryFailureReason();
+    void saveFallsBackWhenRepositoryReportsNoReason();
+    void addServerReportsRepositoryFailureReason();
 
     // list
     void listReturnsConfigServers();
@@ -137,7 +143,13 @@ private:
     static const QString kId2;
     static const QString kId3;
     static const QString kId4;
+    // Shape mirrors what JsonConfigRepository::lastSaveError() produces, so the
+    // assertions exercise the real message format rather than a placeholder.
+    static const QString kSaveError;
 };
+
+const QString ServerServiceTests::kSaveError =
+    QStringLiteral("Failed to write configuration file: C:/tmp/songbird.json");
 
 const QString ServerServiceTests::kAddr1 = QStringLiteral("10.0.0.1");
 const QString ServerServiceTests::kAddr2 = QStringLiteral("10.0.0.2");
@@ -893,17 +905,63 @@ void ServerServiceTests::saveDelegatesToRepository()
         makeServer(kId1, kAddr1, 100),
     });
 
-    const bool ok = service_->save(config);
-    QVERIFY(ok);
+    const OperationResult result = service_->save(config);
+    QVERIFY(result.success);
     QCOMPARE(mock_->config_.collection().servers.size(), 1);
     QCOMPARE(mock_->config_.collection().servers.first().indexId, kId1);
 }
 
-void ServerServiceTests::saveReturnsFalseWhenRepositoryFails()
+void ServerServiceTests::saveReturnsFailureWhenRepositoryFails()
 {
     mock_->saveSucceeds_ = false;
     Config config;
-    QVERIFY(!service_->save(config));
+    QVERIFY(!service_->save(config).success);
+}
+
+void ServerServiceTests::saveReportsRepositoryFailureReason()
+{
+    mock_->saveSucceeds_ = false;
+    mock_->lastSaveError_ = kSaveError;
+    Config config;
+
+    const OperationResult result = service_->save(config);
+
+    QVERIFY(!result.success);
+    // The whole point of returning OperationResult instead of a bool: the reason
+    // the repository recorded -- which file, and at which step -- has to survive
+    // the trip to the caller.
+    QVERIFY(result.message.contains(kSaveError));
+}
+
+void ServerServiceTests::saveFallsBackWhenRepositoryReportsNoReason()
+{
+    mock_->saveSucceeds_ = false;
+    Config config;
+
+    const OperationResult result = service_->save(config);
+
+    QVERIFY(!result.success);
+    // Must never be empty. Callers append the message straight to the log, and
+    // appendResult() silently drops an empty one, so an empty message would turn
+    // a failed save into an invisible one.
+    QVERIFY(!result.message.trimmed().isEmpty());
+}
+
+void ServerServiceTests::addServerReportsRepositoryFailureReason()
+{
+    mock_->saveSucceeds_ = false;
+    mock_->lastSaveError_ = kSaveError;
+    Config config;
+    VmessItem item;
+    item.address = kAddr1;
+    item.port = 443;
+
+    const OperationResult result = service_->addServer(config, item);
+
+    QVERIFY(!result.success);
+    // Both halves matter: what the app was doing, and why the write failed.
+    QVERIFY(result.message.contains(QStringLiteral("after adding the server")));
+    QVERIFY(result.message.contains(kSaveError));
 }
 
 // ---------------------------------------------------------------------------

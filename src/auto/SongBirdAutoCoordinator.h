@@ -25,7 +25,6 @@
 #include "platform/windows/WindowsSystemProxyService.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
-#include "services/ProxyAvailabilityCheckService.h"
 #include "services/ServerService.h"
 #include "services/SpeedTestRequestItem.h"
 #include "services/SubscriptionService.h"
@@ -80,7 +79,7 @@ signals:
 
 private:
     void reloadConfig();
-    bool saveConfig();
+    OperationResult saveConfig();
     QString resolveCustomConfigDirectory() const;
     OperationResult replaceSubscriptionsFromUrls(const QStringList& urls);
     void ensureDefaultSubscriptions();
@@ -184,7 +183,6 @@ private:
     std::unique_ptr<FunctionProxyActivationCoordinator> activationCoordinator_;
     std::unique_ptr<ProxySession> proxySession_;
     std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
-    ProxyAvailabilityCheckService availabilityCheck_;
 
     QList<CoreType> existingCoreTypes_;
     QList<AutoNodeEvaluation> evaluations_;

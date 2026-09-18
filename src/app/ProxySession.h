@@ -38,8 +38,11 @@ public:
         Stopped,
         EnvironmentCleanup,
         ValidateCoreApplication,
-        ValidateRuntimeResources,
+        // Runtime config generation needs the resolved core info, and rule-set
+        // validation parses the generated config, so the core config is
+        // validated before runtime resources.
         ValidateCoreConfig,
+        ValidateRuntimeResources,
         StartTunRuntime,
         StartCoreProcess,
         CheckOutboundLocation,

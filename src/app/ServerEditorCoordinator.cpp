@@ -30,7 +30,8 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
 {
     const std::optional<VmessItem> existing = findServer(indexId);
     if (!existing.has_value()) {
-        appendLog(QStringLiteral("The selected server could not be found for editing."));
+        appendLog(QCoreApplication::translate(
+            "ServerEditorCoordinator", "The selected server could not be found for editing."));
         return;
     }
 
@@ -62,7 +63,8 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
     appendResult(result);
     syncWindow();
     if (result.success && shouldRestartCore) {
-        restartCoreIfRunning(QStringLiteral("Reloading core after editing the active server."));
+        restartCoreIfRunning(QCoreApplication::translate(
+            "AppBootstrap", "Reloading core after editing the active server."));
     }
 }
 

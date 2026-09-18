@@ -56,9 +56,12 @@ void TunModeCoordinator::setEnabled(bool enabled)
     }
 
     deps_.config = tunSaveBehavior.configToPersist;
-    if (!deps_.serverService.save(deps_.config)) {
+    const OperationResult saveResult = deps_.serverService.save(deps_.config);
+    if (!saveResult.success) {
         deps_.config = previousConfig;
-        appendResult(OperationResult::fail(QStringLiteral("Failed to save the TUN mode setting.")));
+        appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+            QCoreApplication::translate("AppBootstrap", "Failed to save the TUN mode setting."),
+            saveResult.message)));
         syncWindow();
         return;
     }
@@ -94,10 +97,23 @@ void TunModeCoordinator::setEnabled(bool enabled)
         }
         deps_.config.ui().mainProxyEnabled = true;
         deps_.config.sysProxyType = toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange);
-        deps_.serverService.save(deps_.config);
+        const OperationResult saveResult = deps_.serverService.save(deps_.config);
+        if (!saveResult.success) {
+            appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+                QCoreApplication::translate("AppBootstrap", "Failed to save the TUN mode setting."),
+                saveResult.message)));
+        }
         if (!callbacks_.restartApplication || !callbacks_.restartApplication(true)) {
             deps_.config = previousConfig;
-            deps_.serverService.save(deps_.config);
+            // Rolling back is best effort, but a silent failure here leaves TUN
+            // enabled on disk while the UI reports that the toggle was reverted.
+            const OperationResult restoreResult = deps_.serverService.save(deps_.config);
+            if (!restoreResult.success) {
+                appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+                    QCoreApplication::translate(
+                        "AppBootstrap", "Failed to restore the previous TUN mode setting."),
+                    restoreResult.message)));
+            }
             appendResult(OperationResult::fail(tunAdminRestartFailureMessage()));
             syncWindow();
         }

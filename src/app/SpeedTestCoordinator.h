@@ -21,7 +21,7 @@ public:
         BackgroundTaskCoordinator* backgroundTasks = nullptr;
         SpeedTestController* speedTestController = nullptr;
         std::function<Config&()> mutableConfig;
-        std::function<bool(Config&)> saveConfig;
+        std::function<OperationResult(Config&)> saveConfig;
         std::function<const VmessItem*(const QString&)> findServerById;
         std::function<CoreType(const VmessItem&)> resolveLaunchCoreType;
         std::function<CoreInfo(const VmessItem&)> resolveCoreInfo;

@@ -11,6 +11,7 @@
 #include <QUuid>
 
 #include "common/UserAgent.h"
+#include "services/ServiceTimeouts.h"
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionContentParser.h"
 
@@ -20,8 +21,8 @@ QString subscriptionDisplayName(const SubItem& item)
     return item.remarks.trimmed().isEmpty() ? item.url.trimmed() : item.remarks.trimmed();
 }
 
-constexpr int kSubscriptionDownloadTimeoutMs = 30000;
-constexpr int kCancellationPollIntervalMs = 100;
+constexpr int kSubscriptionDownloadTimeoutMs = ServiceTimeouts::kDefaultNetworkTimeoutMs;
+constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 
 bool currentThreadInterruptionRequested()
@@ -147,7 +148,7 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save imported servers."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save imported servers."));
     }
 
     return OperationResult::ok(

@@ -265,8 +265,8 @@ ProxySession::StartupSteps ProxySession::startupSteps()
     return {
         tr("Environment cleanup"),
         tr("Validate core application"),
-        tr("Validate runtime resources"),
         tr("Validate core config"),
+        tr("Validate runtime resources"),
         tr("Start TUN runtime"),
         tr("Start core process")};
 }
@@ -317,7 +317,7 @@ void ProxySession::startInternal(
 
     setPhase(Phase::ValidateCoreConfig);
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, validateConfigStep,
-        QStringLiteral("Generating runtime config."));
+        QCoreApplication::translate("ProxySession", "Generating runtime config."));
 
     QStringList auxiliaryConfigPaths;
     deps_.configWriter.setExistingCoreTypes(currentRequest_.existingCoreTypes);
@@ -366,7 +366,7 @@ void ProxySession::startInternal(
         setCheckpointStatus(CoreStartupCheckpointStatus::Passed, validateConfigStep, preflightResult.message);
     } else {
         setCheckpointStatus(CoreStartupCheckpointStatus::Skipped, validateConfigStep,
-            QStringLiteral("Startup checks are disabled."));
+            QCoreApplication::translate("ProxySession", "Startup checks are disabled."));
     }
 
     // Start TUN runtime (auxiliary core)
@@ -382,7 +382,7 @@ void ProxySession::startInternal(
             deps_.profileResolver.resolveCoreCandidates(auxiliaryCoreType));
         if (auxiliaryProgram.isEmpty()) {
             const OperationResult missingAuxiliaryResult = OperationResult::fail(
-                QStringLiteral("TUN compatibility mode requires %1, but no compatible %1 executable was found.")
+                QCoreApplication::translate("ProxySession", "TUN compatibility mode requires %1, but no compatible %1 executable was found.")
                     .arg(coreTypeDisplayName(auxiliaryCoreType)));
             downloadMissingCoreAndResume(auxiliaryCoreType, missingAuxiliaryResult,
                 downloadCoreStep, skipTunCleanup, showStartupOverlay);
@@ -400,7 +400,7 @@ void ProxySession::startInternal(
 
         if (!deps_.environment.skipCoreChecks()) {
             setCheckpointStatus(CoreStartupCheckpointStatus::Started, startTunRuntimeStep,
-                QStringLiteral("Validating TUN compatibility relay."));
+                QCoreApplication::translate("ProxySession", "Validating TUN compatibility relay."));
             const OperationResult auxiliaryPreflightResult = validateCoreConfigBeforeStart(
                 auxiliaryCoreInfo, auxiliaryConfigPaths.constFirst());
             if (!auxiliaryPreflightResult.success) {
@@ -413,7 +413,7 @@ void ProxySession::startInternal(
 
         stopAuxiliaryCore();
         setCheckpointStatus(CoreStartupCheckpointStatus::Started, startTunRuntimeStep,
-            QStringLiteral("Starting TUN compatibility relay core."));
+            QCoreApplication::translate("ProxySession", "Starting TUN compatibility relay core."));
         const OperationResult auxiliaryStartResult = deps_.auxiliaryCore.start(
             auxiliaryCoreInfo, auxiliaryConfigPaths.constFirst(),
             [this](const QString& line) { emit auxiliaryCoreOutput(line); },
@@ -435,7 +435,7 @@ void ProxySession::startInternal(
         if (currentRequest_.config.tun().tunModeItem.enableTun) {
             setPhase(Phase::StartTunRuntime);
             setCheckpointStatus(CoreStartupCheckpointStatus::Started, startTunRuntimeStep,
-                QStringLiteral("TUN runtime will be started by the core process."));
+                QCoreApplication::translate("ProxySession", "TUN runtime will be started by the core process."));
         }
         stopAuxiliaryCore();
     }
@@ -462,7 +462,7 @@ void ProxySession::startInternal(
             if (coreTunEnabledAtStart_
                 && checklist_.status(tr("Start TUN runtime")) == CoreStartupCheckpointStatus::Started) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Passed, tr("Start TUN runtime"),
-                    QStringLiteral("TUN runtime startup is handled by the core process."));
+                    QCoreApplication::translate("ProxySession", "TUN runtime startup is handled by the core process."));
             }
             validateCoreListeningAndHandleStarted(serverIndexId, customServer);
         },
@@ -506,8 +506,8 @@ bool ProxySession::rejectOverlappingStart(const StartupContext& context)
 
     keepChecklistForUserDismissal(context.steps.startCore,
         phase_ == Phase::Stopping
-            ? QStringLiteral("Core stop is already in progress.")
-            : QStringLiteral("Core start is already in progress."));
+            ? QCoreApplication::translate("ProxySession", "Core stop is already in progress.")
+            : QCoreApplication::translate("ProxySession", "Core start is already in progress."));
     return true;
 }
 
@@ -529,7 +529,7 @@ bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
             deps_.environment.isWindowsPlatform(),
             deps_.environment.isProcessElevated())) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.environment,
-            QStringLiteral("Administrator permission is required for TUN."));
+            QCoreApplication::translate("ProxySession", "Administrator permission is required for TUN."));
         failStartup(OperationResult::fail(tunAdminRequiredStartMessage()));
         return false;
     }
@@ -537,12 +537,12 @@ bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
     if (currentRequest_.config.tun().tunModeItem.enableTun && !context.environmentAlreadyChecked) {
         if (tunCleanupState_ != TunCleanupState::Idle) {
             keepChecklistForUserDismissal(context.steps.environment,
-                QStringLiteral("TUN adapter cleanup is already in progress."));
+                QCoreApplication::translate("ProxySession", "TUN adapter cleanup is already in progress."));
             return false;
         }
 
         setCheckpointStatus(CoreStartupCheckpointStatus::Started, context.steps.environment,
-            QStringLiteral("Removing stale TUN adapter if needed."));
+            QCoreApplication::translate("ProxySession", "Removing stale TUN adapter if needed."));
         setTunCleanupState(TunCleanupState::CleaningThenResume);
         removeStaleTunAdapterAsync([this, context](const OperationResult& result) {
             const bool resumeStart = tunCleanupState_ == TunCleanupState::CleaningThenResume;
@@ -557,7 +557,7 @@ bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
                     failStartup(result);
                 } else {
                     keepChecklistForUserDismissal(context.steps.environment,
-                        QStringLiteral("Core startup was canceled before TUN cleanup finished."));
+                        QCoreApplication::translate("ProxySession", "Core startup was canceled before TUN cleanup finished."));
                     cancelActivation();
                     emit statusSyncRequested();
                 }
@@ -573,12 +573,12 @@ bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
     if (context.environmentAlreadyChecked
         && checklist_.status(context.steps.environment) == CoreStartupCheckpointStatus::Pending) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.environment,
-            QStringLiteral("Environment cleanup completed."));
+            QCoreApplication::translate("ProxySession", "Environment cleanup completed."));
     } else if (!context.environmentAlreadyChecked) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.environment,
             context.skipTunCleanup
-                ? QStringLiteral("TUN cleanup completed.")
-                : QStringLiteral("No TUN cleanup required."));
+                ? QCoreApplication::translate("ProxySession", "TUN cleanup completed.")
+                : QCoreApplication::translate("ProxySession", "No TUN cleanup required."));
     }
 
     return true;
@@ -590,8 +590,8 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
     const std::optional<VmessItem> server = deps_.profileResolver.resolveActiveServer();
     if (!server.has_value()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig,
-            QStringLiteral("No active server."));
-        failStartup(OperationResult::fail(QStringLiteral("No active server is available for runtime config generation.")));
+            QCoreApplication::translate("ProxySession", "No active server."));
+        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "No active server is available for runtime config generation.")));
         return std::nullopt;
     }
     currentServer_ = *server;
@@ -632,14 +632,14 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
     }
     if (checklist_.status(context.steps.downloadCore) == CoreStartupCheckpointStatus::Pending) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Passed, context.steps.downloadCore,
-            QStringLiteral("Required core executable is available."));
+            QCoreApplication::translate("ProxySession", "Required core executable is available."));
     }
 
     const QString coreConfigPath = deps_.profileResolver.resolveRuntimeConfigPath(*server);
     if (coreConfigPath.isEmpty()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig,
-            QStringLiteral("Runtime config path is empty."));
-        failStartup(OperationResult::fail(QStringLiteral("Failed to resolve the runtime config output path.")));
+            QCoreApplication::translate("ProxySession", "Runtime config path is empty."));
+        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Failed to resolve the runtime config output path.")));
         return std::nullopt;
     }
 
@@ -722,8 +722,8 @@ void ProxySession::cleanupAfterFailedStartup()
     if (proxyConfigured || proxyApplied || managedSystemProxyActive_) {
         const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
         emit logMessage(proxyCleared
-            ? QStringLiteral("System proxy disabled because core startup failed.")
-            : QStringLiteral("Failed to disable system proxy after core startup failed."));
+            ? QCoreApplication::translate("ProxySession", "System proxy disabled because core startup failed.")
+            : QCoreApplication::translate("ProxySession", "Failed to disable system proxy after core startup failed."));
         if (proxyCleared) {
             managedSystemProxyActive_ = false;
         }
@@ -758,7 +758,7 @@ void ProxySession::downloadMissingGeoFilesAndResume(
         ? QFileInfo(coreInfo.program).absolutePath()
         : coreInfo.workingDirectory;
     if (targetDirectory.trimmed().isEmpty()) {
-        failStartup(OperationResult::fail(QStringLiteral("Core working directory is empty.")));
+        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Core working directory is empty.")));
         return;
     }
 
@@ -1029,7 +1029,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
     const bool usesDedicatedProbe = !customServer;
     const int listenPort = OutboundLocationProbeService::resolveHttpPort(currentRequest_.config, usesDedicatedProbe);
     if (listenPort <= 0 || listenPort > 65535) {
-        const QString message = QStringLiteral("Local proxy listen port is unavailable.");
+        const QString message = QCoreApplication::translate("ProxySession", "Local proxy listen port is unavailable.");
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, startCoreStep, message);
         failStartup(OperationResult::fail(message));
         return;
@@ -1056,7 +1056,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
             }
             if (coreStartTime_ != startTime || deps_.profileResolver.currentIndexId() != activeServerId) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Skipped, startCoreStep,
-                    QStringLiteral("Core listening validation result is stale."));
+                    QCoreApplication::translate("ProxySession", "Core listening validation result is stale."));
                 if (coreStartTime_ == startTime && deps_.mainCore.isRunning() && phase_ != Phase::Stopping) {
                     stop(false);
                 }
@@ -1064,7 +1064,8 @@ void ProxySession::validateCoreListeningAndHandleStarted(
             }
 
             if (!portReady) {
-                const QString message = QStringLiteral(
+                const QString message = QCoreApplication::translate(
+                    "ProxySession",
                     "Core did not open the local proxy port %1 within %2 seconds.")
                     .arg(listenPort)
                     .arg((listenProbeTimeoutMs + 999) / 1000);
@@ -1074,7 +1075,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
             }
 
             setCheckpointStatus(CoreStartupCheckpointStatus::Passed, startCoreStep,
-                QStringLiteral("Core local proxy is listening on 127.0.0.1:%1.").arg(listenPort));
+                QCoreApplication::translate("ProxySession", "Core local proxy is listening on 127.0.0.1:%1.").arg(listenPort));
             handleCoreStarted(activeServerId);
         }, Qt::QueuedConnection);
     });
@@ -1115,7 +1116,7 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
     setPhase(Phase::CheckOutboundLocation);
     const QString locationStep = tr("Check outbound location");
     if (!deps_.mainCore.isRunning() || serverIndexId.trimmed().isEmpty()) {
-        const QString message = QStringLiteral("Core is not ready for outbound location detection.");
+        const QString message = QCoreApplication::translate("ProxySession", "Core is not ready for outbound location detection.");
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
         failStartup(OperationResult::fail(message));
         return;
@@ -1123,12 +1124,12 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
 
     clearServerLocation();
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, locationStep,
-        QStringLiteral("Detecting outbound IP location."));
+        QCoreApplication::translate("ProxySession", "Detecting outbound IP location."));
 
     const bool usesDedicatedProbe = currentServer_.configType != ConfigType::Custom;
     const int httpPort = OutboundLocationProbeService::resolveHttpPort(currentRequest_.config, usesDedicatedProbe);
     if (httpPort <= 0 || httpPort > 65535) {
-        const QString message = QStringLiteral("Location probe port is unavailable.");
+        const QString message = QCoreApplication::translate("ProxySession", "Location probe port is unavailable.");
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
         failStartup(OperationResult::fail(message));
         return;
@@ -1150,14 +1151,14 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
                 || coreStartTime_ != startTime
                 || deps_.profileResolver.currentIndexId() != activeServerId) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep,
-                    QStringLiteral("Outbound location detection result is stale."));
+                    QCoreApplication::translate("ProxySession", "Outbound location detection result is stale."));
                 cancelActivation();
                 return;
             }
             setServerLocation(location);
             if (currentServerLocation_.isEmpty()) {
                 const QString message = lastError.trimmed().isEmpty()
-                    ? QStringLiteral("Outbound location unavailable.")
+                    ? QCoreApplication::translate("ProxySession", "Outbound location unavailable.")
                     : lastError;
                 setCheckpointStatus(CoreStartupCheckpointStatus::Failed, locationStep, message);
                 failStartup(OperationResult::fail(message));
@@ -1180,25 +1181,25 @@ bool ProxySession::applySystemProxyAfterLocation()
 
     if (configuredMode != SystemProxyMode::ForcedChange) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, proxyStep,
-            QStringLiteral("Global system proxy mode is not enabled."));
-        failStartup(OperationResult::fail(QStringLiteral("Global system proxy mode is not enabled.")));
+            QCoreApplication::translate("ProxySession", "Global system proxy mode is not enabled."));
+        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Global system proxy mode is not enabled.")));
         return false;
     }
 
     setPhase(Phase::ApplySystemProxy);
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, proxyStep,
-        QStringLiteral("Applying Global system proxy."));
+        QCoreApplication::translate("ProxySession", "Applying Global system proxy."));
     const bool proxyUpdated = updateSystemProxyMode(SystemProxyMode::ForcedChange);
     if (!proxyUpdated) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, proxyStep,
-            QStringLiteral("Failed to apply the configured Global system proxy."));
+            QCoreApplication::translate("ProxySession", "Failed to apply the configured Global system proxy."));
         failStartup(OperationResult::fail(
-            QStringLiteral("Failed to apply the configured Global system proxy after starting the core.")));
+            QCoreApplication::translate("ProxySession", "Failed to apply the configured Global system proxy after starting the core.")));
         emit statusSyncRequested();
         return false;
     }
     setCheckpointStatus(CoreStartupCheckpointStatus::Passed, proxyStep,
-        QStringLiteral("Global system proxy is active."));
+        QCoreApplication::translate("ProxySession", "Global system proxy is active."));
     managedSystemProxyActive_ = true;
 
     finishActivation();
@@ -1402,8 +1403,8 @@ void ProxySession::clearAppliedProxyAfterStopped()
 
     const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
     emit logMessage(proxyCleared
-        ? QStringLiteral("System proxy disabled because the core stopped.")
-        : QStringLiteral("Failed to disable system proxy after the core stopped."));
+        ? QCoreApplication::translate("ProxySession", "System proxy disabled because the core stopped.")
+        : QCoreApplication::translate("ProxySession", "Failed to disable system proxy after the core stopped."));
     if (proxyCleared) {
         managedSystemProxyActive_ = false;
     }

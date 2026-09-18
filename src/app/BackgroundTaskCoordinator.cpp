@@ -41,6 +41,7 @@ BackgroundTaskCoordinator::Token BackgroundTaskCoordinator::tryBegin(Kind kind, 
     }
 
     if (activeKind_ != Kind::None) {
+        emit busyWithAnotherTask(describe(activeKind_));
         return {};
     }
 

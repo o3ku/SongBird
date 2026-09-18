@@ -106,10 +106,12 @@ bool SystemProxyCoordinator::saveMode(SystemProxyMode mode)
     const bool previousMainProxyEnabled = deps_.config.ui().mainProxyEnabled;
     deps_.config.sysProxyType = toLegacySystemProxyModeValue(mode);
     deps_.config.ui().mainProxyEnabled = mode == SystemProxyMode::ForcedChange;
-    if (!deps_.serverService.save(deps_.config)) {
+    const OperationResult saveResult = deps_.serverService.save(deps_.config);
+    if (!saveResult.success) {
         deps_.config.sysProxyType = previousValue;
         deps_.config.ui().mainProxyEnabled = previousMainProxyEnabled;
-        appendResult(OperationResult::fail(QStringLiteral("Failed to save the selected system proxy mode.")));
+        appendResult(OperationResult::fail(
+            QStringLiteral("Failed to save the selected system proxy mode: %1").arg(saveResult.message)));
         syncStatusIndicators();
         return false;
     }

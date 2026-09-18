@@ -41,6 +41,17 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
         return;
     }
 
+    // The check performs network I/O, so it must respect the background task
+    // coordinator just like the download phase does: no concurrent update
+    // work while proxy activation or another background task is running.
+    const BackgroundTaskCoordinator::Token checkToken =
+        deps_.backgroundTasks == nullptr
+            ? BackgroundTaskCoordinator::Token{}
+            : deps_.backgroundTasks->tryBeginUserTask(BackgroundTaskCoordinator::Kind::AppUpdate);
+    if (deps_.backgroundTasks != nullptr && !checkToken.isValid()) {
+        return;
+    }
+
     checkRunning_ = true;
     const QString title = QCoreApplication::translate("AppBootstrap", "Check for Updates");
     if (manual) {
@@ -56,7 +67,7 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
     QPointer<QWidget> dialogParent(deps_.feedback->dialogParent());
     QPointer<AppUpdateCheckCoordinator> self(this);
 
-    runInBackground([self, title, currentVersion, allowPrerelease, manual, uiContext, dialogParent]() {
+    runInBackground([self, title, currentVersion, allowPrerelease, manual, uiContext, dialogParent, checkToken]() {
         OperationResult result;
         AppUpdateCheckResult updateResult;
         if (self.isNull()) {
@@ -73,12 +84,16 @@ void AppUpdateCheckCoordinator::checkAppUpdates(bool manual)
         QObject* target = uiContext.isNull()
             ? static_cast<QObject*>(QCoreApplication::instance())
             : uiContext.data();
-        self->invokeOnUiThread(target, [self, title, result, updateResult, manual, dialogParent]() {
+        self->invokeOnUiThread(target, [self, title, result, updateResult, manual, dialogParent, checkToken]() {
             if (self.isNull()) {
                 return;
             }
 
             self->checkRunning_ = false;
+            if (self->deps_.backgroundTasks != nullptr
+                && self->deps_.backgroundTasks->isCurrent(checkToken)) {
+                self->deps_.backgroundTasks->finish(checkToken);
+            }
             if (self->deps_.feedback == nullptr || isShuttingDown(self->deps_)) {
                 return;
             }

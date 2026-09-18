@@ -49,6 +49,9 @@ signals:
     void runningChanged(bool running);
     void descriptionChanged(const QString& description);
     void blockedByCoreStartup();
+    // Emitted when a user task is refused because another background task
+    // already holds the single task slot; the description is localized.
+    void busyWithAnotherTask(const QString& description);
 
 private:
     enum class StartScope {

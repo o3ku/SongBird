@@ -436,6 +436,10 @@ Restart SongBird as administrator now to apply the saved TUN setting?</source>
         <translation>代理正在启动。</translation>
     </message>
     <message>
+        <source>%1 is already running. Please wait for it to finish.</source>
+        <translation>%1 正在进行，请等待其完成。</translation>
+    </message>
+    <message>
         <source>Reloading core after reloading configuration.</source>
         <translation>重新加载配置后正在重启核心。</translation>
     </message>
@@ -552,6 +556,90 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>Reloading core after applying TUN mode changes.</source>
         <translation>应用 TUN 模式更改后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Failed to Load Configuration</source>
+        <translation>加载配置失败</translation>
+    </message>
+    <message>
+        <source>Configuration reloaded from disk.</source>
+        <translation>已从磁盘重新加载配置。</translation>
+    </message>
+    <message>
+        <source>Startup core checks skipped by command line.</source>
+        <translation>核心启动检查已由命令行参数跳过。</translation>
+    </message>
+    <message>
+        <source>Reloading core to apply routing changes.</source>
+        <translation>正在重启核心以应用路由变更。</translation>
+    </message>
+    <message>
+        <source>Reloading core after switching the default server.</source>
+        <translation>切换默认服务器后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Reloading core after removing the active server.</source>
+        <translation>移除当前服务器后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Reloading core after deleting the active subscription.</source>
+        <translation>删除当前订阅后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Reloading core after editing the active server.</source>
+        <translation>编辑当前服务器后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Reloading core after updating subscriptions.</source>
+        <translation>更新订阅后正在重启核心。</translation>
+    </message>
+    <message>
+        <source>Startup check: The configured default server does not exist. The first available server will be used.</source>
+        <translation>启动检查：配置的默认服务器不存在，将使用第一个可用的服务器。</translation>
+    </message>
+    <message>
+        <source>Startup check: Custom config file is missing for default server: %1</source>
+        <translation>启动检查：默认服务器的自定义配置文件缺失：%1</translation>
+    </message>
+    <message>
+        <source>Startup check: No compatible core executable was found for default server \"%1\". Expected one of: %2.</source>
+        <translation>启动检查：未找到默认服务器“%1”兼容的核心可执行文件。期望以下之一：%2。</translation>
+    </message>
+    <message>
+        <source>Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.</source>
+        <translation>启动检查：默认服务器“%1”还需要 %2 核心以兼容 TUN。期望以下之一：%3。</translation>
+    </message>
+    <message>
+        <source>Startup check: %1 custom server config file(s) are missing.</source>
+        <translation>启动检查：%1 个自定义服务器配置文件缺失。</translation>
+    </message>
+    <message>
+        <source>Failed to save the TUN mode setting.</source>
+        <translation>保存 TUN 模式设置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to restore the previous TUN mode setting.</source>
+        <translation>恢复先前的 TUN 模式设置失败。</translation>
+    </message>
+    <message>
+        <source>TUN mode enabled.</source>
+        <translation>已启用 TUN 模式。</translation>
+    </message>
+    <message>
+        <source>TUN mode disabled.</source>
+        <translation>已关闭 TUN 模式。</translation>
+    </message>
+    <message>
+        <source>Stopping current core before switching the default server.</source>
+        <translation>切换默认服务器前正在停止当前核心。</translation>
+    </message>
+    <message>
+        <source>Starting core after switching the default server.</source>
+        <translation>切换默认服务器后正在启动核心。</translation>
+    </message>
+    <message>
+        <source>Default server selection is unavailable.</source>
+        <translation>默认服务器选择不可用。</translation>
     </message>
 </context>
 <context>
@@ -1325,6 +1413,29 @@ The running core will be stopped before installation if needed.</source>
     </message>
 </context>
 <context>
+    <name>OutboundLocationProbeService</name>
+    <message>
+        <source>Outbound location request failed: %1</source>
+        <translation>出口位置请求失败：%1</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1：%2</translation>
+    </message>
+    <message>
+        <source>Outbound location probe is unavailable.</source>
+        <translation>出口位置探测不可用。</translation>
+    </message>
+    <message>
+        <source>Outbound location request timed out.</source>
+        <translation>出口位置请求超时。</translation>
+    </message>
+    <message>
+        <source>Outbound location response was empty.</source>
+        <translation>出口位置响应为空。</translation>
+    </message>
+</context>
+<context>
     <name>ProxyAvailabilityCheckService</name>
     <message>
         <source>Availability check: %1 ms</source>
@@ -1424,6 +1535,166 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Apply system proxy</source>
         <translation>应用系统代理</translation>
+    </message>
+    <message>
+        <source>Generating runtime config.</source>
+        <translation>正在生成运行时配置。</translation>
+    </message>
+    <message>
+        <source>Startup checks are disabled.</source>
+        <translation>启动检查已禁用。</translation>
+    </message>
+    <message>
+        <source>TUN compatibility mode requires %1, but no compatible %1 executable was found.</source>
+        <translation>TUN 兼容模式需要 %1，但未找到兼容的 %1 可执行文件。</translation>
+    </message>
+    <message>
+        <source>Validating TUN compatibility relay.</source>
+        <translation>正在校验 TUN 兼容中继。</translation>
+    </message>
+    <message>
+        <source>Starting TUN compatibility relay core.</source>
+        <translation>正在启动 TUN 兼容中继核心。</translation>
+    </message>
+    <message>
+        <source>TUN runtime will be started by the core process.</source>
+        <translation>TUN 运行时将由核心进程启动。</translation>
+    </message>
+    <message>
+        <source>TUN runtime startup is handled by the core process.</source>
+        <translation>TUN 运行时启动由核心进程处理。</translation>
+    </message>
+    <message>
+        <source>Core stop is already in progress.</source>
+        <translation>核心正在停止中。</translation>
+    </message>
+    <message>
+        <source>Core start is already in progress.</source>
+        <translation>核心正在启动中。</translation>
+    </message>
+    <message>
+        <source>Administrator permission is required for TUN.</source>
+        <translation>TUN 需要管理员权限。</translation>
+    </message>
+    <message>
+        <source>TUN adapter cleanup is already in progress.</source>
+        <translation>TUN 网卡清理正在进行中。</translation>
+    </message>
+    <message>
+        <source>Removing stale TUN adapter if needed.</source>
+        <translation>如有需要，正在移除残留的 TUN 网卡。</translation>
+    </message>
+    <message>
+        <source>Core startup was canceled before TUN cleanup finished.</source>
+        <translation>核心启动在 TUN 清理完成前已被取消。</translation>
+    </message>
+    <message>
+        <source>Environment cleanup completed.</source>
+        <translation>环境清理完成。</translation>
+    </message>
+    <message>
+        <source>TUN cleanup completed.</source>
+        <translation>TUN 清理完成。</translation>
+    </message>
+    <message>
+        <source>No TUN cleanup required.</source>
+        <translation>无需清理 TUN。</translation>
+    </message>
+    <message>
+        <source>No active server.</source>
+        <translation>无活动服务器。</translation>
+    </message>
+    <message>
+        <source>No active server is available for runtime config generation.</source>
+        <translation>没有可用于生成运行时配置的活动服务器。</translation>
+    </message>
+    <message>
+        <source>Required core executable is available.</source>
+        <translation>所需核心可执行文件可用。</translation>
+    </message>
+    <message>
+        <source>Runtime config path is empty.</source>
+        <translation>运行时配置路径为空。</translation>
+    </message>
+    <message>
+        <source>Failed to resolve the runtime config output path.</source>
+        <translation>无法解析运行时配置输出路径。</translation>
+    </message>
+    <message>
+        <source>System proxy disabled because core startup failed.</source>
+        <translation>由于核心启动失败，已关闭系统代理。</translation>
+    </message>
+    <message>
+        <source>Failed to disable system proxy after core startup failed.</source>
+        <translation>核心启动失败后，关闭系统代理失败。</translation>
+    </message>
+    <message>
+        <source>Core working directory is empty.</source>
+        <translation>核心工作目录为空。</translation>
+    </message>
+    <message>
+        <source>Local proxy listen port is unavailable.</source>
+        <translation>本地代理监听端口不可用。</translation>
+    </message>
+    <message>
+        <source>Core listening validation result is stale.</source>
+        <translation>核心监听校验结果已过期。</translation>
+    </message>
+    <message>
+        <source>Core local proxy is listening on 127.0.0.1:%1.</source>
+        <translation>核心本地代理正在监听 127.0.0.1：%1。</translation>
+    </message>
+    <message>
+        <source>Core is not ready for outbound location detection.</source>
+        <translation>核心尚未准备好进行出口位置检测。</translation>
+    </message>
+    <message>
+        <source>Detecting outbound IP location.</source>
+        <translation>正在检测出口 IP 位置。</translation>
+    </message>
+    <message>
+        <source>Location probe port is unavailable.</source>
+        <translation>位置探测端口不可用。</translation>
+    </message>
+    <message>
+        <source>Outbound location detection result is stale.</source>
+        <translation>出口位置检测结果已过期。</translation>
+    </message>
+    <message>
+        <source>Outbound location unavailable.</source>
+        <translation>出口位置不可用。</translation>
+    </message>
+    <message>
+        <source>Global system proxy mode is not enabled.</source>
+        <translation>未启用全局系统代理模式。</translation>
+    </message>
+    <message>
+        <source>Applying Global system proxy.</source>
+        <translation>正在应用全局系统代理。</translation>
+    </message>
+    <message>
+        <source>Failed to apply the configured Global system proxy.</source>
+        <translation>应用已配置的全局系统代理失败。</translation>
+    </message>
+    <message>
+        <source>Failed to apply the configured Global system proxy after starting the core.</source>
+        <translation>启动核心后应用已配置的全局系统代理失败。</translation>
+    </message>
+    <message>
+        <source>Global system proxy is active.</source>
+        <translation>全局系统代理已生效。</translation>
+    </message>
+    <message>
+        <source>System proxy disabled because the core stopped.</source>
+        <translation>由于核心已停止，已关闭系统代理。</translation>
+    </message>
+    <message>
+        <source>Failed to disable system proxy after the core stopped.</source>
+        <translation>核心停止后，关闭系统代理失败。</translation>
+    </message>
+    <message>
+        <source>Core did not open the local proxy port %1 within %2 seconds.</source>
+        <translation>核心未在 %2 秒内打开本地代理端口 %1。</translation>
     </message>
 </context>
 <context>
@@ -1760,6 +2031,10 @@ The running core will be stopped before installation if needed.</source>
         <source>Edit Server</source>
         <translation>编辑服务器</translation>
     </message>
+    <message>
+        <source>The selected server could not be found for editing.</source>
+        <translation>找不到所选服务器，无法编辑。</translation>
+    </message>
 </context>
 <context>
     <name>ServerTableModel</name>
@@ -1827,6 +2102,13 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>QR preview unavailable for this server.</source>
         <translation>当前服务器无法生成二维码预览。</translation>
+    </message>
+</context>
+<context>
+    <name>SongBirdAuto</name>
+    <message>
+        <source>Subscriptions were updated but saving the reconciled active server failed.</source>
+        <translation>订阅已更新，但保存重新对齐后的当前服务器失败。</translation>
     </message>
 </context>
 <context>

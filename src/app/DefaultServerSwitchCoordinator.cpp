@@ -31,7 +31,9 @@ void DefaultServerSwitchCoordinator::setDefaultServer(const QString& indexId)
     setCurrentActivationPending(true);
     if (isCoreRunning()) {
         if (previousIndexId != currentIndexId() && callbacks_.restartCoreIfRunning) {
-            callbacks_.restartCoreIfRunning(QStringLiteral("Reloading core after switching the default server."), true);
+            callbacks_.restartCoreIfRunning(QCoreApplication::translate(
+                "AppBootstrap", "Reloading core after switching the default server."),
+                true);
             return;
         }
         setCurrentActivationPending(false);
@@ -64,7 +66,8 @@ void DefaultServerSwitchCoordinator::setDefaultServerWithTun(const QString& inde
         if (isCoreRunning() && previousIndexId != currentIndexId()) {
             if (callbacks_.restartCoreIfRunning) {
                 callbacks_.restartCoreIfRunning(
-                    QStringLiteral("Reloading core after switching the default server."),
+                    QCoreApplication::translate(
+                        "AppBootstrap", "Reloading core after switching the default server."),
                     true);
             }
             return;
@@ -88,7 +91,8 @@ bool DefaultServerSwitchCoordinator::requestSwitchAfterCoreStop(const QString& i
     }
 
     setCurrentActivationPending(true);
-    appendResult(OperationResult::ok(QStringLiteral("Stopping current core before switching the default server.")));
+    appendResult(OperationResult::ok(QCoreApplication::translate(
+        "AppBootstrap", "Stopping current core before switching the default server.")));
     if (callbacks_.switchRunningCoreToServer) {
         callbacks_.switchRunningCoreToServer(trimmedId, enableTun);
     }
@@ -143,7 +147,8 @@ void DefaultServerSwitchCoordinator::switchAfterCoreStopped(
     }
 
     if (previousIndexId != currentIndexId() || enableTun) {
-        appendResult(OperationResult::ok(QStringLiteral("Starting core after switching the default server.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "Starting core after switching the default server.")));
         if (callbacks_.startProxyAfterSwitch) {
             callbacks_.startProxyAfterSwitch(showStartupOverlay);
         }
@@ -198,7 +203,8 @@ OperationResult DefaultServerSwitchCoordinator::setDefaultServerOnConfig(const Q
 {
     return callbacks_.setDefaultServer
         ? callbacks_.setDefaultServer(indexId)
-        : OperationResult::fail(QStringLiteral("Default server selection is unavailable."));
+        : OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap", "Default server selection is unavailable."));
 }
 
 void DefaultServerSwitchCoordinator::appendResult(const OperationResult& result) const

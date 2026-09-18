@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "auto/AutoCoordinatorLogic.h"
 #include "auto/AutoCountrySelection.h"
 #include "auto/AutoCountrySupport.h"
 #include "auto/AutoCountryInference.h"
@@ -33,8 +34,21 @@
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "services/CoreUpdateService.h"
+#include "services/ProxyAvailabilityCheckService.h"
 #include "services/SpeedTestRuntimeRunner.h"
 #include "services/SubscriptionUpdateService.h"
+
+// The pure helpers live in AutoCoordinatorLogic so they can be unit tested; the
+// names are re-exported here to keep the call sites in this file unchanged.
+using AutoCoordinatorLogic::evaluationStateText;
+using AutoCoordinatorLogic::findServerInConfig;
+using AutoCoordinatorLogic::firstCountryWithNodesOrFirst;
+using AutoCoordinatorLogic::kAutoStrategyFirstAvailable;
+using AutoCoordinatorLogic::kAutoStrategyLowestLatency;
+using AutoCoordinatorLogic::normalizeAutoSelectionStrategy;
+using AutoCoordinatorLogic::normalizeSubscriptionUrl;
+using AutoCoordinatorLogic::preserveActiveServerForSubscriptionUpdate;
+using AutoCoordinatorLogic::reconcilePreservedActiveServer;
 
 namespace {
 
@@ -48,114 +62,6 @@ constexpr int kLowCountryNodeThreshold = 1;
 const QString kDefaultIeProxyExceptions = QStringLiteral(
     "localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;"
     "172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*");
-const QString kAutoStrategyFirstAvailable = QStringLiteral("firstAvailable");
-const QString kAutoStrategyLowestLatency = QStringLiteral("lowestLatency");
-
-QString normalizeSubscriptionUrl(QString value)
-{
-    value = value.trimmed();
-    if (value.startsWith(QChar('#'))) {
-        return {};
-    }
-    return value;
-}
-
-QString normalizeAutoSelectionStrategy(QString value)
-{
-    value = value.trimmed();
-    return value.compare(kAutoStrategyFirstAvailable, Qt::CaseInsensitive) == 0
-        ? kAutoStrategyFirstAvailable
-        : kAutoStrategyLowestLatency;
-}
-
-QString evaluationStateText(const AutoNodeEvaluation& evaluation)
-{
-    if (evaluation.available) {
-        return QStringLiteral("%1 %2 ms").arg(evaluation.countryDisplay).arg(evaluation.latencyMs);
-    }
-    return evaluation.error.trimmed().isEmpty() ? QStringLiteral("Failed") : evaluation.error.trimmed();
-}
-
-QString firstCountryWithNodesOrFirst(const QList<AutoCountrySummary>& countries)
-{
-    const auto withNodes = std::find_if(countries.cbegin(), countries.cend(), [](const AutoCountrySummary& country) {
-        return country.availableCount > 0;
-    });
-    return withNodes == countries.cend()
-        ? (countries.isEmpty() ? QString() : countries.constFirst().countryCode)
-        : withNodes->countryCode;
-}
-
-const VmessItem* findServerInConfig(const Config& config, const QString& indexId)
-{
-    if (indexId.trimmed().isEmpty()) {
-        return nullptr;
-    }
-    for (const VmessItem& server : config.collection().servers) {
-        if (server.indexId == indexId) {
-            return &server;
-        }
-    }
-    return nullptr;
-}
-
-void preserveActiveServerForSubscriptionUpdate(Config& config, const QString& activeServerId)
-{
-    for (VmessItem& server : config.collection().servers) {
-        if (server.indexId != activeServerId || server.subId.trimmed().isEmpty()) {
-            continue;
-        }
-        server.subId.clear();
-        if (!server.remarks.trimmed().startsWith(QStringLiteral("Active copy |"))) {
-            server.remarks = QStringLiteral("Active copy | %1")
-                .arg(server.remarks.trimmed().isEmpty() ? server.address.trimmed() : server.remarks.trimmed());
-        }
-        return;
-    }
-}
-
-bool reconcilePreservedActiveServer(Config& config, const QString& activeServerId)
-{
-    const VmessItem* activeServer = findServerInConfig(config, activeServerId);
-    if (activeServer == nullptr || !activeServer->subId.trimmed().isEmpty()) {
-        return false;
-    }
-
-    const QString activeReuseKey = SubscriptionService::serverReuseKey(*activeServer);
-    bool hasDuplicateSubscriptionServer = false;
-    for (VmessItem& server : config.collection().servers) {
-        if (server.subId.trimmed().isEmpty()) {
-            continue;
-        }
-        if (SubscriptionService::serverReuseKey(server) == activeReuseKey) {
-            server.indexId = activeServerId;
-            if (server.testResult.trimmed().isEmpty()) {
-                server.testResult = activeServer->testResult;
-            }
-            hasDuplicateSubscriptionServer = true;
-            break;
-        }
-    }
-
-    if (hasDuplicateSubscriptionServer) {
-        config.collection().servers.erase(
-            std::remove_if(
-                config.collection().servers.begin(),
-                config.collection().servers.end(),
-                [&activeServerId](const VmessItem& server) {
-                    return server.indexId == activeServerId && server.subId.trimmed().isEmpty();
-                }),
-            config.collection().servers.end());
-        config.currentIndexId = activeServerId;
-        return true;
-    }
-
-    if (config.currentIndexId == activeServerId) {
-        return false;
-    }
-    config.currentIndexId = activeServerId;
-    return true;
-}
 
 } // namespace
 
@@ -435,10 +341,11 @@ void SongBirdAutoCoordinator::setTunEnabled(bool enabled)
     }
 
     config_.tun().tunModeItem.enableTun = enabled;
-    if (!saveConfig()) {
+    const OperationResult saveResult = saveConfig();
+    if (!saveResult.success) {
         config_.tun().tunModeItem.enableTun = !enabled;
         emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
-        log(QStringLiteral("Failed to save TUN setting."));
+        log(QStringLiteral("Failed to save TUN setting: %1").arg(saveResult.message));
         return;
     }
 
@@ -465,9 +372,10 @@ void SongBirdAutoCoordinator::setAutoSelectionStrategy(const QString& strategy)
 
     const QString previous = autoSelectionStrategy();
     config_.ui().autoSelectionStrategy = normalized;
-    if (!saveConfig()) {
+    const OperationResult saveResult = saveConfig();
+    if (!saveResult.success) {
         config_.ui().autoSelectionStrategy = previous;
-        log(QStringLiteral("Failed to save auto selection strategy."));
+        log(QStringLiteral("Failed to save auto selection strategy: %1").arg(saveResult.message));
         emit autoSelectionStrategyChanged(autoSelectionStrategy());
         return;
     }
@@ -502,8 +410,9 @@ bool SongBirdAutoCoordinator::saveRoutingSettings(
     config_.ui().settingsRoutingRuleTabKey = settingsRoutingRuleTabKey;
     applyAutoRuntimeDefaults(config_);
 
-    if (!saveConfig()) {
-        log(QStringLiteral("Failed to save routing settings."));
+    const OperationResult saveResult = saveConfig();
+    if (!saveResult.success) {
+        log(QStringLiteral("Failed to save routing settings: %1").arg(saveResult.message));
         setStatus(QStringLiteral("Failed to save routing settings"));
         return false;
     }
@@ -529,7 +438,10 @@ void SongBirdAutoCoordinator::saveSubscriptionUrlsText(const QString& text)
     const OperationResult result = replaceSubscriptionsFromUrls(urls);
     const bool reconciled = reconcilePreservedActiveServer(config_, activeServerId_);
     if (reconciled) {
-        saveConfig();
+        const OperationResult reconciledSaveResult = saveConfig();
+        if (!reconciledSaveResult.success) {
+            log(reconciledSaveResult.message);
+        }
     }
     log(result.message);
     if (result.success) {
@@ -651,6 +563,21 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService updateService(repository, subscriptionService, networkAccessManager);
         Config workerConfig = repository.load();
+        // A corrupt config parses to an empty Config; persisting that would
+        // wipe the user's data, so abort the update instead.
+        if (!repository.lastLoadError().trimmed().isEmpty()) {
+            const QString loadError = repository.lastLoadError();
+            if (!self) {
+                return;
+            }
+            QMetaObject::invokeMethod(self, [self, loadError, operationId]() {
+                if (self && self->isCurrentOperation(operationId)) {
+                    self->log(loadError);
+                    self->taskSummary(QString());
+                }
+            }, Qt::QueuedConnection);
+            return;
+        }
         applyAutoRuntimeDefaults(workerConfig);
         preserveActiveServerForSubscriptionUpdate(workerConfig, activeServerIdBeforeUpdate);
         const OperationResult updateResult = updateService.updateAllWithProgress(
@@ -667,16 +594,28 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
                 }, Qt::QueuedConnection);
             });
         const bool reconciled = reconcilePreservedActiveServer(workerConfig, activeServerIdBeforeUpdate);
-        if (reconciled) {
-            repository.save(workerConfig);
-        }
+        const bool reconciledSaveFailed = reconciled && !repository.save(workerConfig);
+        // Carry the repository's reason alongside the flag. The log line used to
+        // report only that the save failed, with no hint of which file or step --
+        // which is exactly the detail JsonConfigRepository goes to the trouble of
+        // recording.
+        const QString reconciledSaveError = reconciledSaveFailed
+            ? repository.lastSaveError().trimmed()
+            : QString();
 
         if (!self) {
             return;
         }
-        QMetaObject::invokeMethod(self, [self, updateResult, operationId, activeServerIdBeforeUpdate]() {
+        QMetaObject::invokeMethod(self, [self, updateResult, operationId, activeServerIdBeforeUpdate, reconciledSaveFailed, reconciledSaveError]() {
             if (!self || !self->isCurrentOperation(operationId)) {
                 return;
+            }
+            if (reconciledSaveFailed) {
+                const QString failureMessage = QCoreApplication::translate("SongBirdAuto",
+                    "Subscriptions were updated but saving the reconciled active server failed.");
+                self->log(reconciledSaveError.isEmpty()
+                    ? failureMessage
+                    : QStringLiteral("%1 %2").arg(failureMessage, reconciledSaveError));
             }
             self->lastSubscriptionUpdateAt_ = QDateTime::currentDateTimeUtc();
             self->lastCountryTestAt_.clear();
@@ -693,13 +632,34 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
 
 void SongBirdAutoCoordinator::reloadConfig()
 {
-    config_ = repository_ == nullptr ? Config() : repository_->load();
+    if (repository_ == nullptr) {
+        config_ = Config();
+        return;
+    }
+    Config loadedConfig = repository_->load();
+    // A corrupt config parses to an empty Config. Keep the previous in-memory
+    // config rather than replacing it, and do not save it back to disk. The
+    // load result is staged first so a failed parse never reaches config_.
+    if (!repository_->lastLoadError().trimmed().isEmpty()) {
+        log(repository_->lastLoadError());
+        return;
+    }
+
+    config_ = std::move(loadedConfig);
     applyAutoRuntimeDefaults(config_);
 }
 
-bool SongBirdAutoCoordinator::saveConfig()
+OperationResult SongBirdAutoCoordinator::saveConfig()
 {
-    return repository_ != nullptr && repository_->save(config_);
+    if (repository_ == nullptr) {
+        return OperationResult::fail(QStringLiteral("Configuration repository is unavailable."));
+    }
+
+    if (repository_->save(config_)) {
+        return OperationResult::ok();
+    }
+
+    return repository_->saveFailureResult(QStringLiteral("Failed to save the configuration file."));
 }
 
 QString SongBirdAutoCoordinator::resolveCustomConfigDirectory() const

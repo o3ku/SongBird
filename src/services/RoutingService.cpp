@@ -65,7 +65,7 @@ OperationResult RoutingService::saveRouting(
     RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save routing settings."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save routing settings."));
     }
 
     return OperationResult::ok(QStringLiteral("Routing settings saved."));
@@ -85,7 +85,7 @@ OperationResult RoutingService::setRoutingMode(Config& config, const QString& ro
     RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save the selected routing mode."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save the selected routing mode."));
     }
 
     return OperationResult::ok(QStringLiteral("Routing mode switched."));

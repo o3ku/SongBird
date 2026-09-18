@@ -14,9 +14,12 @@ public:
         config_ = config;
         return saveSucceeds_;
     }
+    QString lastLoadError() const override { return lastLoadError_; }
+    QString lastSaveError() const override { return {}; }
 
     Config config_;
     bool saveSucceeds_ = true;
+    QString lastLoadError_;
 };
 
 RoutingItem makeItem(const QString& remarks, const QList<RoutingRule>& rules = {})

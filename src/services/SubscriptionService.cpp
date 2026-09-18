@@ -39,7 +39,7 @@ OperationResult SubscriptionService::saveSubscriptions(Config& config, QList<Sub
     config.collection().subscriptions = std::move(items);
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
     }
 
     return OperationResult::ok(QStringLiteral("Subscriptions saved."));
@@ -68,7 +68,7 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
     }
 
     return OperationResult::ok(enabled
@@ -126,7 +126,7 @@ OperationResult SubscriptionService::removeSubscription(Config& config, const QS
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
     }
 
     return OperationResult::ok(QStringLiteral("Subscription deleted."));
@@ -187,7 +187,7 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to replace subscription servers."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to replace subscription servers."));
     }
 
     return OperationResult::ok(QStringLiteral("Subscription servers replaced."));

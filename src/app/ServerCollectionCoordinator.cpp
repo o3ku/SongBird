@@ -1,5 +1,6 @@
 #include "app/ServerCollectionCoordinator.h"
 
+#include <QCoreApplication>
 #include <utility>
 
 #include "services/SubscriptionService.h"
@@ -29,7 +30,8 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
         return;
     }
 
-    restartCoreIfRunning(QStringLiteral("Reloading core after removing the active server."));
+    restartCoreIfRunning(QCoreApplication::translate(
+        "AppBootstrap", "Reloading core after removing the active server."));
 }
 
 void ServerCollectionCoordinator::moveServers(const QStringList& indexIds, ServerMoveOperation operation)
@@ -70,7 +72,8 @@ void ServerCollectionCoordinator::deleteSubscription(const QString& subscription
         return;
     }
 
-    restartCoreIfRunning(QStringLiteral("Reloading core after deleting the active subscription."));
+    restartCoreIfRunning(QCoreApplication::translate(
+        "AppBootstrap", "Reloading core after deleting the active subscription."));
 }
 
 void ServerCollectionCoordinator::appendResult(const OperationResult& result) const

@@ -120,7 +120,6 @@ inline TunSettingsSaveBehavior evaluateTunSettingsSaveBehavior(
     bool isCoreRunning)
 {
     TunSettingsSaveBehavior behavior;
-    behavior.configToPersist = updated;
     behavior.applyDecision = evaluateTunSettingsApply(
         previous,
         updated,
@@ -128,6 +127,15 @@ inline TunSettingsSaveBehavior evaluateTunSettingsSaveBehavior(
         isProcessElevated,
         isCoreRunning);
     behavior.shouldPromptForAdminRestart = behavior.applyDecision.requiresAdminForConfiguredTun;
+    behavior.configToPersist = updated;
+    if (behavior.shouldPromptForAdminRestart) {
+        // Same normalization as prepareTunToggleConfigForSave: persist the
+        // proxy preference together with TUN so the elevated restart actually
+        // enables the core and system proxy via applyStartupSystemProxyPreference.
+        behavior.configToPersist.ui().mainProxyEnabled = true;
+        behavior.configToPersist.sysProxyType =
+            toLegacySystemProxyModeValue(SystemProxyMode::ForcedChange);
+    }
     return behavior;
 }
 

@@ -62,7 +62,7 @@ OperationResult ServerService::addServer(Config& config, const VmessItem& item)
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after adding the server."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after adding the server."));
     }
 
     return OperationResult::ok(QStringLiteral("Server added."));
@@ -107,7 +107,7 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
     *it = updated;
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after editing the server."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after editing the server."));
     }
 
     return OperationResult::ok(QStringLiteral("Server updated."));
@@ -146,7 +146,7 @@ OperationResult ServerService::removeServers(Config& config, const QList<QString
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after removing server(s)."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after removing server(s)."));
     }
 
     for (const QString& address : removedCustomAddresses) {
@@ -176,7 +176,7 @@ OperationResult ServerService::moveServers(Config& config, const QList<QString>&
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after reordering server(s)."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after reordering server(s)."));
     }
 
     return OperationResult::ok(QStringLiteral("Server order updated."));
@@ -204,7 +204,7 @@ OperationResult ServerService::reorderServers(Config& config, const QList<QStrin
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after drag reordering server(s)."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after drag reordering server(s)."));
     }
 
     return OperationResult::ok(QStringLiteral("Server order updated."));
@@ -228,7 +228,7 @@ OperationResult ServerService::setDefaultServer(Config& config, const QString& i
 
     config.currentIndexId = indexId;
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after switching the default server."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after switching the default server."));
     }
 
     return OperationResult::ok(QStringLiteral("Default server updated."));
@@ -263,15 +263,23 @@ OperationResult ServerService::updateTestResult(Config& config, const QString& i
     }
 
     if (!repository_.save(config)) {
-        return OperationResult::fail(QStringLiteral("Failed to save configuration after updating the test result."));
+        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after updating the test result."));
     }
 
     return OperationResult::ok();
 }
 
-bool ServerService::save(Config& config)
+OperationResult ServerService::save(Config& config)
 {
-    return repository_.save(config);
+    if (repository_.save(config)) {
+        return OperationResult::ok();
+    }
+
+    // Never returns an empty message: callers append it straight to the log, and
+    // a repository with nothing to report (a test double, for instance) would
+    // otherwise turn a failed save into a silent one.
+    return repository_.saveFailureResult(
+        QStringLiteral("Failed to save the configuration file."));
 }
 
 QString ServerService::resolveCustomConfigPath(const QString& address) const

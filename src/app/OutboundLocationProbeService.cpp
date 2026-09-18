@@ -1,6 +1,7 @@
 #include "app/OutboundLocationProbeService.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -115,9 +116,12 @@ QString locationProbeErrorMessage(const QUrl& url, const QString& error)
         return error;
     }
     if (error.trimmed().isEmpty()) {
-        return QStringLiteral("Outbound location request failed: %1").arg(host);
+        return QCoreApplication::translate(
+                   "OutboundLocationProbeService", "Outbound location request failed: %1")
+            .arg(host);
     }
-    return QStringLiteral("%1: %2").arg(host, error.trimmed());
+    return QCoreApplication::translate("OutboundLocationProbeService", "%1: %2")
+        .arg(host, error.trimmed());
 }
 
 } // namespace
@@ -191,7 +195,8 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
 {
     OutboundLocationDetails result;
     if (probeUrls.isEmpty() || !isValidTcpPort(httpPort) || timeoutMs <= 0) {
-        result.error = QStringLiteral("Outbound location probe is unavailable.");
+        result.error = QCoreApplication::translate(
+            "OutboundLocationProbeService", "Outbound location probe is unavailable.");
         return result;
     }
 
@@ -207,7 +212,8 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
     timeoutTimer.setSingleShot(true);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         if (!completed) {
-            result.error = QStringLiteral("Outbound location request timed out.");
+            result.error = QCoreApplication::translate(
+                "OutboundLocationProbeService", "Outbound location request timed out.");
         }
         loop.quit();
     });
@@ -235,7 +241,8 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
                 }
                 result.error = locationProbeErrorMessage(
                     probeUrl,
-                    QStringLiteral("Outbound location response was empty."));
+                    QCoreApplication::translate(
+                        "OutboundLocationProbeService", "Outbound location response was empty."));
                 return;
             }
 

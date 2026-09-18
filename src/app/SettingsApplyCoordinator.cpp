@@ -71,10 +71,12 @@ void SettingsApplyCoordinator::apply(const Config& updatedConfig)
     SubscriptionService::normalizeSubscriptionIds(deps_.config.collection().subscriptions);
 
     const QStringList newSubIds = collectNewEnabledSubscriptionIds(deps_.config, previousSubIds);
-    if (!deps_.serverService.save(deps_.config)) {
+    const OperationResult saveResult = deps_.serverService.save(deps_.config);
+    if (!saveResult.success) {
         deps_.config = previousConfig;
-        appendResult(OperationResult::fail(
-            QCoreApplication::translate("AppBootstrap", "Failed to save settings.")));
+        appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+            QCoreApplication::translate("AppBootstrap", "Failed to save settings."),
+            saveResult.message)));
         syncWindow();
         return;
     }

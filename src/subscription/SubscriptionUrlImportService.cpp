@@ -105,7 +105,10 @@ OperationResult SubscriptionUrlImportService::importAndUpdate(
     }
 
     config.ui().mainSelectedSubId = plan.lastSubscriptionId;
-    repository_.save(config);
+    if (!repository_.save(config)) {
+        return repository_.saveFailureResult(
+            QStringLiteral("Subscriptions were imported but saving the configuration failed."));
+    }
     const OperationResult updateResult = updateByIds_
         ? updateByIds_(config, plan.subscriptionIds)
         : OperationResult::fail(QStringLiteral("Subscription update service is unavailable."));

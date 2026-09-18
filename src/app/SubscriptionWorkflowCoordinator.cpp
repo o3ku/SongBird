@@ -114,6 +114,18 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
         Config workerConfig = repository.load();
+        // A corrupt config parses to an empty Config; persisting that would
+        // wipe the user's data, so abort the import instead.
+        if (!repository.lastLoadError().trimmed().isEmpty()) {
+            Completion completion;
+            completion.result = OperationResult::fail(repository.lastLoadError());
+            QMetaObject::invokeMethod(uiContext, [self, token, lifetimeGuard, completion]() {
+                if (self) {
+                    self->finishOnUiThread(token, lifetimeGuard, completion);
+                }
+            }, Qt::QueuedConnection);
+            return;
+        }
 
         OperationResult result = subscriptionUpdateService.importFromText(workerConfig, text);
         if (!result.success) {
@@ -181,6 +193,18 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
                 return subscriptionUpdateService.updateByIds(config, subscriptionIds);
             });
         Config workerConfig = repository.load();
+        // A corrupt config parses to an empty Config; persisting that would
+        // wipe the user's data, so abort the import instead.
+        if (!repository.lastLoadError().trimmed().isEmpty()) {
+            Completion completion;
+            completion.result = OperationResult::fail(repository.lastLoadError());
+            QMetaObject::invokeMethod(uiContext, [self, token, lifetimeGuard, completion]() {
+                if (self) {
+                    self->finishOnUiThread(token, lifetimeGuard, completion);
+                }
+            }, Qt::QueuedConnection);
+            return;
+        }
 
         SubscriptionUrlImportService::ImportPlan plan;
         const OperationResult result = importService.importAndUpdate(workerConfig, text, &plan);
@@ -281,6 +305,18 @@ void SubscriptionWorkflowCoordinator::updateByIds(
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
         Config workerConfig = repository.load();
+        // A corrupt config parses to an empty Config; persisting that would
+        // wipe the user's data, so abort the update instead.
+        if (!repository.lastLoadError().trimmed().isEmpty()) {
+            Completion completion;
+            completion.result = OperationResult::fail(repository.lastLoadError());
+            QMetaObject::invokeMethod(uiContext, [self, token, lifetimeGuard, completion]() {
+                if (self) {
+                    self->finishOnUiThread(token, lifetimeGuard, completion);
+                }
+            }, Qt::QueuedConnection);
+            return;
+        }
         const OperationResult result = subscriptionIds.isEmpty()
             ? subscriptionUpdateService.updateAll(workerConfig, useProxy)
             : subscriptionUpdateService.updateByIds(workerConfig, subscriptionIds, useProxy);
@@ -353,7 +389,8 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
         uiCallbacks_.selectSubscriptionTab(completion.lastSubscriptionId);
     }
     if (completion.restartActiveSubscription && workflowCallbacks_.restartCoreIfRunning) {
-        workflowCallbacks_.restartCoreIfRunning(QStringLiteral("Reloading core after updating subscriptions."), true);
+        workflowCallbacks_.restartCoreIfRunning(QCoreApplication::translate(
+            "AppBootstrap", "Reloading core after updating subscriptions."), true);
     }
 }
 

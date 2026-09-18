@@ -23,7 +23,10 @@ public:
     OperationResult setDefaultServer(Config& config, const QString& indexId);
     OperationResult setTestResult(Config& config, const QString& indexId, const QString& result);
     OperationResult updateTestResult(Config& config, const QString& indexId, const QString& result);
-    bool save(Config& config);
+    // Returns OperationResult like every other mutating method here: a bare bool
+    // forced callers to invent their own message and drop the repository's
+    // specific save failure reason.
+    OperationResult save(Config& config);
     QString resolveCustomConfigPath(const QString& address) const;
 
 private:

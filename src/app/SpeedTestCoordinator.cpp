@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <QCoreApplication>
+
 #include "common/ServerDisplayName.h"
 
 namespace {
@@ -48,7 +50,8 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
 {
     if (deps_.speedTestController == nullptr || deps_.backgroundTasks == nullptr || !deps_.mutableConfig) {
         if (deps_.appendResult) {
-            deps_.appendResult(OperationResult::fail(QStringLiteral("Speed test service is unavailable.")));
+            deps_.appendResult(OperationResult::fail(QCoreApplication::translate(
+                "AppBootstrap", "Speed test service is unavailable.")));
         }
         return;
     }
@@ -146,11 +149,13 @@ void SpeedTestCoordinator::handleRunningChanged(bool running)
             return;
         }
 
-        if (speedTestResultsDirty_ && deps_.mutableConfig && deps_.saveConfig
-            && !deps_.saveConfig(deps_.mutableConfig())) {
-            if (deps_.appendResult) {
-                deps_.appendResult(OperationResult::fail(
-                    QStringLiteral("Failed to save configuration after updating test results.")));
+        if (speedTestResultsDirty_ && deps_.mutableConfig && deps_.saveConfig) {
+            const OperationResult saveResult = deps_.saveConfig(deps_.mutableConfig());
+            if (!saveResult.success && deps_.appendResult) {
+                deps_.appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
+                    QCoreApplication::translate(
+                        "AppBootstrap", "Failed to save configuration after updating test results."),
+                    saveResult.message)));
             }
         }
         speedTestResultsDirty_ = false;
@@ -182,7 +187,8 @@ void SpeedTestCoordinator::handleTestResultReady(const QString& indexId, const Q
 
     const OperationResult updateResult = deps_.setTestResult
         ? deps_.setTestResult(indexId, result)
-        : OperationResult::fail(QStringLiteral("Speed test result service is unavailable."));
+        : OperationResult::fail(QCoreApplication::translate(
+              "AppBootstrap", "Speed test result service is unavailable."));
     if (!updateResult.success) {
         if (deps_.appendResult) {
             deps_.appendResult(updateResult);
