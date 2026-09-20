@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include <QCoreApplication>
 #include <QUuid>
 
 #include "subscription/SubscriptionImportTextParser.h"
@@ -96,7 +97,7 @@ OperationResult SubscriptionUrlImportService::importAndUpdate(
     }
 
     if (plan.subscriptionIds.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No supported share URL or subscription payload was detected."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUrlImportService", "No supported share URL or subscription payload was detected."));
     }
 
     const OperationResult saveResult = subscriptionService_.saveSubscriptions(config, plan.subscriptions);
@@ -107,11 +108,11 @@ OperationResult SubscriptionUrlImportService::importAndUpdate(
     config.ui().mainSelectedSubId = plan.lastSubscriptionId;
     if (!repository_.save(config)) {
         return repository_.saveFailureResult(
-            QStringLiteral("Subscriptions were imported but saving the configuration failed."));
+            QCoreApplication::translate("SubscriptionUrlImportService", "Subscriptions were imported but saving the configuration failed."));
     }
     const OperationResult updateResult = updateByIds_
         ? updateByIds_(config, plan.subscriptionIds)
-        : OperationResult::fail(QStringLiteral("Subscription update service is unavailable."));
+        : OperationResult::fail(QCoreApplication::translate("SubscriptionUrlImportService", "Subscription update service is unavailable."));
 
     QStringList lines;
     lines.append(QStringLiteral("Imported %1 subscription URL(s).").arg(plan.subscriptionIds.size()));

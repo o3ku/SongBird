@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QCoreApplication>
 #include <QList>
 #include <QString>
 
@@ -63,13 +64,14 @@ inline CoreLaunchCompatDecision evaluateCoreLaunchCompat(
 
 inline QString coreLaunchCompatFailureMessage(const CoreLaunchCompatDecision& decision)
 {
-    return QStringLiteral("No available core can run %1 servers.")
+    return QCoreApplication::translate("ProxySession", "No available core can run %1 servers.")
         .arg(configTypeDisplayName(decision.configType));
 }
 
 inline QString coreLaunchCompatSwitchPrompt(const CoreLaunchCompatDecision& decision)
 {
-    return QStringLiteral("%1 cannot run %2 servers.\n\nSwitch this protocol to %3?")
+    return QCoreApplication::translate(
+               "ProxySession", "%1 cannot run %2 servers.\n\nSwitch this protocol to %3?")
         .arg(coreTypeDisplayName(decision.storedCore))
         .arg(configTypeDisplayName(decision.configType))
         .arg(coreTypeDisplayName(decision.resolvedCore));

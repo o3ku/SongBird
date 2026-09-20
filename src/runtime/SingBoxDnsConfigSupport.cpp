@@ -5,6 +5,7 @@
 #include <QJsonParseError>
 #include <QUrl>
 
+#include "common/RoutingValuePattern.h"
 #include "runtime/DnsAddressParser.h"
 #include "runtime/DnsHosts.h"
 #include "runtime/SingBoxFakeIpFilter.h"
@@ -192,39 +193,52 @@ bool usesDirectDnsAsFinalServer(const RoutingItem* routing)
 bool appendDomainField(QJsonObject& rule, const QString& value, bool plainAsDomain)
 {
     const QString domain = value.trimmed();
-    if (domain.isEmpty()
-        || domain.startsWith(QChar('#'))
-        || domain.startsWith(QStringLiteral("ext:"), Qt::CaseInsensitive)
-        || domain.startsWith(QStringLiteral("ext-domain:"), Qt::CaseInsensitive)) {
+    if (domain.isEmpty() || domain.startsWith(QChar('#'))) {
         return false;
     }
 
-    if (domain.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("geosite"), domain.mid(QStringLiteral("geosite:").size()));
-        return true;
-    }
-    if (domain.startsWith(QStringLiteral("regexp:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("domain_regex"), domain.mid(QStringLiteral("regexp:").size()));
-        return true;
-    }
-    if (domain.startsWith(QStringLiteral("domain:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("domain_suffix"), domain.mid(QStringLiteral("domain:").size()));
-        return true;
-    }
-    if (domain.startsWith(QStringLiteral("full:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("domain"), domain.mid(QStringLiteral("full:").size()));
-        return true;
-    }
-    if (domain.startsWith(QStringLiteral("keyword:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("domain_keyword"), domain.mid(QStringLiteral("keyword:").size()));
-        return true;
-    }
-    if (domain.startsWith(QStringLiteral("dotless:"), Qt::CaseInsensitive)) {
-        appendJsonArrayValue(rule, QStringLiteral("domain_keyword"), domain.mid(QStringLiteral("dotless:").size()));
-        return true;
+    // The prefix vocabulary lives in one place, so this and the routing mappers cannot drift
+    // apart again. `plainAsDomain` is the one axis where a DNS rule genuinely differs from a
+    // routing rule: a bare value here is a hostname read from a hosts file, so it matches that
+    // exact host, whereas the same bare value in a routing rule is a keyword match.
+    const RoutingValuePattern::DomainValue parsed = RoutingValuePattern::parseDomain(domain);
+    if (!parsed.recognised || parsed.value.isEmpty()) {
+        // Either a prefix no core defines, or a known prefix with nothing behind it. Both used
+        // to fall through to the bare branch and emit the literal text as a domain, which could
+        // never match a real query and was never reported to the user.
+        return false;
     }
 
-    appendJsonArrayValue(rule, plainAsDomain ? QStringLiteral("domain") : QStringLiteral("domain_keyword"), domain);
+    switch (parsed.kind) {
+    case RoutingValuePattern::DomainKind::Geosite:
+        appendJsonArrayValue(rule, QStringLiteral("geosite"), parsed.value);
+        return true;
+    case RoutingValuePattern::DomainKind::Regex:
+        appendJsonArrayValue(rule, QStringLiteral("domain_regex"), parsed.value);
+        return true;
+    case RoutingValuePattern::DomainKind::Suffix:
+        // "domain:", and a leading '.', both mean the host and its subdomains. The leading dot
+        // used to reach the bare branch below and produce an exact match instead.
+        appendJsonArrayValue(rule, QStringLiteral("domain_suffix"), parsed.value);
+        return true;
+    case RoutingValuePattern::DomainKind::Exact:
+        appendJsonArrayValue(rule, QStringLiteral("domain"), parsed.value);
+        return true;
+    case RoutingValuePattern::DomainKind::Keyword:
+    case RoutingValuePattern::DomainKind::Dotless:
+        // "dotless:" has no exact equivalent here; a keyword match is the closest the core
+        // offers, and the routing settings page reports the approximation to the user.
+        appendJsonArrayValue(rule, QStringLiteral("domain_keyword"), parsed.value);
+        return true;
+    case RoutingValuePattern::DomainKind::Ext:
+        // "ext:" and "ext-domain:" name a rule set loaded from a file. Neither core reads that
+        // file for a DNS rule, so the value is dropped rather than emitted as a literal host.
+        return false;
+    case RoutingValuePattern::DomainKind::Bare:
+        break;
+    }
+
+    appendJsonArrayValue(rule, plainAsDomain ? QStringLiteral("domain") : QStringLiteral("domain_keyword"), parsed.value);
     return true;
 }
 

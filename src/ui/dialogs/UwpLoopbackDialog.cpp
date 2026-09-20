@@ -18,6 +18,7 @@
 #include <QHBoxLayout>
 
 #include "common/AppPlatform.h"
+#include "common/BackgroundThreadLaunch.h"
 #include "common/DialogUtils.h"
 #include "ui/dialogs/UwpLoopbackDialogSupport.h"
 #include "ui/theme/AppTheme.h"
@@ -156,7 +157,7 @@ void UwpLoopbackDialog::startLoadingPackages()
     setStatus(tr("Loading UWP app list..."));
 
     QPointer<UwpLoopbackDialog> dialogGuard(this);
-    QThread* thread = QThread::create([dialogGuard]() {
+    QThread* thread = launchBackgroundThread([dialogGuard]() {
         WindowsUwpLoopbackService service;
         OperationResult result;
         QList<WindowsUwpPackageInfo> loadedPackages = service.listPackages(&result);
@@ -174,7 +175,6 @@ void UwpLoopbackDialog::startLoadingPackages()
             },
             Qt::QueuedConnection);
     });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
 }
 

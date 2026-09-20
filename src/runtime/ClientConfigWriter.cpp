@@ -1,5 +1,6 @@
 #include "runtime/ClientConfigWriter.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -65,11 +66,11 @@ OperationResult ClientConfigWriter::writeClientConfigs(
     QStringList* auxiliaryPaths) const
 {
     if (server.address.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Cannot generate config for an empty server address."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Cannot generate config for an empty server address."));
     }
 
     if (filePath.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Runtime config path is empty."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Runtime config path is empty."));
     }
 
     const OperationResult validationResult = validateServer(config, server);
@@ -83,13 +84,13 @@ OperationResult ClientConfigWriter::writeClientConfigs(
 
     const QFileInfo fileInfo(filePath);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create runtime config directory."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to create runtime config directory."));
     }
 
     const GeneratedConfigSet generated = generateClientConfigs(config, server);
     if (generated.primary.root.isEmpty()) {
         return OperationResult::fail(
-            QStringLiteral("%1 cannot generate a runtime config for %2 servers.")
+            QCoreApplication::translate("ClientConfigWriter", "%1 cannot generate a runtime config for %2 servers.")
                 .arg(coreTypeDisplayName(resolveSelectedCoreType(config, server, effectiveExistingCoreTypes())))
                 .arg(configTypeDisplayName(server.configType)));
     }
@@ -122,27 +123,27 @@ OperationResult ClientConfigWriter::writeCustomConfig(const VmessItem& server, c
 {
     const QString sourcePath = resolveCustomConfigPath(server.address);
     if (sourcePath.trimmed().isEmpty() || !QFileInfo::exists(sourcePath)) {
-        return OperationResult::fail(QStringLiteral("Custom config file does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Custom config file does not exist."));
     }
 
     const QFileInfo fileInfo(filePath);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create runtime config directory."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to create runtime config directory."));
     }
 
     if (QFileInfo(sourcePath).absoluteFilePath().compare(fileInfo.absoluteFilePath(), Qt::CaseInsensitive) == 0) {
-        return OperationResult::ok(QStringLiteral("Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
+        return OperationResult::ok(QCoreApplication::translate("ClientConfigWriter", "Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
     }
 
     if (QFileInfo::exists(filePath) && !QFile::remove(filePath)) {
-        return OperationResult::fail(QStringLiteral("Failed to replace existing runtime custom config file."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to replace existing runtime custom config file."));
     }
 
     if (!QFile::copy(sourcePath, filePath)) {
-        return OperationResult::fail(QStringLiteral("Failed to copy custom config file to runtime path."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to copy custom config file to runtime path."));
     }
 
-    return OperationResult::ok(QStringLiteral("Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
+    return OperationResult::ok(QCoreApplication::translate("ClientConfigWriter", "Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
 }
 
 ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs(
@@ -183,24 +184,24 @@ OperationResult ClientConfigWriter::validateServer(const Config& config, const V
 
     if (realityTransport) {
         if (server.publicKey.trimmed().isEmpty()) {
-            return OperationResult::fail(QStringLiteral("Reality transport requires a public key."));
+            return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Reality transport requires a public key."));
         }
 
         if (!ProtocolConfigMapper::isValidRealityShortId(server.shortId)) {
             return OperationResult::fail(
-                QStringLiteral("Reality short ID must be a hexadecimal string with an even length up to 16 characters."));
+                QCoreApplication::translate("ClientConfigWriter", "Reality short ID must be a hexadecimal string with an even length up to 16 characters."));
         }
     }
 
     if (server.network.compare(QStringLiteral("xhttp"), Qt::CaseInsensitive) == 0
         && !server.extra.trimmed().isEmpty()) {
         if (!isValidJsonObjectText(server.extra)) {
-            return OperationResult::fail(QStringLiteral("XHTTP extra must be a valid JSON object."));
+            return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "XHTTP extra must be a valid JSON object."));
         }
     }
 
     if (!isValidJsonObjectText(server.finalmask)) {
-        return OperationResult::fail(QStringLiteral("Finalmask must be a valid JSON object."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Finalmask must be a valid JSON object."));
     }
 
     if (server.configType == ConfigType::Custom) {
@@ -210,7 +211,7 @@ OperationResult ClientConfigWriter::validateServer(const Config& config, const V
     const ICoreBackend* backend = coreBackend(runtimeCore);
     return backend != nullptr
         ? backend->validateServer(server)
-        : OperationResult::fail(QStringLiteral("Unsupported core type: %1.").arg(coreTypeDisplayName(runtimeCore)));
+        : OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Unsupported core type: %1.").arg(coreTypeDisplayName(runtimeCore)));
 }
 
 OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& generatedConfig, const QString& filePath) const
@@ -224,18 +225,18 @@ OperationResult ClientConfigWriter::writeGeneratedConfig(const GeneratedConfig& 
     if (!written.ok) {
         switch (written.stage) {
         case JsonFile::WriteFailureStage::Open:
-            return OperationResult::fail(QStringLiteral("Failed to open runtime config file for writing."));
+            return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to open runtime config file for writing."));
         case JsonFile::WriteFailureStage::Write:
-            return OperationResult::fail(QStringLiteral("Failed to write runtime config file."));
+            return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to write runtime config file."));
         case JsonFile::WriteFailureStage::Commit:
-            return OperationResult::fail(QStringLiteral("Failed to commit runtime config file."));
+            return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to commit runtime config file."));
         case JsonFile::WriteFailureStage::None:
             break;
         }
-        return OperationResult::fail(QStringLiteral("Failed to write runtime config file."));
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to write runtime config file."));
     }
 
-    return OperationResult::ok(QStringLiteral("Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
+    return OperationResult::ok(QCoreApplication::translate("ClientConfigWriter", "Runtime config generated: %1").arg(QDir::toNativeSeparators(filePath)));
 }
 
 QJsonObject ClientConfigWriter::buildRoot(const Config& config, const VmessItem& server) const

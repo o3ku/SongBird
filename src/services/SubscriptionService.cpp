@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <QCoreApplication>
 #include <QHash>
 #include <QSet>
 #include <QUuid>
@@ -39,17 +40,17 @@ OperationResult SubscriptionService::saveSubscriptions(Config& config, QList<Sub
     config.collection().subscriptions = std::move(items);
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save subscriptions."));
     }
 
-    return OperationResult::ok(QStringLiteral("Subscriptions saved."));
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscriptions saved."));
 }
 
 OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, const QString& subscriptionId, bool enabled)
 {
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Subscription id is required."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionService", "Subscription id is required."));
     }
 
     auto it = std::find_if(
@@ -59,7 +60,7 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
             return item.id.trimmed() == normalizedId;
         });
     if (it == config.collection().subscriptions.end()) {
-        return OperationResult::fail(QStringLiteral("The selected subscription does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionService", "The selected subscription does not exist."));
     }
 
     it->enabled = enabled;
@@ -68,19 +69,19 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save subscriptions."));
     }
 
     return OperationResult::ok(enabled
-            ? QStringLiteral("Subscription enabled.")
-            : QStringLiteral("Subscription hidden."));
+            ? QCoreApplication::translate("SubscriptionService", "Subscription enabled.")
+            : QCoreApplication::translate("SubscriptionService", "Subscription hidden."));
 }
 
 OperationResult SubscriptionService::removeSubscription(Config& config, const QString& subscriptionId)
 {
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Subscription id is required."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionService", "Subscription id is required."));
     }
 
     const bool subscriptionExists = std::any_of(
@@ -90,7 +91,7 @@ OperationResult SubscriptionService::removeSubscription(Config& config, const QS
             return item.id.trimmed() == normalizedId;
         });
     if (!subscriptionExists) {
-        return OperationResult::fail(QStringLiteral("The selected subscription does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionService", "The selected subscription does not exist."));
     }
 
     QSet<QString> removedServerIds;
@@ -126,10 +127,10 @@ OperationResult SubscriptionService::removeSubscription(Config& config, const QS
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save subscriptions."));
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save subscriptions."));
     }
 
-    return OperationResult::ok(QStringLiteral("Subscription deleted."));
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription deleted."));
 }
 
 OperationResult SubscriptionService::replaceSubscriptionServers(
@@ -139,7 +140,7 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
 {
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Subscription id is required."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionService", "Subscription id is required."));
     }
 
     const QString previousCurrentIndexId = config.currentIndexId;
@@ -187,10 +188,10 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to replace subscription servers."));
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to replace subscription servers."));
     }
 
-    return OperationResult::ok(QStringLiteral("Subscription servers replaced."));
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription servers replaced."));
 }
 
 QHash<QString, QList<SubscriptionService::ReusableServerState>> SubscriptionService::takeReusableServerStates(

@@ -4,8 +4,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "common/RoutingValuePattern.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/SingBoxDnsConfigSupport.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/core/CoreDescriptor.h"
@@ -72,6 +74,9 @@ private slots:
     void everyRegisteredCoreHasBackend();
     void everyDeclaredProtocolProducesConfig();
     void declaredProtocolsMapToDistinctWireProtocols();
+    void routingValueParsingDoesNotMistakeAddressesForPrefixes();
+    void unsupportedRoutingValuesAreReported();
+    void dnsRuleFieldsFollowTheSharedPrefixVocabulary();
 };
 
 void BackendContractTests::everyRegisteredCoreHasBackend()
@@ -145,6 +150,126 @@ void BackendContractTests::declaredProtocolsMapToDistinctWireProtocols()
             }
             seenWireProtocols.insert(wireProtocol, configType);
         }
+    }
+}
+
+void BackendContractTests::routingValueParsingDoesNotMistakeAddressesForPrefixes()
+{
+    // Routing values carry their match type in a "word:" prefix, but two legitimate values also
+    // contain a colon: an IPv6 literal and a host carrying a port. Reading either as an unknown
+    // prefix would report a perfectly good rule as broken.
+    for (const QString& address : {QStringLiteral("10.0.0.0/8"),
+             QStringLiteral("fe80::1"),
+             QStringLiteral("2001:db8::/32"),
+             QStringLiteral("dead:beef::1")}) {
+        const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(address);
+        QVERIFY2(parsed.recognised, qPrintable(address));
+        QVERIFY2(parsed.kind == RoutingValuePattern::IpKind::Address, qPrintable(address));
+        QCOMPARE(parsed.value, address);
+    }
+
+    const RoutingValuePattern::IpValue geoip = RoutingValuePattern::parseIp(QStringLiteral("geoip:private"));
+    QVERIFY(geoip.recognised);
+    QVERIFY(geoip.kind == RoutingValuePattern::IpKind::GeoIp);
+    QCOMPARE(geoip.value, QStringLiteral("private"));
+
+    const RoutingValuePattern::DomainValue hostWithPort = RoutingValuePattern::parseDomain(QStringLiteral("example.com:8080"));
+    QVERIFY(hostWithPort.recognised);
+    QVERIFY(hostWithPort.kind == RoutingValuePattern::DomainKind::Bare);
+    QCOMPARE(hostWithPort.value, QStringLiteral("example.com:8080"));
+
+    // A leading dot is shorthand for the same suffix match "domain:" asks for.
+    const RoutingValuePattern::DomainValue dotted = RoutingValuePattern::parseDomain(QStringLiteral(".example.com"));
+    QVERIFY(dotted.kind == RoutingValuePattern::DomainKind::Suffix);
+    QCOMPARE(dotted.value, QStringLiteral("example.com"));
+}
+
+void BackendContractTests::unsupportedRoutingValuesAreReported()
+{
+    // One issue per value a core cannot honour faithfully: an unknown prefix, an "ext:" rule
+    // set, the xray-only "dotless:" modifier, and a prefix with nothing after it. "domain:" and
+    // "geoip:" are honoured everywhere and must raise nothing.
+    const QList<RoutingValuePattern::Issue> issues = RoutingValuePattern::issuesForValues(
+        {QStringLiteral("domain:example.com"),
+            QStringLiteral("nosuchprefix:example.com"),
+            QStringLiteral("ext:geosite.dat:cn"),
+            QStringLiteral("dotless:example.com"),
+            QStringLiteral("domain:")},
+        {QStringLiteral("geoip:cn"), QStringLiteral("keyword:1.2.3.4")});
+
+    QCOMPARE(issues.size(), 5);
+
+    QVERIFY(issues.at(0).kind == RoutingValuePattern::IssueKind::UnknownPrefix);
+    QCOMPARE(issues.at(0).field, QStringLiteral("domain"));
+    QCOMPARE(issues.at(0).detail, QStringLiteral("nosuchprefix:"));
+
+    QVERIFY(issues.at(1).kind == RoutingValuePattern::IssueKind::Unsupported);
+    QCOMPARE(issues.at(1).detail, QStringLiteral("ext:"));
+
+    QVERIFY(issues.at(2).kind == RoutingValuePattern::IssueKind::Approximated);
+    QCOMPARE(issues.at(2).detail, QStringLiteral("dotless:"));
+
+    QVERIFY(issues.at(3).kind == RoutingValuePattern::IssueKind::EmptyValue);
+    QCOMPARE(issues.at(3).detail, QStringLiteral("domain:"));
+
+    QVERIFY(issues.at(4).kind == RoutingValuePattern::IssueKind::UnknownPrefix);
+    QCOMPARE(issues.at(4).field, QStringLiteral("ip"));
+    QCOMPARE(issues.at(4).detail, QStringLiteral("keyword:"));
+
+    // Nothing portable is ever reported, so a config built from the built-in profiles -- which
+    // use only "domain:", "geosite:" and "geoip:" -- stays quiet.
+    QVERIFY(RoutingValuePattern::issuesForValues(
+        {QStringLiteral("domain:example-example.com"), QStringLiteral("geosite:cn"), QStringLiteral(".example.com")},
+        {QStringLiteral("geoip:private"), QStringLiteral("10.0.0.0/8"), QStringLiteral("fe80::1")})
+                .isEmpty());
+}
+
+void BackendContractTests::dnsRuleFieldsFollowTheSharedPrefixVocabulary()
+{
+    // The DNS rule builder used to carry its own copy of the prefix chain, and the copy had
+    // drifted from the routing mappers. It now reads the shared vocabulary, so every kind has to
+    // land on the same field the routing side would choose.
+    const auto fieldFor = [](const QString& value, bool plainAsDomain) {
+        QJsonObject rule;
+        if (!SingBoxDnsConfigSupport::appendDomainField(rule, value, plainAsDomain) || rule.isEmpty()) {
+            return QString();
+        }
+
+        const QString key = rule.keys().constFirst();
+        return QStringLiteral("%1=%2").arg(key, rule.value(key).toArray().at(0).toString());
+    };
+
+    QCOMPARE(fieldFor(QStringLiteral("domain:example.com"), true), QStringLiteral("domain_suffix=example.com"));
+    QCOMPARE(fieldFor(QStringLiteral("full:example.com"), true), QStringLiteral("domain=example.com"));
+    QCOMPARE(fieldFor(QStringLiteral("keyword:tracker"), true), QStringLiteral("domain_keyword=tracker"));
+    QCOMPARE(fieldFor(QStringLiteral("dotless:example"), true), QStringLiteral("domain_keyword=example"));
+    QCOMPARE(fieldFor(QStringLiteral("geosite:cn"), true), QStringLiteral("geosite=cn"));
+    QCOMPARE(fieldFor(QStringLiteral("regexp:^ad\\."), true), QStringLiteral("domain_regex=^ad\\."));
+
+    // A bare value here is a hostname read from a hosts file, so it matches that host exactly.
+    // The same bare value in a routing rule is a keyword, which is what the false flag asks for.
+    QCOMPARE(fieldFor(QStringLiteral("example.com"), true), QStringLiteral("domain=example.com"));
+    QCOMPARE(fieldFor(QStringLiteral("example.com"), false), QStringLiteral("domain_keyword=example.com"));
+
+    // A leading dot means the host and its subdomains, exactly like "domain:". It used to reach
+    // the bare branch and become an exact match instead.
+    QCOMPARE(fieldFor(QStringLiteral(".example.com"), true), QStringLiteral("domain_suffix=example.com"));
+
+    // A host carrying a port is not a prefix, and must survive as a bare hostname.
+    QCOMPARE(fieldFor(QStringLiteral("example.com:8080"), true), QStringLiteral("domain=example.com:8080"));
+
+    // Values no core can express as a DNS match are dropped rather than emitted as a literal
+    // host that could never be queried. A comment and a blank entry are not values at all.
+    for (const QString& value : {QStringLiteral("ext:geosite.dat:cn"),
+             QStringLiteral("ext-domain:geosite.dat:cn"),
+             QStringLiteral("nosuchprefix:example.com"),
+             QStringLiteral("domain:"),
+             QStringLiteral("  "),
+             QStringLiteral("# a comment"),
+             QString()}) {
+        QJsonObject rule;
+        QVERIFY2(!SingBoxDnsConfigSupport::appendDomainField(rule, value, true), qPrintable(value));
+        QVERIFY2(rule.isEmpty(), qPrintable(value));
     }
 }
 

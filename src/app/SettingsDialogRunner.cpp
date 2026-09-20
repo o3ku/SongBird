@@ -5,6 +5,7 @@
 #include <QThread>
 #include <QVector>
 
+#include "common/BackgroundThreadLaunch.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "ui/dialogs/SettingsDialog.h"
 
@@ -57,22 +58,25 @@ SettingsDialogRunner::Result SettingsDialogRunner::exec(
     dialog.setExistingCoreTypes(existingCoreTypes);
 
     for (const CoreType coreType : availableCoreTypes()) {
-        auto* thread = QThread::create([coreType, dialogGuard, lifetimeGuard, detectCoreVersion = detectCoreVersion_]() {
-            if (lifetimeGuard.expired()) {
-                return;
-            }
+        QThread* thread = launchBackgroundThread(
+            [coreType, dialogGuard, lifetimeGuard, detectCoreVersion = detectCoreVersion_]() {
+                if (lifetimeGuard.expired()) {
+                    return;
+                }
 
-            const QString version = detectCoreVersion(coreType);
-            if (!dialogGuard.isNull()) {
-                QMetaObject::invokeMethod(dialogGuard.data(), [dialogGuard, coreType, version]() {
-                    if (!dialogGuard.isNull()) {
-                        dialogGuard->setCoreVersion(coreType, version);
-                    }
-                }, Qt::QueuedConnection);
-            }
-        });
-        threadJoiner.threads.append(thread);
-        trackThread_(thread);
+                const QString version = detectCoreVersion(coreType);
+                if (!dialogGuard.isNull()) {
+                    QMetaObject::invokeMethod(dialogGuard.data(), [dialogGuard, coreType, version]() {
+                        if (!dialogGuard.isNull()) {
+                            dialogGuard->setCoreVersion(coreType, version);
+                        }
+                    }, Qt::QueuedConnection);
+                }
+            },
+            [this, &threadJoiner](QThread* worker) {
+                threadJoiner.threads.append(worker);
+                trackThread_(worker);
+            });
         thread->start();
     }
 

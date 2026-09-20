@@ -19,7 +19,33 @@ bool hasEditableCustomRoutingFields(const RoutingRule& rule)
     return !rule.protocol.isEmpty()
         || !rule.port.trimmed().isEmpty()
         || !rule.ip.isEmpty()
-        || !rule.domain.isEmpty();
+        || !rule.domain.isEmpty()
+        || !rule.process.isEmpty();
+}
+
+// The editor is a flat grid -- one list per (action, field kind) -- so it cannot express a
+// rule that combines kinds. Accepting one would let collectRules split it apart, turning
+// `{domain: X, process: Y}` (every condition must match) into `{domain: X}` OR
+// `{process: Y}` and silently widening what gets routed. Rules that span kinds are
+// therefore preserved verbatim, the same treatment `network`/`inboundTag` already get.
+//
+// protocol and port count as a single group because collectRules emits them as one rule.
+int editableFieldGroupCount(const RoutingRule& rule)
+{
+    int groups = 0;
+    if (!rule.protocol.isEmpty() || !rule.port.trimmed().isEmpty()) {
+        ++groups;
+    }
+    if (!rule.ip.isEmpty()) {
+        ++groups;
+    }
+    if (!rule.domain.isEmpty()) {
+        ++groups;
+    }
+    if (!rule.process.isEmpty()) {
+        ++groups;
+    }
+    return groups;
 }
 
 bool isEditableCustomRoutingRule(const RoutingRule& rule, bool supportedAction)
@@ -33,10 +59,13 @@ bool isEditableCustomRoutingRule(const RoutingRule& rule, bool supportedAction)
         return false;
     }
 
+    // `network` and `inboundTag` have no editor field, so any rule carrying them is
+    // preserved verbatim instead. `process` does have one now, so it is editable -- provided
+    // it is the rule's only field kind, so the round-trip cannot change its meaning.
     return hasEditableCustomRoutingFields(rule)
+        && editableFieldGroupCount(rule) == 1
         && rule.network.trimmed().isEmpty()
-        && !containsNonEmptyValue(rule.inboundTag)
-        && !containsNonEmptyValue(rule.process);
+        && !containsNonEmptyValue(rule.inboundTag);
 }
 
 void appendUnique(QStringList& target, const QStringList& values)
@@ -121,10 +150,14 @@ RoutingCustomRuleSupport::PartitionedRules RoutingCustomRuleSupport::partitionEd
             continue;
         }
 
+        // Merging by action is only safe because every rule that reaches here is confined to
+        // a single field group: within a group the values are OR'd either way, and
+        // collectRules re-emits one rule per group, so the output matches the input.
         RuleValues& values = result.valuesByAction[action];
         appendUnique(values.protocols, rule.protocol);
         appendUnique(values.ips, rule.ip);
         appendUnique(values.domains, rule.domain);
+        appendUnique(values.processes, rule.process);
         const QString port = rule.port.trimmed();
         if (!port.isEmpty() && !values.ports.contains(port)) {
             values.ports.append(port);
@@ -157,6 +190,12 @@ QList<RoutingRule> RoutingCustomRuleSupport::collectRules(
         if (!values.domains.isEmpty()) {
             RoutingRule rule = makeRule(action);
             rule.domain = values.domains;
+            rules.append(rule);
+        }
+
+        if (!values.processes.isEmpty()) {
+            RoutingRule rule = makeRule(action);
+            rule.process = values.processes;
             rules.append(rule);
         }
     }

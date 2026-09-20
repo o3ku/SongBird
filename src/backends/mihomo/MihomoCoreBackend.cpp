@@ -1,5 +1,6 @@
 #include "backends/mihomo/MihomoCoreBackend.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QRegularExpression>
 #include <QSet>
@@ -91,7 +92,8 @@ QString MihomoCoreBackend::extractVersionFromOutput(const QString& output) const
 OperationResult MihomoCoreBackend::validateServer(const VmessItem& server) const
 {
     if (!supportsConfigType(server.configType) || server.configType == ConfigType::Custom) {
-        return OperationResult::fail(QStringLiteral("The selected server type is not supported by the current Mihomo generator."));
+        return OperationResult::fail(QCoreApplication::translate(
+            "MihomoCoreBackend", "The selected server type is not supported by the current Mihomo generator."));
     }
 
     const QString network = server.network.trimmed().isEmpty()
@@ -99,14 +101,14 @@ OperationResult MihomoCoreBackend::validateServer(const VmessItem& server) const
         : server.network.trimmed().toLower();
     if (!isSupportedNetwork(network)) {
         return OperationResult::fail(
-            QStringLiteral("Mihomo config generation does not support network %1 yet.").arg(network));
+            QCoreApplication::translate("MihomoCoreBackend", "Mihomo config generation does not support network %1 yet.").arg(network));
     }
 
     if (network == QStringLiteral("tcp")) {
         const QString headerType = server.headerType.trimmed().toLower();
         if (!headerType.isEmpty() && headerType != QStringLiteral("none")) {
             return OperationResult::fail(
-                QStringLiteral("Mihomo config generation does not support tcp headerType %1 yet.").arg(headerType));
+                QCoreApplication::translate("MihomoCoreBackend", "Mihomo config generation does not support tcp headerType %1 yet.").arg(headerType));
         }
     }
 

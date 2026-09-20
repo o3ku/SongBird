@@ -1,5 +1,6 @@
 #include "persistence/JsonConfigRepository.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -121,7 +122,7 @@ Config JsonConfigRepository::loadPrimaryConfig()
     }
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        lastLoadError_ = QStringLiteral("Failed to open configuration file: %1")
+        lastLoadError_ = QCoreApplication::translate("JsonConfigRepository", "Failed to open configuration file: %1")
                              .arg(QDir::toNativeSeparators(configPath_));
         return {};
     }
@@ -133,11 +134,11 @@ Config JsonConfigRepository::loadPrimaryConfig()
     const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         lastLoadError_ = parseError.error != QJsonParseError::NoError
-            ? QStringLiteral("Failed to parse configuration file: %1 (offset %2: %3).")
+            ? QCoreApplication::translate("JsonConfigRepository", "Failed to parse configuration file: %1 (offset %2: %3).")
                   .arg(QDir::toNativeSeparators(configPath_))
                   .arg(parseError.offset)
                   .arg(parseError.errorString())
-            : QStringLiteral("Configuration file root must be a JSON object: %1")
+            : QCoreApplication::translate("JsonConfigRepository", "Configuration file root must be a JSON object: %1")
                   .arg(QDir::toNativeSeparators(configPath_));
         return {};
     }

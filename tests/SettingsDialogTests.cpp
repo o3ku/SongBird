@@ -19,6 +19,7 @@
 #include <QTableWidget>
 #include <QTextEdit>
 
+#include "ui/dialogs/RoutingCustomRuleSupport.h"
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 #include "ui/theme/AppTheme.h"
@@ -52,7 +53,11 @@ private slots:
     void corePageUsesPlainContentWithoutGroupBoxes();
     void corePageShowsProtocolAndCoreSectionTitles();
     void routingRuleNetworkAndProcessRoundTripConfig();
+    void routingCustomRuleProcessRoundTripsThroughProcessEditor();
+    void routingCustomRuleWithMultipleFieldKindsIsPreservedVerbatim();
+    void routingCustomRuleWithMultipleFieldKindsRoundTripsThroughDialog();
     void routingCustomRuleTabsRoundTripConfig();
+    void routingPageReportsValuesNoCoreCanHonour();
     void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
     void routingPageUsesCompactCardsAndPlainCustomRuleForms();
     void routingBaseRouteCardsCollapseAroundSelectedCard();
@@ -606,6 +611,108 @@ void SettingsDialogTests::routingRuleNetworkAndProcessRoundTripConfig()
         QStringList({QStringLiteral("self/"), QStringLiteral("C:/Program Files/Test/test.exe")}));
 }
 
+void SettingsDialogTests::routingCustomRuleProcessRoundTripsThroughProcessEditor()
+{
+    Config config;
+    RoutingRule proxyProcessRule;
+    proxyProcessRule.type = QStringLiteral("field");
+    proxyProcessRule.enabled = true;
+    proxyProcessRule.outboundTag = QStringLiteral("proxy");
+    proxyProcessRule.process = QStringList{
+        QStringLiteral("chrome.exe"),
+        QStringLiteral("C:/Program Files/Test/test.exe")};
+    config.collection().routingCustomRules = {proxyProcessRule};
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* processEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomproxyProcessEdit"));
+    QVERIFY(processEdit != nullptr);
+    QCOMPARE(
+        processEdit->toPlainText().trimmed(),
+        QStringLiteral("chrome.exe\nC:/Program Files/Test/test.exe"));
+
+    // The process column exists on every action tab, not just PROXY.
+    QVERIFY(dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomblockProcessEdit")) != nullptr);
+    QVERIFY(dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomdirectProcessEdit")) != nullptr);
+
+    processEdit->setPlainText(QStringLiteral("firefox.exe"));
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.collection().routingCustomRules.size(), 1);
+    QCOMPARE(updated.collection().routingCustomRules.constFirst().outboundTag, QStringLiteral("proxy"));
+    QCOMPARE(
+        updated.collection().routingCustomRules.constFirst().process,
+        QStringList{QStringLiteral("firefox.exe")});
+}
+
+void SettingsDialogTests::routingCustomRuleWithMultipleFieldKindsIsPreservedVerbatim()
+{
+    // The custom-rule editor is a flat grid: one list per (action, field kind). A rule that
+    // combines kinds cannot be expressed there, and flattening it would turn its AND into an
+    // OR -- `{domain: X, process: Y}` would come back as two rules, widening what is routed.
+    // Such a rule must therefore survive the partition/collect round trip untouched.
+    const QStringList supportedActions{
+        QStringLiteral("block"), QStringLiteral("direct"), QStringLiteral("proxy")};
+
+    RoutingRule combined;
+    combined.type = QStringLiteral("field");
+    combined.enabled = true;
+    combined.outboundTag = QStringLiteral("proxy");
+    combined.domain = QStringList{QStringLiteral("domain:example.com")};
+    combined.process = QStringList{QStringLiteral("chrome.exe")};
+
+    const RoutingCustomRuleSupport::PartitionedRules partitioned =
+        RoutingCustomRuleSupport::partitionEditableRules({combined}, supportedActions);
+    QVERIFY(partitioned.valuesByAction.isEmpty());
+    QCOMPARE(partitioned.preservedRules.size(), 1);
+
+    const QList<RoutingRule> collected =
+        RoutingCustomRuleSupport::collectRules(partitioned.preservedRules, partitioned.valuesByAction);
+    QCOMPARE(collected.size(), 1);
+    QCOMPARE(collected.constFirst().domain, combined.domain);
+    QCOMPARE(collected.constFirst().process, combined.process);
+
+    // Dropping one of the two kinds makes it expressible again, so it goes through the
+    // editor rather than being preserved -- this is what keeps the process column usable.
+    RoutingRule processOnly = combined;
+    processOnly.domain.clear();
+    const RoutingCustomRuleSupport::PartitionedRules single =
+        RoutingCustomRuleSupport::partitionEditableRules({processOnly}, supportedActions);
+    QCOMPARE(single.preservedRules.size(), 0);
+    QCOMPARE(
+        single.valuesByAction.value(QStringLiteral("proxy")).processes,
+        QStringList{QStringLiteral("chrome.exe")});
+
+    const QList<RoutingRule> singleCollected =
+        RoutingCustomRuleSupport::collectRules(single.preservedRules, single.valuesByAction);
+    QCOMPARE(singleCollected.size(), 1);
+    QCOMPARE(singleCollected.constFirst().process, QStringList{QStringLiteral("chrome.exe")});
+}
+
+void SettingsDialogTests::routingCustomRuleWithMultipleFieldKindsRoundTripsThroughDialog()
+{
+    // Same guarantee as above, but through the real dialog so the fix is proven to reach the
+    // path a user actually takes (open Settings, press OK).
+    Config config;
+    RoutingRule combined;
+    combined.type = QStringLiteral("field");
+    combined.enabled = true;
+    combined.outboundTag = QStringLiteral("proxy");
+    combined.domain = QStringList{QStringLiteral("domain:example.com")};
+    combined.process = QStringList{QStringLiteral("chrome.exe")};
+    config.collection().routingCustomRules = {combined};
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    const Config updated = dialog.config();
+    QCOMPARE(updated.collection().routingCustomRules.size(), 1);
+    const RoutingRule result = updated.collection().routingCustomRules.constFirst();
+    QCOMPARE(result.domain, combined.domain);
+    QCOMPARE(result.process, combined.process);
+}
+
 void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
 {
     Config config;
@@ -672,6 +779,50 @@ void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()
     QCOMPARE(updated.collection().routingCustomRules.at(2).outboundTag, QStringLiteral("proxy"));
     QCOMPARE(updated.collection().routingCustomRules.at(2).protocol, QStringList{QStringLiteral("bittorrent")});
     QCOMPARE(updated.collection().routingCustomRules.at(2).port, QStringLiteral("6881-6999"));
+}
+
+void SettingsDialogTests::routingPageReportsValuesNoCoreCanHonour()
+{
+    Config config;
+    RoutingRule directRule;
+    directRule.type = QStringLiteral("field");
+    directRule.enabled = true;
+    directRule.outboundTag = QStringLiteral("direct");
+    directRule.domain = QStringList{QStringLiteral("domain:example.com")};
+    config.collection().routingCustomRules = {directRule};
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    auto* warnings = dialog.findChild<QLabel*>(QStringLiteral("routingCustomRuleWarnings"));
+    auto* directDomainEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomdirectDomainEdit"));
+    auto* directIpEdit = dialog.findChild<QTextEdit*>(QStringLiteral("routingCustomdirectIpEdit"));
+    QVERIFY(warnings != nullptr);
+    QVERIFY(directDomainEdit != nullptr);
+    QVERIFY(directIpEdit != nullptr);
+
+    // Every value here is honoured by every core, so nothing is reported. Asserted with
+    // isHidden() rather than !isVisible(): the dialog is never shown, so a visible widget would
+    // still report isVisible() == false.
+    QVERIFY(warnings->isHidden());
+    QVERIFY(warnings->text().isEmpty());
+
+    // A "word:" prefix no core defines is reported rather than reaching the generated config as
+    // a keyword rule matching its own prefix text, which could never match a host.
+    directDomainEdit->setPlainText(QStringLiteral("nosuchprefix:example.com"));
+    QVERIFY(!warnings->isHidden());
+    QVERIFY(warnings->text().contains(QStringLiteral("nosuchprefix:")));
+
+    // So is a prefix the ip field does not accept.
+    directDomainEdit->setPlainText(QStringLiteral("domain:example.com"));
+    directIpEdit->setPlainText(QStringLiteral("keyword:1.2.3.4"));
+    QVERIFY(!warnings->isHidden());
+    QVERIFY(warnings->text().contains(QStringLiteral("keyword:1.2.3.4")));
+
+    // Clearing the offending value clears the warning again.
+    directIpEdit->setPlainText(QStringLiteral("geoip:cn"));
+    QVERIFY(warnings->isHidden());
+    QVERIFY(warnings->text().isEmpty());
 }
 
 void SettingsDialogTests::routingCustomRuleTabsDefaultToDirectAndPersistSelection()

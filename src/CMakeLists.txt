@@ -83,6 +83,7 @@ set(SONGBIRD_SOURCES
     app/TunAdminMessages.h
     app/TunModeCoordinator.h
     app/TunModeCoordinator.cpp
+    common/BackgroundThreadLaunch.h
     common/OperationResult.h
     common/DataSizeFormatter.h
     common/EndpointParser.h
@@ -92,6 +93,8 @@ set(SONGBIRD_SOURCES
     common/GitHubReleaseParsing.cpp
     common/JsonFile.h
     common/PortValidator.h
+    common/RoutingValuePattern.h
+    common/RoutingValuePattern.cpp
     common/ProcessRunner.h
     common/ProcessRunner.cpp
     common/ServerDisplayName.h
@@ -492,6 +495,7 @@ set(SONGBIRD_AUTO_SOURCES
     auto/SongBirdAutoCoordinator.cpp
     auto/SongBirdAutoWindow.h
     auto/SongBirdAutoWindow.cpp
+    common/BackgroundThreadLaunch.h
     common/DialogUtils.h
     common/CorePidFile.h
     common/JsonFile.h
@@ -500,6 +504,8 @@ set(SONGBIRD_AUTO_SOURCES
     common/GitHubReleaseParsing.cpp
     common/OperationResult.h
     common/PortValidator.h
+    common/RoutingValuePattern.h
+    common/RoutingValuePattern.cpp
     common/ProcessRunner.h
     common/ProcessRunner.cpp
     common/ServerDisplayName.h

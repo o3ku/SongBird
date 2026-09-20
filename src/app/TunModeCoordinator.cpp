@@ -68,8 +68,8 @@ void TunModeCoordinator::setEnabled(bool enabled)
 
     appendResult(OperationResult::ok(
         enabled
-            ? QStringLiteral("TUN mode enabled.")
-            : QStringLiteral("TUN mode disabled.")));
+            ? QCoreApplication::translate("AppBootstrap", "TUN mode enabled.")
+            : QCoreApplication::translate("AppBootstrap", "TUN mode disabled.")));
 
     if (tunSaveBehavior.shouldPromptForAdminRestart) {
         appendResult(OperationResult::fail(tunAdminRequiredSaveMessage()));

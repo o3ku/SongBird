@@ -2,12 +2,15 @@
 
 #include <QAbstractButton>
 #include <QButtonGroup>
+#include <QColor>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
 #include <QTabWidget>
 #include <QTextEdit>
 
+#include "common/RoutingValuePattern.h"
 #include "ui/dialogs/RoutingBaseRouteCard.h"
 #include "ui/dialogs/RoutingCustomRuleSupport.h"
 #include "domain/models/RoutingProfiles.h"
@@ -47,6 +50,7 @@ void RoutingSettingsPageWidget::setConfig(const Config& config)
     loadRoutingCustomRules(config.collection().routingCustomRules);
     selectRoutingCustomRuleTab(config.ui().settingsRoutingRuleTabKey);
     updateRoutingActionState();
+    updateRoutingValueWarnings();
 }
 
 QList<RoutingItem> RoutingSettingsPageWidget::routingItems() const
@@ -123,6 +127,9 @@ void RoutingSettingsPageWidget::loadRoutingCustomRules(const QList<RoutingRule>&
         if (it.value().domainEdit != nullptr) {
             it.value().domainEdit->clear();
         }
+        if (it.value().processEdit != nullptr) {
+            it.value().processEdit->clear();
+        }
     }
 
     const RoutingCustomRuleSupport::PartitionedRules partitioned =
@@ -148,6 +155,9 @@ void RoutingSettingsPageWidget::loadRoutingCustomRules(const QList<RoutingRule>&
         }
         if (editors.domainEdit != nullptr) {
             editors.domainEdit->setPlainText(values.domains.join(QChar('\n')));
+        }
+        if (editors.processEdit != nullptr) {
+            editors.processEdit->setPlainText(values.processes.join(QChar('\n')));
         }
     }
 }
@@ -184,6 +194,10 @@ QList<RoutingRule> RoutingSettingsPageWidget::collectRoutingCustomRules() const
         values.domains = editors.domainEdit == nullptr
             ? QStringList()
             : RoutingCustomRuleSupport::splitValues(editors.domainEdit->toPlainText());
+
+        values.processes = editors.processEdit == nullptr
+            ? QStringList()
+            : RoutingCustomRuleSupport::splitValues(editors.processEdit->toPlainText());
     }
 
     return RoutingCustomRuleSupport::collectRules(preservedCustomRules_, valuesByAction);
@@ -241,6 +255,53 @@ void RoutingSettingsPageWidget::updateRoutingActionState()
             ? QString()
             : customRulesTitleLabel_->toolTip());
     }
+}
+
+void RoutingSettingsPageWidget::updateRoutingValueWarnings()
+{
+    if (customRuleWarningsLabel_ == nullptr) {
+        return;
+    }
+
+    QStringList domains;
+    QStringList ips;
+    for (auto it = customRuleEditors_.cbegin(); it != customRuleEditors_.cend(); ++it) {
+        if (it.value().domainEdit != nullptr) {
+            domains += RoutingCustomRuleSupport::splitValues(it.value().domainEdit->toPlainText());
+        }
+        if (it.value().ipEdit != nullptr) {
+            ips += RoutingCustomRuleSupport::splitValues(it.value().ipEdit->toPlainText());
+        }
+    }
+
+    // The match vocabulary is shared with the backends, so a value none of them can honour is
+    // detectable here. Without this the value would reach the generated config and turn into a
+    // rule that silently never matches.
+    QStringList lines;
+    const QList<RoutingValuePattern::Issue> issues = RoutingValuePattern::issuesForValues(domains, ips);
+    for (const RoutingValuePattern::Issue& issue : issues) {
+        const QString field = issue.field == QLatin1String("ip") ? tr("IP") : tr("Domain");
+        switch (issue.kind) {
+        case RoutingValuePattern::IssueKind::UnknownPrefix:
+            lines.append(tr("%1 \"%2\": \"%3\" is not a prefix any core understands.")
+                             .arg(field, issue.value, issue.detail));
+            break;
+        case RoutingValuePattern::IssueKind::EmptyValue:
+            lines.append(tr("%1 \"%2\": no value after \"%3\".").arg(field, issue.value, issue.detail));
+            break;
+        case RoutingValuePattern::IssueKind::Approximated:
+            lines.append(tr("%1 \"%2\": \"%3\" is approximated with a keyword match.")
+                             .arg(field, issue.value, issue.detail));
+            break;
+        case RoutingValuePattern::IssueKind::Unsupported:
+            lines.append(tr("%1 \"%2\": \"%3\" rule sets are not applied by mihomo or sing-box.")
+                             .arg(field, issue.value, issue.detail));
+            break;
+        }
+    }
+
+    customRuleWarningsLabel_->setText(lines.join(QChar('\n')));
+    customRuleWarningsLabel_->setVisible(!lines.isEmpty());
 }
 
 int RoutingSettingsPageWidget::findInitialRouteIndex(const QList<RoutingItem>& items, const QString& selectedRoutingModeId) const

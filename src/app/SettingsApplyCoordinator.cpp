@@ -98,7 +98,7 @@ void SettingsApplyCoordinator::apply(const Config& updatedConfig)
     if (plan.autoRunChanged && deps_.autoRunService != nullptr) {
         const bool success = deps_.autoRunService->setEnabled(updatedConfig.ui().autoRunEnabled);
         if (!success) {
-            appendResult(OperationResult::fail(QStringLiteral("Failed to update auto run setting.")));
+            appendResult(OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Failed to update auto run setting.")));
         }
     }
 

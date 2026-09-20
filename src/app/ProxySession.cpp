@@ -22,6 +22,7 @@
 #include "app/OutboundLocationProbeService.h"
 #include "app/TunSettingsApplyDecision.h"
 #include "app/TunRuntimeState.h"
+#include "common/BackgroundThreadLaunch.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/CoreConfigPreflight.h"
 #include "runtime/TunCompatCoreRequirement.h"
@@ -770,7 +771,7 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     setPhase(Phase::ValidateRuntimeResources);
 
     const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = QThread::create([this, targetDirectory, checkGeoStep, skipTunCleanup,
+    QThread* thread = launchBackgroundThread([this, targetDirectory, checkGeoStep, skipTunCleanup,
                                        showStartupOverlay, guard]() {
         const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
             postStartupDownloadProgress(checkGeoStep, message, guard);
@@ -795,8 +796,7 @@ void ProxySession::downloadMissingGeoFilesAndResume(
                 tr("Proxy startup was canceled while Geo files were updating."),
                 tr("Geo files were updated, but proxy startup was canceled."));
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 
@@ -821,7 +821,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     setPhase(Phase::ValidateRuntimeResources);
 
     const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = QThread::create([this, targetDirectory, tags, checkGeoStep, skipTunCleanup,
+    QThread* thread = launchBackgroundThread([this, targetDirectory, tags, checkGeoStep, skipTunCleanup,
                                        showStartupOverlay, guard]() {
         const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
             postStartupDownloadProgress(checkGeoStep, message, guard);
@@ -847,8 +847,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
                 tr("Proxy startup was canceled while sing-box rule sets were updating."),
                 tr("sing-box rule sets were updated, but proxy startup was canceled."));
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 
@@ -891,7 +890,7 @@ void ProxySession::downloadMissingCoreAndResume(
         currentRequest_.config.ignoreGeoUpdateCore};
     const std::weak_ptr<char> guard = lifetimeGuard_;
 
-    QThread* thread = QThread::create([this, runtimeCore, workerConfig, installDirectory,
+    QThread* thread = launchBackgroundThread([this, runtimeCore, workerConfig, installDirectory,
                                        downloadCoreStep, skipTunCleanup,
                                        showStartupOverlay, token, guard]() {
         CoreUpdateService coreUpdateService;
@@ -930,8 +929,7 @@ void ProxySession::downloadMissingCoreAndResume(
                 tr("The core was downloaded, but proxy startup was canceled."),
                 [this]() { deps_.activationCoordinator.refreshExistingCoreTypes(); });
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 
@@ -1043,7 +1041,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
     constexpr int kTunCoreProbeTotalTimeoutMs = 20000;
     const int listenProbeTimeoutMs = tunEnabledAtStart ? kTunCoreProbeTotalTimeoutMs : kCoreProbeTotalTimeoutMs;
 
-    QThread* thread = QThread::create([this, guard, activeServerId,
+    QThread* thread = launchBackgroundThread([this, guard, activeServerId,
                                        startCoreStep, startTime,
                                        listenPort, listenProbeTimeoutMs]() {
         const bool portReady = waitForLocalTcpPortReady(listenPort, listenProbeTimeoutMs);
@@ -1078,8 +1076,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
                 QCoreApplication::translate("ProxySession", "Core local proxy is listening on 127.0.0.1:%1.").arg(listenPort));
             handleCoreStarted(activeServerId);
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 
@@ -1138,7 +1135,7 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
     const std::weak_ptr<char> guard = lifetimeGuard_;
     const QString activeServerId = serverIndexId.trimmed();
     const qint64 startTime = coreStartTime_;
-    QThread* thread = QThread::create([this, guard, activeServerId, httpPort, locationStep, startTime]() {
+    QThread* thread = launchBackgroundThread([this, guard, activeServerId, httpPort, locationStep, startTime]() {
         const OutboundLocationProbeResult probeResult = deps_.locationProbe.probe(httpPort);
         const QString location = probeResult.location;
         const QString lastError = probeResult.error;
@@ -1169,8 +1166,7 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
                 clearChecklistAfterStableRun(CoreStartupCompletionOverlayDelayMs);
             }
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 
@@ -1427,7 +1423,7 @@ void ProxySession::setTunCleanupState(TunCleanupState state)
 void ProxySession::removeStaleTunAdapterAsync(const std::function<void(const OperationResult&)>& completion)
 {
     const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = QThread::create([this, completion, guard]() {
+    QThread* thread = launchBackgroundThread([this, completion, guard]() {
         const OperationResult result = deps_.environment.removeStaleTunAdapter();
         QMetaObject::invokeMethod(this, [completion, result, guard]() {
             if (guard.expired()) {
@@ -1437,8 +1433,7 @@ void ProxySession::removeStaleTunAdapterAsync(const std::function<void(const Ope
                 completion(result);
             }
         }, Qt::QueuedConnection);
-    });
-    trackBackgroundThread(thread);
+    }, [this](QThread* worker) { trackBackgroundThread(worker); });
     thread->start();
 }
 

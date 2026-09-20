@@ -15,6 +15,7 @@ struct RuleValues {
     QStringList ports;
     QStringList ips;
     QStringList domains;
+    QStringList processes;
 };
 
 struct PartitionedRules {

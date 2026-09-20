@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include "common/RoutingValuePattern.h"
 #include "runtime/RoutingRuleJsonSupport.h"
 
 namespace {
@@ -62,42 +63,42 @@ void populateDomainFields(QJsonObject& rule, const QStringList& domains)
     QJsonArray geositeValues;
 
     for (const QString& domain : domains) {
-        if (domain.startsWith(QStringLiteral("ext:"), Qt::CaseInsensitive)
-            || domain.startsWith(QStringLiteral("ext-domain:"), Qt::CaseInsensitive)) {
+        const RoutingValuePattern::DomainValue parsed = RoutingValuePattern::parseDomain(domain);
+        if (parsed.value.isEmpty()) {
             continue;
         }
 
-        if (domain.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)) {
-            geositeValues.append(domain.mid(QStringLiteral("geosite:").size()));
-            continue;
+        switch (parsed.kind) {
+        case RoutingValuePattern::DomainKind::Exact:
+            exactDomains.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Suffix:
+            // Covers "domain:example.com" and the ".example.com" shorthand alike; both mean
+            // "this host and every subdomain of it", which is what domain_suffix matches.
+            // The shorthand used to be emitted as a keyword, which matched subdomains but not
+            // the host itself.
+            domainSuffixes.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Keyword:
+        case RoutingValuePattern::DomainKind::Bare:
+            domainKeywords.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Regex:
+            domainRegexes.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Geosite:
+            geositeValues.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Dotless:
+            // xray-only modifier; sing-box has no dot-insensitive matcher, so a keyword match
+            // is the closest approximation. Reported by the routing settings page.
+            domainKeywords.append(parsed.value);
+            break;
+        case RoutingValuePattern::DomainKind::Ext:
+            // A rule set loaded from a file. sing-box cannot resolve one here, and the keyword
+            // entry this used to become referenced a file name, not a host.
+            break;
         }
-
-        if (domain.startsWith(QStringLiteral("full:"), Qt::CaseInsensitive)) {
-            exactDomains.append(domain.mid(QStringLiteral("full:").size()));
-            continue;
-        }
-
-        if (domain.startsWith(QStringLiteral("domain:"), Qt::CaseInsensitive)) {
-            domainSuffixes.append(domain.mid(QStringLiteral("domain:").size()));
-            continue;
-        }
-
-        if (domain.startsWith(QStringLiteral("keyword:"), Qt::CaseInsensitive)) {
-            domainKeywords.append(domain.mid(QStringLiteral("keyword:").size()));
-            continue;
-        }
-
-        if (domain.startsWith(QStringLiteral("dotless:"), Qt::CaseInsensitive)) {
-            domainKeywords.append(domain.mid(QStringLiteral("dotless:").size()));
-            continue;
-        }
-
-        if (domain.startsWith(QStringLiteral("regexp:"), Qt::CaseInsensitive)) {
-            domainRegexes.append(domain.mid(QStringLiteral("regexp:").size()));
-            continue;
-        }
-
-        domainKeywords.append(domain);
     }
 
     if (!exactDomains.isEmpty()) {
@@ -124,17 +125,27 @@ void populateIpFields(QJsonObject& rule, const QStringList& ips)
     bool privateIp = false;
 
     for (const QString& ip : ips) {
-        if (ip.startsWith(QStringLiteral("geoip:"), Qt::CaseInsensitive)) {
-            const QString value = ip.mid(QStringLiteral("geoip:").size());
-            if (value.compare(QStringLiteral("private"), Qt::CaseInsensitive) == 0) {
-                privateIp = true;
-            } else {
-                geoipValues.append(value);
-            }
+        const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(ip);
+        if (parsed.value.isEmpty()) {
             continue;
         }
 
-        ipCidrs.append(ip);
+        switch (parsed.kind) {
+        case RoutingValuePattern::IpKind::GeoIp:
+            if (parsed.value.compare(QStringLiteral("private"), Qt::CaseInsensitive) == 0) {
+                privateIp = true;
+            } else {
+                geoipValues.append(parsed.value);
+            }
+            break;
+        case RoutingValuePattern::IpKind::Address:
+            ipCidrs.append(parsed.value);
+            break;
+        case RoutingValuePattern::IpKind::Ext:
+            // A rule set loaded from a file. This used to be emitted as an ip_cidr entry
+            // holding the literal text "ext:...", which the core rejects.
+            break;
+        }
     }
 
     if (!ipCidrs.isEmpty()) {

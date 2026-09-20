@@ -1,5 +1,7 @@
 #include "services/RoutingService.h"
 
+#include <QCoreApplication>
+
 #include <algorithm>
 
 #include "domain/models/RoutingProfiles.h"
@@ -65,30 +67,30 @@ OperationResult RoutingService::saveRouting(
     RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save routing settings."));
+        return repository_.saveFailureResult(QCoreApplication::translate("RoutingService", "Failed to save routing settings."));
     }
 
-    return OperationResult::ok(QStringLiteral("Routing settings saved."));
+    return OperationResult::ok(QCoreApplication::translate("RoutingService", "Routing settings saved."));
 }
 
 OperationResult RoutingService::setRoutingMode(Config& config, const QString& routingModeId)
 {
     const QString normalizedId = routingModeId.trimmed();
     if (normalizedId.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No routing entry is available."));
+        return OperationResult::fail(QCoreApplication::translate("RoutingService", "No routing entry is available."));
     }
 
     if (!containsRoutingModeId(config.collection(), normalizedId)) {
-        return OperationResult::fail(QStringLiteral("No routing entry is available."));
+        return OperationResult::fail(QCoreApplication::translate("RoutingService", "No routing entry is available."));
     }
     config.collection().routingModeId = normalizedId;
     RoutingProfiles::normalizeRoutingConfig(config.collection());
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save the selected routing mode."));
+        return repository_.saveFailureResult(QCoreApplication::translate("RoutingService", "Failed to save the selected routing mode."));
     }
 
-    return OperationResult::ok(QStringLiteral("Routing mode switched."));
+    return OperationResult::ok(QCoreApplication::translate("RoutingService", "Routing mode switched."));
 }
 
 OperationResult RoutingService::selectRouting(Config& config, const QString& routingModeId)

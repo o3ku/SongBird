@@ -1,5 +1,6 @@
 #include "runtime/CoreConfigPreflight.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
@@ -62,29 +63,29 @@ OperationResult validateCoreConfigBeforeStart(
     int timeoutMs)
 {
     if (coreInfo.program.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Core config preflight failed: core executable path is empty."));
+        return OperationResult::fail(QCoreApplication::translate("CoreConfigPreflight", "Core config preflight failed: core executable path is empty."));
     }
 
     if (!QFileInfo::exists(coreInfo.program)) {
         return OperationResult::fail(
-            QStringLiteral("Core config preflight failed: core executable was not found: %1")
+            QCoreApplication::translate("CoreConfigPreflight", "Core config preflight failed: core executable was not found: %1")
                 .arg(coreInfo.program));
     }
 
     if (configFilePath.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Core config preflight failed: config path is empty."));
+        return OperationResult::fail(QCoreApplication::translate("CoreConfigPreflight", "Core config preflight failed: config path is empty."));
     }
 
     if (!QFileInfo::exists(configFilePath)) {
         return OperationResult::fail(
-            QStringLiteral("Core config preflight failed: config file was not found: %1")
+            QCoreApplication::translate("CoreConfigPreflight", "Core config preflight failed: config file was not found: %1")
                 .arg(configFilePath));
     }
 
     const QStringList arguments = buildCoreConfigPreflightArguments(coreInfo, configFilePath);
     if (arguments.isEmpty()) {
         return OperationResult::ok(
-            QStringLiteral("Core config preflight skipped for unsupported core: %1")
+            QCoreApplication::translate("CoreConfigPreflight", "Core config preflight skipped for unsupported core: %1")
                 .arg(QFileInfo(coreInfo.program).fileName()));
     }
 
@@ -100,7 +101,7 @@ OperationResult validateCoreConfigBeforeStart(
 
     if (outcome.status == ProcessRunner::Status::FailedToStart) {
         return OperationResult::fail(
-            QStringLiteral("Core config preflight failed to start: %1")
+            QCoreApplication::translate("CoreConfigPreflight", "Core config preflight failed to start: %1")
                 .arg(outcome.errorText));
     }
 
@@ -131,10 +132,10 @@ OperationResult validateCoreConfigBeforeStart(
     const QString coreName = QFileInfo(coreInfo.program).fileName();
     if (output.isEmpty()) {
         return OperationResult::ok(
-            QStringLiteral("Core config preflight passed: %1").arg(coreName));
+            QCoreApplication::translate("CoreConfigPreflight", "Core config preflight passed: %1").arg(coreName));
     }
 
     return OperationResult::ok(
-        QStringLiteral("Core config preflight passed: %1\n%2")
+        QCoreApplication::translate("CoreConfigPreflight", "Core config preflight passed: %1\n%2")
             .arg(coreName, output));
 }

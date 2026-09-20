@@ -109,6 +109,9 @@ private slots:
     void generateClientConfigsAddsSingBoxDirectExpectedIpsForMatchingDirectGeosite();
     void generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules();
     void generateClientConfigsSplitsSingBoxRoutingProcessNameAndPathRules();
+    void generateClientConfigsSplitsMihomoRoutingProcessNameAndPathRules();
+    void generateClientConfigsMapsMihomoRoutingDomainPrefixes();
+    void generateClientConfigsMapsSingBoxRoutingDomainPrefixes();
     void generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute();
     void generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules();
     void generateClientConfigsDoesNotCreateTunCompatRelayForSingBoxCore();
@@ -2966,6 +2969,193 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingProcessNa
 
     QVERIFY(foundProcessNameRule);
     QVERIFY(foundProcessPathRule);
+}
+
+void ClientConfigWriterTests::generateClientConfigsSplitsMihomoRoutingProcessNameAndPathRules()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    setProtocolCore(config, ConfigType::VMess, CoreType::Mihomo);
+    config.collection().customRoutingItems = {
+        createRoutingItem({
+            createRoutingRule(
+                QStringLiteral("proxy"),
+                {},
+                {},
+                {},
+                {},
+                QStringLiteral("tcp,udp"),
+                QStringList{
+                    QStringLiteral("self/"),
+                    QStringLiteral("plainproc"),
+                    QStringLiteral("C:/Program Files/Test/test.exe")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Mihomo;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    // mihomo rules are flat "TYPE,value,policy" strings, unlike sing-box's rule objects.
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("rules")).toArray();
+
+    bool foundCoreProcessRule = false;
+    bool foundProcessNameRule = false;
+    bool foundProcessPathRule = false;
+    for (const QJsonValue& value : rules) {
+        const QString rule = value.toString();
+        if (rule == QStringLiteral("PROCESS-NAME,mihomo.exe,proxy")) {
+            foundCoreProcessRule = true;
+        }
+        if (rule == QStringLiteral("PROCESS-NAME,plainproc,proxy")) {
+            foundProcessNameRule = true;
+        }
+        if (rule == QStringLiteral("PROCESS-PATH,C:\\Program Files\\Test\\test.exe,proxy")) {
+            foundProcessPathRule = true;
+        }
+    }
+
+    QVERIFY(foundCoreProcessRule);
+    QVERIFY(foundProcessNameRule);
+    QVERIFY(foundProcessPathRule);
+}
+
+void ClientConfigWriterTests::generateClientConfigsMapsMihomoRoutingDomainPrefixes()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    setProtocolCore(config, ConfigType::VMess, CoreType::Mihomo);
+    config.collection().customRoutingItems = {
+        createRoutingItem({
+            createRoutingRule(
+                QStringLiteral("proxy"),
+                QStringList{
+                    QStringLiteral("domain:suffix.example"),
+                    QStringLiteral("full:exact.example"),
+                    QStringLiteral(".dotted.example"),
+                    QStringLiteral("keyword:tracker"),
+                    QStringLiteral("geosite:cn"),
+                    QStringLiteral("regexp:^ads\\."),
+                    QStringLiteral("nosuchprefix:ignored.example"),
+                    QStringLiteral("ext:geosite.dat:cn")}),
+            createRoutingRule(
+                QStringLiteral("direct"),
+                {},
+                QStringList{
+                    QStringLiteral("geoip:private"),
+                    QStringLiteral("10.0.0.0/8"),
+                    QStringLiteral("keyword:1.2.3.4"),
+                    QStringLiteral("ext:geoip.dat:cn")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Mihomo;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    QStringList rules;
+    for (const QJsonValue& value : generated.primary.root.value(QStringLiteral("rules")).toArray()) {
+        rules.append(value.toString());
+    }
+
+    // "domain:" means "this host and every subdomain of it", so it maps to DOMAIN-SUFFIX. It
+    // used to map to DOMAIN, an exact match, while sing-box read the same rule as a suffix
+    // match -- one rule with two meanings, depending on which core was selected.
+    QVERIFY(rules.contains(QStringLiteral("DOMAIN-SUFFIX,suffix.example,proxy")));
+    QVERIFY(!rules.contains(QStringLiteral("DOMAIN,suffix.example,proxy")));
+
+    // "full:" is the exact-match prefix; a leading dot is the same shorthand as "domain:".
+    QVERIFY(rules.contains(QStringLiteral("DOMAIN,exact.example,proxy")));
+    QVERIFY(rules.contains(QStringLiteral("DOMAIN-SUFFIX,dotted.example,proxy")));
+
+    // "keyword:" has to lose its prefix. Keeping it produced DOMAIN-KEYWORD,keyword:tracker,
+    // which only matches a host containing the literal text "keyword:tracker".
+    QVERIFY(rules.contains(QStringLiteral("DOMAIN-KEYWORD,tracker,proxy")));
+    QVERIFY(!rules.contains(QStringLiteral("DOMAIN-KEYWORD,keyword:tracker,proxy")));
+
+    QVERIFY(rules.contains(QStringLiteral("GEOSITE,cn,proxy")));
+    QVERIFY(rules.contains(QStringLiteral("DOMAIN-REGEX,^ads\\.,proxy")));
+
+    QVERIFY(rules.contains(QStringLiteral("GEOIP,PRIVATE,DIRECT")));
+    QVERIFY(rules.contains(QStringLiteral("IP-CIDR,10.0.0.0/8,DIRECT,no-resolve")));
+
+    // Neither an unknown prefix nor an "ext:" rule set can be honoured, so neither may reach
+    // the generated rules. Both used to become a rule carrying their own prefix text.
+    for (const QString& rule : rules) {
+        QVERIFY2(!rule.contains(QStringLiteral("nosuchprefix")), qPrintable(rule));
+        QVERIFY2(!rule.contains(QStringLiteral("ext:")), qPrintable(rule));
+        QVERIFY2(!rule.contains(QStringLiteral("keyword:1.2.3.4")), qPrintable(rule));
+    }
+}
+
+void ClientConfigWriterTests::generateClientConfigsMapsSingBoxRoutingDomainPrefixes()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    setProtocolCore(config, ConfigType::VMess, CoreType::SingBox);
+    config.collection().customRoutingItems = {
+        createRoutingItem({
+            createRoutingRule(
+                QStringLiteral("proxy"),
+                QStringList{
+                    QStringLiteral("domain:suffix.example"),
+                    QStringLiteral("full:exact.example"),
+                    QStringLiteral(".dotted.example"),
+                    QStringLiteral("keyword:tracker"),
+                    QStringLiteral("geosite:cn"),
+                    QStringLiteral("regexp:^ads\\."),
+                    QStringLiteral("nosuchprefix:ignored.example"),
+                    QStringLiteral("ext:geosite.dat:cn")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
+
+    bool foundSuffix = false;
+    bool foundDottedSuffix = false;
+    bool foundExact = false;
+    bool foundKeyword = false;
+    bool foundGeosite = false;
+    bool foundRegex = false;
+    for (const QJsonValue& value : rules) {
+        const QJsonObject rule = value.toObject();
+        foundSuffix = foundSuffix
+            || jsonArrayContainsString(rule.value(QStringLiteral("domain_suffix")).toArray(), QStringLiteral("suffix.example"));
+        // ".dotted.example" is the same shorthand as "domain:", so it belongs in domain_suffix
+        // too. It used to become a keyword, which matched subdomains but not the host itself.
+        foundDottedSuffix = foundDottedSuffix
+            || jsonArrayContainsString(rule.value(QStringLiteral("domain_suffix")).toArray(), QStringLiteral("dotted.example"));
+        foundExact = foundExact
+            || jsonArrayContainsString(rule.value(QStringLiteral("domain")).toArray(), QStringLiteral("exact.example"));
+        foundKeyword = foundKeyword
+            || jsonArrayContainsString(rule.value(QStringLiteral("domain_keyword")).toArray(), QStringLiteral("tracker"));
+        // "geosite:" is migrated into a rule_set reference ("geosite-cn") before the config is
+        // written, so the final rule carries no "geosite" key.
+        foundGeosite = foundGeosite
+            || jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geosite-cn"));
+        foundRegex = foundRegex
+            || jsonArrayContainsString(rule.value(QStringLiteral("domain_regex")).toArray(), QStringLiteral("^ads\\."));
+
+        // A value no core can honour must not be retyped into one of the matcher fields.
+        for (const QString& key : {QStringLiteral("domain"), QStringLiteral("domain_suffix"), QStringLiteral("domain_keyword"),
+                 QStringLiteral("domain_regex"), QStringLiteral("geosite"), QStringLiteral("rule_set")}) {
+            for (const QJsonValue& entry : rule.value(key).toArray()) {
+                QVERIFY2(!entry.toString().contains(QStringLiteral("nosuchprefix")), qPrintable(entry.toString()));
+                QVERIFY2(!entry.toString().contains(QStringLiteral("ext:")), qPrintable(entry.toString()));
+            }
+        }
+    }
+
+    QVERIFY(foundSuffix);
+    QVERIFY(foundDottedSuffix);
+    QVERIFY(foundExact);
+    QVERIFY(foundKeyword);
+    QVERIFY(foundGeosite);
+    QVERIFY(foundRegex);
 }
 
 void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute()

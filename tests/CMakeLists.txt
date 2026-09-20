@@ -23,6 +23,17 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-appbootstrap-member-order.ps1
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
+    # lupdate's "0 unfinished" is not a coverage metric: strings never wrapped in
+    # tr()/translate() never reach the .ts, and strings that are wrapped but not added to
+    # the hand-maintained .ts render in English. This check covers both gaps.
+    add_test(
+        NAME localization-coverage
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-localization-coverage.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+            -TranslationFile ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
+    )
 endif()
 
 function(songbird_add_qt_test target_name test_name)
@@ -136,6 +147,8 @@ songbird_add_qt_test(songbird_add_server_dialog_tests add-server-dialog-roundtri
 
 set(SONGBIRD_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/ui/dialogs/CoreSettingsPageWidget.h
     ../src/ui/dialogs/CoreSettingsPageWidget.cpp
     ../src/ui/dialogs/CoreSettingsPageWidgetUi.cpp
@@ -216,6 +229,8 @@ songbird_add_qt_test(songbird_startup_admin_elevation_tests startup-admin-elevat
 
 set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     AppBootstrapTunRuntimeTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     TestSupport.h
     ../src/app/CoreStartupCheckpoint.h
     ../src/common/ProcessRunner.h
@@ -300,6 +315,8 @@ songbird_add_qt_test(songbird_app_bootstrap_tun_runtime_tests app-bootstrap-tun-
 
 set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ProxySessionTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubReleaseParsing.h
     ../src/common/GitHubReleaseParsing.cpp
     ../src/app/BackgroundTaskCoordinator.h
@@ -426,6 +443,8 @@ songbird_add_qt_test(songbird_proxy_session_tests proxy-session-state
 
 set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     CoreUpdateCoordinatorTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubReleaseParsing.h
     ../src/common/GitHubReleaseParsing.cpp
     ../src/app/BackgroundTaskCoordinator.h
@@ -644,6 +663,8 @@ songbird_add_qt_test(songbird_main_window_tests main-window-log-scroll
 
 set(SONGBIRD_BACKEND_STACK_SOURCES
     ../src/common/JsonFile.h
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/runtime/ClientConfigWriter.h
     ../src/runtime/ClientConfigWriter.cpp
     ../src/runtime/DnsConfigFragments.h
@@ -1051,6 +1072,8 @@ songbird_add_qt_test(songbird_app_update_check_coordinator_tests app-update-chec
 
 set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     CoreUpdateServiceTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubReleaseParsing.h
     ../src/common/GitHubReleaseParsing.cpp
     ../src/services/CoreUpdateService.h
@@ -1242,6 +1265,8 @@ songbird_add_qt_test(songbird_protocol_core_compat_tests protocol-core-compat
 
 set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     EndToEndSmokeTests.cpp
+    ../src/common/RoutingValuePattern.h
+    ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
     ../src/common/GitHubReleaseParsing.h

@@ -33,6 +33,7 @@ private:
         QLineEdit* portEdit = nullptr;
         QTextEdit* ipEdit = nullptr;
         QTextEdit* domainEdit = nullptr;
+        QTextEdit* processEdit = nullptr;
     };
 
     void setupUi();
@@ -44,6 +45,7 @@ private:
     void selectRoutingCustomRuleTab(const QString& key);
     QString selectedRoutingCustomRuleTabKey() const;
     void updateRoutingActionState();
+    void updateRoutingValueWarnings();
     int findInitialRouteIndex(const QList<RoutingItem>& items, const QString& routingModeId) const;
     int selectedBaseRouteIndex() const;
 
@@ -53,6 +55,7 @@ private:
     QButtonGroup* baseRouteButtonGroup_ = nullptr;
     QHBoxLayout* baseRouteLayout_ = nullptr;
     QTabWidget* customRuleTabs_ = nullptr;
+    QLabel* customRuleWarningsLabel_ = nullptr;
     QMap<QString, CustomRuleEditors> customRuleEditors_;
     QList<RoutingRule> preservedCustomRules_;
 };

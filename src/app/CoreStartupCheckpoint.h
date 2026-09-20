@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QString>
@@ -110,14 +111,14 @@ inline OperationResult validateCoreGeoFilesBeforeStart(const CoreInfo& coreInfo)
 {
     if (!coreUsesLegacyGeoFiles(coreInfo)) {
         return OperationResult::ok(
-            QStringLiteral("The selected core does not require local geoip.dat/geosite.dat files."));
+            QCoreApplication::translate("ProxySession", "The selected core does not require local geoip.dat/geosite.dat files."));
     }
 
     const QString directory = coreInfo.workingDirectory.trimmed().isEmpty()
         ? QFileInfo(coreInfo.program).absolutePath()
         : coreInfo.workingDirectory;
     if (directory.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Core working directory is empty."));
+        return OperationResult::fail(QCoreApplication::translate("ProxySession", "Core working directory is empty."));
     }
 
     const QStringList requiredFiles{
@@ -150,6 +151,6 @@ inline OperationResult validateCoreGeoFilesBeforeStart(const CoreInfo& coreInfo)
     }
 
     return OperationResult::ok(
-        QStringLiteral("Found geoip.dat and geosite.dat in %1.")
+        QCoreApplication::translate("ProxySession", "Found geoip.dat and geosite.dat in %1.")
             .arg(QDir::toNativeSeparators(directory)));
 }

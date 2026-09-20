@@ -4,6 +4,7 @@
 #include <memory>
 #include <utility>
 
+#include <QCoreApplication>
 #include <QWidget>
 
 #include "app/DefaultServerSwitchCoordinator.h"
@@ -27,7 +28,7 @@ void AppBootstrap::wireServerCoordinators()
     defaultServerCallbacks.setDefaultServer = [this](const QString& indexId) {
         return objects_->serverService != nullptr
             ? objects_->serverService->setDefaultServer(config_, indexId)
-            : OperationResult::fail(QStringLiteral("Server service is unavailable."));
+            : OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Server service is unavailable."));
     };
     defaultServerCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
     defaultServerCallbacks.syncWindow = [this]() { syncWindow(); };

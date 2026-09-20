@@ -25,7 +25,7 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
     }
 
     if (!resolveActiveServer().has_value()) {
-        appendResult(OperationResult::ok(QStringLiteral("Stopping core because the active server was removed.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Stopping core because the active server was removed.")));
         stopCore();
         return;
     }
@@ -67,7 +67,7 @@ void ServerCollectionCoordinator::deleteSubscription(const QString& subscription
     }
 
     if (!resolveActiveServer().has_value()) {
-        appendResult(OperationResult::ok(QStringLiteral("Stopping core because the active subscription was deleted.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Stopping core because the active subscription was deleted.")));
         stopCore();
         return;
     }

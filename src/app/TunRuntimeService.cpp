@@ -2,6 +2,7 @@
 
 #include "runtime/TunAdapterNames.h"
 
+#include <QCoreApplication>
 #include <QProcess>
 #include <QString>
 
@@ -62,10 +63,10 @@ bool TunRuntimeService::isAdapterPresent() const
 OperationResult TunRuntimeService::removeStaleAdapterIfPresent() const
 {
 #ifndef Q_OS_WIN
-    return OperationResult::ok(QStringLiteral("TUN adapter cleanup is only required on Windows."));
+    return OperationResult::ok(QCoreApplication::translate("AppBootstrap", "TUN adapter cleanup is only required on Windows."));
 #else
     if (!isAdapterPresent()) {
-        return OperationResult::ok(QStringLiteral("TUN preflight did not find removable stale SongBird TUN adapters."));
+        return OperationResult::ok(QCoreApplication::translate("AppBootstrap", "TUN preflight did not find removable stale SongBird TUN adapters."));
     }
     QProcess remover;
     remover.setProgram(QStringLiteral("powershell"));
@@ -121,27 +122,27 @@ OperationResult TunRuntimeService::removeStaleAdapterIfPresent() const
         remover.kill();
         remover.waitForFinished(500);
         return OperationResult::fail(
-            QStringLiteral("Timed out while removing SongBird TUN adapters (%1).").arg(cleanupTargetDescription()));
+            QCoreApplication::translate("AppBootstrap", "Timed out while removing SongBird TUN adapters (%1).").arg(cleanupTargetDescription()));
     }
     if (remover.exitStatus() != QProcess::NormalExit) {
         return OperationResult::fail(
-            QStringLiteral("Aborted while removing SongBird TUN adapters (%1).").arg(cleanupTargetDescription()));
+            QCoreApplication::translate("AppBootstrap", "Aborted while removing SongBird TUN adapters (%1).").arg(cleanupTargetDescription()));
     }
     const QString removerOutput = QString::fromLocal8Bit(remover.readAll()).trimmed();
     if (remover.exitCode() != 0) {
         return OperationResult::fail(
             removerOutput.isEmpty()
-                ? QStringLiteral("Failed to remove SongBird TUN adapters (%1).").arg(cleanupTargetDescription())
-                : QStringLiteral("Failed to remove SongBird TUN adapters (%1): %2")
+                ? QCoreApplication::translate("AppBootstrap", "Failed to remove SongBird TUN adapters (%1).").arg(cleanupTargetDescription())
+                : QCoreApplication::translate("AppBootstrap", "Failed to remove SongBird TUN adapters (%1): %2")
                     .arg(cleanupTargetDescription(), removerOutput));
     }
     if (isAdapterPresent()) {
         return OperationResult::fail(
-            QStringLiteral("A SongBird TUN adapter is still present after cleanup (%1).").arg(cleanupTargetDescription()));
+            QCoreApplication::translate("AppBootstrap", "A SongBird TUN adapter is still present after cleanup (%1).").arg(cleanupTargetDescription()));
     }
     return OperationResult::ok(
         removerOutput.isEmpty()
-            ? QStringLiteral("Cleaned any stale SongBird TUN adapters (%1).").arg(cleanupTargetDescription())
+            ? QCoreApplication::translate("AppBootstrap", "Cleaned any stale SongBird TUN adapters (%1).").arg(cleanupTargetDescription())
             : removerOutput);
 #endif
 }

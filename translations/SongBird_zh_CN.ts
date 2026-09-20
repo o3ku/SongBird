@@ -602,11 +602,11 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>启动检查：默认服务器的自定义配置文件缺失：%1</translation>
     </message>
     <message>
-        <source>Startup check: No compatible core executable was found for default server \"%1\". Expected one of: %2.</source>
+        <source>Startup check: No compatible core executable was found for default server "%1". Expected one of: %2.</source>
         <translation>启动检查：未找到默认服务器“%1”兼容的核心可执行文件。期望以下之一：%2。</translation>
     </message>
     <message>
-        <source>Startup check: Default server \"%1\" also needs the %2 core for TUN compatibility. Expected one of: %3.</source>
+        <source>Startup check: Default server "%1" also needs the %2 core for TUN compatibility. Expected one of: %3.</source>
         <translation>启动检查：默认服务器“%1”还需要 %2 核心以兼容 TUN。期望以下之一：%3。</translation>
     </message>
     <message>
@@ -640,6 +640,142 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>Default server selection is unavailable.</source>
         <translation>默认服务器选择不可用。</translation>
+    </message>
+    <message>
+        <source>A SongBird TUN adapter is still present after cleanup (%1).</source>
+        <translation>清理后仍存在 SongBird TUN 网卡（%1）。</translation>
+    </message>
+    <message>
+        <source>A subscription update is already running in the background.</source>
+        <translation>后台已有一个订阅更新任务在运行。</translation>
+    </message>
+    <message>
+        <source>Aborted while removing SongBird TUN adapters (%1).</source>
+        <translation>移除 SongBird TUN 网卡时已中止（%1）。</translation>
+    </message>
+    <message>
+        <source>Cleaned up core processes using configured ports: %1</source>
+        <translation>已清理占用已配置端口的核心里程：%1</translation>
+    </message>
+    <message>
+        <source>Cleaned up orphan core processes: %1</source>
+        <translation>已清理孤立的核心里程：%1</translation>
+    </message>
+    <message>
+        <source>Clipboard text is empty.</source>
+        <translation>剪贴板内容为空。</translation>
+    </message>
+    <message>
+        <source>Core start is already in progress.</source>
+        <translation>核心正在启动中。</translation>
+    </message>
+    <message>
+        <source>Failed to apply system proxy mode %1.</source>
+        <translation>应用系统代理模式 %1 失败。</translation>
+    </message>
+    <message>
+        <source>Failed to create temporary custom config file.</source>
+        <translation>无法创建临时自定义配置文件。</translation>
+    </message>
+    <message>
+        <source>Failed to create temporary directory for custom config import.</source>
+        <translation>无法为自定义配置导入创建临时目录。</translation>
+    </message>
+    <message>
+        <source>Failed to save the selected system proxy mode: %1</source>
+        <translation>保存所选的系统代理模式失败：%1</translation>
+    </message>
+    <message>
+        <source>Failed to update auto run setting.</source>
+        <translation>更新开机自启设置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to write temporary custom config file.</source>
+        <translation>无法写入临时自定义配置文件。</translation>
+    </message>
+    <message>
+        <source>Server service is unavailable.</source>
+        <translation>服务器服务不可用。</translation>
+    </message>
+    <message>
+        <source>Start hidden requested, but the system tray is unavailable. The window was minimized instead.</source>
+        <translation>请求了隐藏启动，但系统托盘不可用。窗口已改为最小化。</translation>
+    </message>
+    <message>
+        <source>Starting the active core because Global system proxy mode was enabled.</source>
+        <translation>由于启用了全局系统代理模式，正在启动活动核心。</translation>
+    </message>
+    <message>
+        <source>Stopping core because the active server was removed.</source>
+        <translation>由于活动服务器已被移除，正在停止核心。</translation>
+    </message>
+    <message>
+        <source>Stopping core because the active subscription was deleted.</source>
+        <translation>由于活动订阅已被删除，正在停止核心。</translation>
+    </message>
+    <message>
+        <source>Stopping the active core because system proxy was cleared.</source>
+        <translation>由于已清除系统代理，正在停止活动核心。</translation>
+    </message>
+    <message>
+        <source>System proxy mode set to %1.</source>
+        <translation>系统代理模式已设置为 %1。</translation>
+    </message>
+    <message>
+        <source>System proxy mode set to %1. It will be applied after the core starts.</source>
+        <translation>系统代理模式已设置为 %1，将在核心启动后生效。</translation>
+    </message>
+    <message>
+        <source>TUN adapter cleanup is only required on Windows.</source>
+        <translation>仅在 Windows 上需要清理 TUN 网卡。</translation>
+    </message>
+    <message>
+        <source>TUN preflight did not find removable stale SongBird TUN adapters.</source>
+        <translation>TUN 预检未发现可移除的残留 SongBird TUN 网卡。</translation>
+    </message>
+    <message>
+        <source>Timed out while removing SongBird TUN adapters (%1).</source>
+        <translation>移除 SongBird TUN 网卡超时（%1）。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after updating test results.</source>
+        <translation>更新测试结果后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Speed test result service is unavailable.</source>
+        <translation>测速结果服务不可用。</translation>
+    </message>
+    <message>
+        <source>Speed test service is unavailable.</source>
+        <translation>测速服务不可用。</translation>
+    </message>
+    <message>
+        <source>System proxy mode cannot be changed before the configuration service is ready.</source>
+        <translation>在配置服务就绪前无法更改系统代理模式。</translation>
+    </message>
+    <message>
+        <source>TUN mode cannot be changed before the configuration service is ready.</source>
+        <translation>在配置服务就绪前无法更改 TUN 模式。</translation>
+    </message>
+    <message>
+        <source>TUN runtime service is unavailable.</source>
+        <translation>TUN 运行时服务不可用。</translation>
+    </message>
+    <message>
+        <source>Core Compatibility</source>
+        <translation>核心兼容性</translation>
+    </message>
+    <message>
+        <source>Cleaned any stale SongBird TUN adapters (%1).</source>
+        <translation>已清理所有残留的 SongBird TUN 网卡（%1）。</translation>
+    </message>
+    <message>
+        <source>Failed to remove SongBird TUN adapters (%1).</source>
+        <translation>移除 SongBird TUN 网卡失败（%1）。</translation>
+    </message>
+    <message>
+        <source>Failed to remove SongBird TUN adapters (%1): %2</source>
+        <translation>移除 SongBird TUN 网卡失败（%1）：%2</translation>
     </message>
 </context>
 <context>
@@ -742,6 +878,197 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>SongBird update downloaded: %1</source>
         <translation>SongBird 更新已下载：%1</translation>
+    </message>
+</context>
+<context>
+    <name>ClientConfigWriter</name>
+    <message>
+        <source>%1 cannot generate a runtime config for %2 servers.</source>
+        <translation>%1 无法为 %2 服务器生成运行时配置。</translation>
+    </message>
+    <message>
+        <source>Cannot generate config for an empty server address.</source>
+        <translation>服务器地址为空，无法生成配置。</translation>
+    </message>
+    <message>
+        <source>Custom config file does not exist.</source>
+        <translation>自定义配置文件不存在。</translation>
+    </message>
+    <message>
+        <source>Failed to commit runtime config file.</source>
+        <translation>提交运行时配置文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to copy custom config file to runtime path.</source>
+        <translation>复制自定义配置文件到运行时路径失败。</translation>
+    </message>
+    <message>
+        <source>Failed to create runtime config directory.</source>
+        <translation>创建运行时配置目录失败。</translation>
+    </message>
+    <message>
+        <source>Failed to open runtime config file for writing.</source>
+        <translation>无法打开运行时配置文件进行写入。</translation>
+    </message>
+    <message>
+        <source>Failed to replace existing runtime custom config file.</source>
+        <translation>替换现有运行时自定义配置文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to write runtime config file.</source>
+        <translation>写入运行时配置文件失败。</translation>
+    </message>
+    <message>
+        <source>Finalmask must be a valid JSON object.</source>
+        <translation>Finalmask 必须是有效的 JSON 对象。</translation>
+    </message>
+    <message>
+        <source>Reality short ID must be a hexadecimal string with an even length up to 16 characters.</source>
+        <translation>Reality short ID 必须是最多 16 个字符、长度为偶数的十六进制字符串。</translation>
+    </message>
+    <message>
+        <source>Reality transport requires a public key.</source>
+        <translation>Reality 传输方式需要公钥。</translation>
+    </message>
+    <message>
+        <source>Runtime config generated: %1</source>
+        <translation>已生成运行时配置：%1</translation>
+    </message>
+    <message>
+        <source>Runtime config path is empty.</source>
+        <translation>运行时配置路径为空。</translation>
+    </message>
+    <message>
+        <source>Unsupported core type: %1.</source>
+        <translation>不支持的核心类型：%1。</translation>
+    </message>
+    <message>
+        <source>XHTTP extra must be a valid JSON object.</source>
+        <translation>XHTTP extra 必须是有效的 JSON 对象。</translation>
+    </message>
+</context>
+<context>
+    <name>ConfigBackupService</name>
+    <message>
+        <source>Backup directory is unavailable.</source>
+        <translation>备份目录不可用。</translation>
+    </message>
+    <message>
+        <source>Backup file does not exist.</source>
+        <translation>备份文件不存在。</translation>
+    </message>
+    <message>
+        <source>Backup target path is empty.</source>
+        <translation>备份目标路径为空。</translation>
+    </message>
+    <message>
+        <source>Configuration backed up to %1.</source>
+        <translation>配置已备份到 %1。</translation>
+    </message>
+    <message>
+        <source>Configuration path is unavailable.</source>
+        <translation>配置路径不可用。</translation>
+    </message>
+    <message>
+        <source>Configuration restored from %1.</source>
+        <translation>已从 %1 恢复配置。</translation>
+    </message>
+    <message>
+        <source>Failed to create the backup directory.</source>
+        <translation>创建备份目录失败。</translation>
+    </message>
+    <message>
+        <source>Failed to create the configuration directory.</source>
+        <translation>创建配置目录失败。</translation>
+    </message>
+    <message>
+        <source>Failed to finalize the backup file.</source>
+        <translation>完成备份文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to open the configuration file for backup.</source>
+        <translation>无法打开配置文件进行备份。</translation>
+    </message>
+    <message>
+        <source>Failed to open the selected backup file.</source>
+        <translation>无法打开所选的备份文件。</translation>
+    </message>
+    <message>
+        <source>Failed to parse the configuration file for backup.</source>
+        <translation>解析用于备份的配置文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to parse the selected backup file.</source>
+        <translation>解析所选的备份文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to remove an old backup file.</source>
+        <translation>删除旧备份文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to remove the restored UI/runtime state file.</source>
+        <translation>删除已恢复的界面/运行时状态文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to remove the temporary backup state file.</source>
+        <translation>删除临时备份状态文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to restore the UI/runtime state file.</source>
+        <translation>恢复界面/运行时状态文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to write the backup file.</source>
+        <translation>写入备份文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to write the initial backup file.</source>
+        <translation>写入初始备份文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to commit the restored configuration file.</source>
+        <translation>提交恢复后的配置文件失败。</translation>
+    </message>
+    <message>
+        <source>Failed to open the configuration file for restore.</source>
+        <translation>无法打开配置文件进行恢复。</translation>
+    </message>
+</context>
+<context>
+    <name>CoreConfigPreflight</name>
+    <message>
+        <source>Core config preflight failed to start: %1</source>
+        <translation>核心配置预检启动失败：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight failed: config file was not found: %1</source>
+        <translation>核心配置预检失败：未找到配置文件：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight failed: config path is empty.</source>
+        <translation>核心配置预检失败：配置路径为空。</translation>
+    </message>
+    <message>
+        <source>Core config preflight failed: core executable path is empty.</source>
+        <translation>核心配置预检失败：核心可执行文件路径为空。</translation>
+    </message>
+    <message>
+        <source>Core config preflight failed: core executable was not found: %1</source>
+        <translation>核心配置预检失败：未找到核心可执行文件：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight passed: %1</source>
+        <translation>核心配置预检通过：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight skipped for unsupported core: %1</source>
+        <translation>已跳过不受支持的核心的配置预检：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight passed: %1
+%2</source>
+        <translation>核心配置预检通过：%1
+%2</translation>
     </message>
 </context>
 <context>
@@ -1029,6 +1356,34 @@ The running core will be stopped before installation if needed.</source>
         <source>HTTP %1</source>
         <translation>HTTP %1</translation>
     </message>
+    <message>
+        <source>Failed to install the extracted file to %1.</source>
+        <translation>安装解压后的文件到 %1 失败。</translation>
+    </message>
+    <message>
+        <source>Failed to start PowerShell for gzip extraction: %1</source>
+        <translation>启动 PowerShell 进行 gzip 解压失败：%1</translation>
+    </message>
+    <message>
+        <source>Gzip extraction failed.</source>
+        <translation>gzip 解压失败。</translation>
+    </message>
+    <message>
+        <source>Gzip extraction produced no output file.</source>
+        <translation>gzip 解压未生成任何输出文件。</translation>
+    </message>
+    <message>
+        <source>Gzip extraction timed out.</source>
+        <translation>gzip 解压超时。</translation>
+    </message>
+    <message>
+        <source>Gzip extraction was canceled.</source>
+        <translation>gzip 解压已取消。</translation>
+    </message>
+    <message>
+        <source>The gzip package name is invalid.</source>
+        <translation>gzip 包名无效。</translation>
+    </message>
 </context>
 <context>
     <name>CustomServerDialog</name>
@@ -1291,6 +1646,21 @@ The running core will be stopped before installation if needed.</source>
     </message>
 </context>
 <context>
+    <name>JsonConfigRepository</name>
+    <message>
+        <source>Configuration file root must be a JSON object: %1</source>
+        <translation>配置文件根节点必须是 JSON 对象：%1</translation>
+    </message>
+    <message>
+        <source>Failed to open configuration file: %1</source>
+        <translation>无法打开配置文件：%1</translation>
+    </message>
+    <message>
+        <source>Failed to parse configuration file: %1 (offset %2: %3).</source>
+        <translation>解析配置文件失败：%1（偏移 %2：%3）。</translation>
+    </message>
+</context>
+<context>
     <name>LogPanelWidget</name>
     <message>
         <source>Collapse information</source>
@@ -1410,6 +1780,21 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Update %1 Core</source>
         <translation>更新 %1 核心</translation>
+    </message>
+</context>
+<context>
+    <name>MihomoCoreBackend</name>
+    <message>
+        <source>Mihomo config generation does not support network %1 yet.</source>
+        <translation>Mihomo 配置生成尚不支持 network %1。</translation>
+    </message>
+    <message>
+        <source>Mihomo config generation does not support tcp headerType %1 yet.</source>
+        <translation>Mihomo 配置生成尚不支持 tcp headerType %1。</translation>
+    </message>
+    <message>
+        <source>The selected server type is not supported by the current Mihomo generator.</source>
+        <translation>当前 Mihomo 生成器不支持所选的服务器类型。</translation>
     </message>
 </context>
 <context>
@@ -1696,6 +2081,34 @@ The running core will be stopped before installation if needed.</source>
         <source>Core did not open the local proxy port %1 within %2 seconds.</source>
         <translation>核心未在 %2 秒内打开本地代理端口 %1。</translation>
     </message>
+    <message>
+        <source>Found geoip.dat and geosite.dat in %1.</source>
+        <translation>在 %1 中找到 geoip.dat 和 geosite.dat。</translation>
+    </message>
+    <message>
+        <source>The selected core does not require local geoip.dat/geosite.dat files.</source>
+        <translation>所选核心不需要本地 geoip.dat/geosite.dat 文件。</translation>
+    </message>
+    <message>
+        <source>%1 cannot run %2 servers.
+
+Switch this protocol to %3?</source>
+        <translation>%1 无法运行 %2 服务器。
+
+是否将此协议切换为 %3？</translation>
+    </message>
+    <message>
+        <source>%1 cannot run %2 servers. Using %3 instead.</source>
+        <translation>%1 无法运行 %2 服务器，改用 %3。</translation>
+    </message>
+    <message>
+        <source>No available core can run %1 servers.</source>
+        <translation>没有可运行 %1 服务器的可用核心。</translation>
+    </message>
+    <message>
+        <source>Startup canceled: %1 cannot run %2 servers.</source>
+        <translation>启动已取消：%1 无法运行 %2 服务器。</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
@@ -1937,6 +2350,45 @@ The running core will be stopped before installation if needed.</source>
     </message>
 </context>
 <context>
+    <name>QtCoreProcessHost</name>
+    <message>
+        <source>Core executable path is empty.</source>
+        <translation>核心可执行文件路径为空。</translation>
+    </message>
+    <message>
+        <source>Core executable was not found: %1</source>
+        <translation>未找到核心可执行文件：%1</translation>
+    </message>
+    <message>
+        <source>Core process is not running.</source>
+        <translation>核心里程未在运行。</translation>
+    </message>
+    <message>
+        <source>Core process stopped.</source>
+        <translation>核心里程已停止。</translation>
+    </message>
+    <message>
+        <source>Launching core process: %1</source>
+        <translation>正在启动核心里程：%1</translation>
+    </message>
+    <message>
+        <source>No core process has been started yet.</source>
+        <translation>尚未启动任何核心里程。</translation>
+    </message>
+    <message>
+        <source>Stopping core process immediately...</source>
+        <translation>正在立即停止核心里程…</translation>
+    </message>
+    <message>
+        <source>Stopping core process...</source>
+        <translation>正在停止核心里程…</translation>
+    </message>
+    <message>
+        <source>Timed out while stopping the core process.</source>
+        <translation>停止核心里程超时。</translation>
+    </message>
+</context>
+<context>
     <name>RoutingBaseRouteCard</name>
     <message>
         <source>Port: %1</source>
@@ -1976,6 +2428,29 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Global</source>
         <translation>全局</translation>
+    </message>
+</context>
+<context>
+    <name>RoutingService</name>
+    <message>
+        <source>No routing entry is available.</source>
+        <translation>没有可用的路由条目。</translation>
+    </message>
+    <message>
+        <source>Routing mode switched.</source>
+        <translation>路由模式已切换。</translation>
+    </message>
+    <message>
+        <source>Routing settings saved.</source>
+        <translation>路由设置已保存。</translation>
+    </message>
+    <message>
+        <source>Failed to save routing settings.</source>
+        <translation>保存路由设置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save the selected routing mode.</source>
+        <translation>保存所选路由模式失败。</translation>
     </message>
 </context>
 <context>
@@ -2020,6 +2495,49 @@ The running core will be stopped before installation if needed.</source>
         <source>Domain</source>
         <translation>域名</translation>
     </message>
+    <message>
+        <source>Process</source>
+        <translation>进程</translation>
+    </message>
+    <message>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <source>%1 &quot;%2&quot;: &quot;%3&quot; is not a prefix any core understands.</source>
+        <translation>%1 &quot;%2&quot;：&quot;%3&quot; 不是任何核心能够识别的前缀。</translation>
+    </message>
+    <message>
+        <source>%1 &quot;%2&quot;: no value after &quot;%3&quot;.</source>
+        <translation>%1 &quot;%2&quot;：&quot;%3&quot; 后面没有内容。</translation>
+    </message>
+    <message>
+        <source>%1 &quot;%2&quot;: &quot;%3&quot; is approximated with a keyword match.</source>
+        <translation>%1 &quot;%2&quot;：&quot;%3&quot; 将以关键字匹配的方式近似处理。</translation>
+    </message>
+    <message>
+        <source>%1 &quot;%2&quot;: &quot;%3&quot; rule sets are not applied by mihomo or sing-box.</source>
+        <translation>%1 &quot;%2&quot;：&quot;%3&quot; 规则集不会被 mihomo 或 sing-box 应用。</translation>
+    </message>
+</context>
+<context>
+    <name>ServerCustomConfigStore</name>
+    <message>
+        <source>Custom config directory is unavailable.</source>
+        <translation>自定义配置目录不可用。</translation>
+    </message>
+    <message>
+        <source>Custom config file does not exist.</source>
+        <translation>自定义配置文件不存在。</translation>
+    </message>
+    <message>
+        <source>Failed to copy custom config file into managed storage.</source>
+        <translation>复制自定义配置文件到托管存储失败。</translation>
+    </message>
+    <message>
+        <source>Failed to create custom config directory.</source>
+        <translation>创建自定义配置目录失败。</translation>
+    </message>
 </context>
 <context>
     <name>ServerEditorCoordinator</name>
@@ -2034,6 +2552,101 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>The selected server could not be found for editing.</source>
         <translation>找不到所选服务器，无法编辑。</translation>
+    </message>
+</context>
+<context>
+    <name>ServerService</name>
+    <message>
+        <source>Default server updated.</source>
+        <translation>默认服务器已更新。</translation>
+    </message>
+    <message>
+        <source>Failed to rebuild the requested server order.</source>
+        <translation>重建请求的服务器顺序失败。</translation>
+    </message>
+    <message>
+        <source>No server selected for editing.</source>
+        <translation>未选择要编辑的服务器。</translation>
+    </message>
+    <message>
+        <source>No server selected for test result update.</source>
+        <translation>未选择要更新测试结果的服务器。</translation>
+    </message>
+    <message>
+        <source>No server selected.</source>
+        <translation>未选择服务器。</translation>
+    </message>
+    <message>
+        <source>No server was selected.</source>
+        <translation>未选择任何服务器。</translation>
+    </message>
+    <message>
+        <source>Pre-Socks port must be between 0 and 65535.</source>
+        <translation>Pre-Socks 端口必须在 0 到 65535 之间。</translation>
+    </message>
+    <message>
+        <source>Server added.</source>
+        <translation>服务器已添加。</translation>
+    </message>
+    <message>
+        <source>Server address is required.</source>
+        <translation>必须填写服务器地址。</translation>
+    </message>
+    <message>
+        <source>Server order unchanged.</source>
+        <translation>服务器顺序未变化。</translation>
+    </message>
+    <message>
+        <source>Server order updated.</source>
+        <translation>服务器顺序已更新。</translation>
+    </message>
+    <message>
+        <source>Server port must be between 1 and 65535.</source>
+        <translation>服务器端口必须在 1 到 65535 之间。</translation>
+    </message>
+    <message>
+        <source>Server selection removed.</source>
+        <translation>已取消服务器选择。</translation>
+    </message>
+    <message>
+        <source>Server updated.</source>
+        <translation>服务器已更新。</translation>
+    </message>
+    <message>
+        <source>The selected server does not exist.</source>
+        <translation>所选的服务器不存在。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after adding the server.</source>
+        <translation>添加服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after drag reordering server(s).</source>
+        <translation>拖动重排服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after editing the server.</source>
+        <translation>编辑服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after removing server(s).</source>
+        <translation>移除服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after reordering server(s).</source>
+        <translation>重排服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after switching the default server.</source>
+        <translation>切换默认服务器后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save configuration after updating the test result.</source>
+        <translation>更新测试结果后保存配置失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save the configuration file.</source>
+        <translation>保存配置文件失败。</translation>
     </message>
 </context>
 <context>
@@ -2105,10 +2718,457 @@ The running core will be stopped before installation if needed.</source>
     </message>
 </context>
 <context>
+    <name>SingBoxCoreBackend</name>
+    <message>
+        <source>The selected server type is not supported by the current sing-box generator.</source>
+        <translation>当前 sing-box 生成器不支持所选的服务器类型。</translation>
+    </message>
+    <message>
+        <source>sing-box config generation does not support network %1 yet.</source>
+        <translation>sing-box 配置生成尚不支持 network %1。</translation>
+    </message>
+    <message>
+        <source>sing-box does not support %1 transport for %2 nodes.</source>
+        <translation>sing-box 不支持 %2 节点的 %1 传输方式。</translation>
+    </message>
+</context>
+<context>
     <name>SongBirdAuto</name>
     <message>
         <source>Subscriptions were updated but saving the reconciled active server failed.</source>
         <translation>订阅已更新，但保存重新对齐后的当前服务器失败。</translation>
+    </message>
+    <message>
+        <source>Configuration repository is unavailable.</source>
+        <translation>配置仓库不可用。</translation>
+    </message>
+    <message>
+        <source>Subscription service is unavailable.</source>
+        <translation>订阅服务不可用。</translation>
+    </message>
+    <message>
+        <source>TUN cleanup unavailable.</source>
+        <translation>TUN 清理不可用。</translation>
+    </message>
+    <message>
+        <source>Using existing subscriptions.</source>
+        <translation>使用现有订阅。</translation>
+    </message>
+    <message>
+        <source>Failed to save the configuration file.</source>
+        <translation>保存配置文件失败。</translation>
+    </message>
+    <message>
+        <source>%1 has %2 usable node(s). Refreshing subscriptions.</source>
+        <translation>%1 有 %2 个可用节点，正在刷新订阅。</translation>
+    </message>
+    <message>
+        <source>Active node unavailable: %1</source>
+        <translation>活动节点不可用：%1</translation>
+    </message>
+    <message>
+        <source>Auto selection strategy is blocked while background work is running.</source>
+        <translation>后台任务运行期间无法修改自动选择策略。</translation>
+    </message>
+    <message>
+        <source>Auto strategy: first available.</source>
+        <translation>自动策略：首个可用。</translation>
+    </message>
+    <message>
+        <source>Auto strategy: lowest latency.</source>
+        <translation>自动策略：最低延迟。</translation>
+    </message>
+    <message>
+        <source>Cleaned core processes: %1</source>
+        <translation>已清理核心里程：%1</translation>
+    </message>
+    <message>
+        <source>Current node remains the fastest tested node.</source>
+        <translation>当前节点仍是最快的已测节点。</translation>
+    </message>
+    <message>
+        <source>Downloading %1</source>
+        <translation>正在下载 %1</translation>
+    </message>
+    <message>
+        <source>Failed to save TUN setting: %1</source>
+        <translation>保存 TUN 设置失败：%1</translation>
+    </message>
+    <message>
+        <source>Failed to save auto selection strategy: %1</source>
+        <translation>保存自动选择策略失败：%1</translation>
+    </message>
+    <message>
+        <source>Failed to save routing settings</source>
+        <translation>保存路由设置失败</translation>
+    </message>
+    <message>
+        <source>Failed to save routing settings: %1</source>
+        <translation>保存路由设置失败：%1</translation>
+    </message>
+    <message>
+        <source>Failed to write TUN runtime config.</source>
+        <translation>写入 TUN 运行时配置失败。</translation>
+    </message>
+    <message>
+        <source>Keeping the active proxy while waiting for compatible automatic nodes.</source>
+        <translation>在等待兼容的自动节点期间保持当前代理。</translation>
+    </message>
+    <message>
+        <source>No alternate node for %1. Retesting after subscription update.</source>
+        <translation>%1 没有备用节点，将在更新订阅后重新测试。</translation>
+    </message>
+    <message>
+        <source>No compatible servers</source>
+        <translation>无兼容服务器</translation>
+    </message>
+    <message>
+        <source>No compatible servers are available for automatic testing.</source>
+        <translation>没有可用于自动测试的兼容服务器。</translation>
+    </message>
+    <message>
+        <source>No inferred nodes for %1</source>
+        <translation>%1 未推断出节点</translation>
+    </message>
+    <message>
+        <source>No inferred nodes for %1. Updating subscriptions.</source>
+        <translation>%1 未推断出节点，正在更新订阅。</translation>
+    </message>
+    <message>
+        <source>No usable node for %1</source>
+        <translation>%1 没有可用节点</translation>
+    </message>
+    <message>
+        <source>No usable node for %1. Retesting before updating subscriptions.</source>
+        <translation>%1 没有可用节点，将在更新订阅前重新测试。</translation>
+    </message>
+    <message>
+        <source>No usable tested node for %1.</source>
+        <translation>%1 没有可用的已测节点。</translation>
+    </message>
+    <message>
+        <source>Preparing start</source>
+        <translation>正在准备启动</translation>
+    </message>
+    <message>
+        <source>Proxy active. Location: %1</source>
+        <translation>代理已启用。位置：%1</translation>
+    </message>
+    <message>
+        <source>Proxy start failed: %1</source>
+        <translation>代理启动失败：%1</translation>
+    </message>
+    <message>
+        <source>Ready: %1 node(s) classified</source>
+        <translation>就绪：已分类 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Routing settings are blocked while background work is running.</source>
+        <translation>后台任务运行期间无法修改路由设置。</translation>
+    </message>
+    <message>
+        <source>Routing settings blocked</source>
+        <translation>路由设置被阻止</translation>
+    </message>
+    <message>
+        <source>Routing settings saved</source>
+        <translation>路由设置已保存</translation>
+    </message>
+    <message>
+        <source>Routing settings saved.</source>
+        <translation>路由设置已保存。</translation>
+    </message>
+    <message>
+        <source>Routing settings saved. Changes apply on the next proxy start.</source>
+        <translation>路由设置已保存，更改将在下次启动代理时生效。</translation>
+    </message>
+    <message>
+        <source>Select a country</source>
+        <translation>请选择国家/地区</translation>
+    </message>
+    <message>
+        <source>Selected %1</source>
+        <translation>已选择 %1</translation>
+    </message>
+    <message>
+        <source>Skipping %1 test; last test was less than 5 minutes ago.</source>
+        <translation>跳过 %1 测速：上次测速在 5 分钟内。</translation>
+    </message>
+    <message>
+        <source>Skipping subscription update; last update was less than 10 minutes ago.</source>
+        <translation>跳过订阅更新：上次更新在 10 分钟内。</translation>
+    </message>
+    <message>
+        <source>SongBirdAuto config: %1</source>
+        <translation>SongBirdAuto 配置：%1</translation>
+    </message>
+    <message>
+        <source>Starting best node: %1</source>
+        <translation>正在启动最佳节点：%1</translation>
+    </message>
+    <message>
+        <source>Starting first available node</source>
+        <translation>正在启动首个可用节点</translation>
+    </message>
+    <message>
+        <source>Starting first available node while tests continue: %1</source>
+        <translation>测试继续期间先启动首个可用节点：%1</translation>
+    </message>
+    <message>
+        <source>Starting proxy</source>
+        <translation>正在启动代理</translation>
+    </message>
+    <message>
+        <source>Subscription URLs saved</source>
+        <translation>订阅链接已保存</translation>
+    </message>
+    <message>
+        <source>Subscription update failed; using existing nodes for startup.</source>
+        <translation>订阅更新失败，将使用现有节点启动。</translation>
+    </message>
+    <message>
+        <source>Switching proxy</source>
+        <translation>正在切换代理</translation>
+    </message>
+    <message>
+        <source>Switching to %1 after current task</source>
+        <translation>当前任务完成后切换到 %1</translation>
+    </message>
+    <message>
+        <source>Switching to fastest tested node after background tests completed.</source>
+        <translation>后台测速完成后切换到最快的已测节点。</translation>
+    </message>
+    <message>
+        <source>TUN device ready</source>
+        <translation>TUN 设备就绪</translation>
+    </message>
+    <message>
+        <source>TUN disabled</source>
+        <translation>TUN 已关闭</translation>
+    </message>
+    <message>
+        <source>TUN disabled.</source>
+        <translation>已关闭 TUN。</translation>
+    </message>
+    <message>
+        <source>TUN enabled.</source>
+        <translation>已启用 TUN。</translation>
+    </message>
+    <message>
+        <source>TUN failed to start</source>
+        <translation>TUN 启动失败</translation>
+    </message>
+    <message>
+        <source>TUN requires administrator privileges</source>
+        <translation>TUN 需要管理员权限</translation>
+    </message>
+    <message>
+        <source>TUN requires administrator privileges.</source>
+        <translation>TUN 需要管理员权限。</translation>
+    </message>
+    <message>
+        <source>TUN requires sing-box, but no sing-box executable was found.</source>
+        <translation>TUN 需要 sing-box，但未找到 sing-box 可执行文件。</translation>
+    </message>
+    <message>
+        <source>TUN routing through proxy</source>
+        <translation>TUN 通过代理路由</translation>
+    </message>
+    <message>
+        <source>TUN runtime exited unexpectedly: %1</source>
+        <translation>TUN 运行时意外退出：%1</translation>
+    </message>
+    <message>
+        <source>TUN runtime failed to start: %1</source>
+        <translation>TUN 运行时启动失败：%1</translation>
+    </message>
+    <message>
+        <source>TUN runtime started. %1</source>
+        <translation>TUN 运行时已启动。%1</translation>
+    </message>
+    <message>
+        <source>TUN setting is blocked while background work is running.</source>
+        <translation>后台任务运行期间无法修改 TUN 设置。</translation>
+    </message>
+    <message>
+        <source>TUN stopped unexpectedly</source>
+        <translation>TUN 意外停止</translation>
+    </message>
+    <message>
+        <source>Testing %1 %2 node(s) in background</source>
+        <translation>正在后台测试 %1 个 %2 节点</translation>
+    </message>
+    <message>
+        <source>Updating subscriptions</source>
+        <translation>正在更新订阅</translation>
+    </message>
+    <message>
+        <source>Updating subscriptions after no usable nodes</source>
+        <translation>无可用节点，正在更新订阅</translation>
+    </message>
+    <message>
+        <source>Updating subscriptions before start</source>
+        <translation>启动前正在更新订阅</translation>
+    </message>
+    <message>
+        <source>Using recent test results for %1</source>
+        <translation>%1 使用最近的测试结果</translation>
+    </message>
+    <message>
+        <source>Waiting for compatible servers</source>
+        <translation>正在等待兼容服务器</translation>
+    </message>
+</context>
+<context>
+    <name>SongBirdAutoWindow</name>
+    <message>
+        <source>Administrator Permission</source>
+        <translation>管理员权限</translation>
+    </message>
+    <message>
+        <source>Click to open logs.</source>
+        <translation>点击打开日志。</translation>
+    </message>
+    <message>
+        <source>Country</source>
+        <translation>国家/地区</translation>
+    </message>
+    <message>
+        <source>Disable TUN</source>
+        <translation>禁用 TUN</translation>
+    </message>
+    <message>
+        <source>Enable TUN</source>
+        <translation>启用 TUN</translation>
+    </message>
+    <message>
+        <source>Exit</source>
+        <translation>退出</translation>
+    </message>
+    <message>
+        <source>Failed to restart SongBirdAuto with administrator privileges.</source>
+        <translation>以管理员权限重启 SongBirdAuto 失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save routing settings.</source>
+        <translation>保存路由设置失败。</translation>
+    </message>
+    <message>
+        <source>First available</source>
+        <translation>首个可用</translation>
+    </message>
+    <message>
+        <source>Initializing</source>
+        <translation>正在初始化</translation>
+    </message>
+    <message>
+        <source>Logs</source>
+        <translation>日志</translation>
+    </message>
+    <message>
+        <source>Lowest latency</source>
+        <translation>最低延迟</translation>
+    </message>
+    <message>
+        <source>No countries</source>
+        <translation>无国家/地区</translation>
+    </message>
+    <message>
+        <source>Nodes</source>
+        <translation>节点</translation>
+    </message>
+    <message>
+        <source>One subscription URL per line</source>
+        <translation>每行一个订阅链接</translation>
+    </message>
+    <message>
+        <source>Proxy running</source>
+        <translation>代理运行中</translation>
+    </message>
+    <message>
+        <source>Proxy starting</source>
+        <translation>代理启动中</translation>
+    </message>
+    <message>
+        <source>Proxy stopped</source>
+        <translation>代理已停止</translation>
+    </message>
+    <message>
+        <source>Routing</source>
+        <translation>路由</translation>
+    </message>
+    <message>
+        <source>Show SongBirdAuto</source>
+        <translation>显示 SongBirdAuto</translation>
+    </message>
+    <message>
+        <source>SongBirdAuto</source>
+        <translation>SongBirdAuto</translation>
+    </message>
+    <message>
+        <source>SongBirdAuto is still running in the tray.</source>
+        <translation>SongBirdAuto 仍在托盘中运行。</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>启动</translation>
+    </message>
+    <message>
+        <source>Start Proxy</source>
+        <translation>启动代理</translation>
+    </message>
+    <message>
+        <source>Starting Proxy</source>
+        <translation>正在启动代理</translation>
+    </message>
+    <message>
+        <source>Starting%1</source>
+        <translation>正在启动%1</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
+    <message>
+        <source>Stop Proxy</source>
+        <translation>停止代理</translation>
+    </message>
+    <message>
+        <source>Subscriptions</source>
+        <translation>订阅</translation>
+    </message>
+    <message>
+        <source>TUN</source>
+        <translation>TUN</translation>
+    </message>
+    <message>
+        <source>TUN requires administrator privileges.
+Restart SongBirdAuto as administrator and start proxy now?</source>
+        <translation>TUN 需要管理员权限。
+是否以管理员身份重启 SongBirdAuto 并立即启动代理？</translation>
+    </message>
+    <message>
+        <source>TUN start canceled because administrator privileges are required.</source>
+        <translation>由于需要管理员权限，已取消启动 TUN。</translation>
+    </message>
+</context>
+<context>
+    <name>SpeedTestController</name>
+    <message>
+        <source>Another speed test batch is already running.</source>
+        <translation>已有另一批测速任务在运行。</translation>
+    </message>
+    <message>
+        <source>Failed to queue the speed test batch.</source>
+        <translation>将测速批次加入队列失败。</translation>
+    </message>
+    <message>
+        <source>No servers were selected for speed testing.</source>
+        <translation>未选择要测速的服务器。</translation>
+    </message>
+    <message>
+        <source>Speed test worker thread is unavailable.</source>
+        <translation>测速工作线程不可用。</translation>
     </message>
 </context>
 <context>
@@ -2124,6 +3184,45 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Proxy startup failed</source>
         <translation>代理启动失败</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionService</name>
+    <message>
+        <source>Subscription deleted.</source>
+        <translation>订阅已删除。</translation>
+    </message>
+    <message>
+        <source>Subscription id is required.</source>
+        <translation>必须提供订阅 ID。</translation>
+    </message>
+    <message>
+        <source>Subscription servers replaced.</source>
+        <translation>订阅服务器已替换。</translation>
+    </message>
+    <message>
+        <source>Subscriptions saved.</source>
+        <translation>订阅已保存。</translation>
+    </message>
+    <message>
+        <source>The selected subscription does not exist.</source>
+        <translation>所选的订阅不存在。</translation>
+    </message>
+    <message>
+        <source>Failed to replace subscription servers.</source>
+        <translation>替换订阅服务器失败。</translation>
+    </message>
+    <message>
+        <source>Failed to save subscriptions.</source>
+        <translation>保存订阅失败。</translation>
+    </message>
+    <message>
+        <source>Subscription enabled.</source>
+        <translation>订阅已启用。</translation>
+    </message>
+    <message>
+        <source>Subscription hidden.</source>
+        <translation>订阅已隐藏。</translation>
     </message>
 </context>
 <context>
@@ -2151,6 +3250,108 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Update Selected</source>
         <translation>更新所选</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionUpdateService</name>
+    <message>
+        <source>%1 download failed: %2</source>
+        <translation>%1 下载失败：%2</translation>
+    </message>
+    <message>
+        <source>%1 has an empty URL.</source>
+        <translation>%1 的 URL 为空。</translation>
+    </message>
+    <message>
+        <source>%1 is disabled.</source>
+        <translation>%1 已禁用。</translation>
+    </message>
+    <message>
+        <source>%1 save failed: %2</source>
+        <translation>%1 保存失败：%2</translation>
+    </message>
+    <message>
+        <source>%1 update cancelled.</source>
+        <translation>%1 更新已取消。</translation>
+    </message>
+    <message>
+        <source>Download target buffer is null.</source>
+        <translation>下载目标缓冲区为空。</translation>
+    </message>
+    <message>
+        <source>HTTP %1</source>
+        <translation>HTTP %1</translation>
+    </message>
+    <message>
+        <source>HTTP %1: %2</source>
+        <translation>HTTP %1：%2</translation>
+    </message>
+    <message>
+        <source>No enabled subscriptions needed updating.</source>
+        <translation>没有需要更新的已启用订阅。</translation>
+    </message>
+    <message>
+        <source>No subscriptions were selected for updating.</source>
+        <translation>未选择要更新的订阅。</translation>
+    </message>
+    <message>
+        <source>Subscription URL is invalid.</source>
+        <translation>订阅 URL 无效。</translation>
+    </message>
+    <message>
+        <source>Subscription download cancelled.</source>
+        <translation>订阅下载已取消。</translation>
+    </message>
+    <message>
+        <source>Subscription download timed out.</source>
+        <translation>订阅下载超时。</translation>
+    </message>
+    <message>
+        <source>Subscription downloaded.</source>
+        <translation>订阅已下载。</translation>
+    </message>
+    <message>
+        <source>Subscription response is empty.</source>
+        <translation>订阅响应为空。</translation>
+    </message>
+    <message>
+        <source>The selected subscriptions could not be found.</source>
+        <translation>找不到所选的订阅。</translation>
+    </message>
+    <message>
+        <source>%1 imported %2 server(s).</source>
+        <translation>%1 已导入 %2 个服务器。</translation>
+    </message>
+    <message>
+        <source>%1 returned no supported servers.</source>
+        <translation>%1 未返回受支持的服务器。</translation>
+    </message>
+    <message>
+        <source>Failed to save imported servers.</source>
+        <translation>保存导入的服务器失败。</translation>
+    </message>
+    <message>
+        <source>Imported %1 server(s) from text input.</source>
+        <translation>已从文本输入导入 %1 个服务器。</translation>
+    </message>
+    <message>
+        <source>No supported share URL or subscription payload was detected.</source>
+        <translation>未检测到受支持的分享链接或订阅内容。</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionUrlImportService</name>
+    <message>
+        <source>No supported share URL or subscription payload was detected.</source>
+        <translation>未检测到受支持的分享链接或订阅内容。</translation>
+    </message>
+    <message>
+        <source>Subscription update service is unavailable.</source>
+        <translation>订阅更新服务不可用。</translation>
+    </message>
+    <message>
+        <source>Subscriptions were imported but saving the configuration failed.</source>
+        <translation>订阅已导入，但保存配置失败。</translation>
     </message>
 </context>
 <context>

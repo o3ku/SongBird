@@ -1,5 +1,6 @@
 #include "services/ServerService.h"
 
+#include <QCoreApplication>
 #include <QDate>
 #include <QSet>
 #include <QStringList>
@@ -62,16 +63,16 @@ OperationResult ServerService::addServer(Config& config, const VmessItem& item)
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after adding the server."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after adding the server."));
     }
 
-    return OperationResult::ok(QStringLiteral("Server added."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server added."));
 }
 
 OperationResult ServerService::updateServer(Config& config, const QString& indexId, const VmessItem& item)
 {
     if (indexId.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No server selected for editing."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "No server selected for editing."));
     }
 
     const OperationResult validationResult = validateServer(item);
@@ -86,7 +87,7 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
             return existing.indexId == indexId;
         });
     if (it == config.collection().servers.end()) {
-        return OperationResult::fail(QStringLiteral("The selected server does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "The selected server does not exist."));
     }
 
     VmessItem updated = item;
@@ -107,16 +108,16 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
     *it = updated;
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after editing the server."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after editing the server."));
     }
 
-    return OperationResult::ok(QStringLiteral("Server updated."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server updated."));
 }
 
 OperationResult ServerService::removeServers(Config& config, const QList<QString>& indexIds)
 {
     if (indexIds.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("No server was selected."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "No server was selected."));
     }
 
     QSet<QString> removedIds;
@@ -146,74 +147,74 @@ OperationResult ServerService::removeServers(Config& config, const QList<QString
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after removing server(s)."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after removing server(s)."));
     }
 
     for (const QString& address : removedCustomAddresses) {
         customConfigStore_.removeManagedConfig(address);
     }
 
-    return OperationResult::ok(QStringLiteral("Server selection removed."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server selection removed."));
 }
 
 OperationResult ServerService::moveServers(Config& config, const QList<QString>& indexIds, ServerMoveOperation operation)
 {
     if (indexIds.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("No server was selected."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "No server was selected."));
     }
 
     if (config.collection().servers.size() <= 1) {
-        return OperationResult::ok(QStringLiteral("Server order unchanged."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
     const QStringList selectedIds = ServerListOperations::normalizedIndexIds(indexIds);
     if (selectedIds.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("No server was selected."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "No server was selected."));
     }
 
     if (!ServerListOperations::moveServers(config.collection().servers, selectedIds, operation)) {
-        return OperationResult::ok(QStringLiteral("Server order unchanged."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after reordering server(s)."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after reordering server(s)."));
     }
 
-    return OperationResult::ok(QStringLiteral("Server order updated."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order updated."));
 }
 
 OperationResult ServerService::reorderServers(Config& config, const QList<QString>& orderedIndexIds)
 {
     if (orderedIndexIds.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("Server order unchanged."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
     const QStringList normalizedIds = ServerListOperations::normalizedIndexIds(orderedIndexIds);
     if (normalizedIds.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("Server order unchanged."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
     const ServerListOperations::ReorderResult reorderResult =
         ServerListOperations::reorderServers(config.collection().servers, normalizedIds);
     if (reorderResult == ServerListOperations::ReorderResult::Invalid) {
-        return OperationResult::fail(QStringLiteral("Failed to rebuild the requested server order."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "Failed to rebuild the requested server order."));
     }
 
     if (reorderResult == ServerListOperations::ReorderResult::Unchanged) {
-        return OperationResult::ok(QStringLiteral("Server order unchanged."));
+        return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after drag reordering server(s)."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after drag reordering server(s)."));
     }
 
-    return OperationResult::ok(QStringLiteral("Server order updated."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order updated."));
 }
 
 OperationResult ServerService::setDefaultServer(Config& config, const QString& indexId)
 {
     if (indexId.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No server selected."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "No server selected."));
     }
 
     const auto it = std::find_if(
@@ -223,22 +224,22 @@ OperationResult ServerService::setDefaultServer(Config& config, const QString& i
             return item.indexId == indexId;
         });
     if (it == config.collection().servers.cend()) {
-        return OperationResult::fail(QStringLiteral("The selected server does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "The selected server does not exist."));
     }
 
     config.currentIndexId = indexId;
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after switching the default server."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after switching the default server."));
     }
 
-    return OperationResult::ok(QStringLiteral("Default server updated."));
+    return OperationResult::ok(QCoreApplication::translate("ServerService", "Default server updated."));
 }
 
 OperationResult ServerService::setTestResult(Config& config, const QString& indexId, const QString& result)
 {
     const QString trimmedId = indexId.trimmed();
     if (trimmedId.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No server selected for test result update."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "No server selected for test result update."));
     }
 
     auto it = std::find_if(
@@ -248,7 +249,7 @@ OperationResult ServerService::setTestResult(Config& config, const QString& inde
             return item.indexId == trimmedId;
         });
     if (it == config.collection().servers.end()) {
-        return OperationResult::fail(QStringLiteral("The selected server does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "The selected server does not exist."));
     }
 
     it->testResult = result.trimmed();
@@ -263,7 +264,7 @@ OperationResult ServerService::updateTestResult(Config& config, const QString& i
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save configuration after updating the test result."));
+        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after updating the test result."));
     }
 
     return OperationResult::ok();
@@ -279,7 +280,7 @@ OperationResult ServerService::save(Config& config)
     // a repository with nothing to report (a test double, for instance) would
     // otherwise turn a failed save into a silent one.
     return repository_.saveFailureResult(
-        QStringLiteral("Failed to save the configuration file."));
+        QCoreApplication::translate("ServerService", "Failed to save the configuration file."));
 }
 
 QString ServerService::resolveCustomConfigPath(const QString& address) const
@@ -290,18 +291,18 @@ QString ServerService::resolveCustomConfigPath(const QString& address) const
 OperationResult ServerService::validateServer(const VmessItem& item)
 {
     if (item.address.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Server address is required."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "Server address is required."));
     }
 
     if (item.configType == ConfigType::Custom) {
         if (!isValidOptionalTcpPort(item.preSocksPort)) {
-            return OperationResult::fail(QStringLiteral("Pre-Socks port must be between 0 and 65535."));
+            return OperationResult::fail(QCoreApplication::translate("ServerService", "Pre-Socks port must be between 0 and 65535."));
         }
         return OperationResult::ok();
     }
 
     if (!isValidTcpPort(item.port)) {
-        return OperationResult::fail(QStringLiteral("Server port must be between 1 and 65535."));
+        return OperationResult::fail(QCoreApplication::translate("ServerService", "Server port must be between 1 and 65535."));
     }
 
     return OperationResult::ok();

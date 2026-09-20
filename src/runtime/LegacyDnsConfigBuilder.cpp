@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QUrl>
 
+#include "common/RoutingValuePattern.h"
 #include "runtime/DnsAddressParser.h"
 #include "runtime/DnsHosts.h"
 #include "runtime/RoutingRuleJsonMapper.h"
@@ -114,15 +115,16 @@ QJsonObject build(const Config& config, const RoutingItem* selectedRouting)
             continue;
         }
         expectedIps.append(trimmed);
-        if (trimmed.startsWith(QStringLiteral("geoip:"), Qt::CaseInsensitive)) {
-            const QString region = trimmed.mid(QStringLiteral("geoip:").size()).trimmed();
-            if (region.isEmpty()) {
-                continue;
-            }
-            expectedIpRegionNames.insert(QStringLiteral("geosite:%1").arg(region));
-            expectedIpRegionNames.insert(QStringLiteral("geosite:geolocation-%1").arg(region));
-            expectedIpRegionNames.insert(QStringLiteral("geosite:tld-%1").arg(region));
+
+        const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(trimmed);
+        if (parsed.kind != RoutingValuePattern::IpKind::GeoIp || parsed.value.isEmpty()) {
+            continue;
         }
+
+        const QString region = parsed.value;
+        expectedIpRegionNames.insert(QStringLiteral("geosite:%1").arg(region));
+        expectedIpRegionNames.insert(QStringLiteral("geosite:geolocation-%1").arg(region));
+        expectedIpRegionNames.insert(QStringLiteral("geosite:tld-%1").arg(region));
     }
     if (selectedRouting != nullptr) {
         for (const RoutingRule& rule : selectedRouting->rules) {
@@ -136,20 +138,23 @@ QJsonObject build(const Config& config, const RoutingItem* selectedRouting)
             }
 
             for (const QString& domain : domains) {
+                // A "geosite:" or "ext:" value names a rule set rather than a host, so it is
+                // kept in its own bucket. The bucket decides which DNS server answers, not what
+                // the value means, so the original text is what gets carried through.
+                const RoutingValuePattern::DomainKind kind = RoutingValuePattern::parseDomain(domain).kind;
+                const bool isRuleSet = kind == RoutingValuePattern::DomainKind::Geosite
+                    || kind == RoutingValuePattern::DomainKind::Ext;
+
                 if (rule.outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
-                    if ((domain.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)
-                            || domain.startsWith(QStringLiteral("ext:"), Qt::CaseInsensitive))
-                        && expectedIpRegionNames.contains(domain)) {
+                    if (isRuleSet && expectedIpRegionNames.contains(domain)) {
                         expectedIpDomains.append(domain);
-                    } else if (domain.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)
-                        || domain.startsWith(QStringLiteral("ext:"), Qt::CaseInsensitive)) {
+                    } else if (isRuleSet) {
                         directGeositeDomains.append(domain);
                     } else {
                         directDomains.append(domain);
                     }
                 } else if (rule.outboundTag.compare(QStringLiteral("block"), Qt::CaseInsensitive) != 0) {
-                    if (domain.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)
-                        || domain.startsWith(QStringLiteral("ext:"), Qt::CaseInsensitive)) {
+                    if (isRuleSet) {
                         proxyGeositeDomains.append(domain);
                     } else {
                         proxyDomains.append(domain);

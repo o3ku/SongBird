@@ -13,6 +13,7 @@
 #include <QThread>
 #include <QUuid>
 
+#include "common/BackgroundThreadLaunch.h"
 #include "persistence/JsonConfigRepository.h"
 #include "services/ServerService.h"
 #include "services/SubscriptionService.h"
@@ -40,7 +41,7 @@ OperationResult importCustomConfigTextWithService(
         tempDirectory = QDir::tempPath();
     }
     if (!QDir().mkpath(tempDirectory)) {
-        return OperationResult::fail(QStringLiteral("Failed to create temporary directory for custom config import."));
+        return OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Failed to create temporary directory for custom config import."));
     }
 
     const QString fileName = extension.trimmed().isEmpty()
@@ -50,12 +51,12 @@ OperationResult importCustomConfigTextWithService(
 
     QFile file(tempFilePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return OperationResult::fail(QStringLiteral("Failed to create temporary custom config file."));
+        return OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Failed to create temporary custom config file."));
     }
     if (file.write(text.toUtf8()) < 0) {
         file.close();
         QFile::remove(tempFilePath);
-        return OperationResult::fail(QStringLiteral("Failed to write temporary custom config file."));
+        return OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Failed to write temporary custom config file."));
     }
     file.close();
 
@@ -107,7 +108,7 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
     QPointer<SubscriptionWorkflowCoordinator> self(this);
-    QThread* thread = QThread::create([self, text, configPath, customConfigDirectory, uiContext, token, lifetimeGuard]() {
+    QThread* thread = launchBackgroundThread([self, text, configPath, customConfigDirectory, uiContext, token, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
         ServerService serverService(repository, customConfigDirectory);
@@ -146,12 +147,7 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
                 self->finishOnUiThread(token, lifetimeGuard, completion);
             }
         }, Qt::QueuedConnection);
-    });
-    if (threadCallbacks_.trackBackgroundThread) {
-        threadCallbacks_.trackBackgroundThread(thread);
-    } else {
-        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    }
+    }, threadCallbacks_.trackBackgroundThread);
     thread->start();
 }
 
@@ -181,7 +177,7 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
     QPointer<SubscriptionWorkflowCoordinator> self(this);
-    QThread* thread = QThread::create([self, text, configPath, activeSubscriptionId, uiContext, token, lifetimeGuard]() {
+    QThread* thread = launchBackgroundThread([self, text, configPath, activeSubscriptionId, uiContext, token, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
@@ -226,12 +222,7 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
                 self->finishOnUiThread(token, lifetimeGuard, completion);
             }
         }, Qt::QueuedConnection);
-    });
-    if (threadCallbacks_.trackBackgroundThread) {
-        threadCallbacks_.trackBackgroundThread(thread);
-    } else {
-        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    }
+    }, threadCallbacks_.trackBackgroundThread);
     thread->start();
 }
 
@@ -240,7 +231,7 @@ void SubscriptionWorkflowCoordinator::updateAll()
     if (backgroundTasks_.isKindActive(BackgroundTaskCoordinator::Kind::SubscriptionUpdate)) {
         if (uiCallbacks_.appendResult) {
             uiCallbacks_.appendResult(OperationResult::fail(
-                QStringLiteral("A subscription update is already running in the background.")));
+                QCoreApplication::translate("AppBootstrap", "A subscription update is already running in the background.")));
         }
         return;
     }
@@ -299,7 +290,7 @@ void SubscriptionWorkflowCoordinator::updateByIds(
     QObject* uiContext = resolvedUiContext();
     const std::weak_ptr<char> lifetimeGuard = resolvedLifetimeGuard();
     QPointer<SubscriptionWorkflowCoordinator> self(this);
-    QThread* thread = QThread::create([self, configPath, subscriptionIds, activeSubscriptionId, uiContext, useProxy, token, lifetimeGuard]() {
+    QThread* thread = launchBackgroundThread([self, configPath, subscriptionIds, activeSubscriptionId, uiContext, useProxy, token, lifetimeGuard]() {
         JsonConfigRepository repository(configPath);
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
@@ -336,12 +327,7 @@ void SubscriptionWorkflowCoordinator::updateByIds(
                 self->finishOnUiThread(token, lifetimeGuard, completion);
             }
         }, Qt::QueuedConnection);
-    });
-    if (threadCallbacks_.trackBackgroundThread) {
-        threadCallbacks_.trackBackgroundThread(thread);
-    } else {
-        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    }
+    }, threadCallbacks_.trackBackgroundThread);
     thread->start();
 }
 
@@ -351,7 +337,7 @@ BackgroundTaskCoordinator::Token SubscriptionWorkflowCoordinator::beginSubscript
         && backgroundTasks_.isKindActive(BackgroundTaskCoordinator::Kind::SubscriptionUpdate)
         && uiCallbacks_.appendResult) {
         uiCallbacks_.appendResult(OperationResult::fail(
-            QStringLiteral("A subscription update is already running in the background.")));
+            QCoreApplication::translate("AppBootstrap", "A subscription update is already running in the background.")));
         return {};
     }
 

@@ -4,6 +4,7 @@
 #include <QRegularExpression>
 #include <QSet>
 
+#include "common/RoutingValuePattern.h"
 #include "runtime/DnsHosts.h"
 #include "runtime/RoutingRuleJsonMapper.h"
 #include "runtime/SingBoxDnsConfigSupport.h"
@@ -52,18 +53,21 @@ ExpectedIps parseExpectedIps(const QString& value)
         if (trimmed.isEmpty()) {
             continue;
         }
-        if (trimmed.startsWith(QStringLiteral("geoip:"), Qt::CaseInsensitive)) {
-            const QString region = trimmed.mid(QStringLiteral("geoip:").size()).trimmed();
-            if (region.isEmpty()) {
-                continue;
-            }
-            expectedIps.geoips.append(region);
-            expectedIps.regionNames.insert(region);
-            expectedIps.regionNames.insert(QStringLiteral("geolocation-%1").arg(region));
-            expectedIps.regionNames.insert(QStringLiteral("tld-%1").arg(region));
-        } else {
+        const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(trimmed);
+        if (parsed.kind != RoutingValuePattern::IpKind::GeoIp) {
             expectedIps.cidrs.append(trimmed);
+            continue;
         }
+
+        const QString region = parsed.value;
+        if (region.isEmpty()) {
+            continue;
+        }
+
+        expectedIps.geoips.append(region);
+        expectedIps.regionNames.insert(region);
+        expectedIps.regionNames.insert(QStringLiteral("geolocation-%1").arg(region));
+        expectedIps.regionNames.insert(QStringLiteral("tld-%1").arg(region));
     }
 
     return expectedIps;

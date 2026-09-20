@@ -1,5 +1,6 @@
 #include "services/SubscriptionUpdateService.h"
 
+#include <QCoreApplication>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -71,7 +72,7 @@ OperationResult SubscriptionUpdateService::updateAll(Config& config, bool usePro
     }
 
     if (items.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("No enabled subscriptions needed updating."));
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionUpdateService", "No enabled subscriptions needed updating."));
     }
 
     return updateInternal(config, items, useProxy);
@@ -88,7 +89,7 @@ OperationResult SubscriptionUpdateService::updateByIds(Config& config, const QSt
     }
 
     if (normalizedIds.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No subscriptions were selected for updating."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "No subscriptions were selected for updating."));
     }
 
     QList<SubItem> items;
@@ -99,7 +100,7 @@ OperationResult SubscriptionUpdateService::updateByIds(Config& config, const QSt
     }
 
     if (items.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("The selected subscriptions could not be found."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "The selected subscriptions could not be found."));
     }
 
     return updateInternal(config, items, useProxy);
@@ -119,7 +120,7 @@ OperationResult SubscriptionUpdateService::updateAllWithProgress(
     }
 
     if (items.isEmpty()) {
-        return OperationResult::ok(QStringLiteral("No enabled subscriptions needed updating."));
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionUpdateService", "No enabled subscriptions needed updating."));
     }
 
     return updateInternal(config, items, useProxy, progressCallback);
@@ -135,7 +136,7 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
 
     if (servers.isEmpty()) {
         return OperationResult::fail(appendParseNotes(
-            QStringLiteral("No supported share URL or subscription payload was detected."), report));
+            QCoreApplication::translate("SubscriptionUpdateService", "No supported share URL or subscription payload was detected."), report));
     }
 
     for (VmessItem& item : servers) {
@@ -148,11 +149,11 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QStringLiteral("Failed to save imported servers."));
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionUpdateService", "Failed to save imported servers."));
     }
 
     return OperationResult::ok(
-        appendSkippedSummary(QStringLiteral("Imported %1 server(s) from text input.").arg(servers.size()), report));
+        appendSkippedSummary(QCoreApplication::translate("SubscriptionUpdateService", "Imported %1 server(s) from text input.").arg(servers.size()), report));
 }
 
 OperationResult SubscriptionUpdateService::updateInternal(
@@ -223,39 +224,39 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
 
     const QString displayName = subscriptionDisplayName(item);
     if (!item.enabled) {
-        return OperationResult::fail(QStringLiteral("%1 is disabled.").arg(displayName));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 is disabled.").arg(displayName));
     }
 
     if (item.url.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("%1 has an empty URL.").arg(displayName));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 has an empty URL.").arg(displayName));
     }
     if (currentThreadInterruptionRequested()) {
-        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
     QString content;
     const int proxyPort = useProxy ? config.localPort + 1 : 0;
     const OperationResult downloadResult = downloadText(item.url, item.userAgent, proxyPort, &content);
     if (!downloadResult.success) {
-        return OperationResult::fail(QStringLiteral("%1 download failed: %2").arg(displayName, downloadResult.message));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 download failed: %2").arg(displayName, downloadResult.message));
     }
     if (currentThreadInterruptionRequested()) {
-        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
     const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
         return OperationResult::fail(appendParseNotes(
-            QStringLiteral("%1 returned no supported servers.").arg(displayName), report));
+            QCoreApplication::translate("SubscriptionUpdateService", "%1 returned no supported servers.").arg(displayName), report));
     }
     if (currentThreadInterruptionRequested()) {
-        return OperationResult::fail(QStringLiteral("%1 update cancelled.").arg(displayName));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
     const OperationResult replaceResult = subscriptionService_.replaceSubscriptionServers(config, item.id, servers);
     if (!replaceResult.success) {
-        return OperationResult::fail(QStringLiteral("%1 save failed: %2").arg(displayName, replaceResult.message));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 save failed: %2").arg(displayName, replaceResult.message));
     }
 
     if (importedCount != nullptr) {
@@ -269,7 +270,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
 
     const int finalImportedCount = importedCount == nullptr ? servers.size() : *importedCount;
     return OperationResult::ok(appendSkippedSummary(
-        QStringLiteral("%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount), report));
+        QCoreApplication::translate("SubscriptionUpdateService", "%1 imported %2 server(s).").arg(displayName).arg(finalImportedCount), report));
 }
 
 OperationResult SubscriptionUpdateService::downloadText(
@@ -279,15 +280,15 @@ OperationResult SubscriptionUpdateService::downloadText(
     QString* content)
 {
     if (content == nullptr) {
-        return OperationResult::fail(QStringLiteral("Download target buffer is null."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Download target buffer is null."));
     }
     if (currentThreadInterruptionRequested()) {
-        return OperationResult::fail(QStringLiteral("Subscription download cancelled."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download cancelled."));
     }
 
     const QUrl parsedUrl = QUrl::fromUserInput(url.trimmed());
     if (!parsedUrl.isValid() || parsedUrl.scheme().trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Subscription URL is invalid."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription URL is invalid."));
     }
 
     QNetworkRequest request{parsedUrl};
@@ -332,13 +333,13 @@ OperationResult SubscriptionUpdateService::downloadText(
     if (cancelled) {
         networkAccessManager_.setProxy(previousProxy);
         reply->deleteLater();
-        return OperationResult::fail(QStringLiteral("Subscription download cancelled."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download cancelled."));
     }
 
     if (timedOut) {
         networkAccessManager_.setProxy(previousProxy);
         reply->deleteLater();
-        return OperationResult::fail(QStringLiteral("Subscription download timed out."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download timed out."));
     }
 
     if (reply->error() != QNetworkReply::NoError) {
@@ -346,7 +347,7 @@ OperationResult SubscriptionUpdateService::downloadText(
         networkAccessManager_.setProxy(previousProxy);
         reply->deleteLater();
         return statusCode > 0
-            ? OperationResult::fail(QStringLiteral("HTTP %1: %2").arg(statusCode).arg(error))
+            ? OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1: %2").arg(statusCode).arg(error))
             : OperationResult::fail(error);
     }
 
@@ -355,12 +356,12 @@ OperationResult SubscriptionUpdateService::downloadText(
     reply->deleteLater();
 
     if (statusCode >= 400) {
-        return OperationResult::fail(QStringLiteral("HTTP %1").arg(statusCode));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1").arg(statusCode));
     }
 
     if (content->isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Subscription response is empty."));
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription response is empty."));
     }
 
-    return OperationResult::ok(QStringLiteral("Subscription downloaded."));
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionUpdateService", "Subscription downloaded."));
 }

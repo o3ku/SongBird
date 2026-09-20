@@ -4,9 +4,11 @@
 
 #include <utility>
 
+#include <QCoreApplication>
 #include <QStringList>
 
 #include "app/ProxySession.h"
+#include "common/RoutingValuePattern.h"
 #include "platform/windows/WindowsSystemProxyService.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "services/ServerService.h"
@@ -72,19 +74,21 @@ QStringList collectRouteDerivedProxyExceptions(const Config& config)
         }
 
         for (const QString& domainValue : rule.domain) {
-            const QString domain = domainValue.trimmed();
-            if (domain.startsWith(QStringLiteral("domain:"), Qt::CaseInsensitive)) {
-                const QString suffix = domain.mid(QStringLiteral("domain:").size()).trimmed();
-                if (suffix.isEmpty()) {
-                    continue;
-                }
-                appendUniqueProxyException(derived, suffix);
-                appendUniqueProxyException(derived, QStringLiteral("*.%1").arg(suffix));
+            const RoutingValuePattern::DomainValue parsed = RoutingValuePattern::parseDomain(domainValue);
+            if (parsed.value.isEmpty()) {
                 continue;
             }
 
-            if (domain.startsWith(QStringLiteral("full:"), Qt::CaseInsensitive)) {
-                appendUniqueProxyException(derived, domain.mid(QStringLiteral("full:").size()).trimmed());
+            if (parsed.kind == RoutingValuePattern::DomainKind::Suffix) {
+                // "domain:example.com" and a leading ".example.com" mean the same thing -- the
+                // host and its subdomains -- and the system proxy needs an entry for each.
+                appendUniqueProxyException(derived, parsed.value);
+                appendUniqueProxyException(derived, QStringLiteral("*.%1").arg(parsed.value));
+                continue;
+            }
+
+            if (parsed.kind == RoutingValuePattern::DomainKind::Exact) {
+                appendUniqueProxyException(derived, parsed.value);
             }
         }
     }
@@ -111,7 +115,7 @@ bool SystemProxyCoordinator::saveMode(SystemProxyMode mode)
         deps_.config.sysProxyType = previousValue;
         deps_.config.ui().mainProxyEnabled = previousMainProxyEnabled;
         appendResult(OperationResult::fail(
-            QStringLiteral("Failed to save the selected system proxy mode: %1").arg(saveResult.message)));
+            QCoreApplication::translate("AppBootstrap", "Failed to save the selected system proxy mode: %1").arg(saveResult.message)));
         syncStatusIndicators();
         return false;
     }
@@ -138,7 +142,7 @@ void SystemProxyCoordinator::setMode(
         if (showStartupOverlay) {
             deps_.proxySession->requestChecklistOverlay();
         }
-        appendResult(OperationResult::ok(QStringLiteral("Core start is already in progress.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Core start is already in progress.")));
         syncStatusIndicators();
         return;
     }
@@ -154,15 +158,17 @@ void SystemProxyCoordinator::setMode(
                 deps_.proxySession->adoptManagedSystemProxy(true);
             }
             appendResult(proxyApplied
-                ? OperationResult::ok(QStringLiteral("System proxy mode set to %1.").arg(systemProxyModeDisplayName(mode)))
-                : OperationResult::fail(QStringLiteral("Failed to apply system proxy mode %1.").arg(systemProxyModeDisplayName(mode))));
+                ? OperationResult::ok(QCoreApplication::translate(
+                      "AppBootstrap", "System proxy mode set to %1.").arg(systemProxyModeDisplayName(mode)))
+                : OperationResult::fail(QCoreApplication::translate(
+                      "AppBootstrap", "Failed to apply system proxy mode %1.").arg(systemProxyModeDisplayName(mode))));
             syncStatusIndicators();
             return;
         }
         appendResult(OperationResult::ok(
-            QStringLiteral("System proxy mode set to %1. It will be applied after the core starts.")
+            QCoreApplication::translate("AppBootstrap", "System proxy mode set to %1. It will be applied after the core starts.")
                 .arg(systemProxyModeDisplayName(mode))));
-        appendResult(OperationResult::ok(QStringLiteral("Starting the active core because Global system proxy mode was enabled.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Starting the active core because Global system proxy mode was enabled.")));
         startManagedProxyCore(skipTunCleanup, showStartupOverlay);
         return;
     }
@@ -173,10 +179,12 @@ void SystemProxyCoordinator::setMode(
         deps_.proxySession->adoptManagedSystemProxy(false);
     }
     appendResult(proxyApplied
-        ? OperationResult::ok(QStringLiteral("System proxy mode set to %1.").arg(systemProxyModeDisplayName(mode)))
-        : OperationResult::fail(QStringLiteral("Failed to apply system proxy mode %1.").arg(systemProxyModeDisplayName(mode))));
+        ? OperationResult::ok(QCoreApplication::translate(
+              "AppBootstrap", "System proxy mode set to %1.").arg(systemProxyModeDisplayName(mode)))
+        : OperationResult::fail(QCoreApplication::translate(
+              "AppBootstrap", "Failed to apply system proxy mode %1.").arg(systemProxyModeDisplayName(mode))));
     if (shouldStop) {
-        appendResult(OperationResult::ok(QStringLiteral("Stopping the active core because system proxy was cleared.")));
+        appendResult(OperationResult::ok(QCoreApplication::translate("AppBootstrap", "Stopping the active core because system proxy was cleared.")));
         deps_.proxySession->stop(immediateStop);
         return;
     }

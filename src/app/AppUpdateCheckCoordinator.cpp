@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/AppUpdateCheckPresentation.h"
+#include "common/BackgroundThreadLaunch.h"
 
 namespace {
 
@@ -259,14 +260,7 @@ void AppUpdateCheckCoordinator::runInBackground(std::function<void()> task)
         return;
     }
 
-    QThread* thread = QThread::create([task = std::move(task)]() mutable {
-        task();
-    });
-    if (deps_.trackBackgroundThread) {
-        deps_.trackBackgroundThread(thread);
-    } else {
-        connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    }
+    QThread* thread = launchBackgroundThread(std::move(task), deps_.trackBackgroundThread);
     thread->start();
 }
 

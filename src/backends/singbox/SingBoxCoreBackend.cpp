@@ -127,7 +127,8 @@ QString SingBoxCoreBackend::extractVersionFromOutput(const QString& output) cons
 OperationResult SingBoxCoreBackend::validateServer(const VmessItem& server) const
 {
     if (ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType).isEmpty()) {
-        return OperationResult::fail(QStringLiteral("The selected server type is not supported by the current sing-box generator."));
+        return OperationResult::fail(QCoreApplication::translate(
+            "SingBoxCoreBackend", "The selected server type is not supported by the current sing-box generator."));
     }
 
     const QString network = server.network.trimmed().isEmpty()
@@ -135,19 +136,19 @@ OperationResult SingBoxCoreBackend::validateServer(const VmessItem& server) cons
         : server.network.trimmed().toLower();
     if (!isSupportedSingBoxNetwork(network)) {
         return OperationResult::fail(
-            QStringLiteral("sing-box config generation does not support network %1 yet.").arg(network));
+            QCoreApplication::translate("SingBoxCoreBackend", "sing-box config generation does not support network %1 yet.").arg(network));
     }
 
     if (network != QStringLiteral("tcp") && !isSupportedSingBoxNonTcpTransport(server.configType)) {
         return OperationResult::fail(
-            QStringLiteral("sing-box does not support %1 transport for %2 nodes.")
+            QCoreApplication::translate("SingBoxCoreBackend", "sing-box does not support %1 transport for %2 nodes.")
                 .arg(network, configTypeDisplayName(server.configType)));
     }
 
     if (server.configType == ConfigType::Shadowsocks
         && !isSupportedSingBoxShadowsocksTransport(network)) {
         return OperationResult::fail(
-            QStringLiteral("sing-box does not support %1 transport for %2 nodes.")
+            QCoreApplication::translate("SingBoxCoreBackend", "sing-box does not support %1 transport for %2 nodes.")
                 .arg(network, configTypeDisplayName(server.configType)));
     }
 

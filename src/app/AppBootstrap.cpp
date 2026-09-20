@@ -220,8 +220,8 @@ bool AppBootstrap::run()
             objects_->mainWindow->hide();
         } else {
             objects_->mainWindow->showMinimized();
-            appendResult(OperationResult::ok(QStringLiteral(
-                "Start hidden requested, but the system tray is unavailable. The window was minimized instead.")));
+            appendResult(OperationResult::ok(QCoreApplication::translate(
+                "AppBootstrap", "Start hidden requested, but the system tray is unavailable. The window was minimized instead.")));
         }
     }
     uiReady_ = true;
@@ -332,7 +332,7 @@ void AppBootstrap::wireProxySessionSignals()
     objects_->proxySession->setCoreSwitchConfirmation([this](const CoreLaunchCompatDecision& decision) {
         if (DialogUtils::askYesNoQuestion(
                 objects_->mainWindow.get(),
-                QObject::tr("Core Compatibility"),
+                QCoreApplication::translate("AppBootstrap", "Core Compatibility"),
                 coreLaunchCompatSwitchPrompt(decision),
                 QMessageBox::Yes)
             != QMessageBox::Yes) {
@@ -866,7 +866,7 @@ void AppBootstrap::cleanupOrphanCoreProcesses()
     const QStringList terminatedProcesses = objects_->coreProcessCleanupService->cleanupOrphanCoreProcesses();
     if (!terminatedProcesses.isEmpty()) {
         appendResult(OperationResult::ok(
-            QStringLiteral("Cleaned up orphan core processes: %1").arg(terminatedProcesses.join(QStringLiteral(", ")))));
+            QCoreApplication::translate("AppBootstrap", "Cleaned up orphan core processes: %1").arg(terminatedProcesses.join(QStringLiteral(", ")))));
         appendResult(removeStaleTunAdapterIfPresent());
     }
 }
@@ -883,7 +883,7 @@ void AppBootstrap::cleanupCoreProcessesUsingConfiguredPorts()
             OutboundLocationProbeService::LocationProbePortOffset);
     if (!terminatedProcesses.isEmpty()) {
         appendResult(OperationResult::ok(
-            QStringLiteral("Cleaned up core processes using configured ports: %1")
+            QCoreApplication::translate("AppBootstrap", "Cleaned up core processes using configured ports: %1")
                 .arg(terminatedProcesses.join(QStringLiteral(", ")))));
     }
 }
@@ -1019,7 +1019,7 @@ void AppBootstrap::importFromClipboard()
         ? QString()
         : QApplication::clipboard()->text().trimmed();
     if (text.isEmpty()) {
-        appendResult(OperationResult::fail(QStringLiteral("Clipboard text is empty.")));
+        appendResult(OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Clipboard text is empty.")));
         return;
     }
 

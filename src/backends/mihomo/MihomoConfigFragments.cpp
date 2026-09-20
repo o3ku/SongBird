@@ -5,6 +5,7 @@
 #include <QJsonArray>
 
 #include "backends/singbox/SingBoxOutboundConfigSupport.h"
+#include "common/RoutingValuePattern.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "runtime/TunAdapterNames.h"
@@ -15,6 +16,7 @@ namespace {
 
 const QString kProxyGroupName = QStringLiteral("proxy");
 const QString kPrimaryProxyName = QStringLiteral("server");
+const QString kMihomoProcessName = QStringLiteral("mihomo.exe");
 
 QString normalizedLogLevel(const QString& level)
 {
@@ -243,40 +245,94 @@ QJsonObject buildProxyGroup()
 
 void appendDomainRule(QJsonArray& rules, const QString& value, const QString& policy)
 {
-    const QString trimmed = value.trimmed();
-    if (trimmed.isEmpty()) {
+    const RoutingValuePattern::DomainValue parsed = RoutingValuePattern::parseDomain(value);
+    if (parsed.value.isEmpty()) {
         return;
     }
 
-    if (trimmed.startsWith(QStringLiteral("geosite:"), Qt::CaseInsensitive)) {
-        rules.append(QStringLiteral("GEOSITE,%1,%2").arg(trimmed.mid(8), policy));
-    } else if (trimmed.startsWith(QStringLiteral("domain:"), Qt::CaseInsensitive)) {
-        rules.append(QStringLiteral("DOMAIN,%1,%2").arg(trimmed.mid(7), policy));
-    } else if (trimmed.startsWith(QStringLiteral("full:"), Qt::CaseInsensitive)) {
-        rules.append(QStringLiteral("DOMAIN,%1,%2").arg(trimmed.mid(5), policy));
-    } else if (trimmed.startsWith(QStringLiteral("regexp:"), Qt::CaseInsensitive)) {
-        rules.append(QStringLiteral("DOMAIN-REGEX,%1,%2").arg(trimmed.mid(7), policy));
-    } else if (trimmed.startsWith(QChar('.'))) {
-        rules.append(QStringLiteral("DOMAIN-SUFFIX,%1,%2").arg(trimmed.mid(1), policy));
-    } else {
-        rules.append(QStringLiteral("DOMAIN-KEYWORD,%1,%2").arg(trimmed, policy));
+    switch (parsed.kind) {
+    case RoutingValuePattern::DomainKind::Geosite:
+        rules.append(QStringLiteral("GEOSITE,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Exact:
+        // "full:example.com" matches that host and nothing else.
+        rules.append(QStringLiteral("DOMAIN,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Suffix:
+        // "domain:" means "this host and every subdomain of it", which is DOMAIN-SUFFIX.
+        // This used to map to DOMAIN (an exact match), so the same rule meant one thing here
+        // and another thing on sing-box.
+        rules.append(QStringLiteral("DOMAIN-SUFFIX,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Regex:
+        rules.append(QStringLiteral("DOMAIN-REGEX,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Keyword:
+    case RoutingValuePattern::DomainKind::Bare:
+        // A bare value matches any part of the host, which is what "keyword:" asks for too.
+        rules.append(QStringLiteral("DOMAIN-KEYWORD,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Dotless:
+        // xray-only modifier with no mihomo equivalent; the closest mihomo has is a keyword
+        // match. Approximated rather than dropped, and reported by the routing settings page.
+        rules.append(QStringLiteral("DOMAIN-KEYWORD,%1,%2").arg(parsed.value, policy));
+        return;
+    case RoutingValuePattern::DomainKind::Ext:
+        // A rule set loaded from a file. mihomo cannot resolve one here, and the keyword rule
+        // this used to fall through to matched the literal text "ext:..." and so never
+        // matched anything. Emitting nothing keeps the generated rules honest.
+        return;
     }
 }
 
 void appendIpRule(QJsonArray& rules, const QString& value, const QString& policy)
+{
+    const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(value);
+    if (parsed.value.isEmpty()) {
+        return;
+    }
+
+    switch (parsed.kind) {
+    case RoutingValuePattern::IpKind::GeoIp:
+        rules.append(QStringLiteral("GEOIP,%1,%2").arg(parsed.value.toUpper(), policy));
+        return;
+    case RoutingValuePattern::IpKind::Ext:
+        return;
+    case RoutingValuePattern::IpKind::Address:
+        break;
+    }
+
+    const QString ruleType = parsed.value.contains(QChar(':')) ? QStringLiteral("IP-CIDR6") : QStringLiteral("IP-CIDR");
+    rules.append(QStringLiteral("%1,%2,%3,no-resolve").arg(ruleType, parsed.value, policy));
+}
+
+void appendProcessRule(QJsonArray& rules, const QString& value, const QString& policy)
 {
     const QString trimmed = value.trimmed();
     if (trimmed.isEmpty()) {
         return;
     }
 
-    if (trimmed.startsWith(QStringLiteral("geoip:"), Qt::CaseInsensitive)) {
-        rules.append(QStringLiteral("GEOIP,%1,%2").arg(trimmed.mid(6).toUpper(), policy));
+    // "self/" and "xray/" name the core's own process rather than a path. mihomo is
+    // the core in this backend, so both map to its canonical executable -- the same
+    // convention the sing-box backend uses when it maps them to "sing-box.exe".
+    if (trimmed.compare(QStringLiteral("self/"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("xray/"), Qt::CaseInsensitive) == 0) {
+        rules.append(QStringLiteral("PROCESS-NAME,%1,%2").arg(kMihomoProcessName, policy));
         return;
     }
 
-    const QString ruleType = trimmed.contains(QChar(':')) ? QStringLiteral("IP-CIDR6") : QStringLiteral("IP-CIDR");
-    rules.append(QStringLiteral("%1,%2,%3,no-resolve").arg(ruleType, trimmed, policy));
+    // Anything containing a separator is a path, and mihomo matches those with
+    // PROCESS-PATH. Dropping them (the previous behaviour) silently disabled the
+    // rule while sing-box and Xray both honoured it.
+    if (trimmed.contains(QChar('/')) || trimmed.contains(QChar('\\'))) {
+        QString normalizedPath = trimmed;
+        normalizedPath.replace(QChar('/'), QChar('\\'));
+        rules.append(QStringLiteral("PROCESS-PATH,%1,%2").arg(normalizedPath, policy));
+        return;
+    }
+
+    rules.append(QStringLiteral("PROCESS-NAME,%1,%2").arg(trimmed, policy));
 }
 
 void appendRoutingRules(QJsonArray& rules, const Config& config)
@@ -294,10 +350,7 @@ void appendRoutingRules(QJsonArray& rules, const Config& config)
             appendIpRule(rules, ip, policy);
         }
         for (const QString& process : rule.process) {
-            const QString trimmed = process.trimmed();
-            if (!trimmed.isEmpty() && !trimmed.contains(QChar('/')) && !trimmed.contains(QChar('\\'))) {
-                rules.append(QStringLiteral("PROCESS-NAME,%1,%2").arg(trimmed, policy));
-            }
+            appendProcessRule(rules, process, policy);
         }
         for (const QString& port : OutboundSupport::splitCsv(rule.port)) {
             rules.append(QStringLiteral("DST-PORT,%1,%2").arg(port, policy));

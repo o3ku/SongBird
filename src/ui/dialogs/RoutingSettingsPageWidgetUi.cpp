@@ -1,9 +1,11 @@
 #include "ui/dialogs/RoutingSettingsPageWidget.h"
 
 #include <QButtonGroup>
+#include <QColor>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -113,9 +115,23 @@ void RoutingSettingsPageWidget::setupUi()
         domainLayout->addWidget(domainLabel);
         domainLayout->addWidget(editors.domainEdit, 1);
 
+        auto* processColumn = new QWidget(tabWidget);
+        auto* processLayout = new QVBoxLayout(processColumn);
+        processLayout->setContentsMargins(0, 0, 0, 0);
+        processLayout->setSpacing(4);
+        auto* processLabel = new QLabel(tr("Process"), processColumn);
+        editors.processEdit = new QTextEdit(processColumn);
+        editors.processEdit->setObjectName(QStringLiteral("routingCustom%1ProcessEdit").arg(action));
+        editors.processEdit->setTabChangesFocus(true);
+        editors.processEdit->setPlaceholderText(QStringLiteral("chrome.exe\nC:/Program Files/App/app.exe"));
+        AppTheme::applyCompactFont({processLabel, editors.processEdit});
+        processLayout->addWidget(processLabel);
+        processLayout->addWidget(editors.processEdit, 1);
+
         tabLayout->addWidget(protocolPortColumn, 1);
         tabLayout->addWidget(ipColumn, 1);
         tabLayout->addWidget(domainColumn, 1);
+        tabLayout->addWidget(processColumn, 1);
 
         tabWidget->setProperty("routingCustomRuleTabKey", action);
         customRuleTabs_->addTab(tabWidget, title);
@@ -123,7 +139,32 @@ void RoutingSettingsPageWidget::setupUi()
     }
     routingLayout->addWidget(customRuleTabs_, 1);
 
+    // Values no core can honour are only detectable while the user types, so this is updated
+    // on every edit rather than only when the page is saved.
+    customRuleWarningsLabel_ = new QLabel(this);
+    customRuleWarningsLabel_->setObjectName(QStringLiteral("routingCustomRuleWarnings"));
+    customRuleWarningsLabel_->setWordWrap(true);
+    AppTheme::applyCompactFont(customRuleWarningsLabel_);
+    QPalette warningPalette = customRuleWarningsLabel_->palette();
+    warningPalette.setColor(QPalette::WindowText, QColor(AppTheme::attentionBorderColor()));
+    customRuleWarningsLabel_->setPalette(warningPalette);
+    customRuleWarningsLabel_->hide();
+    routingLayout->addWidget(customRuleWarningsLabel_);
+
     connect(customRuleTabs_, &QTabWidget::currentChanged, this, [this]() {
         updateRoutingActionState();
     });
+
+    for (auto it = customRuleEditors_.cbegin(); it != customRuleEditors_.cend(); ++it) {
+        if (it.value().domainEdit != nullptr) {
+            connect(it.value().domainEdit, &QTextEdit::textChanged, this, [this]() {
+                updateRoutingValueWarnings();
+            });
+        }
+        if (it.value().ipEdit != nullptr) {
+            connect(it.value().ipEdit, &QTextEdit::textChanged, this, [this]() {
+                updateRoutingValueWarnings();
+            });
+        }
+    }
 }

@@ -1,5 +1,6 @@
 #include "services/ServerCustomConfigStore.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -37,16 +38,16 @@ OperationResult ServerCustomConfigStore::prepareServer(VmessItem& server, const 
 {
     const QString sourcePath = resolveConfigPath(server.address);
     if (sourcePath.trimmed().isEmpty() || !QFileInfo::exists(sourcePath)) {
-        return OperationResult::fail(QStringLiteral("Custom config file does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ServerCustomConfigStore", "Custom config file does not exist."));
     }
 
     if (customConfigDirectory_.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Custom config directory is unavailable."));
+        return OperationResult::fail(QCoreApplication::translate("ServerCustomConfigStore", "Custom config directory is unavailable."));
     }
 
     QDir customDirectory(customConfigDirectory_);
     if (!customDirectory.exists() && !QDir().mkpath(customDirectory.absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create custom config directory."));
+        return OperationResult::fail(QCoreApplication::translate("ServerCustomConfigStore", "Failed to create custom config directory."));
     }
 
     const QString existingStoredPath = existing == nullptr ? QString() : resolveConfigPath(existing->address);
@@ -67,7 +68,7 @@ OperationResult ServerCustomConfigStore::prepareServer(VmessItem& server, const 
         QFile::remove(targetPath);
     }
     if (!QFile::copy(sourcePath, targetPath)) {
-        return OperationResult::fail(QStringLiteral("Failed to copy custom config file into managed storage."));
+        return OperationResult::fail(QCoreApplication::translate("ServerCustomConfigStore", "Failed to copy custom config file into managed storage."));
     }
 
     if (!existingStoredPath.isEmpty() && isManagedConfigPath(existingStoredPath) && QFileInfo::exists(existingStoredPath)) {

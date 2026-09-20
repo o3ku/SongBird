@@ -1,5 +1,6 @@
 #include "services/SpeedTestController.h"
 
+#include <QCoreApplication>
 #include <QMetaObject>
 #include <QThread>
 
@@ -34,15 +35,15 @@ SpeedTestController::SpeedTestController(QString customConfigDirectory, QObject*
 OperationResult SpeedTestController::start(const Config& config, const QList<SpeedTestRequestItem>& items)
 {
     if (running_) {
-        return OperationResult::fail(QStringLiteral("Another speed test batch is already running."));
+        return OperationResult::fail(QCoreApplication::translate("SpeedTestController", "Another speed test batch is already running."));
     }
 
     if (items.isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No servers were selected for speed testing."));
+        return OperationResult::fail(QCoreApplication::translate("SpeedTestController", "No servers were selected for speed testing."));
     }
 
     if (worker_ == nullptr || workerThread_ == nullptr || !workerThread_->isRunning()) {
-        return OperationResult::fail(QStringLiteral("Speed test worker thread is unavailable."));
+        return OperationResult::fail(QCoreApplication::translate("SpeedTestController", "Speed test worker thread is unavailable."));
     }
 
     cancelled_ = false;
@@ -65,7 +66,7 @@ OperationResult SpeedTestController::start(const Config& config, const QList<Spe
     if (!invoked) {
         running_ = false;
         emit runningChanged(false);
-        return OperationResult::fail(QStringLiteral("Failed to queue the speed test batch."));
+        return OperationResult::fail(QCoreApplication::translate("SpeedTestController", "Failed to queue the speed test batch."));
     }
 
     return OperationResult::ok(message);

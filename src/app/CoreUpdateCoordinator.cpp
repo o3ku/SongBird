@@ -1,5 +1,6 @@
 #include "app/CoreUpdateCoordinator.h"
 #include "app/UiThreadInvocation.h"
+#include "common/BackgroundThreadLaunch.h"
 
 #include <utility>
 
@@ -375,10 +376,7 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
         return;
     }
 
-    QThread* thread = QThread::create(std::move(task));
-    if (deps_.trackBackgroundThread) {
-        deps_.trackBackgroundThread(thread);
-    }
+    QThread* thread = launchBackgroundThread(std::move(task), deps_.trackBackgroundThread);
     thread->start();
 }
 

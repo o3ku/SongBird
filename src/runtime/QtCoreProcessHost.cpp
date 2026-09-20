@@ -1,5 +1,6 @@
 #include "runtime/QtCoreProcessHost.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QPointer>
@@ -39,11 +40,11 @@ OperationResult QtCoreProcessHost::start(
     ExitedCallback exited)
 {
     if (coreInfo.program.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Core executable path is empty."));
+        return OperationResult::fail(QCoreApplication::translate("QtCoreProcessHost", "Core executable path is empty."));
     }
 
     if (!QFileInfo::exists(coreInfo.program)) {
-        return OperationResult::fail(QStringLiteral("Core executable was not found: %1").arg(coreInfo.program));
+        return OperationResult::fail(QCoreApplication::translate("QtCoreProcessHost", "Core executable was not found: %1").arg(coreInfo.program));
     }
 
     OperationResult stopResult = stop(true);
@@ -80,24 +81,24 @@ OperationResult QtCoreProcessHost::start(
     const QString programName = QFileInfo(coreInfo.program).fileName();
     if (coreInfo.asyncStart) {
         return OperationResult::ok(
-            QStringLiteral("Launching core process: %1").arg(programName));
+            QCoreApplication::translate("QtCoreProcessHost", "Launching core process: %1").arg(programName));
     }
 
     return OperationResult::ok(
-        QStringLiteral("Launching core process: %1").arg(programName));
+        QCoreApplication::translate("QtCoreProcessHost", "Launching core process: %1").arg(programName));
 }
 
 OperationResult QtCoreProcessHost::stop(bool immediate)
 {
     if (!process_) {
-        return OperationResult::ok(QStringLiteral("Core process is not running."));
+        return OperationResult::ok(QCoreApplication::translate("QtCoreProcessHost", "Core process is not running."));
     }
 
     stopRequested_ = true;
     if (process_->state() == QProcess::NotRunning) {
         flushBufferedOutput(true);
         resetProcessState();
-        return OperationResult::ok(QStringLiteral("Core process stopped."));
+        return OperationResult::ok(QCoreApplication::translate("QtCoreProcessHost", "Core process stopped."));
     }
 
     process_->terminate();
@@ -105,20 +106,20 @@ OperationResult QtCoreProcessHost::stop(bool immediate)
         if (!process_->waitForFinished(1500)) {
             process_->kill();
             if (!process_->waitForFinished(1500)) {
-                return OperationResult::fail(QStringLiteral("Timed out while stopping the core process."));
+                return OperationResult::fail(QCoreApplication::translate("QtCoreProcessHost", "Timed out while stopping the core process."));
             }
         }
-        return OperationResult::ok(QStringLiteral("Stopping core process immediately..."));
+        return OperationResult::ok(QCoreApplication::translate("QtCoreProcessHost", "Stopping core process immediately..."));
     }
 
     scheduleForcedKill();
-    return OperationResult::ok(QStringLiteral("Stopping core process..."));
+    return OperationResult::ok(QCoreApplication::translate("QtCoreProcessHost", "Stopping core process..."));
 }
 
 OperationResult QtCoreProcessHost::reload()
 {
     if (lastCoreInfo_.program.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("No core process has been started yet."));
+        return OperationResult::fail(QCoreApplication::translate("QtCoreProcessHost", "No core process has been started yet."));
     }
 
     return start(lastCoreInfo_, lastConfigFilePath_, outputReceived_, startedCallback_, startFailedCallback_, exitedCallback_);

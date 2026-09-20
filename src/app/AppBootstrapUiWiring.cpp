@@ -38,7 +38,7 @@ void AppBootstrap::wireUiObjects()
                 // keep the two copies identical rather than inventing a third
                 // spelling of the same condition.
                 return objects_->serverService == nullptr
-                    ? OperationResult::fail(QStringLiteral("Server service is unavailable."))
+                    ? OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Server service is unavailable."))
                     : objects_->serverService->save(config);
             },
             [this](const QString& indexId) { return findServerById(indexId); },

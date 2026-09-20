@@ -1,5 +1,6 @@
 #include "app/GeoResourceUpdateCoordinator.h"
 #include "app/UiThreadInvocation.h"
+#include "common/BackgroundThreadLaunch.h"
 
 #include <utility>
 
@@ -37,7 +38,7 @@ void GeoResourceUpdateCoordinator::updateGeoResources()
     }
 
     const std::weak_ptr<char> lifetimeGuard = deps_.lifetimeGuard ? deps_.lifetimeGuard() : std::weak_ptr<char>();
-    QThread* thread = QThread::create([this, targetDirectory, title, uiContext, token, lifetimeGuard]() {
+    QThread* thread = launchBackgroundThread([this, targetDirectory, title, uiContext, token, lifetimeGuard]() {
         GeoResourceUpdateService geoResourceUpdateService(targetDirectory);
         const QList<OperationResult> results{
             geoResourceUpdateService.update(QStringLiteral("geosite")),
@@ -86,10 +87,7 @@ void GeoResourceUpdateCoordinator::updateGeoResources()
                     "Reloading core after updating Geo resources."));
             }
         });
-    });
+    }, deps_.trackBackgroundThread);
 
-    if (deps_.trackBackgroundThread) {
-        deps_.trackBackgroundThread(thread);
-    }
     thread->start();
 }

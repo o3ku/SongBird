@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -39,7 +40,7 @@ OperationResult pruneBackupDirectory(const QString& directoryPath)
 
     for (int i = kMaxBackupFileCount; i < backupFiles.size(); ++i) {
         if (!QFile::remove(backupFiles.at(i).absoluteFilePath())) {
-            return OperationResult::fail(QStringLiteral("Failed to remove an old backup file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to remove an old backup file."));
         }
     }
 
@@ -71,7 +72,7 @@ OperationResult ConfigBackupService::backupCurrentConfig(const Config& fallbackC
 {
     const QString directoryPath = backupDirectoryPath();
     if (directoryPath.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Backup directory is unavailable."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Backup directory is unavailable."));
     }
 
     OperationResult result = backupToPath(QDir(directoryPath).filePath(buildBackupFileName()), fallbackConfig);
@@ -90,21 +91,21 @@ OperationResult ConfigBackupService::backupCurrentConfig(const Config& fallbackC
 OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) const
 {
     if (configPath_.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Configuration path is unavailable."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Configuration path is unavailable."));
     }
 
     const QString sourcePath = QFileInfo(backupPath).absoluteFilePath();
     QFile sourceFile(sourcePath);
     if (!sourceFile.exists()) {
-        return OperationResult::fail(QStringLiteral("Backup file does not exist."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Backup file does not exist."));
     }
     if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return OperationResult::fail(QStringLiteral("Failed to open the selected backup file."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to open the selected backup file."));
     }
 
     const QJsonDocument document = QJsonDocument::fromJson(sourceFile.readAll());
     if (!document.isObject()) {
-        return OperationResult::fail(QStringLiteral("Failed to parse the selected backup file."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to parse the selected backup file."));
     }
 
     QJsonObject primaryRoot = document.object();
@@ -112,7 +113,7 @@ OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) 
 
     const QFileInfo targetFileInfo(configPath_);
     if (!targetFileInfo.dir().exists() && !QDir().mkpath(targetFileInfo.dir().absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create the configuration directory."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to create the configuration directory."));
     }
 
     const JsonFile::WriteResult written = JsonFile::writeFileAtomically(
@@ -121,43 +122,43 @@ OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) 
     if (!written.ok) {
         return OperationResult::fail(
             written.stage == JsonFile::WriteFailureStage::Open
-                ? QStringLiteral("Failed to open the configuration file for restore.")
-                : QStringLiteral("Failed to commit the restored configuration file."));
+                ? QCoreApplication::translate("ConfigBackupService", "Failed to open the configuration file for restore.")
+                : QCoreApplication::translate("ConfigBackupService", "Failed to commit the restored configuration file."));
     }
 
     const QString statePath = ConfigBackupStateDocument::stateConfigPathFor(configPath_);
     if (stateRoot.isEmpty()) {
         if (QFileInfo::exists(statePath) && !QFile::remove(statePath)) {
-            return OperationResult::fail(QStringLiteral("Failed to remove the restored UI/runtime state file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to remove the restored UI/runtime state file."));
         }
     } else if (!ConfigBackupStateDocument::writeJsonObject(statePath, stateRoot)) {
-        return OperationResult::fail(QStringLiteral("Failed to restore the UI/runtime state file."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to restore the UI/runtime state file."));
     }
 
-    return OperationResult::ok(QStringLiteral("Configuration restored from %1.").arg(QDir::toNativeSeparators(sourcePath)));
+    return OperationResult::ok(QCoreApplication::translate("ConfigBackupService", "Configuration restored from %1.").arg(QDir::toNativeSeparators(sourcePath)));
 }
 
 OperationResult ConfigBackupService::backupToPath(const QString& targetPath, const Config& fallbackConfig) const
 {
     if (targetPath.trimmed().isEmpty()) {
-        return OperationResult::fail(QStringLiteral("Backup target path is empty."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Backup target path is empty."));
     }
 
     const QFileInfo targetFileInfo(targetPath);
     if (!targetFileInfo.dir().exists() && !QDir().mkpath(targetFileInfo.dir().absolutePath())) {
-        return OperationResult::fail(QStringLiteral("Failed to create the backup directory."));
+        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to create the backup directory."));
     }
 
     const QString sourcePath = QFileInfo(configPath_).absoluteFilePath();
     QFile sourceFile(sourcePath);
     if (sourceFile.exists()) {
         if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            return OperationResult::fail(QStringLiteral("Failed to open the configuration file for backup."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to open the configuration file for backup."));
         }
 
         const QJsonDocument document = QJsonDocument::fromJson(sourceFile.readAll());
         if (!document.isObject()) {
-            return OperationResult::fail(QStringLiteral("Failed to parse the configuration file for backup."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to parse the configuration file for backup."));
         }
 
         QJsonObject backupRoot = document.object();
@@ -165,12 +166,12 @@ OperationResult ConfigBackupService::backupToPath(const QString& targetPath, con
             backupRoot,
             ConfigBackupStateDocument::readJsonObject(ConfigBackupStateDocument::stateConfigPathFor(configPath_)));
         if (!ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot)) {
-            return OperationResult::fail(QStringLiteral("Failed to write the backup file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to write the backup file."));
         }
     } else {
         JsonConfigRepository backupRepository(targetPath);
         if (!backupRepository.save(fallbackConfig)) {
-            return OperationResult::fail(QStringLiteral("Failed to write the initial backup file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to write the initial backup file."));
         }
 
         QJsonObject backupRoot = ConfigBackupStateDocument::readJsonObject(targetPath);
@@ -178,15 +179,15 @@ OperationResult ConfigBackupService::backupToPath(const QString& targetPath, con
             backupRoot,
             ConfigBackupStateDocument::readJsonObject(ConfigBackupStateDocument::stateConfigPathFor(targetPath)));
         if (!ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot)) {
-            return OperationResult::fail(QStringLiteral("Failed to finalize the backup file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to finalize the backup file."));
         }
         const QString targetStatePath = ConfigBackupStateDocument::stateConfigPathFor(targetPath);
         if (QFileInfo::exists(targetStatePath) && !QFile::remove(targetStatePath)) {
-            return OperationResult::fail(QStringLiteral("Failed to remove the temporary backup state file."));
+            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to remove the temporary backup state file."));
         }
     }
 
-    return OperationResult::ok(QStringLiteral("Configuration backed up to %1.").arg(QDir::toNativeSeparators(targetPath)));
+    return OperationResult::ok(QCoreApplication::translate("ConfigBackupService", "Configuration backed up to %1.").arg(QDir::toNativeSeparators(targetPath)));
 }
 
 QString ConfigBackupService::buildBackupFileName()
