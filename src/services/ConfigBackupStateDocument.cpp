@@ -1,5 +1,6 @@
 #include "services/ConfigBackupStateDocument.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -32,13 +33,41 @@ QJsonObject ConfigBackupStateDocument::readJsonObject(const QString& path)
     return document.isObject() ? document.object() : QJsonObject();
 }
 
-bool ConfigBackupStateDocument::writeJsonObject(const QString& path, const QJsonObject& root)
+OperationResult ConfigBackupStateDocument::writeJsonObject(const QString& path, const QJsonObject& root)
 {
-    return JsonFile::writeFileAtomically(
-               path,
-               QJsonDocument(root).toJson(QJsonDocument::Compact),
-               QIODevice::Text)
-        .ok;
+    const JsonFile::WriteResult written = JsonFile::writeFileAtomically(
+        path,
+        QJsonDocument(root).toJson(QJsonDocument::Compact),
+        QIODevice::Text);
+    if (written.ok) {
+        return OperationResult::ok();
+    }
+
+    // One complete sentence per step rather than a shared "Failed to %1 %2" template, for the same
+    // reason JsonConfigRepository does it that way: a translator cannot reorder a template's parts.
+    // The OS reason is appended rather than slotted in, because it is empty when the OS offered
+    // none and would otherwise leave a dangling separator.
+    const QString target = QDir::toNativeSeparators(path);
+    const auto withReason = [&written](const QString& message) {
+        return written.errorString.isEmpty()
+            ? message
+            : QStringLiteral("%1: %2").arg(message, written.errorString);
+    };
+
+    switch (written.stage) {
+    case JsonFile::WriteFailureStage::Open:
+        return OperationResult::fail(withReason(
+            QCoreApplication::translate("ConfigBackupStateDocument", "Failed to open %1").arg(target)));
+    case JsonFile::WriteFailureStage::Commit:
+        return OperationResult::fail(withReason(
+            QCoreApplication::translate("ConfigBackupStateDocument", "Failed to commit %1").arg(target)));
+    case JsonFile::WriteFailureStage::Write:
+    case JsonFile::WriteFailureStage::None:
+        break;
+    }
+
+    return OperationResult::fail(withReason(
+        QCoreApplication::translate("ConfigBackupStateDocument", "Failed to write %1").arg(target)));
 }
 
 void ConfigBackupStateDocument::mergeStateIntoPrimary(QJsonObject& primaryRoot, const QJsonObject& stateRoot)

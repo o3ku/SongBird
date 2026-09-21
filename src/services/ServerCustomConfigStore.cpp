@@ -80,14 +80,26 @@ OperationResult ServerCustomConfigStore::prepareServer(VmessItem& server, const 
     return OperationResult::ok();
 }
 
-bool ServerCustomConfigStore::removeManagedConfig(const QString& address) const
+OperationResult ServerCustomConfigStore::removeManagedConfig(const QString& address) const
 {
     const QString resolvedPath = resolveConfigPath(address);
     if (!isManagedConfigPath(resolvedPath) || !QFileInfo::exists(resolvedPath)) {
-        return false;
+        // Nothing of ours to delete: the address is not managed storage, or the file is already
+        // gone. Reporting this as a failure would turn the ordinary "no file to clean up" case
+        // into a spurious error.
+        return OperationResult::ok();
     }
 
-    return QFile::remove(resolvedPath);
+    // QFile::remove() is static and cannot report why it failed, so use an instance to keep
+    // errorString() for the message.
+    QFile file(resolvedPath);
+    if (file.remove()) {
+        return OperationResult::ok();
+    }
+
+    return OperationResult::fail(
+        QCoreApplication::translate("ServerCustomConfigStore", "Failed to delete the managed custom config file %1: %2")
+            .arg(QDir::toNativeSeparators(resolvedPath), file.errorString()));
 }
 
 bool ServerCustomConfigStore::isManagedConfigPath(const QString& filePath) const

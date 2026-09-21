@@ -262,6 +262,110 @@
         <source>%1 (Default)</source>
         <translation>%1（默认）</translation>
     </message>
+    <message>
+        <source>VMess</source>
+        <translation>VMess</translation>
+    </message>
+    <message>
+        <source>VLESS</source>
+        <translation>VLESS</translation>
+    </message>
+    <message>
+        <source>Trojan</source>
+        <translation>Trojan</translation>
+    </message>
+    <message>
+        <source>Shadowsocks</source>
+        <translation>Shadowsocks</translation>
+    </message>
+    <message>
+        <source>Socks</source>
+        <translation>SOCKS</translation>
+    </message>
+    <message>
+        <source>HTTP</source>
+        <translation>HTTP</translation>
+    </message>
+    <message>
+        <source>Hysteria2</source>
+        <translation>Hysteria2</translation>
+    </message>
+    <message>
+        <source>TUIC</source>
+        <translation>TUIC</translation>
+    </message>
+    <message>
+        <source>WireGuard</source>
+        <translation>WireGuard</translation>
+    </message>
+    <message>
+        <source>AnyTLS</source>
+        <translation>AnyTLS</translation>
+    </message>
+    <message>
+        <source>Naive</source>
+        <translation>Naive</translation>
+    </message>
+    <message>
+        <source>Credential</source>
+        <translation>凭据</translation>
+    </message>
+    <message>
+        <source>Security</source>
+        <translation>安全</translation>
+    </message>
+    <message>
+        <source>Encryption</source>
+        <translation>加密</translation>
+    </message>
+    <message>
+        <source>UUID</source>
+        <translation>UUID</translation>
+    </message>
+    <message>
+        <source>Method</source>
+        <translation>方法</translation>
+    </message>
+    <message>
+        <source>Username</source>
+        <translation>用户名</translation>
+    </message>
+    <message>
+        <source>Mode</source>
+        <translation>模式</translation>
+    </message>
+    <message>
+        <source>Service Name</source>
+        <translation>服务名称</translation>
+    </message>
+    <message>
+        <source>QUIC Security</source>
+        <translation>QUIC 安全</translation>
+    </message>
+    <message>
+        <source>Key</source>
+        <translation>密钥</translation>
+    </message>
+    <message>
+        <source>Seed</source>
+        <translation>种子</translation>
+    </message>
+    <message>
+        <source>service-name</source>
+        <translation>service-name</translation>
+    </message>
+    <message>
+        <source>mkcp-seed</source>
+        <translation>mkcp-种子</translation>
+    </message>
+    <message>
+        <source>none</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>quic-key</source>
+        <translation>quic-密钥</translation>
+    </message>
 </context>
 <context>
     <name>AppBootstrap</name>
@@ -1035,6 +1139,21 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     </message>
 </context>
 <context>
+    <name>ConfigBackupStateDocument</name>
+    <message>
+        <source>Failed to commit %1</source>
+        <translation>提交%1失败</translation>
+    </message>
+    <message>
+        <source>Failed to open %1</source>
+        <translation>打开%1失败</translation>
+    </message>
+    <message>
+        <source>Failed to write %1</source>
+        <translation>写入%1失败</translation>
+    </message>
+</context>
+<context>
     <name>CoreConfigPreflight</name>
     <message>
         <source>Core config preflight failed to start: %1</source>
@@ -1124,6 +1243,18 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>Default User-Agent</source>
         <translation>默认 User-Agent</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>已安装</translation>
+    </message>
+    <message>
+        <source>Not found</source>
+        <translation>未找到</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>更新</translation>
     </message>
 </context>
 <context>
@@ -1652,12 +1783,39 @@ The running core will be stopped before installation if needed.</source>
         <translation>配置文件根节点必须是 JSON 对象：%1</translation>
     </message>
     <message>
+        <source>Failed to commit %1: %2</source>
+        <translation>提交%1失败：%2</translation>
+    </message>
+    <message>
+        <source>Failed to open %1: %2</source>
+        <translation>打开%1失败：%2</translation>
+    </message>
+    <message>
         <source>Failed to open configuration file: %1</source>
         <translation>无法打开配置文件：%1</translation>
     </message>
     <message>
         <source>Failed to parse configuration file: %1 (offset %2: %3).</source>
         <translation>解析配置文件失败：%1（偏移 %2：%3）。</translation>
+    </message>
+    <message>
+        <source>Failed to write %1: %2</source>
+        <translation>写入%1失败：%2</translation>
+    </message>
+    <message>
+        <source>configuration file</source>
+        <translation>配置文件</translation>
+    </message>
+    <message>
+        <source>configuration state file</source>
+        <translation>配置状态文件</translation>
+    </message>
+</context>
+<context>
+    <name>LogListModel</name>
+    <message>
+        <source> ... [truncated]</source>
+        <translation> ... [已截断]</translation>
     </message>
 </context>
 <context>
@@ -1780,6 +1938,78 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Update %1 Core</source>
         <translation>更新 %1 核心</translation>
+    </message>
+    <message>
+        <source>Add Server</source>
+        <translation>添加服务器</translation>
+    </message>
+    <message>
+        <source>Edit Server</source>
+        <translation>编辑服务器</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>删除</translation>
+    </message>
+    <message>
+        <source>Move To Top</source>
+        <translation>移到顶部</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>上移</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>下移</translation>
+    </message>
+    <message>
+        <source>Move To Bottom</source>
+        <translation>移到底部</translation>
+    </message>
+    <message>
+        <source>Set Current</source>
+        <translation>设为当前</translation>
+    </message>
+    <message>
+        <source>Set Current with TUN On</source>
+        <translation>设为当前并开启 TUN</translation>
+    </message>
+    <message>
+        <source>Test</source>
+        <translation>测试</translation>
+    </message>
+    <message>
+        <source>Copy Url</source>
+        <translation>复制链接</translation>
+    </message>
+    <message>
+        <source>Copy Share Link</source>
+        <translation>复制分享链接</translation>
+    </message>
+    <message>
+        <source>Import Clipboard</source>
+        <translation>导入剪贴板</translation>
+    </message>
+    <message>
+        <source>Update Subscriptions</source>
+        <translation>更新订阅</translation>
+    </message>
+    <message>
+        <source>Update Geo Files</source>
+        <translation>更新 Geo 文件</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>检查更新</translation>
+    </message>
+    <message>
+        <source>UWP Loopback</source>
+        <translation>UWP 环回</translation>
     </message>
 </context>
 <context>
@@ -2108,6 +2338,38 @@ Switch this protocol to %3?</source>
     <message>
         <source>Startup canceled: %1 cannot run %2 servers.</source>
         <translation>启动已取消：%1 无法运行 %2 服务器。</translation>
+    </message>
+    <message>
+        <source>Core crash detected (code=%1).</source>
+        <translation>核心崩溃（代码=%1）。</translation>
+    </message>
+    <message>
+        <source>Core exited (code=%1).</source>
+        <translation>核心退出（代码=%1）。</translation>
+    </message>
+    <message>
+        <source>Auxiliary core crash detected (code=%1).</source>
+        <translation>辅助核心崩溃（代码=%1）。</translation>
+    </message>
+    <message>
+        <source>Auxiliary core exited (code=%1).</source>
+        <translation>辅助核心退出（代码=%1）。</translation>
+    </message>
+    <message>
+        <source>%1 Auto-restart disabled after %2 consecutive failures.</source>
+        <translation>%1 连续失败 %2 次后已禁用自动重启。</translation>
+    </message>
+    <message>
+        <source>%1 Restarting in %2s... (attempt %3/%4)</source>
+        <translation>%1 将在 %2 秒后重启...（第 %3/%4 次尝试）</translation>
+    </message>
+    <message>
+        <source>TUN adapter conflict detected (code=%1). Cleaning up and retrying core startup...</source>
+        <translation>检测到 TUN 适配器冲突（代码=%1）。正在清理并重试启动核心...</translation>
+    </message>
+    <message>
+        <source>TUN adapter conflict persisted after cleanup retry. Auto-restart disabled.</source>
+        <translation>清理重试后 TUN 适配器冲突仍然存在。已自动禁用重启。</translation>
     </message>
 </context>
 <context>
@@ -2538,6 +2800,10 @@ Switch this protocol to %3?</source>
         <source>Failed to create custom config directory.</source>
         <translation>创建自定义配置目录失败。</translation>
     </message>
+    <message>
+        <source>Failed to delete the managed custom config file %1: %2</source>
+        <translation>删除托管的自定义配置文件 %1 失败：%2</translation>
+    </message>
 </context>
 <context>
     <name>ServerEditorCoordinator</name>
@@ -2603,6 +2869,10 @@ Switch this protocol to %3?</source>
     <message>
         <source>Server port must be between 1 and 65535.</source>
         <translation>服务器端口必须在 1 到 65535 之间。</translation>
+    </message>
+    <message>
+        <source>Server selection removed, but its managed custom config files could not all be deleted.</source>
+        <translation>已移除服务器选择，但其托管的自定义配置文件未能全部删除。</translation>
     </message>
     <message>
         <source>Server selection removed.</source>
@@ -3018,6 +3288,38 @@ Switch this protocol to %3?</source>
         <source>Waiting for compatible servers</source>
         <translation>正在等待兼容服务器</translation>
     </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>已取消</translation>
+    </message>
+    <message>
+        <source>Core missing</source>
+        <translation>核心文件缺失</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <source>Outbound country unavailable</source>
+        <translation>出口国家/地区不可用</translation>
+    </message>
+    <message>
+        <source>Port busy</source>
+        <translation>端口被占用</translation>
+    </message>
+    <message>
+        <source>Proxy startup timeout</source>
+        <translation>代理启动超时</translation>
+    </message>
+    <message>
+        <source>Temp dir failed</source>
+        <translation>临时目录创建失败</translation>
+    </message>
+    <message>
+        <source>Unsupported custom config</source>
+        <translation>不支持自定义配置</translation>
+    </message>
 </context>
 <context>
     <name>SongBirdAutoWindow</name>
@@ -3151,6 +3453,18 @@ Restart SongBirdAuto as administrator and start proxy now?</source>
         <source>TUN start canceled because administrator privileges are required.</source>
         <translation>由于需要管理员权限，已取消启动 TUN。</translation>
     </message>
+    <message>
+        <source>Failed</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>正常</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <translation>待测试</translation>
+    </message>
 </context>
 <context>
     <name>SpeedTestController</name>
@@ -3170,6 +3484,58 @@ Restart SongBirdAuto as administrator and start proxy now?</source>
         <source>Speed test worker thread is unavailable.</source>
         <translation>测速工作线程不可用。</translation>
     </message>
+    <message>
+        <source>Blocked</source>
+        <translation>已阻断</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>已取消</translation>
+    </message>
+    <message>
+        <source>Core missing</source>
+        <translation>核心文件缺失</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <source>Port busy</source>
+        <translation>端口被占用</translation>
+    </message>
+    <message>
+        <source>Proxy exited before listening (code %1)</source>
+        <translation>代理在监听前退出（代码 %1）</translation>
+    </message>
+    <message>
+        <source>Proxy exited before listening: %1</source>
+        <translation>代理在监听前退出：%1</translation>
+    </message>
+    <message>
+        <source>Proxy startup timeout (no core output)</source>
+        <translation>代理启动超时（核心无输出）</translation>
+    </message>
+    <message>
+        <source>Proxy startup timeout: %1</source>
+        <translation>代理启动超时：%1</translation>
+    </message>
+    <message>
+        <source>Temp dir failed</source>
+        <translation>临时目录创建失败</translation>
+    </message>
+    <message>
+        <source>Timeout</source>
+        <translation>超时</translation>
+    </message>
+    <message>
+        <source>Unsupported</source>
+        <translation>不支持</translation>
+    </message>
+    <message>
+        <source>SOCKS handshake failed</source>
+        <translation>SOCKS 握手失败</translation>
+    </message>
 </context>
 <context>
     <name>StartupOverlayWidget</name>
@@ -3184,6 +3550,17 @@ Restart SongBirdAuto as administrator and start proxy now?</source>
     <message>
         <source>Proxy startup failed</source>
         <translation>代理启动失败</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionContentParser</name>
+    <message>
+        <source>skipped %1 node(s): %2</source>
+        <translation>已跳过 %1 个节点：%2</translation>
+    </message>
+    <message>
+        <source>(no type)</source>
+        <translation>（无类型）</translation>
     </message>
 </context>
 <context>
@@ -3352,6 +3729,81 @@ Restart SongBirdAuto as administrator and start proxy now?</source>
     <message>
         <source>Subscriptions were imported but saving the configuration failed.</source>
         <translation>订阅已导入，但保存配置失败。</translation>
+    </message>
+</context>
+<context>
+    <name>TrayController</name>
+    <message>
+        <source>Running</source>
+        <translation>运行中</translation>
+    </message>
+    <message>
+        <source>Starting</source>
+        <translation>启动中</translation>
+    </message>
+    <message>
+        <source>Stopped</source>
+        <translation>已停止</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>ON</source>
+        <translation>开</translation>
+    </message>
+    <message>
+        <source>OFF</source>
+        <translation>关</translation>
+    </message>
+    <message>
+        <source>Current: %1</source>
+        <translation>当前：%1</translation>
+    </message>
+    <message>
+        <source>No default server</source>
+        <translation>无默认服务器</translation>
+    </message>
+    <message>
+        <source>Auto Run: %1</source>
+        <translation>自启动：%1</translation>
+    </message>
+    <message>
+        <source>Routing: %1</source>
+        <translation>路由：%1</translation>
+    </message>
+    <message>
+        <source>Core %1 | Proxy %2 | Tun %3</source>
+        <translation>核心 %1 | 代理 %2 | TUN %3</translation>
+    </message>
+    <message>
+        <source>Switch Server</source>
+        <translation>切换服务器</translation>
+    </message>
+    <message>
+        <source>Switch Routing</source>
+        <translation>切换路由</translation>
+    </message>
+    <message>
+        <source>Enable Auto Run</source>
+        <translation>启用开机自启</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation>退出</translation>
+    </message>
+    <message>
+        <source>No servers</source>
+        <translation>没有服务器</translation>
+    </message>
+    <message>
+        <source>No routing entries</source>
+        <translation>没有路由项</translation>
+    </message>
+    <message>
+        <source>Routing %1</source>
+        <translation>路由 %1</translation>
     </message>
 </context>
 <context>

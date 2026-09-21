@@ -77,13 +77,6 @@ public:
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();
-    void setProxyEnabled(bool enabled);
-    void setTunEnabled(bool enabled);
-    void setProxyUiState(ProxyUiState state);
-    void setCurrentServerName(const QString& name);
-    void setCurrentServerLocation(const QString& location);
-    void setCurrentServerWarning(const QString& warning);
-    void setRoutingSummary(const QString& routingText, const QString& listenText);
     void setSubscriptionUpdateRunning(bool running);
     void setCoreStartupChecklist(const QStringList& items);
     void clearCoreStartupChecklist();
@@ -247,7 +240,6 @@ private:
     StartupOverlayWidget* startupOverlay_ = nullptr;
     bool hideToTrayEnabled_ = false;
     bool allowClose_ = false;
-    bool systemProxyApplied_ = false;
     ProxyUiState proxyUiState_ = ProxyUiState::Idle;
     bool qrPreviewVisible_ = false;
     QString currentServerLocation_;

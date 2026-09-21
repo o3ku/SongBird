@@ -73,7 +73,6 @@ private slots:
     void proxyToggleButtonAllowsStartWhenNoCompatibleCoreInstalled();
     void tunToggleButtonUsesCheckedStateAndEmitsSignals();
     void tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff();
-    void tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxyStateWasStale();
     void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
     void subscriptionViewSupportMapsTabKeysAndLabels();
     void subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds();
@@ -993,15 +992,19 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCoreApplication::processEvents();
     QCOMPARE(enableSpy.count(), 1);
 
-    window.setProxyEnabled(true);
-    window.setProxyUiState(ProxyUiState::Inconsistent);
+    // Runtime state arrives as one snapshot, so the test keeps a snapshot and mutates the fields
+    // it cares about: applyRuntimeState() replaces every field rather than merging one in.
+    RuntimeStateSnapshot snapshot;
+    snapshot.proxyUiState = ProxyUiState::Inconsistent;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
     QVERIFY(!proxyButton->isEnabled());
 
-    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
-    window.setProxyUiState(ProxyUiState::Active);
+    snapshot.currentServerLocation = QStringLiteral("United States, Los Angeles");
+    snapshot.proxyUiState = ProxyUiState::Active;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("STOP"));
     QVERIFY(proxyButton->isChecked());
@@ -1011,9 +1014,8 @@ void MainWindowTests::proxyToggleButtonUsesCheckedStateAndEmitsSignals()
     QCoreApplication::processEvents();
     QCOMPARE(disableSpy.count(), 1);
 
-    window.setProxyEnabled(false);
-    window.setProxyUiState(ProxyUiState::Inconsistent);
-    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    snapshot.proxyUiState = ProxyUiState::Inconsistent;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
     QCOMPARE(proxyButton->text(), QStringLiteral("START"));
     QVERIFY(!proxyButton->isChecked());
@@ -1026,9 +1028,10 @@ void MainWindowTests::proxyToggleButtonRemainsEnabledToDisableActiveProxyWithout
     Config config = createServerSelectionConfig();
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
-    window.setProxyEnabled(true);
-    window.setProxyUiState(ProxyUiState::Active);
-    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    RuntimeStateSnapshot snapshot;
+    snapshot.proxyUiState = ProxyUiState::Active;
+    snapshot.currentServerLocation = QStringLiteral("United States, Los Angeles");
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
 
     QSignalSpy disableSpy(&window, SIGNAL(disableSystemProxyRequested()));
@@ -1099,7 +1102,10 @@ void MainWindowTests::tunToggleButtonUsesCheckedStateAndEmitsSignals()
     QCOMPARE(tunSpy.count(), 1);
     QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
 
-    window.setTunEnabled(true);
+    // The tun state is owned by the config rather than by a window setter, so the application
+    // reflects a persisted toggle by reapplying the config; this mirrors that path.
+    config.tun().tunModeItem.enableTun = true;
+    window.setConfig(config);
     QCoreApplication::processEvents();
     QVERIFY(tunButton->isChecked());
 
@@ -1116,8 +1122,15 @@ void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff()
     config.tun().tunModeItem.enableTun = false;
     window.setConfig(config);
     window.setExistingCoreTypes({CoreType::SingBox});
-    window.setProxyUiState(ProxyUiState::Idle);
-    window.setProxyEnabled(false);
+    RuntimeStateSnapshot snapshot;
+    snapshot.proxyUiState = ProxyUiState::Idle;
+    // The snapshot's systemProxyApplied is deliberately left at its default and not asserted on:
+    // MainWindow never reads it. The "is the system proxy actually applied" fact is owned by the
+    // tray (RuntimeState::systemProxyStateChanged -> TrayController -> TrayMenuSupport), and the
+    // proxy toolbar is driven by proxyUiState instead. A former sibling test named
+    // "...WhenCoreWasOffButProxyStateWasStale" set this field to true and asserted exactly what
+    // this test asserts, so it covered nothing extra and was removed with the field.
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
 
     QSignalSpy tunSpy(&window, SIGNAL(tunEnabledChanged(bool)));
@@ -1128,33 +1141,6 @@ void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff()
     auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
     QVERIFY(tunButton != nullptr);
     QVERIFY(!tunButton->isChecked());
-
-    tunButton->click();
-    QCoreApplication::processEvents();
-
-    QCOMPARE(tunSpy.count(), 1);
-    QCOMPARE(tunSpy.at(0).at(0).toBool(), true);
-    QCOMPARE(enableProxySpy.count(), 0);
-}
-
-void MainWindowTests::tunToggleButtonOnlyEmitsTunChangeWhenCoreWasOffButProxyStateWasStale()
-{
-    MainWindow window;
-    Config config = createServerSelectionConfig();
-    config.tun().tunModeItem.enableTun = false;
-    window.setConfig(config);
-    window.setExistingCoreTypes({CoreType::SingBox});
-    window.setProxyUiState(ProxyUiState::Idle);
-    window.setProxyEnabled(true);
-    QCoreApplication::processEvents();
-
-    QSignalSpy tunSpy(&window, SIGNAL(tunEnabledChanged(bool)));
-    QSignalSpy enableProxySpy(&window, SIGNAL(enableSystemProxyRequested()));
-    QVERIFY(tunSpy.isValid());
-    QVERIFY(enableProxySpy.isValid());
-
-    auto* tunButton = window.findChild<QToolButton*>(QStringLiteral("tunToggleButton"));
-    QVERIFY(tunButton != nullptr);
 
     tunButton->click();
     QCoreApplication::processEvents();
@@ -2222,10 +2208,13 @@ void MainWindowTests::currentServerStatusUsesNoServerPlaceholderWhenEmpty()
     QVERIFY(currentServerStatusLabel != nullptr);
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
 
-    window.setCurrentServerName(QStringLiteral("Test Server"));
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("Test Server");
+    window.applyRuntimeState(snapshot);
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
 
-    window.setCurrentServerName(QString());
+    snapshot.currentServerName.clear();
+    window.applyRuntimeState(snapshot);
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: <No Server>"));
 }
 
@@ -2238,13 +2227,16 @@ void MainWindowTests::currentServerStatusAppendsLocation()
         window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
     QVERIFY(currentServerStatusLabel != nullptr);
 
-    window.setCurrentServerName(QStringLiteral("Test Server"));
-    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("Test Server");
+    snapshot.currentServerLocation = QStringLiteral("United States, Los Angeles");
+    window.applyRuntimeState(snapshot);
     QCOMPARE(
         currentServerStatusLabel->text(),
         QStringLiteral("Current: Test Server | United States, Los Angeles"));
 
-    window.setCurrentServerLocation(QString());
+    snapshot.currentServerLocation.clear();
+    window.applyRuntimeState(snapshot);
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
 }
 
@@ -2256,14 +2248,17 @@ void MainWindowTests::currentServerStatusAppendsManualVerificationWarning()
     auto* currentServerStatusLabel = window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
     QVERIFY(currentServerStatusLabel != nullptr);
 
-    window.setCurrentServerName(QStringLiteral("Test Server"));
-    window.setCurrentServerLocation(QStringLiteral("United States, Los Angeles"));
-    window.setCurrentServerWarning(QStringLiteral("Please verify manually"));
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("Test Server");
+    snapshot.currentServerLocation = QStringLiteral("United States, Los Angeles");
+    snapshot.currentServerWarning = QStringLiteral("Please verify manually");
+    window.applyRuntimeState(snapshot);
     QCOMPARE(
         currentServerStatusLabel->text(),
         QStringLiteral("Current: Test Server | United States, Los Angeles | Please verify manually"));
 
-    window.setCurrentServerWarning(QString());
+    snapshot.currentServerWarning.clear();
+    window.applyRuntimeState(snapshot);
     QCOMPARE(
         currentServerStatusLabel->text(),
         QStringLiteral("Current: Test Server | United States, Los Angeles"));
@@ -2362,7 +2357,9 @@ void MainWindowTests::coreStatusRemainsStartingUntilStrictActivation()
     auto* proxyButton = window.findChild<QToolButton*>(QStringLiteral("proxyToggleButton"));
     QVERIFY(proxyButton != nullptr);
 
-    window.setProxyUiState(ProxyUiState::Inconsistent);
+    RuntimeStateSnapshot snapshot;
+    snapshot.proxyUiState = ProxyUiState::Inconsistent;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
 
     QCOMPARE(proxyButton->toolTip(), QStringLiteral("Proxy state is inconsistent. Check logs."));
@@ -2571,10 +2568,13 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QVERIFY(routingCombo->minimumWidth() >= QFontMetrics(routingCombo->font()).horizontalAdvance(routingCombo->currentText()));
 
     const int routingComboWidth = routingCombo->width();
-    window.setProxyUiState(ProxyUiState::Transitioning);
+    RuntimeStateSnapshot snapshot;
+    snapshot.proxyUiState = ProxyUiState::Transitioning;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);
-    window.setProxyUiState(ProxyUiState::Active);
+    snapshot.proxyUiState = ProxyUiState::Active;
+    window.applyRuntimeState(snapshot);
     QCoreApplication::processEvents();
     QCOMPARE(routingCombo->width(), routingComboWidth);
 }

@@ -8,16 +8,16 @@
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 
+class ISystemProxyService;
 class ProxySession;
 class ServerService;
-class WindowsSystemProxyService;
 
 class SystemProxyCoordinator final {
 public:
     struct Dependencies {
         Config& config;
         ServerService& serverService;
-        WindowsSystemProxyService* systemProxyService = nullptr;
+        ISystemProxyService* systemProxyService = nullptr;
         ProxySession* proxySession = nullptr;
     };
 

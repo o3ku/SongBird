@@ -1,5 +1,6 @@
 #include "auto/AutoNodeEvaluationService.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QProcess>
@@ -57,6 +58,9 @@ Config makeProbeConfig(Config config, const PortPool::Ports& ports)
     return config;
 }
 
+// `error` is rendered verbatim as the node's state text in the SongBirdAuto node
+// table (SongBirdAutoWindow::availabilityText), so every argument at a call site is
+// user-visible prose and has to be localized here, not at the display site.
 AutoNodeEvaluation unavailableResult(const SpeedTestRequestItem& item, const QString& error)
 {
     AutoNodeEvaluation result;
@@ -64,7 +68,9 @@ AutoNodeEvaluation unavailableResult(const SpeedTestRequestItem& item, const QSt
     result.displayName = item.displayName.trimmed().isEmpty()
         ? serverDisplayName(item.runtimeServer)
         : item.displayName;
-    result.error = error.trimmed().isEmpty() ? QStringLiteral("Failed") : error.trimmed();
+    result.error = error.trimmed().isEmpty()
+        ? QCoreApplication::translate("SongBirdAuto", "Failed")
+        : error.trimmed();
     result.tested = true;
     result.checkedAt = QDateTime::currentDateTimeUtc();
     return result;
@@ -81,18 +87,18 @@ AutoNodeEvaluation evaluateOne(
         : item.displayName;
 
     if (cancelled.load()) {
-        return unavailableResult(item, QStringLiteral("Cancelled"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
     }
     if (item.configType == ConfigType::Custom) {
-        return unavailableResult(item, QStringLiteral("Unsupported custom config"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Unsupported custom config"));
     }
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
-        return unavailableResult(item, QStringLiteral("Core missing"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Core missing"));
     }
 
     const PortPool::Ports ports = PortPool::takeAvailable();
     if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
-        return unavailableResult(item, QStringLiteral("Port busy"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Port busy"));
     }
     struct ScopedPortRelease
     {
@@ -102,7 +108,7 @@ AutoNodeEvaluation evaluateOne(
 
     QTemporaryDir temporaryDirectory;
     if (!temporaryDirectory.isValid()) {
-        return unavailableResult(item, QStringLiteral("Temp dir failed"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Temp dir failed"));
     }
 
     Config runtimeConfig = makeProbeConfig(request.config, ports);
@@ -136,12 +142,12 @@ AutoNodeEvaluation evaluateOne(
         const QString output = RuntimeProcess::readProcessOutput(coreProcess);
         RuntimeProcess::stopProcess(coreProcess);
         if (cancelled.load()) {
-            return unavailableResult(item, QStringLiteral("Cancelled"));
+            return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
         }
         return unavailableResult(
             item,
             output.trimmed().isEmpty()
-                ? QStringLiteral("Proxy startup timeout")
+                ? QCoreApplication::translate("SongBirdAuto", "Proxy startup timeout")
                 : normalizedError(output));
     }
 
@@ -166,13 +172,13 @@ AutoNodeEvaluation evaluateOne(
     RuntimeProcess::stopProcess(coreProcess);
 
     if (cancelled.load()) {
-        return unavailableResult(item, QStringLiteral("Cancelled"));
+        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
     }
     if (location.countryCode.trimmed().isEmpty() && location.countryName.trimmed().isEmpty()) {
         return unavailableResult(
             item,
             location.error.trimmed().isEmpty()
-                ? QStringLiteral("Outbound country unavailable")
+                ? QCoreApplication::translate("SongBirdAuto", "Outbound country unavailable")
                 : location.error.trimmed());
     }
 

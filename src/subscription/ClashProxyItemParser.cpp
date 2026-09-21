@@ -1,5 +1,6 @@
 #include "subscription/ClashProxyItemParser.h"
 
+#include <QCoreApplication>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QStringList>
@@ -252,7 +253,9 @@ VmessItem baseItemFromProxy(const QJsonObject& proxy)
 
 QString skippedTypeLabel(const QString& type)
 {
-    return type.trimmed().isEmpty() ? QStringLiteral("(no type)") : type;
+    return type.trimmed().isEmpty()
+        ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
+        : type;
 }
 
 void recordSkipped(QStringList* skippedTypes, const QString& type)

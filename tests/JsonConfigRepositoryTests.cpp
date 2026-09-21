@@ -843,6 +843,10 @@ void JsonConfigRepositoryTests::saveReportsPrimaryConfigWriteFailure()
     // boolean alone could not express.
     QVERIFY(repository.lastSaveError().contains(QStringLiteral("configuration file")));
     QVERIFY(!repository.lastSaveError().contains(QStringLiteral("configuration state file")));
+
+    // The step is named too, and each step is its own translatable sentence rather than a shared
+    // "Failed to %1 %2: %3" template -- a translator cannot reorder the parts of a template.
+    QVERIFY(repository.lastSaveError().contains(QStringLiteral("Failed to open configuration file:")));
 }
 
 void JsonConfigRepositoryTests::saveReportsStateWriteFailure()

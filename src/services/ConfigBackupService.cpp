@@ -131,8 +131,14 @@ OperationResult ConfigBackupService::restoreFromPath(const QString& backupPath) 
         if (QFileInfo::exists(statePath) && !QFile::remove(statePath)) {
             return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to remove the restored UI/runtime state file."));
         }
-    } else if (!ConfigBackupStateDocument::writeJsonObject(statePath, stateRoot)) {
-        return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to restore the UI/runtime state file."));
+    } else {
+        const OperationResult stateWritten = ConfigBackupStateDocument::writeJsonObject(statePath, stateRoot);
+        if (!stateWritten.success) {
+            return OperationResult::fail(
+                QStringLiteral("%1 %2")
+                    .arg(QCoreApplication::translate("ConfigBackupService", "Failed to restore the UI/runtime state file."),
+                         stateWritten.message));
+        }
     }
 
     return OperationResult::ok(QCoreApplication::translate("ConfigBackupService", "Configuration restored from %1.").arg(QDir::toNativeSeparators(sourcePath)));
@@ -165,8 +171,12 @@ OperationResult ConfigBackupService::backupToPath(const QString& targetPath, con
         ConfigBackupStateDocument::mergeStateIntoPrimary(
             backupRoot,
             ConfigBackupStateDocument::readJsonObject(ConfigBackupStateDocument::stateConfigPathFor(configPath_)));
-        if (!ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot)) {
-            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to write the backup file."));
+        const OperationResult backupWritten = ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot);
+        if (!backupWritten.success) {
+            return OperationResult::fail(
+                QStringLiteral("%1 %2")
+                    .arg(QCoreApplication::translate("ConfigBackupService", "Failed to write the backup file."),
+                         backupWritten.message));
         }
     } else {
         JsonConfigRepository backupRepository(targetPath);
@@ -178,8 +188,12 @@ OperationResult ConfigBackupService::backupToPath(const QString& targetPath, con
         ConfigBackupStateDocument::mergeStateIntoPrimary(
             backupRoot,
             ConfigBackupStateDocument::readJsonObject(ConfigBackupStateDocument::stateConfigPathFor(targetPath)));
-        if (!ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot)) {
-            return OperationResult::fail(QCoreApplication::translate("ConfigBackupService", "Failed to finalize the backup file."));
+        const OperationResult finalized = ConfigBackupStateDocument::writeJsonObject(targetPath, backupRoot);
+        if (!finalized.success) {
+            return OperationResult::fail(
+                QStringLiteral("%1 %2")
+                    .arg(QCoreApplication::translate("ConfigBackupService", "Failed to finalize the backup file."),
+                         finalized.message));
         }
         const QString targetStatePath = ConfigBackupStateDocument::stateConfigPathFor(targetPath);
         if (QFileInfo::exists(targetStatePath) && !QFile::remove(targetStatePath)) {

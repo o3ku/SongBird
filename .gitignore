@@ -1,3 +1,8 @@
 /build
 /CMakePresets.json
 /.claude/worktrees/
+# Local agent scratch space: memory notes, probe projects (one of them is a full clone with its
+# own .git) and helper scripts. Never part of a source commit.
+/.workbuddy-ai/
+# Planning/backlog notes kept next to the tree on purpose; not shipped source.
+/todo.md

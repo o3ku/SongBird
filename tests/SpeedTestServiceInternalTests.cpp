@@ -43,7 +43,6 @@ void SpeedTestServiceInternalTests::detectReadyProxyPrefersHttpWhenBothPortsAreR
     QVERIFY(readyProxy.has_value());
     QCOMPARE(readyProxy->type, QNetworkProxy::HttpProxy);
     QCOMPARE(readyProxy->port, 1081);
-    QCOMPARE(readyProxy->name, QStringLiteral("http"));
 }
 
 void SpeedTestServiceInternalTests::detectReadyProxyAcceptsSocksWhenHttpIsNotReady()
@@ -56,7 +55,6 @@ void SpeedTestServiceInternalTests::detectReadyProxyAcceptsSocksWhenHttpIsNotRea
     QVERIFY(readyProxy.has_value());
     QCOMPARE(readyProxy->type, QNetworkProxy::Socks5Proxy);
     QCOMPARE(readyProxy->port, 1080);
-    QCOMPARE(readyProxy->name, QStringLiteral("socks"));
 }
 
 void SpeedTestServiceInternalTests::detectReadyProxyReturnsNulloptWhenNoPortIsReady()

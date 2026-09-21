@@ -9,7 +9,7 @@
 
 #include "app/ProxySession.h"
 #include "common/RoutingValuePattern.h"
-#include "platform/windows/WindowsSystemProxyService.h"
+#include "platform/ISystemProxyService.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "services/ServerService.h"
 

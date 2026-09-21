@@ -62,8 +62,8 @@ class SpeedTestController;
 class SubscriptionService;
 class SubscriptionUpdateService;
 class TrayController;
-class WindowsAutoRunService;
-class WindowsSystemProxyService;
+class IAutoRunService;
+class ISystemProxyService;
 struct AppBootstrapObjects;
 
 class AppBootstrap {

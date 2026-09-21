@@ -32,6 +32,7 @@
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingProfiles.h"
+#include "platform/windows/WindowsSystemProxyService.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "services/CoreUpdateService.h"

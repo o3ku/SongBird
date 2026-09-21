@@ -1,5 +1,6 @@
 #include "services/SpeedTestWorker.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QMap>
 #include <QMetaObject>
@@ -91,7 +92,7 @@ void SpeedTestWorker::runBatch(
         }
         const QString serverName = items[index].displayName;
         emit logGenerated(QStringLiteral("URL Test: %1").arg(serverName));
-        const QString result = QStringLiteral("Unsupported");
+        const QString result = QCoreApplication::translate("SpeedTestController", "Unsupported");
         ++completed;
         emit testResultReady(items[index].indexId, result);
         emit logGenerated(QStringLiteral("URL Test result | %1 -> %2").arg(serverName, result));
@@ -186,11 +187,11 @@ void SpeedTestWorker::runFallbackGroup(
         try {
             result = pendingItem.future.get();
         } catch (...) {
-            result = QStringLiteral("Failed");
+            result = QCoreApplication::translate("SpeedTestController", "Failed");
         }
 
         if (result.trimmed().isEmpty()) {
-            result = QStringLiteral("Failed");
+            result = QCoreApplication::translate("SpeedTestController", "Failed");
         }
 
         ++completed;
@@ -225,10 +226,10 @@ void SpeedTestWorker::runFallbackGroup(
             serverName,
             std::async(std::launch::async, [this, item, &probeConfigTemplate, &urlTestUrl]() -> QString {
                 if (item.configType == ConfigType::Custom) {
-                    return QStringLiteral("Unsupported");
+                    return QCoreApplication::translate("SpeedTestController", "Unsupported");
                 }
                 if (cancelled_.load()) {
-                    return QStringLiteral("Cancelled");
+                    return QCoreApplication::translate("SpeedTestController", "Cancelled");
                 }
                 return RuntimeRunner::runUrlTest(
                     probeConfigTemplate,

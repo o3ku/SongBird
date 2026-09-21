@@ -17,6 +17,10 @@ enum class WriteFailureStage {
 struct WriteResult {
     bool ok = false;
     WriteFailureStage stage = WriteFailureStage::None;
+    // What the OS said went wrong, when it said anything ("Permission denied", "No such file or
+    // directory"). Empty on success, and empty when the failure produced no message of its own --
+    // so treat it as extra detail, never as the whole reason.
+    QString errorString;
 };
 
 // Atomically writes `content` to `path` via QSaveFile. Callers own the
@@ -29,15 +33,15 @@ inline WriteResult writeFileAtomically(
 {
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | textFlag)) {
-        return {false, WriteFailureStage::Open};
+        return {false, WriteFailureStage::Open, file.errorString()};
     }
     if (file.write(content) != content.size()) {
-        return {false, WriteFailureStage::Write};
+        return {false, WriteFailureStage::Write, file.errorString()};
     }
     if (!file.commit()) {
-        return {false, WriteFailureStage::Commit};
+        return {false, WriteFailureStage::Commit, file.errorString()};
     }
-    return {true, WriteFailureStage::None};
+    return {true, WriteFailureStage::None, {}};
 }
 
 } // namespace JsonFile

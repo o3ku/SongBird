@@ -1,5 +1,6 @@
 #include "subscription/SubscriptionSingBoxParser.h"
 
+#include <QCoreApplication>
 #include <QSet>
 
 #include "common/PortValidator.h"
@@ -29,7 +30,9 @@ bool isNonProxyOutboundType(const QString& type)
 void recordSkipped(QStringList* skippedTypes, const QString& type)
 {
     if (skippedTypes != nullptr && !isNonProxyOutboundType(type)) {
-        skippedTypes->append(type.trimmed().isEmpty() ? QStringLiteral("(no type)") : type);
+        skippedTypes->append(type.trimmed().isEmpty()
+                                  ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
+                                  : type);
     }
 }
 

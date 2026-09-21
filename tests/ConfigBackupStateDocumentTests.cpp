@@ -14,6 +14,7 @@ private slots:
     void stateConfigPathUsesPrimaryBaseName();
     void mergeStateIntoPrimaryCopiesUiAndMatchingServerState();
     void extractStateFromMergedRootRemovesStateOnlyFields();
+    void writeJsonObjectNamesTheFileAndTheStepThatFailed();
 };
 
 void ConfigBackupStateDocumentTests::stateConfigPathUsesPrimaryBaseName()
@@ -111,6 +112,26 @@ void ConfigBackupStateDocumentTests::extractStateFromMergedRootRemovesStateOnlyF
     QCOMPARE(
         serverStates.at(0).toObject().value(QStringLiteral("testResult")).toString(),
         QStringLiteral("88ms"));
+}
+
+void ConfigBackupStateDocumentTests::writeJsonObjectNamesTheFileAndTheStepThatFailed()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    // A path whose parent directory does not exist: QSaveFile cannot create its temporary file,
+    // so the write fails at the open step rather than the write or commit step.
+    const QString missingParentPath = QDir(directory.path()).filePath(QStringLiteral("no-such-dir/state.json"));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("ui"), QJsonObject{});
+    const OperationResult result = ConfigBackupStateDocument::writeJsonObject(missingParentPath, root);
+
+    // The caller cannot act on a bare false: it needs to know which file failed and at which step,
+    // otherwise the user is told only that "the backup could not be written".
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("Failed to open")));
+    QVERIFY(result.message.contains(QDir::toNativeSeparators(missingParentPath)));
 }
 
 QTEST_MAIN(ConfigBackupStateDocumentTests)

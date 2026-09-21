@@ -114,10 +114,12 @@ OperationResult ServerService::updateServer(Config& config, const QString& index
     return OperationResult::ok(QCoreApplication::translate("ServerService", "Server updated."));
 }
 
-OperationResult ServerService::removeServers(Config& config, const QList<QString>& indexIds)
+ServerService::RemovalOutcome ServerService::removeServers(Config& config, const QList<QString>& indexIds)
 {
     if (indexIds.isEmpty()) {
-        return OperationResult::ok(QCoreApplication::translate("ServerService", "No server was selected."));
+        return {
+            OperationResult::ok(QCoreApplication::translate("ServerService", "No server was selected.")),
+            false};
     }
 
     QSet<QString> removedIds;
@@ -147,14 +149,41 @@ OperationResult ServerService::removeServers(Config& config, const QList<QString
     }
 
     if (!repository_.save(config)) {
-        return repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after removing server(s)."));
+        // Nothing was persisted, so the removal did not happen: `applied` stays false and callers
+        // must not act on the in-memory edit.
+        return {
+            repository_.saveFailureResult(QCoreApplication::translate("ServerService", "Failed to save configuration after removing server(s).")),
+            false};
     }
 
+    QStringList cleanupFailures;
     for (const QString& address : removedCustomAddresses) {
-        customConfigStore_.removeManagedConfig(address);
+        const OperationResult cleanup = customConfigStore_.removeManagedConfig(address);
+        if (!cleanup.success) {
+            cleanupFailures.append(cleanup.message);
+        }
     }
 
-    return OperationResult::ok(QCoreApplication::translate("ServerService", "Server selection removed."));
+    if (!cleanupFailures.isEmpty()) {
+        // The servers are gone from the saved config, but a managed file survived. Report it in the
+        // same "context + reason" shape the repository failures use, rather than claiming a clean
+        // removal and leaving the file behind unmentioned -- and report `applied` = true, because the
+        // two facts drive different decisions: the user hears about the leaked file, while the caller
+        // still has to stop or reload a core that was running the server that is now gone.
+        return {
+            OperationResult::fail(
+                QStringLiteral("%1 %2")
+                    .arg(
+                        QCoreApplication::translate(
+                            "ServerService",
+                            "Server selection removed, but its managed custom config files could not all be deleted."),
+                        cleanupFailures.join(QLatin1Char(' ')))),
+            true};
+    }
+
+    return {
+        OperationResult::ok(QCoreApplication::translate("ServerService", "Server selection removed.")),
+        true};
 }
 
 OperationResult ServerService::moveServers(Config& config, const QList<QString>& indexIds, ServerMoveOperation operation)

@@ -112,7 +112,7 @@ QString LogListModel::normalizeLine(const QString& text)
         return text;
     }
 
-    return text.left(kMaxLogLineCharacters) + QStringLiteral(" ... [truncated]");
+    return text.left(kMaxLogLineCharacters) + tr(" ... [truncated]");
 }
 
 int LogListModel::computeVisualLineCount(const QString& text) const

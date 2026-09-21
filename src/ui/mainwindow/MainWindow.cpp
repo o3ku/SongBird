@@ -336,44 +336,6 @@ bool MainWindow::requestExit()
     return true;
 }
 
-void MainWindow::setProxyEnabled(bool enabled)
-{
-    systemProxyApplied_ = enabled;
-    updateRuntimeUiState();
-}
-
-void MainWindow::setProxyUiState(ProxyUiState state)
-{
-    proxyUiState_ = state;
-    updateRuntimeUiState();
-}
-
-void MainWindow::setCurrentServerName(const QString& name)
-{
-    currentServerName_ = name.trimmed();
-    updateStatusPresentation(true);
-}
-
-void MainWindow::setCurrentServerLocation(const QString& location)
-{
-    currentServerLocation_ = location.trimmed();
-    updateStatusPresentation();
-    syncProxyToolbarController();
-}
-
-void MainWindow::setCurrentServerWarning(const QString& warning)
-{
-    currentServerWarning_ = warning.trimmed();
-    updateStatusPresentation();
-}
-
-void MainWindow::setRoutingSummary(const QString& routingText, const QString& listenText)
-{
-    routingSummary_ = routingText.trimmed();
-    listenSummary_ = listenText.trimmed();
-    updateStatusPresentation();
-}
-
 void MainWindow::setSubscriptionUpdateRunning(bool running)
 {
     backgroundTaskDescription_ = running ? tr("Updating subscriptions...") : QString();
@@ -445,16 +407,9 @@ void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
     routingSummary_ = snapshot.routingSummary.trimmed();
     listenSummary_ = snapshot.listenSummary.trimmed();
     proxyUiState_ = snapshot.proxyUiState;
-    systemProxyApplied_ = snapshot.systemProxyApplied;
 
     updateActionState();
     updateStatusPresentation(true);
-}
-
-void MainWindow::setTunEnabled(bool enabled)
-{
-    tunEnabled_ = enabled;
-    updateRuntimeUiState();
 }
 
 void MainWindow::restoreUiState(const Config& config)
@@ -472,7 +427,6 @@ void MainWindow::restoreUiState(const Config& config)
         sharePanel_->setPreviewVisible(qrPreviewVisible_);
     }
     proxyUiState_ = ProxyUiState::Idle;
-    systemProxyApplied_ = false;
     tunEnabled_ = config.tun().tunModeItem.enableTun;
     updateRuntimeUiState();
     updateQrPanelActionText();

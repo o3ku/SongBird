@@ -1073,6 +1073,9 @@ void EndToEndSmokeTests::subscriptionToGoogleSmoke()
     QVERIFY2(availabilityResult.success, qPrintable(availabilityResult.message));
 
     ScopedSystemProxyRestore restoreSystemProxy;
+    // Deliberately the concrete service, not ISystemProxyService: this test's whole point is to
+    // prove the real registry write takes effect, so substituting a stand-in would test nothing.
+    // The injectable seam exists for the failure branch, which this test cannot reach.
     WindowsSystemProxyService systemProxyService;
     QVERIFY2(
         systemProxyService.update(

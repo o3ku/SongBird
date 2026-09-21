@@ -22,7 +22,7 @@
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
 #include "persistence/JsonConfigRepository.h"
-#include "platform/windows/WindowsSystemProxyService.h"
+#include "platform/ISystemProxyService.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
 #include "services/ServerService.h"
@@ -182,7 +182,7 @@ private:
     std::unique_ptr<FunctionRuntimeEnvironment> runtimeEnvironment_;
     std::unique_ptr<FunctionProxyActivationCoordinator> activationCoordinator_;
     std::unique_ptr<ProxySession> proxySession_;
-    std::unique_ptr<WindowsSystemProxyService> systemProxyService_;
+    std::unique_ptr<ISystemProxyService> systemProxyService_;
 
     QList<CoreType> existingCoreTypes_;
     QList<AutoNodeEvaluation> evaluations_;

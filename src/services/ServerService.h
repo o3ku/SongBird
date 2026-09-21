@@ -14,10 +14,27 @@ class ServerService {
 public:
     ServerService(IConfigRepository& repository, QString customConfigDirectory = {});
 
+    // What removeServers() reports. Removing servers and deleting the managed custom config files
+    // they used are two steps with two failure modes, so a single bool could not describe both:
+    //
+    //   applied -- the removal itself took effect and was persisted. False only when there was
+    //              nothing to remove or the config could not be saved.
+    //   result  -- what the user should be told. It is a failure when a managed config file
+    //              survived the cleanup, even though `applied` is true in that case.
+    //
+    // Callers that act on "the server list changed" (stopping or reloading the core, refreshing the
+    // window) must key off `applied`: keying off `result.success` skipped that work whenever only
+    // the cleanup failed, which left a running core proxying through a server the user had just
+    // deleted.
+    struct RemovalOutcome {
+        OperationResult result;
+        bool applied = false;
+    };
+
     QList<VmessItem> list(const Config& config) const;
     OperationResult addServer(Config& config, const VmessItem& item);
     OperationResult updateServer(Config& config, const QString& indexId, const VmessItem& item);
-    OperationResult removeServers(Config& config, const QList<QString>& indexIds);
+    RemovalOutcome removeServers(Config& config, const QList<QString>& indexIds);
     OperationResult moveServers(Config& config, const QList<QString>& indexIds, ServerMoveOperation operation);
     OperationResult reorderServers(Config& config, const QList<QString>& orderedIndexIds);
     OperationResult setDefaultServer(Config& config, const QString& indexId);

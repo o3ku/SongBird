@@ -1,5 +1,7 @@
 #include "auto/AutoCoordinatorLogic.h"
 
+#include <QCoreApplication>
+
 #include <algorithm>
 
 #include "services/SubscriptionService.h"
@@ -31,7 +33,7 @@ QString evaluationStateText(const AutoNodeEvaluation& evaluation)
     if (evaluation.available) {
         return QStringLiteral("%1 %2 ms").arg(evaluation.countryDisplay).arg(evaluation.latencyMs);
     }
-    return evaluation.error.trimmed().isEmpty() ? QStringLiteral("Failed") : evaluation.error.trimmed();
+    return evaluation.error.trimmed().isEmpty() ? QCoreApplication::translate("SongBirdAuto", "Failed") : evaluation.error.trimmed();
 }
 
 QString firstCountryWithNodesOrFirst(const QList<AutoCountrySummary>& countries)

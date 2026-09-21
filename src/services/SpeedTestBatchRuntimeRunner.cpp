@@ -1,5 +1,6 @@
 #include "services/SpeedTestBatchRuntimeRunner.h"
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -208,7 +209,7 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         const BatchConfig::ProbeEntry probeEntry = entry;
         futures.push_back(std::async(std::launch::async, [probeEntry, &cancelled]() -> QString {
             if (cancelled.load()) {
-                return QStringLiteral("Cancelled");
+                return QCoreApplication::translate("SpeedTestController", "Cancelled");
             }
             const SpeedTestServiceInternal::UrlProbeResult probeResult = UrlProbe::probeSocksWithRetry(
                 probeEntry.socksPort,
@@ -224,10 +225,10 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         try {
             result = futures[i].get();
         } catch (...) {
-            result = QStringLiteral("Failed");
+            result = QCoreApplication::translate("SpeedTestController", "Failed");
         }
         if (result.trimmed().isEmpty()) {
-            result = QStringLiteral("Failed");
+            result = QCoreApplication::translate("SpeedTestController", "Failed");
         }
         if (!cancelled.load()) {
             log(QStringLiteral("URL Test result | %1 -> %2").arg(entries[i].serverName, result));

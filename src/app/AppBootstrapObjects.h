@@ -41,8 +41,8 @@ class SystemProxyCoordinator;
 class TrayController;
 class TunModeCoordinator;
 class TunRuntimeService;
-class WindowsAutoRunService;
-class WindowsSystemProxyService;
+class IAutoRunService;
+class ISystemProxyService;
 
 struct AppBootstrapObjects {
     ~AppBootstrapObjects();
@@ -75,8 +75,8 @@ struct AppBootstrapObjects {
     std::unique_ptr<TunRuntimeService> tunRuntimeService;
     std::unique_ptr<RuntimeState> runtimeState;
     std::unique_ptr<QtCoreProcessHost> auxiliaryCoreProcessHost;
-    std::unique_ptr<WindowsAutoRunService> autoRunService;
-    std::unique_ptr<WindowsSystemProxyService> systemProxyService;
+    std::unique_ptr<IAutoRunService> autoRunService;
+    std::unique_ptr<ISystemProxyService> systemProxyService;
     std::unique_ptr<BackgroundTaskCoordinator> backgroundTasks;
     std::unique_ptr<BackgroundThreadTracker> backgroundThreadTracker;
     std::unique_ptr<ConfigBackupCoordinator> configBackupCoordinator;

@@ -1,6 +1,7 @@
 #include "subscription/SubscriptionContentParser.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -28,7 +29,9 @@ QString SubscriptionParseReport::skippedSummary() const
         }
     }
 
-    return QStringLiteral("skipped %1 node(s): %2")
+    // Reaches the user: SubscriptionUpdateService appends this to the "Imported N server(s)"
+    // message via appendSkippedSummary(), so it is prose in the log panel, not a diagnostic.
+    return QCoreApplication::translate("SubscriptionContentParser", "skipped %1 node(s): %2")
         .arg(skippedTypes.size())
         .arg(distinctTypes.join(QStringLiteral(", ")));
 }

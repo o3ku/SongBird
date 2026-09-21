@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -60,12 +61,12 @@ QString compactLatencyText(qint64 latencyMs)
 QString availabilityText(const AutoNodeEvaluation& evaluation)
 {
     if (!evaluation.tested) {
-        return QStringLiteral("Pending");
+        return QCoreApplication::translate("SongBirdAutoWindow", "Pending");
     }
     if (evaluation.available) {
-        return QStringLiteral("OK");
+        return QCoreApplication::translate("SongBirdAutoWindow", "OK");
     }
-    return evaluation.error.trimmed().isEmpty() ? QStringLiteral("Failed") : evaluation.error.trimmed();
+    return evaluation.error.trimmed().isEmpty() ? QCoreApplication::translate("SongBirdAutoWindow", "Failed") : evaluation.error.trimmed();
 }
 
 int evaluationSortRank(const AutoNodeEvaluation& evaluation)

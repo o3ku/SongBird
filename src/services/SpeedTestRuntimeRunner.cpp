@@ -1,5 +1,6 @@
 #include "services/SpeedTestRuntimeRunner.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -44,15 +45,15 @@ QString runUrlTest(
 {
     const QString serverName = item.displayName;
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
-        return QStringLiteral("Core missing");
+        return QCoreApplication::translate("SpeedTestController", "Core missing");
     }
 
     if (cancelled.load()) {
-        return QStringLiteral("Cancelled");
+        return QCoreApplication::translate("SpeedTestController", "Cancelled");
     }
     const PortPool::Ports ports = PortPool::takeAvailable();
     if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
-        return QStringLiteral("Port busy");
+        return QCoreApplication::translate("SpeedTestController", "Port busy");
     }
     struct ScopedProxyPortRelease
     {
@@ -68,7 +69,7 @@ QString runUrlTest(
 
     QTemporaryDir temporaryDirectory;
     if (!temporaryDirectory.isValid()) {
-        return QStringLiteral("Temp dir failed");
+        return QCoreApplication::translate("SpeedTestController", "Temp dir failed");
     }
 
     Config runtimeConfig = probeConfigTemplate;
@@ -95,7 +96,7 @@ QString runUrlTest(
     }
     coreProcess.start();
     if (!coreProcess.waitForStarted(kRuntimeStartupTimeoutMs)) {
-        const QString errorText = cancelled.load() ? QStringLiteral("Cancelled") : UrlProbe::normalizeErrorText(coreProcess.errorString());
+        const QString errorText = cancelled.load() ? QCoreApplication::translate("SpeedTestController", "Cancelled") : UrlProbe::normalizeErrorText(coreProcess.errorString());
         log(QStringLiteral("URL Test start failed | %1 | %2").arg(serverName, errorText));
         return errorText;
     }
@@ -113,7 +114,7 @@ QString runUrlTest(
             : QProcess::NormalExit;
         RuntimeProcess::stopProcess(coreProcess);
         if (cancelled.load()) {
-            return QStringLiteral("Cancelled");
+            return QCoreApplication::translate("SpeedTestController", "Cancelled");
         }
         const QString outputSummary = RuntimeProcess::summarizeProcessOutput(output);
         if (exitedBeforeReady) {
@@ -125,8 +126,8 @@ QString runUrlTest(
                     .arg(exitCode)
                     .arg(statusText, outputSummary));
             return output.isEmpty()
-                ? QStringLiteral("Proxy exited before listening (code %1)").arg(exitCode)
-                : QStringLiteral("Proxy exited before listening: %1").arg(UrlProbe::normalizeErrorText(output));
+                ? QCoreApplication::translate("SpeedTestController", "Proxy exited before listening (code %1)").arg(exitCode)
+                : QCoreApplication::translate("SpeedTestController", "Proxy exited before listening: %1").arg(UrlProbe::normalizeErrorText(output));
         }
 
         log(QStringLiteral("URL Test startup timeout | %1 | output=%2")
@@ -136,8 +137,8 @@ QString runUrlTest(
                     .arg(serverName, RuntimeProcess::summarizeProcessOutput(runtimeConfigPreview)));
         }
         return output.isEmpty()
-            ? QStringLiteral("Proxy startup timeout (no core output)")
-            : QStringLiteral("Proxy startup timeout: %1").arg(UrlProbe::normalizeErrorText(output));
+            ? QCoreApplication::translate("SpeedTestController", "Proxy startup timeout (no core output)")
+            : QCoreApplication::translate("SpeedTestController", "Proxy startup timeout: %1").arg(UrlProbe::normalizeErrorText(output));
     }
     const SpeedTestServiceInternal::UrlProbeResult probeResult = UrlProbe::probeReadyProxyWithRetry(
         *readyProxy,

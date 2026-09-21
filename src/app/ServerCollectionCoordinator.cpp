@@ -17,10 +17,13 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
     const QString activeServerId = activeServer.has_value() ? activeServer->indexId : QString();
     const bool activeServerRemoved = !activeServerId.isEmpty() && indexIds.contains(activeServerId);
 
-    const OperationResult result = deps_.serverService.removeServers(deps_.config, indexIds);
-    appendResult(result);
+    const ServerService::RemovalOutcome removal = deps_.serverService.removeServers(deps_.config, indexIds);
+    appendResult(removal.result);
     syncWindow();
-    if (!result.success || !activeServerRemoved || !isCoreRunning()) {
+    // Gate the core work on `applied`, not on `removal.result.success`: a cleanup failure makes the
+    // result a failure while the servers are gone from the saved config all the same, and returning
+    // early there would leave the core running the server the user just removed.
+    if (!removal.applied || !activeServerRemoved || !isCoreRunning()) {
         return;
     }
 

@@ -9,15 +9,15 @@
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 
+class IAutoRunService;
 class ServerService;
-class WindowsAutoRunService;
 
 class SettingsApplyCoordinator final {
 public:
     struct Dependencies {
         Config& config;
         ServerService& serverService;
-        WindowsAutoRunService* autoRunService = nullptr;
+        IAutoRunService* autoRunService = nullptr;
     };
 
     struct PlatformCallbacks {

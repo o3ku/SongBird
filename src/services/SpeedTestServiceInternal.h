@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QCoreApplication>
 #include <QNetworkProxy>
 #include <QRegularExpression>
 #include <QString>
@@ -18,7 +19,6 @@ struct ReadyProxy
 {
     QNetworkProxy::ProxyType type = QNetworkProxy::DefaultProxy;
     int port = 0;
-    QString name;
 };
 
 enum class UrlProbeStatus {
@@ -97,14 +97,14 @@ inline std::optional<ReadyProxy> detectReadyProxy(
     const std::function<bool(int)>& isPortReady)
 {
     if (isPortReady(httpPort)) {
-        return ReadyProxy{QNetworkProxy::HttpProxy, httpPort, QStringLiteral("http")};
+        return ReadyProxy{QNetworkProxy::HttpProxy, httpPort};
     }
 
     // Prefer the local HTTP inbound because browser/system-proxy traffic uses
     // that path, so URL test results better match the "set current server"
     // experience seen by users.
     if (isPortReady(socksPort)) {
-        return ReadyProxy{QNetworkProxy::Socks5Proxy, socksPort, QStringLiteral("socks")};
+        return ReadyProxy{QNetworkProxy::Socks5Proxy, socksPort};
     }
 
     return std::nullopt;
@@ -139,7 +139,7 @@ inline UrlProbeResult classifyUrlProbeResult(
     }
 
     if (timedOut) {
-        return UrlProbeResult{UrlProbeStatus::Timeout, -1, QStringLiteral("Timeout")};
+        return UrlProbeResult{UrlProbeStatus::Timeout, -1, QCoreApplication::translate("SpeedTestController", "Timeout")};
     }
 
     return UrlProbeResult{UrlProbeStatus::Failed, latencyMs, errorText.trimmed()};
@@ -151,13 +151,13 @@ inline QString formatUrlProbeResult(const UrlProbeResult& result)
     case UrlProbeStatus::Accessible:
         return result.latencyMs >= 0
             ? QStringLiteral("%1 ms").arg(result.latencyMs)
-            : QStringLiteral("Blocked");
+            : QCoreApplication::translate("SpeedTestController", "Blocked");
     case UrlProbeStatus::Timeout:
-        return QStringLiteral("Timeout");
+        return QCoreApplication::translate("SpeedTestController", "Timeout");
     case UrlProbeStatus::Failed:
     default:
         return result.errorText.isEmpty()
-            ? QStringLiteral("Blocked")
+            ? QCoreApplication::translate("SpeedTestController", "Blocked")
             : result.errorText;
     }
 }

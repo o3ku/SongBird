@@ -1,5 +1,6 @@
 #include "services/SpeedTestUrlProbe.h"
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QHostAddress>
@@ -122,7 +123,7 @@ QString normalizeUpstreamProxyErrorText(const VmessItem& server, const QString& 
     if (server.configType == ConfigType::Socks
         && isIpLiteral(server.address)
         && normalized.contains(QStringLiteral("host not found"), Qt::CaseInsensitive)) {
-        return QStringLiteral("SOCKS handshake failed");
+        return QCoreApplication::translate("SpeedTestController", "SOCKS handshake failed");
     }
 
     return normalized;
@@ -136,12 +137,12 @@ QString normalizeErrorText(const QString& value)
 {
     const QString trimmed = value.trimmed();
     if (trimmed.isEmpty()) {
-        return QStringLiteral("Failed");
+        return QCoreApplication::translate("SpeedTestController", "Failed");
     }
 
     if (trimmed.contains(QStringLiteral("timeout"), Qt::CaseInsensitive)
         || trimmed.contains(QStringLiteral("timed out"), Qt::CaseInsensitive)) {
-        return QStringLiteral("Timeout");
+        return QCoreApplication::translate("SpeedTestController", "Timeout");
     }
 
     const QString firstLine = trimmed.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts).value(0).trimmed();
@@ -208,7 +209,7 @@ SpeedTestServiceInternal::UrlProbeResult probeUpstreamProxyWithRetry(
         return SpeedTestServiceInternal::UrlProbeResult{
             SpeedTestServiceInternal::UrlProbeStatus::Failed,
             -1,
-            QStringLiteral("Unsupported")};
+            QCoreApplication::translate("SpeedTestController", "Unsupported")};
     }
 
     SpeedTestServiceInternal::UrlProbeResult result = probeWithRetry(

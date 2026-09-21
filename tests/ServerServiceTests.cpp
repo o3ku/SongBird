@@ -88,6 +88,9 @@ private slots:
     void removeServerReturnsOkForEmptyList();
     void removeServerReturnsFailureWhenSaveFails();
     void removeCustomServerDeletesManagedConfig();
+    void removeCustomServerSucceedsWhenManagedConfigAlreadyGone();
+    void removeCustomServerLeavesUnmanagedConfigFileOnDisk();
+    void removeCustomServerReportsFailureWhenManagedConfigCannotBeDeleted();
 
     // setDefaultServer
     void setDefaultServerUpdatesCurrentIndexId();
@@ -473,8 +476,9 @@ void ServerServiceTests::removeServerRemovesByIndexId()
         makeServer(kId2, kAddr2, 200),
     });
 
-    const OperationResult result = service_->removeServers(config, {kId1});
-    QVERIFY(result.success);
+    const ServerService::RemovalOutcome outcome = service_->removeServers(config, {kId1});
+    QVERIFY(outcome.result.success);
+    QVERIFY(outcome.applied);
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers.first().indexId, kId2);
 }
@@ -487,8 +491,9 @@ void ServerServiceTests::removeServersRemovesMultiple()
         makeServer(kId3, kAddr3, 300),
     });
 
-    const OperationResult result = service_->removeServers(config, {kId1, kId3});
-    QVERIFY(result.success);
+    const ServerService::RemovalOutcome outcome = service_->removeServers(config, {kId1, kId3});
+    QVERIFY(outcome.result.success);
+    QVERIFY(outcome.applied);
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers.first().indexId, kId2);
 }
@@ -536,8 +541,11 @@ void ServerServiceTests::removeServerReturnsOkForEmptyList()
         makeServer(kId1, kAddr1, 100),
     });
 
-    const OperationResult result = service_->removeServers(config, {});
-    QVERIFY(result.success);
+    const ServerService::RemovalOutcome outcome = service_->removeServers(config, {});
+    // Nothing was selected, so nothing was removed -- and `applied` says so instead of looking like
+    // a removal that took effect.
+    QVERIFY(outcome.result.success);
+    QVERIFY(!outcome.applied);
     QCOMPARE(config.collection().servers.size(), 1);
 }
 
@@ -548,8 +556,11 @@ void ServerServiceTests::removeServerReturnsFailureWhenSaveFails()
         makeServer(kId1, kAddr1, 100),
     });
 
-    const OperationResult result = service_->removeServers(config, {kId1});
-    QVERIFY(!result.success);
+    const ServerService::RemovalOutcome outcome = service_->removeServers(config, {kId1});
+    QVERIFY(!outcome.result.success);
+    // The config write is what makes a removal real: failing it leaves the servers in place, so no
+    // caller may act on the in-memory edit.
+    QVERIFY(!outcome.applied);
 }
 
 void ServerServiceTests::removeCustomServerDeletesManagedConfig()
@@ -576,9 +587,103 @@ void ServerServiceTests::removeCustomServerDeletesManagedConfig()
     const QString managedPath = service.resolveCustomConfigPath(config.collection().servers.first().address);
     QVERIFY(QFileInfo::exists(managedPath));
 
-    const OperationResult result = service.removeServers(config, {indexId});
-    QVERIFY(result.success);
+    const ServerService::RemovalOutcome outcome = service.removeServers(config, {indexId});
+    QVERIFY(outcome.result.success);
+    QVERIFY(outcome.applied);
     QVERIFY(!QFileInfo::exists(managedPath));
+}
+
+void ServerServiceTests::removeCustomServerSucceedsWhenManagedConfigAlreadyGone()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    const QString managedDirectory = QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed"));
+    ServerService service(*mock_, managedDirectory);
+
+    // The managed file is already gone, so the cleanup has nothing to delete. That is a clean
+    // removal, not a failure: reporting it would turn every ordinary delete-after-cleanup into a
+    // spurious error. This is the benign branch of removeManagedConfig().
+    Config config;
+    VmessItem item;
+    item.indexId = kId1;
+    item.configType = ConfigType::Custom;
+    item.address = QStringLiteral("missing-managed-config.json");
+    config.collection().servers.append(item);
+    config.currentIndexId = kId1;
+
+    const ServerService::RemovalOutcome outcome = service.removeServers(config, {kId1});
+
+    QVERIFY(outcome.result.success);
+    QVERIFY(outcome.applied);
+    QVERIFY(outcome.result.message.contains(QStringLiteral("Server selection removed")));
+}
+
+void ServerServiceTests::removeCustomServerLeavesUnmanagedConfigFileOnDisk()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    // A custom config the user pointed at directly, outside managed storage. Removing the server
+    // must leave the user's own file alone -- and must not call that a failure either.
+    const QString userPath = QDir(temporaryDirectory.path()).filePath(QStringLiteral("user-owned.json"));
+    QFile userFile(userPath);
+    QVERIFY(userFile.open(QIODevice::WriteOnly | QIODevice::Text));
+    QVERIFY(userFile.write("{}") > 0);
+    userFile.close();
+
+    ServerService service(*mock_, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+
+    Config config;
+    VmessItem item;
+    item.indexId = kId1;
+    item.configType = ConfigType::Custom;
+    item.address = userPath;
+    config.collection().servers.append(item);
+    config.currentIndexId = kId1;
+
+    const ServerService::RemovalOutcome outcome = service.removeServers(config, {kId1});
+
+    QVERIFY(outcome.result.success);
+    QVERIFY(outcome.applied);
+    QVERIFY(QFileInfo::exists(userPath));
+}
+
+void ServerServiceTests::removeCustomServerReportsFailureWhenManagedConfigCannotBeDeleted()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    const QString managedDirectory = QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed"));
+    ServerService service(*mock_, managedDirectory);
+
+    // A non-empty directory sitting at the managed path is the portable way to make
+    // QFile::remove() fail deterministically: no platform lets a file-deletion call remove a
+    // directory, so the store cannot delete this one.
+    const QString managedPath = QDir(managedDirectory).filePath(QStringLiteral("locked-managed-config.json"));
+    QVERIFY(QDir().mkpath(QDir(managedPath).filePath(QStringLiteral("keep"))));
+
+    Config config;
+    VmessItem item;
+    item.indexId = kId1;
+    item.configType = ConfigType::Custom;
+    item.address = QStringLiteral("locked-managed-config.json");
+    config.collection().servers.append(item);
+    config.currentIndexId = kId1;
+
+    const ServerService::RemovalOutcome outcome = service.removeServers(config, {kId1});
+
+    // The server is gone from the saved config but the file survived, so the user must not be told
+    // this was a clean removal: the result is a failure and it names the file it could not delete.
+    // `applied` is true all the same, because the removal itself was persisted -- that is the fact
+    // the coordinator keys its core handling on, and conflating the two used to leave a core running
+    // a server that had just been deleted.
+    QVERIFY(!outcome.result.success);
+    QVERIFY(outcome.applied);
+    QVERIFY(outcome.result.message.contains(QStringLiteral("could not all be deleted")));
+    QVERIFY(outcome.result.message.contains(QDir::toNativeSeparators(QFileInfo(managedPath).absoluteFilePath())));
+    QVERIFY(config.collection().servers.isEmpty());
+    QVERIFY(QFileInfo::exists(managedPath));
 }
 
 // ---------------------------------------------------------------------------

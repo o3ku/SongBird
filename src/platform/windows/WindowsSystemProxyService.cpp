@@ -47,16 +47,6 @@ bool WindowsSystemProxyService::update(
     return setProxy(proxyServer, proxyExceptions, true);
 }
 
-bool WindowsSystemProxyService::enable(int httpPort, int socksPort, const QString& proxyExceptions, const QString& advancedProtocol) const
-{
-    return update(SystemProxyMode::ForcedChange, httpPort, socksPort, proxyExceptions, advancedProtocol);
-}
-
-bool WindowsSystemProxyService::disable() const
-{
-    return update(SystemProxyMode::ForcedClear, 0, 0, QString(), QString());
-}
-
 bool WindowsSystemProxyService::isEnabled() const
 {
     QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);

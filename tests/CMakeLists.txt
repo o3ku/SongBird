@@ -215,6 +215,60 @@ songbird_add_qt_test(songbird_settings_dialog_apply_plan_tests settings-dialog-a
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+set(SONGBIRD_SETTINGS_APPLY_COORDINATOR_TEST_SOURCES
+    SettingsApplyCoordinatorTests.cpp
+    ../src/app/SettingsApplyCoordinator.h
+    ../src/app/SettingsApplyCoordinator.cpp
+    ../src/app/SettingsDialogApplyPlan.h
+    ../src/app/StartupAdminElevation.h
+    ../src/app/TunAdminMessages.h
+    ../src/app/TunSettingsApplyDecision.h
+    ../src/persistence/IConfigRepository.h
+    ../src/platform/IAutoRunService.h
+    ../src/services/ServerService.h
+    ../src/services/ServerService.cpp
+    ../src/services/ServerCustomConfigStore.h
+    ../src/services/ServerCustomConfigStore.cpp
+    ../src/services/ServerListOperations.h
+    ../src/services/ServerListOperations.cpp
+    ../src/services/SubscriptionService.h
+    ../src/services/SubscriptionService.cpp
+)
+
+songbird_add_qt_test(songbird_settings_apply_coordinator_tests settings-apply-coordinator
+    SOURCES
+        ${SONGBIRD_SETTINGS_APPLY_COORDINATOR_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+set(SONGBIRD_SERVER_COLLECTION_COORDINATOR_TEST_SOURCES
+    ServerCollectionCoordinatorTests.cpp
+    ../src/app/ServerCollectionCoordinator.h
+    ../src/app/ServerCollectionCoordinator.cpp
+    ../src/persistence/IConfigRepository.h
+    ../src/services/ServerService.h
+    ../src/services/ServerService.cpp
+    ../src/services/ServerCustomConfigStore.h
+    ../src/services/ServerCustomConfigStore.cpp
+    ../src/services/ServerListOperations.h
+    ../src/services/ServerListOperations.cpp
+    ../src/services/SubscriptionService.h
+    ../src/services/SubscriptionService.cpp
+)
+
+# Pins the coordinator's reaction to a removal that was applied but leaked a managed config file:
+# ServerService::removeServers() reports that combination as a failure, and gating the core work on
+# that failure used to leave the core running a server the user had just deleted.
+songbird_add_qt_test(songbird_server_collection_coordinator_tests server-collection-coordinator
+    SOURCES
+        ${SONGBIRD_SERVER_COLLECTION_COORDINATOR_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_STARTUP_ADMIN_ELEVATION_TEST_SOURCES
     StartupAdminElevationTests.cpp
 )
@@ -313,8 +367,10 @@ songbird_add_qt_test(songbird_app_bootstrap_tun_runtime_tests app-bootstrap-tun-
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
-    ProxySessionTests.cpp
+# Any target that compiles ProxySession.cpp needs the runtime/backend chain below. It lives in a
+# variable of its own so the system-proxy coordinator tests can reuse it rather than copying ~115
+# lines -- a copy would drift the moment either side gains a file.
+set(SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES
     ../src/common/RoutingValuePattern.h
     ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubReleaseParsing.h
@@ -432,9 +488,41 @@ set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
     ../src/services/GeoResourceDownload.cpp
 )
 
+set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
+    ProxySessionTests.cpp
+    ${SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES}
+)
+
 songbird_add_qt_test(songbird_proxy_session_tests proxy-session-state
     SOURCES
         ${SONGBIRD_PROXY_SESSION_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+# Drives SystemProxyCoordinator through a stand-in ISystemProxyService, which is the only way to
+# reach its failure branch: the real service writes HKCU and cannot be made to refuse a write.
+# It needs ProxySession.cpp because the coordinator also calls into the session on the exit paths,
+# even though the tests under test here (updateMode) do not.
+set(SONGBIRD_SYSTEM_PROXY_COORDINATOR_TEST_SOURCES
+    SystemProxyCoordinatorTests.cpp
+    ../src/app/SystemProxyCoordinator.h
+    ../src/app/SystemProxyCoordinator.cpp
+    ../src/platform/ISystemProxyService.h
+    ../src/services/ServerService.h
+    ../src/services/ServerService.cpp
+    ../src/services/ServerCustomConfigStore.h
+    ../src/services/ServerCustomConfigStore.cpp
+    ../src/services/ServerListOperations.h
+    ../src/services/ServerListOperations.cpp
+    ${SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES}
+)
+
+songbird_add_qt_test(songbird_system_proxy_coordinator_tests system-proxy-coordinator
+    SOURCES
+        ${SONGBIRD_SYSTEM_PROXY_COORDINATOR_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
@@ -908,6 +996,26 @@ set(SONGBIRD_SYSTEM_PROXY_MODE_TEST_SOURCES
 songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
     SOURCES
         ${SONGBIRD_SYSTEM_PROXY_MODE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# ProxyCrashRestartPolicy.cpp used to be compiled only as a member of
+# SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES, where no test case ever referenced it -- so it
+# linked into two binaries and asserted nothing. It is pure decision logic with no I/O, so it
+# gets a small target of its own rather than dragging in the ProxySession chain.
+set(SONGBIRD_PROXY_CRASH_RESTART_POLICY_TEST_SOURCES
+    ProxyCrashRestartPolicyTests.cpp
+    ../src/app/ProxyCrashRestartPolicy.h
+    ../src/app/ProxyCrashRestartPolicy.cpp
+    ../src/app/TunRuntimeState.h
+    ../src/runtime/core/CoreCatalog.h
+)
+
+songbird_add_qt_test(songbird_proxy_crash_restart_policy_tests proxy-crash-restart-policy
+    SOURCES
+        ${SONGBIRD_PROXY_CRASH_RESTART_POLICY_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

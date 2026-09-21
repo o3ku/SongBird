@@ -8,7 +8,7 @@
 #include "app/SettingsDialogApplyPlan.h"
 #include "app/StartupAdminElevation.h"
 #include "app/TunAdminMessages.h"
-#include "platform/windows/WindowsAutoRunService.h"
+#include "platform/IAutoRunService.h"
 #include "services/ServerService.h"
 #include "services/SubscriptionService.h"
 

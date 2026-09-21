@@ -110,6 +110,8 @@ set(SONGBIRD_SOURCES
     domain/models/RoutingRule.h
     domain/models/SubItem.h
     domain/models/VmessItem.h
+    platform/IAutoRunService.h
+    platform/ISystemProxyService.h
     platform/windows/SingleInstanceGuard.h
     platform/windows/SingleInstanceGuard.cpp
     platform/windows/WindowsAutoRunService.h
@@ -523,6 +525,7 @@ set(SONGBIRD_AUTO_SOURCES
     domain/models/RuntimeState.h
     domain/models/RuntimeState.cpp
     domain/models/VmessItem.h
+    platform/ISystemProxyService.h
     platform/windows/WindowsSystemProxyService.h
     platform/windows/WindowsSystemProxyService.cpp
     runtime/CoreConfigPreflight.h

@@ -23,23 +23,23 @@ QString describeWriteFailure(
     const QString& path,
     JsonFile::WriteFailureStage stage)
 {
-    QString step = QStringLiteral("write");
+    const QString target = QDir::toNativeSeparators(path);
+
+    // One complete sentence per step, rather than gluing a step verb and a noun phrase into a
+    // shared "Failed to %1 %2: %3" template. Chinese word order puts the verb and its object the
+    // other way round ("打开配置文件失败"), which swapping parameters cannot express -- the whole
+    // sentence has to be translatable, so each step gets its own source string.
     switch (stage) {
     case JsonFile::WriteFailureStage::Open:
-        step = QStringLiteral("open");
-        break;
-    case JsonFile::WriteFailureStage::Write:
-        step = QStringLiteral("write");
-        break;
+        return QCoreApplication::translate("JsonConfigRepository", "Failed to open %1: %2").arg(label, target);
     case JsonFile::WriteFailureStage::Commit:
-        step = QStringLiteral("commit");
-        break;
+        return QCoreApplication::translate("JsonConfigRepository", "Failed to commit %1: %2").arg(label, target);
+    case JsonFile::WriteFailureStage::Write:
     case JsonFile::WriteFailureStage::None:
         break;
     }
 
-    return QStringLiteral("Failed to %1 %2: %3")
-        .arg(step, label, QDir::toNativeSeparators(path));
+    return QCoreApplication::translate("JsonConfigRepository", "Failed to write %1: %2").arg(label, target);
 }
 
 } // namespace
@@ -79,11 +79,15 @@ bool JsonConfigRepository::save(const Config& config)
     QStringList failures;
     if (!primaryResult.ok) {
         failures.append(describeWriteFailure(
-            QStringLiteral("configuration file"), configPath_, primaryResult.stage));
+            QCoreApplication::translate("JsonConfigRepository", "configuration file"),
+            configPath_,
+            primaryResult.stage));
     }
     if (!stateResult.ok) {
         failures.append(describeWriteFailure(
-            QStringLiteral("configuration state file"), stateConfigPath(), stateResult.stage));
+            QCoreApplication::translate("JsonConfigRepository", "configuration state file"),
+            stateConfigPath(),
+            stateResult.stage));
     }
 
     lastSaveError_ = failures.join(QLatin1Char(' '));
