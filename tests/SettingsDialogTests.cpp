@@ -1285,6 +1285,10 @@ void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsC
     QVERIFY(userAgentCombo->isEditable());
     QCOMPARE(userAgentCombo->findText(QStringLiteral("clash verge rev")), 2);
     QCOMPARE(userAgentCombo->findText(QStringLiteral("loon")), 8);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("mihomo")), 9);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("flclash")), 11);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("nekobox android")), 15);
+    QCOMPARE(userAgentCombo->findText(QStringLiteral("hiddifynext")), 16);
     QCOMPARE(userAgentCombo->objectName(), QStringLiteral("uaCombo"));
     QVERIFY(userAgentCombo->styleSheet().isEmpty());
     QVERIFY(userAgentCombo->lineEdit() != nullptr);
@@ -1292,9 +1296,13 @@ void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsC
     QVERIFY(userAgentCombo->lineEdit()->styleSheet().isEmpty());
 
     QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(userAgentCombo->currentText()),
-             QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+             QStringLiteral("mihomo/1.19.28"));
     QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(QStringLiteral("v2rayn")),
              QStringLiteral("v2rayN/7.10.4"));
+    QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(QStringLiteral("mihomo")),
+             QStringLiteral("mihomo/1.19.28"));
+    QCOMPARE(SubscriptionSettingsPageWidget::resolveUserAgent(QStringLiteral("clash meta")),
+             QStringLiteral("ClashMeta"));
     auto* urlItem = subTable->item(0, 1);
     QVERIFY(urlItem != nullptr);
     urlItem->setText(QStringLiteral("https://example.com/sub"));

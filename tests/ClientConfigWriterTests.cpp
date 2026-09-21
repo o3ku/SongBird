@@ -660,7 +660,7 @@ void ClientConfigWriterTests::generateClientConfigsUsesFallbackUserAgentForLegac
 
     QCOMPARE(
         headers.value(QStringLiteral("User-Agent")).toString(),
-        QStringLiteral("nekobox/5.11.15 (Prefer ClashMeta Format)"));
+        QStringLiteral("mihomo/1.19.28"));
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultUserAgentForLegacyHttpupgradeWhenServerValueMissing()

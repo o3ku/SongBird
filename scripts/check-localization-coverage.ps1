@@ -89,7 +89,18 @@ $allowlist = @{
 
     # fallbackUserAgent() (common/UserAgent.h) -- an HTTP header sent to subscription servers,
     # never rendered. Translating it would change the wire format.
-    'nekobox/5.11.15 (Prefer ClashMeta Format)' = 'HTTP User-Agent header; never shown to the user'
+    # The fallback mirrors Karing's own default client UA, the first entry of
+    # its kUserAgentList (KaringX/karing, setting_manager.dart): Karing sends
+    # mihomo/1.19.28 when no compatible UA is selected. The remaining entries
+    # below are neighboring strings from the same Karing list.
+    'mihomo/1.19.28'                                = 'HTTP User-Agent header; never shown to the user'
+    'clash-verge'                                   = 'HTTP User-Agent header; never shown to the user'
+    'FLClash'                                       = 'HTTP User-Agent header; never shown to the user'
+    'mihomo.party/v2.0.0 (clash.meta)'              = 'HTTP User-Agent header; never shown to the user'
+    'ClashMeta'                                     = 'HTTP User-Agent header; never shown to the user'
+    'v2ray'                                         = 'HTTP User-Agent header; never shown to the user'
+    'NekoBox/Android/1.4.1 (Prefer ClashMeta Format)' = 'HTTP User-Agent header; never shown to the user'
+    'HiddifyNext'                                   = 'HTTP User-Agent header; never shown to the user'
 
     # summarizeProcessOutput() (services/SpeedTestRuntimeProcess.cpp) -- the payload slot of the
     # pipe-delimited URL Test diagnostic lines allowlisted above. Machine data, not a sentence.
