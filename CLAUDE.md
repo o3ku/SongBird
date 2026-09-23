@@ -63,7 +63,9 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 首次运行需从源码编译 Qt5（约 1.5 小时），之后命中 `vcpkg_cache` 缓存。缓存用 `cache/restore` + `cache/save`（`if: always()`）分离，确保构建失败时不丢弃已编译产物。
 
-[.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定，其中版本确认与「构建/测试失败不得打 tag 或发布」的 guardrail 仍然适用。注意该文档描述的是本机构建流程，实际构建已迁移到 CI。
+[.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定：版本确认、翻译校验、以及「构建/测试失败不得打 tag 或发布」。该文档以 CI 为唯一正式发布路径——推 `main` 预热 vcpkg 缓存并过门禁，推 `v*` tag 由 CI 构建并发布；本机构建只作为 CI 不可用时的备案路径。
+
+发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件），`SongBirdAuto.exe` 目前不随 Release 分发。任何新增或修改 `.github/workflows/` 下文件的推送都需要 `workflow` token scope，缺失时用 `gh auth refresh -h github.com -s workflow` 补授权。
 
 版本号权威源是根 [CMakeLists.txt](CMakeLists.txt) 的 `project(SongBird VERSION x.y.z)`，经 `src/CMakeLists.txt` 以 `SONGBIRD_APP_VERSION` 宏注入两个 target。两个 `main.cpp` 里的 `#ifndef SONGBIRD_APP_VERSION` fallback 在正常构建中不可达（宏总是被定义），仅为避免源码中出现互相矛盾的版本数字而保持同步。
 

@@ -7,6 +7,22 @@ description: SongBird repository release workflow for D:\sss\v2rayq. Use when th
 
 Use this skill only for the SongBird repository at `D:\sss\v2rayq`. Follow the workflow in order. Do not skip the explicit version confirmation step.
 
+## Release Path
+
+GitHub Actions is the only official release path. Pushing a `v*` tag makes
+`.github/workflows/release.yml` build the static `x64-windows-static-md` binary, run
+`ctest -LE smoke`, and publish `songbird.exe` with `gh release create`. Do not publish
+from a local build unless the "Fallback: publish without CI" section applies.
+
+What CI guarantees that a local build does not:
+
+- The published asset is the static Qt build with the compiled `.qm` translations embedded
+  into the executable, so every release ships the same kind of artifact. A local
+  `msvc-release` binary depends on the developer machine's Qt and vcpkg setup instead.
+- The test gate is structural. The publish step only runs after `ctest -LE smoke` passes.
+- The tagged commit is always what gets built, so a stale local `build\msvc-release` tree
+  cannot leak into a release.
+
 ## Release Workflow
 
 1. Inspect the current version and release scope.
@@ -42,56 +58,88 @@ Use this skill only for the SongBird repository at `D:\sss\v2rayq`. Follow the w
      ```
    - Fill all unfinished Chinese translations before continuing.
 
-5. Build release and run tests.
-   - Configure and build release:
-     ```powershell
-     cmake --preset msvc-release
-     cmake --build --preset msvc-release --parallel
-     ```
+5. Run the test suite locally before tagging.
+   - CI runs `ctest -LE smoke` and refuses to publish when it fails, but a local run
+     catches the failure before a tag exists and has to be re-pushed.
    - Run the repository test suite. The normal test flow uses the debug preset with tests enabled:
      ```powershell
      cmake --preset msvc-debug -DBUILD_TEST=ON
      cmake --build --preset msvc-debug --parallel
      ctest --test-dir build/msvc-debug --output-on-failure
      ```
-   - If a release test preset exists or the user specifically requires release tests, also run the release test target/CTest directory.
-   - Stop and report failures instead of publishing.
+   - The `smoke`-labelled tests download cores and subscriptions and start real processes,
+     so they are excluded here and in CI.
+   - Stop and report failures instead of tagging.
 
-6. Commit, tag, and push.
+6. Commit and push `main` before tagging.
    - Review `git status --short` and avoid staging unrelated user-local data.
-   - Use a concise imperative commit title such as `Release 2.2.2`.
-   - Commit all intended release changes.
-   - Create an annotated tag `v<version>`:
+   - Use a concise imperative commit title such as `Release 2.4.3`.
+   - Commit all intended release changes, then push:
+     ```powershell
+     git push origin main
+     ```
+   - This step is not optional. A `main` push builds without publishing and writes the
+     vcpkg cache under the default-branch scope, which is the only scope a tag build can
+     read from. Skipping it makes the next tag build compile Qt5 from source (~1.5h).
+   - Any push that adds or edits a file under `.github/workflows/` needs the `workflow`
+     token scope. If the push is rejected for that reason, run
+     `gh auth refresh -h github.com -s workflow` and retry.
+   - If the remote rejects SSH, inspect `git remote -v` and `git branch --show-current`
+     first. This repository stays reachable over HTTPS on networks that block port 22.
+
+7. Tag and let CI publish.
+   - Create an annotated tag `v<version>` and push it:
      ```powershell
      git tag -a v<version> -m "Release <version>"
-     ```
-   - Push code and tag:
-     ```powershell
-     git push
      git push origin v<version>
      ```
-   - If the remote or branch requires a different push command, inspect `git remote -v` and `git branch --show-current` first.
+   - Pushing the tag runs `.github/workflows/release.yml`, which restores the vcpkg cache,
+     builds the static Qt5 release, runs `ctest -LE smoke`, stages `build/src/SongBird.exe`
+     as `songbird.exe`, and publishes the release.
+   - Do not call `gh release create` on this path. CI owns the asset, and a hand-made
+     release bypasses the test gate.
 
-7. Publish GitHub release with `songbird.exe`.
-   - Verify the release binary exists at `build\msvc-release\src\SongBird.exe`.
-   - Copy it to a lowercase release asset name:
+8. Verify the published release.
+   - Confirm the release exists with `songbird.exe` attached:
      ```powershell
-     Copy-Item build\msvc-release\src\SongBird.exe build\msvc-release\songbird.exe -Force
+     gh release view v<version>
      ```
-   - Publish with GitHub CLI:
-     ```powershell
-     gh release create v<version> build\msvc-release\songbird.exe --title "SongBird <version>" --generate-notes
-     ```
-   - If the release already exists, upload or replace the asset explicitly:
-     ```powershell
-     gh release upload v<version> build\msvc-release\songbird.exe --clobber
-     ```
-   - If `gh` is unavailable or not authenticated, stop and tell the user exactly what is missing.
+   - Confirm the publisher on the release page is `github-actions`. Any other publisher
+     means the release did not go through CI.
+   - Report the version, tag, commit hash, release asset, and the tests that passed.
+
+## Fallback: publish without CI
+
+Use this only when CI cannot run at all: an Actions outage or quota, an urgent hotfix that
+cannot wait for a build, or a fork with Actions disabled. The asset produced this way is
+built from the local Qt and vcpkg setup rather than the static CI build, so say so
+explicitly when reporting the release.
+
+1. Run steps 1 through 5 unchanged.
+2. Build the local release binary:
+   ```powershell
+   cmake --preset msvc-release
+   cmake --build --preset msvc-release --parallel
+   ctest --test-dir build/msvc-release --output-on-failure
+   ```
+3. Commit, push, tag, and publish with GitHub CLI. CI is unavailable on this path, so the
+   tag push does not produce a release on its own:
+   ```powershell
+   Copy-Item build\msvc-release\src\SongBird.exe build\msvc-release\songbird.exe -Force
+   gh release create v<version> build\msvc-release\songbird.exe --title "SongBird <version>" --generate-notes
+   ```
+4. If the release already exists, upload or replace the asset explicitly:
+   ```powershell
+   gh release upload v<version> build\msvc-release\songbird.exe --clobber
+   ```
+5. If `gh` is unavailable or not authenticated, stop and tell the user exactly what is missing.
 
 ## Guardrails
 
 - Keep the user informed before destructive or externally visible actions.
 - Do not create a tag, push, or publish a GitHub release if build or tests fail.
+- Do not run `gh release create` or `gh release upload` on the normal path. CI creates the release, and a hand-made release skips the test gate.
 - Do not include local config files, generated runtime configs, secrets, subscriptions, or user state files in the commit.
 - Use non-interactive git commands where possible.
+- Do not claim `SongBirdAuto.exe` was published. The release asset is `SongBird.exe` only.
 - After publishing, report the version, tag, commit hash, release asset, and verification commands that passed.

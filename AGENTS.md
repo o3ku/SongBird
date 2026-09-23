@@ -21,7 +21,7 @@ Use the checked-in CMake presets on Windows.
 - `cmake --preset msvc-debug -DBUILD_TEST=ON` reconfigures the debug build with test targets enabled.
 - `cmake --build --preset msvc-debug --parallel` builds the enabled test targets.
 - `ctest --test-dir build/msvc-debug --output-on-failure` runs the full Qt Test suite.
-- `pwsh -File scripts/package-windows.ps1 -QtPrefixPath <Qt-path>` creates a Windows package.
+- Releases are built and published by GitHub Actions, not locally: pushing a `v*` tag runs `.github/workflows/release.yml`, which installs the static Qt5, runs `ctest -LE smoke`, and calls `gh release create` with `songbird.exe`. The published asset is `SongBird.exe` only; `SongBirdAuto.exe` is not currently shipped in a release.
 
 Requirements are CMake 3.24+, Ninja, MSVC with C++20, Qt 5, the `QT5_PREFIX_PATH` environment variable, and the vcpkg toolchain at `D:/vcpkg`.
 
