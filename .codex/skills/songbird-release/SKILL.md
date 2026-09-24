@@ -81,11 +81,13 @@ What CI guarantees that a local build does not:
    - This step is not optional. A `main` push builds without publishing and writes the
      vcpkg cache under the default-branch scope, which is the only scope a tag build can
      read from. Skipping it makes the next tag build compile Qt5 from source (~1.5h).
-   - Any push that adds or edits a file under `.github/workflows/` needs the `workflow`
-     token scope. If the push is rejected for that reason, run
-     `gh auth refresh -h github.com -s workflow` and retry.
+   - The `workflow` token scope is only required when pushing over HTTPS, because the
+     restriction is imposed by the OAuth App mechanism. SSH keys carry no scopes, so an
+     SSH push that adds or edits `.github/workflows/` is not affected. If an HTTPS push is
+     rejected for that reason, either push over SSH (this repository's origin) or run
+     `gh auth refresh -h github.com -s workflow` followed by `gh auth setup-git`, then retry.
    - If the remote rejects SSH, inspect `git remote -v` and `git branch --show-current`
-     first. This repository stays reachable over HTTPS on networks that block port 22.
+     first. GitHub's `ssh.github.com:443` endpoint works on networks that block port 22.
 
 7. Tag and let CI publish.
    - Create an annotated tag `v<version>` and push it:

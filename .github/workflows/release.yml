@@ -10,6 +10,21 @@ on:
       - main
     tags:
       - 'v*'
+  # Keep-alive for the vcpkg cache. GitHub deletes cache entries that have not
+  # been accessed in over 7 days, and its eviction checks now run hourly, so a
+  # quiet month makes the next tag build pay the full ~1.5h Qt5 compile: the
+  # 2026-08-17 run was followed by 5 idle weeks, and the next build took
+  # 1h49m51s instead of the usual ~20 minutes. A weekly run sits exactly on the
+  # 7-day boundary and scheduled runs are often delayed, so this fires twice a
+  # week. Restoring the cache is what counts as an access.
+  #
+  # The run lands on the default branch, so the cache keeps the default-branch
+  # scope tag builds read from, and "Publish GitHub release" stays skipped
+  # because the ref is not a tag. It doubles as a weekly build-and-test check of
+  # main. GitHub disables scheduled workflows after 60 days without repository
+  # activity, which is also when a stale cache stops costing anything.
+  schedule:
+    - cron: '0 3 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -33,11 +48,11 @@ jobs:
     timeout-minutes: 240
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Restore vcpkg cache
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
@@ -62,7 +77,7 @@ jobs:
         # Save right after the expensive Qt5 build, and even when a later step
         # fails, so a failed run does not discard hours of compilation.
         if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
@@ -93,7 +108,7 @@ jobs:
         run: Copy-Item build/src/SongBird.exe songbird.exe -Force
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: songbird-exe
           path: songbird.exe

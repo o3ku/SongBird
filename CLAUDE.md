@@ -63,9 +63,13 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 首次运行需从源码编译 Qt5（约 1.5 小时），之后命中 `vcpkg_cache` 缓存。缓存用 `cache/restore` + `cache/save`（`if: always()`）分离，确保构建失败时不丢弃已编译产物。
 
+GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 2025-09 起改为每小时一次），所以 workflow 里有一条每周两次（周一/周四 UTC 03:00）的 `schedule` 保活：它跑在默认分支上，`Restore vcpkg cache` 本身即刷新最后访问时间，`Publish GitHub release` 因 ref 不是 tag 而保持跳过，同时兼作 main 的每周构建+测试健康检查。这个保活不是多余的——2026-08-17 之后的 5 周闲置导致缓存被驱逐，下一次构建耗时 **1h49m51s**，而暖缓存只需 **19m44s**。
+
 [.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定：版本确认、翻译校验、以及「构建/测试失败不得打 tag 或发布」。该文档以 CI 为唯一正式发布路径——推 `main` 预热 vcpkg 缓存并过门禁，推 `v*` tag 由 CI 构建并发布；本机构建只作为 CI 不可用时的备案路径。
 
-发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件），`SongBirdAuto.exe` 目前不随 Release 分发。任何新增或修改 `.github/workflows/` 下文件的推送都需要 `workflow` token scope，缺失时用 `gh auth refresh -h github.com -s workflow` 补授权。
+发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件），`SongBirdAuto.exe` 目前不随 Release 分发。
+
+`workflow` token scope 只在**走 HTTPS + token** 推送时才是必需的：这个限制由 OAuth App 机制施加，而 SSH 密钥没有 scope 概念，所以走 SSH 推送新增或修改 `.github/workflows/` 不受限制。本仓库 origin 即 SSH，并通过 `~/.ssh/config` 将 `github.com` 重定向到 `ssh.github.com:443`，以绕过对 22 端口的封锁。若改用 HTTPS，缺失该 scope 时用 `gh auth refresh -h github.com -s workflow` 补授权（补完还需 `gh auth setup-git`）。
 
 版本号权威源是根 [CMakeLists.txt](CMakeLists.txt) 的 `project(SongBird VERSION x.y.z)`，经 `src/CMakeLists.txt` 以 `SONGBIRD_APP_VERSION` 宏注入两个 target。两个 `main.cpp` 里的 `#ifndef SONGBIRD_APP_VERSION` fallback 在正常构建中不可达（宏总是被定义），仅为避免源码中出现互相矛盾的版本数字而保持同步。
 
