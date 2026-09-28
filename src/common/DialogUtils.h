@@ -3,11 +3,12 @@
 #include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QFileDialog>
-#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QString>
 #include <QWidget>
+
+#include "common/UiLanguage.h"
 
 namespace DialogUtils {
 
@@ -17,8 +18,7 @@ inline void localizeStandardDialogButtonBox(QDialogButtonBox* buttonBox)
         return;
     }
 
-    const bool isZhCN = QLocale().name() == QStringLiteral("zh_CN");
-    if (!isZhCN) {
+    if (!UiLanguage::isChinese()) {
         return;
     }
 
@@ -63,7 +63,7 @@ inline QMessageBox::StandardButton askYesNoQuestion(
     QMessageBox messageBox(QMessageBox::Question, title, text, QMessageBox::NoButton, parent);
     auto* yesButton = messageBox.addButton(QMessageBox::Yes);
     auto* noButton = messageBox.addButton(QMessageBox::No);
-    if (QLocale().name() == QStringLiteral("zh_CN")) {
+    if (UiLanguage::isChinese()) {
         yesButton->setText(QStringLiteral("是"));
         noButton->setText(QStringLiteral("否"));
     }
@@ -76,7 +76,7 @@ inline void showInformation(QWidget* parent, const QString& title, const QString
 {
     QMessageBox messageBox(QMessageBox::Information, title, text, QMessageBox::NoButton, parent);
     auto* okButton = messageBox.addButton(QMessageBox::Ok);
-    if (QLocale().name() == QStringLiteral("zh_CN")) {
+    if (UiLanguage::isChinese()) {
         okButton->setText(QStringLiteral("确定"));
     }
     messageBox.setDefaultButton(okButton);
@@ -87,7 +87,7 @@ inline void showWarning(QWidget* parent, const QString& title, const QString& te
 {
     QMessageBox messageBox(QMessageBox::Warning, title, text, QMessageBox::NoButton, parent);
     auto* okButton = messageBox.addButton(QMessageBox::Ok);
-    if (QLocale().name() == QStringLiteral("zh_CN")) {
+    if (UiLanguage::isChinese()) {
         okButton->setText(QStringLiteral("确定"));
     }
     messageBox.setDefaultButton(okButton);
@@ -98,7 +98,7 @@ inline void showCritical(QWidget* parent, const QString& title, const QString& t
 {
     QMessageBox messageBox(QMessageBox::Critical, title, text, QMessageBox::NoButton, parent);
     auto* okButton = messageBox.addButton(QMessageBox::Ok);
-    if (QLocale().name() == QStringLiteral("zh_CN")) {
+    if (UiLanguage::isChinese()) {
         okButton->setText(QStringLiteral("确定"));
     }
     messageBox.setDefaultButton(okButton);

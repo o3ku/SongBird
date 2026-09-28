@@ -3927,6 +3927,17 @@ Restart SongBirdAuto as administrator and start proxy now?</source>
     </message>
 </context>
 <context>
+    <name>XrayCoreBackend</name>
+    <message>
+        <source>The selected server type is not supported by the current Xray generator.</source>
+        <translation>当前 Xray 生成器不支持所选的服务器类型。</translation>
+    </message>
+    <message>
+        <source>Xray config generation does not support network %1 yet.</source>
+        <translation>Xray 配置生成尚不支持 network %1。</translation>
+    </message>
+</context>
+<context>
     <name>main</name>
     <message>
         <source>SongBird is a Qt/C++ rewrite and improvement of v2rayN.</source>

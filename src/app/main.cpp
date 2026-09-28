@@ -20,10 +20,11 @@
 #include "app/SingleInstanceBootstrap.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
+#include "common/UiLanguage.h"
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "2.4.2"
+#define SONGBIRD_APP_VERSION "2.4.3"
 #endif
 
 namespace {
@@ -202,6 +203,10 @@ int main(int argc, char* argv[])
     QTranslator qtTranslator;
     QTranslator translator;
     const QString languageCode = loadConfiguredLanguageCode(requestedConfigPath);
+    // Record the resolved UI language before any dialog can be shown. UI helpers read
+    // it instead of the system locale, which does not follow the in-app language
+    // setting (see UiLanguage::isChinese()).
+    UiLanguage::setConfiguredLanguage(languageCode);
     installQtTranslator(app, qtBaseTranslator, languageCode, QStringLiteral("qtbase"));
     installQtTranslator(app, qtTranslator, languageCode, QStringLiteral("qt"));
     installConfiguredTranslator(app, translator, languageCode);

@@ -1038,10 +1038,6 @@ songbird_add_qt_test(songbird_auto_country_selection_tests auto-country-selectio
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-if(MSVC)
-    target_compile_options(songbird_auto_country_selection_tests PRIVATE /utf-8)
-endif()
-
 set(SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES
     AutoCountryInferenceTests.cpp
     ../src/auto/AutoCountryInference.h
@@ -1060,10 +1056,6 @@ songbird_add_qt_test(songbird_auto_country_inference_tests auto-country-inferenc
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
 )
-
-if(MSVC)
-    target_compile_options(songbird_auto_country_inference_tests PRIVATE /utf-8)
-endif()
 
 set(SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES
     AutoRuntimeDefaultsTests.cpp
@@ -1099,10 +1091,6 @@ songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logi
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-if(MSVC)
-    target_compile_options(songbird_auto_coordinator_logic_tests PRIVATE /utf-8)
-endif()
-
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
     ../src/common/UserAgent.h
@@ -1111,6 +1099,20 @@ set(SONGBIRD_USER_AGENT_TEST_SOURCES
 songbird_add_qt_test(songbird_user_agent_tests user-agent
     SOURCES
         ${SONGBIRD_USER_AGENT_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+set(SONGBIRD_UI_LANGUAGE_TEST_SOURCES
+    UiLanguageTests.cpp
+    ../src/common/UiLanguage.h
+    ../src/common/DialogUtils.h
+)
+
+songbird_add_qt_test(songbird_ui_language_tests ui-language
+    SOURCES
+        ${SONGBIRD_UI_LANGUAGE_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

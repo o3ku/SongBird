@@ -2,9 +2,11 @@
 
 #include <optional>
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QSet>
 
 #include "common/GitHubUrls.h"
 #include "runtime/DnsConfigFragments.h"
@@ -18,6 +20,23 @@ namespace {
 
 const QString kDefaultAccessLogFileName = QStringLiteral("Vaccess.log");
 const QString kDefaultErrorLogFileName = QStringLiteral("Verror.log");
+
+// Mirrors the transports handled by XrayTransportConfigFragments::appendTransportSettings().
+// Any other value leaves streamSettings with a `network` entry and no matching transport
+// settings, which xray-core then rejects at startup instead of the UI explaining it.
+bool isSupportedXrayNetwork(const QString& network)
+{
+    static const QSet<QString> supportedNetworks{
+        QStringLiteral("tcp"),
+        QStringLiteral("kcp"),
+        QStringLiteral("quic"),
+        QStringLiteral("ws"),
+        QStringLiteral("grpc"),
+        QStringLiteral("h2"),
+        QStringLiteral("httpupgrade"),
+        QStringLiteral("xhttp")};
+    return supportedNetworks.contains(network);
+}
 
 } // namespace
 
@@ -81,7 +100,28 @@ QString XrayCoreBackend::extractVersionFromOutput(const QString& output) const
 
 OperationResult XrayCoreBackend::validateServer(const VmessItem& server) const
 {
-    Q_UNUSED(server)
+    // Custom nodes are passed through verbatim by ClientConfigWriter, which never reaches
+    // this backend for them, and the generator has no outbound implementation for them
+    // either, so they are rejected here the same way MihomoCoreBackend does it.
+    if (!supportsConfigType(server.configType) || server.configType == ConfigType::Custom) {
+        return OperationResult::fail(QCoreApplication::translate(
+            "XrayCoreBackend", "The selected server type is not supported by the current Xray generator."));
+    }
+
+    // Hysteria2 always emits a hysteria transport and ignores `network`, so there is
+    // nothing to validate for it.
+    if (server.configType == ConfigType::Hysteria2) {
+        return OperationResult::ok();
+    }
+
+    const QString network = server.network.trimmed().isEmpty()
+        ? QStringLiteral("tcp")
+        : server.network.trimmed().toLower();
+    if (!isSupportedXrayNetwork(network)) {
+        return OperationResult::fail(
+            QCoreApplication::translate("XrayCoreBackend", "Xray config generation does not support network %1 yet.").arg(network));
+    }
+
     return OperationResult::ok();
 }
 

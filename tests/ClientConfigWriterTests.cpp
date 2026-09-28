@@ -11,6 +11,8 @@
 
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/TunAdapterNames.h"
+#include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/ICoreBackend.h"
 
 class ClientConfigWriterTests : public QObject {
     Q_OBJECT
@@ -27,6 +29,10 @@ private slots:
     void validateServerRejectsInvalidXhttpExtraJson();
     void validateServerRejectsInvalidFinalmaskJson();
     void validateServerRejectsMihomoTcpHttpHeaderType();
+    void validateServerRejectsUnsupportedXrayNetwork();
+    void validateServerAcceptsSupportedXrayNetworks();
+    void validateServerRejectsUnsupportedXrayConfigType();
+    void validateServerIgnoresNetworkForXrayHysteria2();
     void generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled();
     void generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled();
     void generateClientConfigsUsesDefaultAllowInsecureForLegacyTlsWhenServerValueMissing();
@@ -544,6 +550,105 @@ void ClientConfigWriterTests::validateServerRejectsMihomoTcpHttpHeaderType()
 
     QVERIFY2(!result.success, qPrintable(result.message));
     QVERIFY(result.message.contains(QStringLiteral("headerType")));
+}
+
+void ClientConfigWriterTests::validateServerRejectsUnsupportedXrayNetwork()
+{
+    // appendTransportSettings() understands a fixed set of networks and has no fallback,
+    // so an unknown value used to be written out as {"network": "<value>"} with no
+    // matching transport settings, and only xray-core would reject it at startup.
+    Config config = legacyConfig(ConfigType::VMess);
+    config.tun().tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.network = QStringLiteral("splithttp");
+
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    ClientConfigWriter writer;
+    const OperationResult result = writer.writeClientConfig(
+        config,
+        server,
+        tempDir.filePath(QStringLiteral("config.json")));
+
+    QVERIFY2(!result.success, qPrintable(result.message));
+    QVERIFY(result.message.contains(QStringLiteral("splithttp")));
+}
+
+void ClientConfigWriterTests::validateServerAcceptsSupportedXrayNetworks()
+{
+    // Positive control for validateServerRejectsUnsupportedXrayNetwork(): every network
+    // the generator emits transport settings for must still pass validation.
+    const QStringList networks{
+        QStringLiteral("tcp"),
+        QStringLiteral("ws"),
+        QStringLiteral("grpc"),
+        QStringLiteral("h2"),
+        QStringLiteral("httpupgrade"),
+        QStringLiteral("xhttp"),
+        QStringLiteral("kcp"),
+        QStringLiteral("quic")};
+
+    for (const QString& network : networks) {
+        Config config = legacyConfig(ConfigType::VMess);
+        config.tun().tunModeItem.enableTun = false;
+
+        VmessItem server = baseServer();
+        server.network = network;
+
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        ClientConfigWriter writer;
+        const OperationResult result = writer.writeClientConfig(
+            config,
+            server,
+            tempDir.filePath(QStringLiteral("config.json")));
+
+        QVERIFY2(result.success, qPrintable(QStringLiteral("%1: %2").arg(network, result.message)));
+    }
+}
+
+void ClientConfigWriterTests::validateServerRejectsUnsupportedXrayConfigType()
+{
+    // Xray has no outbound generator for TUIC, so validation must reject it instead of
+    // falling through to an empty config. Core selection already refuses to pair TUIC
+    // with Xray, so this is asserted against the backend contract directly.
+    const ICoreBackend* backend = coreBackend(CoreType::Xray);
+    QVERIFY(backend != nullptr);
+
+    VmessItem server = baseServer();
+    server.configType = ConfigType::TUIC;
+
+    const OperationResult result = backend->validateServer(server);
+
+    QVERIFY2(!result.success, qPrintable(result.message));
+    QVERIFY(result.message.contains(QStringLiteral("Xray")));
+}
+
+void ClientConfigWriterTests::validateServerIgnoresNetworkForXrayHysteria2()
+{
+    // Hysteria2 always emits a hysteria transport and never reads `network`, so an
+    // otherwise unsupported value must not fail validation. This also pins that Xray is
+    // the backend being asked: sing-box rejects "splithttp" outright.
+    Config config = legacyConfig(ConfigType::Hysteria2);
+    config.tun().tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Hysteria2;
+    server.network = QStringLiteral("splithttp");
+
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    ClientConfigWriter writer;
+    const OperationResult result = writer.writeClientConfig(
+        config,
+        server,
+        tempDir.filePath(QStringLiteral("config.json")));
+
+    QVERIFY2(result.success, qPrintable(result.message));
 }
 
 void ClientConfigWriterTests::generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled()

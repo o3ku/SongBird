@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(SongBird VERSION 2.4.2 LANGUAGES CXX)
+project(SongBird VERSION 2.4.3 LANGUAGES CXX)
+
+# Compile every translation unit as UTF-8, independent of the host's ANSI code page.
+# The sources contain non-ASCII string literals (the Chinese UI strings and the
+# hand-maintained .ts content that gets compiled into the executable). Without this,
+# MSVC decodes them with the local code page, so they silently mojibake on machines
+# whose ANSI code page is not UTF-8 (for example 936 on Chinese Windows) unless each
+# individual file happens to carry a UTF-8 BOM. The COMPILE_LANGUAGE restriction keeps
+# the flag away from rc.exe, which does not understand it.
+if(MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
