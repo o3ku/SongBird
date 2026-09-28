@@ -750,19 +750,28 @@ if(NOT SONGBIRD_QT_TRANSLATIONS_DIR AND QT_VERSION_MAJOR EQUAL 5)
     message(WARNING "Qt translations directory not found. Set SONGBIRD_QT_TRANSLATIONS_DIR manually or ensure qmake is discoverable.")
 endif()
 
-set(SONGBIRD_QT_ZH_QM
-    "${SONGBIRD_QT_TRANSLATIONS_DIR}/qt_zh_CN.qm"
+# Pre-compiled .qm files kept in the repository. They exist because the Qt used by CI
+# (vcpkg's static qt5-base) ships neither lrelease nor Qt's own .qm files, and the
+# release pipeline used to skip .qm embedding entirely in that case -- silently
+# shipping an English-only binary. Committing the compiled output makes the
+# localization independent of which Qt a build happens to find. Regenerate after
+# editing a .ts:
+#     lrelease translations/SongBird_zh_CN.ts -qm translations/compiled/SongBird_zh_CN.qm
+# scripts/check-translations-fresh.ps1 (ctest: translations-fresh) fails when the
+# checked-in .qm no longer matches the .ts it was built from.
+set(SONGBIRD_COMPILED_TRANSLATIONS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../translations/compiled"
 )
-if(EXISTS "${SONGBIRD_QT_ZH_QM}")
-    list(APPEND SONGBIRD_QT_TRANSLATION_QM_FILES "${SONGBIRD_QT_ZH_QM}")
-endif()
 
-set(SONGBIRD_QTBASE_ZH_QM
-    "${SONGBIRD_QT_TRANSLATIONS_DIR}/qtbase_zh_CN.qm"
-)
-if(EXISTS "${SONGBIRD_QTBASE_ZH_QM}")
-    list(APPEND SONGBIRD_QT_TRANSLATION_QM_FILES "${SONGBIRD_QTBASE_ZH_QM}")
-endif()
+# Qt's own translations. Prefer the copy shipped with the Qt installation so a locally
+# installed Qt stays authoritative, and fall back to the checked-in copy.
+foreach(SONGBIRD_QT_QM_NAME qt_zh_CN.qm qtbase_zh_CN.qm)
+    if(SONGBIRD_QT_TRANSLATIONS_DIR AND EXISTS "${SONGBIRD_QT_TRANSLATIONS_DIR}/${SONGBIRD_QT_QM_NAME}")
+        list(APPEND SONGBIRD_QT_TRANSLATION_QM_FILES "${SONGBIRD_QT_TRANSLATIONS_DIR}/${SONGBIRD_QT_QM_NAME}")
+    elseif(EXISTS "${SONGBIRD_COMPILED_TRANSLATIONS_DIR}/${SONGBIRD_QT_QM_NAME}")
+        list(APPEND SONGBIRD_QT_TRANSLATION_QM_FILES "${SONGBIRD_COMPILED_TRANSLATIONS_DIR}/${SONGBIRD_QT_QM_NAME}")
+    endif()
+endforeach()
 
 set(SONGBIRD_TRANSLATION_QM_FILES)
 if(SONGBIRD_HAS_LINGUISTTOOLS)
@@ -773,8 +782,29 @@ if(SONGBIRD_HAS_LINGUISTTOOLS)
     endif()
 
     add_custom_target(songbird_translations ALL DEPENDS ${SONGBIRD_TRANSLATION_QM_FILES})
+else()
+    # No lrelease available: fall back to the checked-in .qm so the build still
+    # produces a localized binary instead of silently producing an English one.
+    foreach(SONGBIRD_TS_FILE ${SONGBIRD_TRANSLATION_TS_FILES})
+        get_filename_component(SONGBIRD_TS_NAME "${SONGBIRD_TS_FILE}" NAME_WE)
+        set(SONGBIRD_COMPILED_QM "${SONGBIRD_COMPILED_TRANSLATIONS_DIR}/${SONGBIRD_TS_NAME}.qm")
+        if(EXISTS "${SONGBIRD_COMPILED_QM}")
+            list(APPEND SONGBIRD_TRANSLATION_QM_FILES "${SONGBIRD_COMPILED_QM}")
+        else()
+            message(WARNING
+                "Qt LinguistTools is unavailable and ${SONGBIRD_COMPILED_TRANSLATIONS_DIR}/${SONGBIRD_TS_NAME}.qm "
+                "does not exist either, so the UI will stay English-only. Run lrelease on "
+                "${SONGBIRD_TS_FILE} and commit the result."
+            )
+        endif()
+    endforeach()
+endif()
 
-    # Generate a .qrc that embeds compiled .qm files into the executable
+# Generate a .qrc that embeds the compiled .qm files into the executable. This
+# deliberately sits outside the LinguistTools branch above: it used to live inside it,
+# which meant the entire embedding step was skipped without any message whenever
+# lrelease was missing.
+if(SONGBIRD_TRANSLATION_QM_FILES OR SONGBIRD_QT_TRANSLATION_QM_FILES)
     set(SONGBIRD_TRANSLATIONS_QRC "${CMAKE_CURRENT_BINARY_DIR}/translations.qrc")
     file(WRITE "${SONGBIRD_TRANSLATIONS_QRC}" "<RCC>\n    <qresource prefix=\"/translations\">\n")
     foreach(qm_file ${SONGBIRD_TRANSLATION_QM_FILES})
@@ -793,6 +823,11 @@ if(SONGBIRD_HAS_LINGUISTTOOLS)
     )
 
     list(APPEND SONGBIRD_SOURCES "${SONGBIRD_TRANSLATIONS_QRC}")
+else()
+    message(WARNING
+        "No translations will be embedded: neither Qt LinguistTools nor any compiled .qm file was "
+        "found. The shipped executable will show an English-only UI."
+    )
 endif()
 
 

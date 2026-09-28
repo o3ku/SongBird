@@ -34,6 +34,28 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
             -TranslationFile ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
     )
+    # The .qm files embedded into SongBird.exe come from translations/compiled/, which is committed,
+    # because the Qt CI builds against (vcpkg's static qt5-base) has no lrelease. Nothing else in the
+    # build notices when that committed copy falls behind the .ts, so check it explicitly.
+    add_test(
+        NAME translations-fresh
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-translations-fresh.ps1
+            -TranslationFile ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
+            -CompiledFile ${CMAKE_CURRENT_SOURCE_DIR}/../translations/compiled/SongBird_zh_CN.qm
+    )
+    # Up to v2.4.3 the .qm embedding step was skipped without a message whenever lrelease was
+    # missing, so every released binary was English-only while the build stayed green. Check the
+    # produced artifacts rather than the configuration, so the same regression cannot pass again.
+    add_test(
+        NAME translations-embedded
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-translations-embedded.ps1
+            -BuildDirectory ${CMAKE_BINARY_DIR}/src
+            -Executable $<TARGET_FILE:songbird>
+    )
 endif()
 
 function(songbird_add_qt_test target_name test_name)
