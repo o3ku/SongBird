@@ -862,10 +862,6 @@ target_compile_definitions(songbird_auto
         SONGBIRD_APP_VERSION="${PROJECT_VERSION}"
 )
 
-if(MSVC)
-    target_compile_options(songbird_auto PRIVATE /utf-8)
-endif()
-
 target_link_libraries(songbird
     PRIVATE
         songbird_core_descriptors
@@ -997,6 +993,6 @@ install(FILES ${SONGBIRD_TRANSLATION_TS_FILES}
 
 install(FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../README.md
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE
     DESTINATION .
 )

@@ -1,6 +1,9 @@
 #include <QtTest>
 
+#include <QStringList>
+
 #include "app/SystemProxyCoordinator.h"
+#include "domain/models/RoutingRule.h"
 #include "persistence/IConfigRepository.h"
 #include "platform/ISystemProxyService.h"
 #include "services/ServerService.h"
@@ -62,6 +65,7 @@ private slots:
     void updateModeReportsSuccessWhenTheServiceAcceptsTheWrite();
     void updateModeTreatsAMissingServiceAsSuccess();
     void updateModePassesTheLocalPortPairToTheService();
+    void buildExceptionsDerivesBypassEntriesFromDirectRoutingRules();
 };
 
 void SystemProxyCoordinatorTests::updateModeReportsFailureWhenTheServiceRefusesTheWrite()
@@ -143,6 +147,75 @@ void SystemProxyCoordinatorTests::updateModePassesTheLocalPortPairToTheService()
     QCOMPARE(systemProxyService.lastSocksPort_, 10808);
     QCOMPARE(systemProxyService.lastAdvancedProtocol_, QStringLiteral("{ip}:{http_port}/{socks_port}"));
     QVERIFY(!systemProxyService.lastProxyExceptions_.trimmed().isEmpty());
+}
+
+// Covers collectRouteDerivedProxyExceptions(), which lives in an anonymous namespace in
+// SystemProxyCoordinator.cpp and is reachable only through buildExceptions(). The system proxy
+// needs a bypass entry for every host the user routed *directly*, and needs none for the hosts
+// routed through the proxy -- a wrong direction here silently sends proxied traffic straight out.
+void SystemProxyCoordinatorTests::buildExceptionsDerivesBypassEntriesFromDirectRoutingRules()
+{
+    Config config;
+    config.localPort = 10808;
+
+    RoutingRule suffixRule;
+    suffixRule.outboundTag = QStringLiteral("direct");
+    suffixRule.domain = QStringList{QStringLiteral("domain:example.com")};
+    config.collection().routingCustomRules.append(suffixRule);
+
+    RoutingRule exactRule;
+    exactRule.outboundTag = QStringLiteral("direct");
+    exactRule.domain = QStringList{QStringLiteral("full:exact.test")};
+    config.collection().routingCustomRules.append(exactRule);
+
+    // "direct" is matched case-insensitively, so a differently-cased tag must still be honoured.
+    RoutingRule upperCaseRule;
+    upperCaseRule.outboundTag = QStringLiteral("Direct");
+    upperCaseRule.domain = QStringList{QStringLiteral(".dot.example")};
+    config.collection().routingCustomRules.append(upperCaseRule);
+
+    // A disabled rule is not part of the effective configuration.
+    RoutingRule disabledRule;
+    disabledRule.outboundTag = QStringLiteral("direct");
+    disabledRule.domain = QStringList{QStringLiteral("domain:disabled.test")};
+    disabledRule.enabled = false;
+    config.collection().routingCustomRules.append(disabledRule);
+
+    // Routed through the proxy: bypassing it would make Windows connect directly to a host the
+    // user explicitly asked to proxy.
+    RoutingRule proxiedRule;
+    proxiedRule.outboundTag = QStringLiteral("proxy");
+    proxiedRule.domain = QStringList{QStringLiteral("domain:proxied.test")};
+    config.collection().routingCustomRules.append(proxiedRule);
+
+    MockConfigRepository repository;
+    ServerService serverService(repository);
+    FakeSystemProxyService systemProxyService;
+
+    SystemProxyCoordinator coordinator(
+        SystemProxyCoordinator::Dependencies{config, serverService, &systemProxyService, nullptr},
+        SystemProxyCoordinator::Callbacks{});
+
+    const QStringList entries = coordinator.buildExceptions().split(QChar(';'));
+
+    // "domain:" means the host and its subdomains, so the system proxy needs both forms.
+    QVERIFY(entries.contains(QStringLiteral("example.com")));
+    QVERIFY(entries.contains(QStringLiteral("*.example.com")));
+    // A leading dot is the same shorthand, and "direct" was written with a capital D.
+    QVERIFY(entries.contains(QStringLiteral("dot.example")));
+    QVERIFY(entries.contains(QStringLiteral("*.dot.example")));
+
+    // "full:" is the host alone -- no subdomain entry, and no proxy entry either.
+    QVERIFY(entries.contains(QStringLiteral("exact.test")));
+    QVERIFY(!entries.contains(QStringLiteral("*.exact.test")));
+
+    QVERIFY(!entries.contains(QStringLiteral("disabled.test")));
+    QVERIFY(!entries.contains(QStringLiteral("proxied.test")));
+
+    // The built-in bypass list must survive: dropping it would route LAN and loopback traffic
+    // through the proxy.
+    QVERIFY(entries.contains(QStringLiteral("localhost")));
+    QVERIFY(entries.contains(QStringLiteral("192.168.*")));
 }
 
 QTEST_MAIN(SystemProxyCoordinatorTests)
