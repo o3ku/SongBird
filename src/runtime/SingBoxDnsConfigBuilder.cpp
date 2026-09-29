@@ -29,7 +29,9 @@ QJsonObject build(const Config& config, const RoutingItem* selectedRouting)
     const bool useDirectFinal = DnsSupport::usesDirectDnsAsFinalServer(selectedRouting);
 
     QJsonObject dns;
-    dns.insert(QStringLiteral("independent_cache"), true);
+    // `independent_cache` is deprecated since sing-box 1.14.0 and removed in 1.16.0. The documented
+    // migration is to drop the field, and 1.14 warns about it on every start, so it is gone rather
+    // than carried forward.
 
     QJsonArray servers;
     QJsonObject localDns = DnsSupport::parseDnsAddress(config.dns().bootstrapDns);
@@ -56,6 +58,8 @@ QJsonObject build(const Config& config, const RoutingItem* selectedRouting)
     const QMap<QString, QStringList> hostsMap = DnsHosts::parseConfigured(config.dns().dnsHosts);
     const QJsonObject predefinedHosts = DnsSupport::predefinedHosts(config, hostsMap);
     const bool hasPredefinedHosts = !predefinedHosts.isEmpty();
+    // QJsonObject keeps its keys sorted, so the emitted domain list is deterministic without a sort.
+    const QStringList predefinedHostDomains = predefinedHosts.keys();
     const QJsonObject hostsDnsServer = DnsSupport::hostsDnsServer(predefinedHosts);
     DnsSupport::applyHostsResolver(localDns, predefinedHosts);
     DnsSupport::applyHostsResolver(remoteDnsServer, predefinedHosts);
@@ -97,11 +101,21 @@ QJsonObject build(const Config& config, const RoutingItem* selectedRouting)
         dns.insert(QStringLiteral("final"), finalServerTag);
     }
 
+    // sing-box 1.14 removed `strategy` as a DNS rule action option, so the per-rule strategies the
+    // direct and proxy rules used to carry collapse into this one global default. The proxy
+    // strategy wins when both are configured, because `final` resolves through the proxy path.
+    QString dnsStrategy = DnsSupport::mapDomainStrategy(config.dns().domainStrategyForProxy);
+    if (dnsStrategy.isEmpty()) {
+        dnsStrategy = DnsSupport::mapDomainStrategy(config.dns().domainStrategyForFreedom);
+    }
+    if (!dnsStrategy.isEmpty()) {
+        dns.insert(QStringLiteral("strategy"), dnsStrategy);
+    }
+
     QJsonArray rules;
     DnsRules::appendModeRules(
         rules,
-        config,
-        hasPredefinedHosts,
+        predefinedHostDomains,
         !remoteDnsServer.isEmpty(),
         !directDnsServer.isEmpty());
     DnsRules::appendHostRules(rules, hostsMap);

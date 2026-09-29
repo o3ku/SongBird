@@ -191,10 +191,14 @@ QUrl SingBoxCoreBackend::releasesApiUrl() const
 
 CoreUpdateAssetPolicy SingBoxCoreBackend::updateAssetPolicy() const
 {
+    // The fallback is only downloaded when no core is installed *and* the GitHub release lookup
+    // fails, so it has to be a current stable core rather than the oldest one the generated config
+    // still loads. The config itself is version neutral -- it is accepted by 1.13.x and 1.14.x alike
+    // -- so this tag is a freshness choice, not a compatibility requirement.
     return CoreUpdateAssetPolicy{
-        QStringLiteral("v1.13.11"),
-        QStringLiteral("sing-box-1.13.11-windows-amd64.zip"),
-        QStringLiteral("sing-box-1.13.11-windows-386.zip"),
+        QStringLiteral("v1.14.2"),
+        QStringLiteral("sing-box-1.14.2-windows-amd64.zip"),
+        QStringLiteral("sing-box-1.14.2-windows-386.zip"),
         QStringLiteral("SagerNet/sing-box"),
         {},
         {},

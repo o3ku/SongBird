@@ -1,21 +1,12 @@
 #include "runtime/SingBoxDnsRuleConfig.h"
 
 #include <QJsonObject>
-#include <QRegularExpression>
-#include <QSet>
 
-#include "common/RoutingValuePattern.h"
 #include "runtime/DnsHosts.h"
 #include "runtime/RoutingRuleJsonMapper.h"
 #include "runtime/SingBoxDnsConfigSupport.h"
 
 namespace {
-
-struct ExpectedIps {
-    QStringList cidrs;
-    QStringList geoips;
-    QSet<QString> regionNames;
-};
 
 QList<RoutingRule> effectiveRoutingRules(const Config& config, const RoutingItem* selectedRouting)
 {
@@ -45,33 +36,15 @@ QList<RoutingRule> effectiveRoutingRules(const Config& config, const RoutingItem
     return rules;
 }
 
-ExpectedIps parseExpectedIps(const QString& value)
-{
-    ExpectedIps expectedIps;
-    for (const QString& item : value.split(QRegularExpression(QStringLiteral("[,;]")), Qt::SkipEmptyParts)) {
-        const QString trimmed = item.trimmed();
-        if (trimmed.isEmpty()) {
-            continue;
-        }
-        const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(trimmed);
-        if (parsed.kind != RoutingValuePattern::IpKind::GeoIp) {
-            expectedIps.cidrs.append(trimmed);
-            continue;
-        }
-
-        const QString region = parsed.value;
-        if (region.isEmpty()) {
-            continue;
-        }
-
-        expectedIps.geoips.append(region);
-        expectedIps.regionNames.insert(region);
-        expectedIps.regionNames.insert(QStringLiteral("geolocation-%1").arg(region));
-        expectedIps.regionNames.insert(QStringLiteral("tld-%1").arg(region));
-    }
-
-    return expectedIps;
-}
+// The "Direct Expected IPs" filter used to append `geoip` and `ip_cidr` to the direct DNS rule.
+// Both are response match fields: sing-box applies them only together with `match_response`, which
+// in turn requires a preceding `evaluate` action and does not exist before 1.14. So on every core
+// this generator ever produced configs for, the two fields never took part in matching -- the rule
+// matched on its domain conditions alone, and a non-matching `ip_cidr` still selected `direct_dns`.
+// From 1.14 the fields are rejected outright unless the rule is rewritten around `evaluate`, and a
+// rule set holding only IP entries (`geoip-cn`) is rejected the same way. Since the domain
+// conditions already pick the direct DNS server, the filter is dropped rather than migrated: it
+// removes nothing that used to work and keeps one rule shape across core versions.
 
 QJsonArray stringArray(const QStringList& values)
 {
@@ -83,48 +56,25 @@ QJsonArray stringArray(const QStringList& values)
     return array;
 }
 
-void appendExpectedIpFilters(QJsonObject& rule, const ExpectedIps& expectedIps)
-{
-    if (expectedIps.geoips.isEmpty()) {
-        return;
-    }
-
-    QSet<QString> geositeValues;
-    for (const QJsonValue& geositeValue : rule.value(QStringLiteral("geosite")).toArray()) {
-        geositeValues.insert(geositeValue.toString());
-    }
-
-    bool matchedExpectedRegion = false;
-    for (const QString& geositeValue : geositeValues) {
-        if (expectedIps.regionNames.contains(geositeValue)) {
-            matchedExpectedRegion = true;
-            break;
-        }
-    }
-    if (!matchedExpectedRegion) {
-        return;
-    }
-
-    rule.insert(QStringLiteral("geoip"), stringArray(expectedIps.geoips));
-    if (!expectedIps.cidrs.isEmpty()) {
-        rule.insert(QStringLiteral("ip_cidr"), stringArray(expectedIps.cidrs));
-    }
-}
-
 } // namespace
 
 namespace SingBoxDnsRuleConfig {
 
 void appendModeRules(
     QJsonArray& rules,
-    const Config& config,
-    bool hasPredefinedHosts,
+    const QStringList& predefinedHostDomains,
     bool hasRemoteDnsServer,
     bool hasDirectDnsServer)
 {
-    if (hasPredefinedHosts) {
+    if (!predefinedHostDomains.isEmpty()) {
+        // "Let the hosts table answer when it has an entry, otherwise keep going" needs a rule item
+        // that is true for exactly those domains. Both candidates for that item are generation
+        // specific -- `ip_accept_any` is a response match field that 1.14 rejects outright, and its
+        // 1.14 replacement `preferred_by` is an unknown field to 1.13 -- so neither can be emitted
+        // by a generator that has to serve both. A plain exact-domain list says the same thing:
+        // every key in a hosts table is a concrete domain, and every core accepts `domain`.
         QJsonObject hostsRule;
-        hostsRule.insert(QStringLiteral("ip_accept_any"), true);
+        hostsRule.insert(QStringLiteral("domain"), stringArray(predefinedHostDomains));
         hostsRule.insert(QStringLiteral("server"), SingBoxDnsConfigSupport::hostsDnsTag());
         rules.append(hostsRule);
     }
@@ -133,10 +83,6 @@ void appendModeRules(
         QJsonObject proxyRule;
         proxyRule.insert(QStringLiteral("server"), SingBoxDnsConfigSupport::remoteDnsTag());
         proxyRule.insert(QStringLiteral("clash_mode"), QStringLiteral("Global"));
-        const QString proxyStrategy = SingBoxDnsConfigSupport::mapDomainStrategy(config.dns().domainStrategyForProxy);
-        if (!proxyStrategy.isEmpty()) {
-            proxyRule.insert(QStringLiteral("strategy"), proxyStrategy);
-        }
         rules.append(proxyRule);
     }
 
@@ -144,10 +90,6 @@ void appendModeRules(
         QJsonObject directRule;
         directRule.insert(QStringLiteral("server"), SingBoxDnsConfigSupport::directDnsTag());
         directRule.insert(QStringLiteral("clash_mode"), QStringLiteral("Direct"));
-        const QString directStrategy = SingBoxDnsConfigSupport::mapDomainStrategy(config.dns().domainStrategyForFreedom);
-        if (!directStrategy.isEmpty()) {
-            directRule.insert(QStringLiteral("strategy"), directStrategy);
-        }
         rules.append(directRule);
     }
 }
@@ -224,14 +166,14 @@ void appendGlobalFakeIpRule(QJsonArray& rules)
 
 void appendRoutingRules(QJsonArray& rules, const Config& config, const RoutingItem* selectedRouting)
 {
-    const ExpectedIps expectedIps = parseExpectedIps(config.dns().directExpectedIps);
     const QList<RoutingRule> effectiveRules = effectiveRoutingRules(config, selectedRouting);
     if (effectiveRules.isEmpty()) {
         return;
     }
 
-    const QString directStrategy = SingBoxDnsConfigSupport::mapDomainStrategy(config.dns().domainStrategyForFreedom);
-    const QString proxyStrategy = SingBoxDnsConfigSupport::mapDomainStrategy(config.dns().domainStrategyForProxy);
+    // The per-rule `strategy` these branches used to carry is gone: sing-box 1.14 dropped it as a
+    // DNS rule action option. The two settings that fed it now collapse into the single global
+    // `dns.strategy` the builder emits, so this function only picks a server tag.
 
     for (const RoutingRule& sourceRule : effectiveRules) {
         if (!sourceRule.enabled) {
@@ -257,10 +199,6 @@ void appendRoutingRules(QJsonArray& rules, const Config& config, const RoutingIt
         const QString outboundTag = sourceRule.outboundTag.trimmed();
         if (outboundTag.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
             rule.insert(QStringLiteral("server"), SingBoxDnsConfigSupport::directDnsTag());
-            if (!directStrategy.isEmpty()) {
-                rule.insert(QStringLiteral("strategy"), directStrategy);
-            }
-            appendExpectedIpFilters(rule, expectedIps);
         } else if (outboundTag.compare(QStringLiteral("block"), Qt::CaseInsensitive) == 0) {
             rule.insert(QStringLiteral("action"), QStringLiteral("predefined"));
             rule.insert(QStringLiteral("rcode"), QStringLiteral("NXDOMAIN"));
@@ -273,9 +211,6 @@ void appendRoutingRules(QJsonArray& rules, const Config& config, const RoutingIt
                 rules.append(fakeRule);
             }
             rule.insert(QStringLiteral("server"), SingBoxDnsConfigSupport::remoteDnsTag());
-            if (!proxyStrategy.isEmpty()) {
-                rule.insert(QStringLiteral("strategy"), proxyStrategy);
-            }
         }
 
         rules.append(rule);

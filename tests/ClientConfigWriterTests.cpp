@@ -112,7 +112,7 @@ private slots:
     void generateClientConfigsAddsSingBoxResolveRuleBeforeUserRulesForIpOnDemand();
     void generateClientConfigsAddsSingBoxResolveRuleAfterUserRulesForIpIfNonMatch();
     void generateClientConfigsReappliesSingBoxIpRulesAfterResolveForIpIfNonMatch();
-    void generateClientConfigsAddsSingBoxDirectExpectedIpsForMatchingDirectGeosite();
+    void generateClientConfigsOmitsDeprecatedFieldsFromSingBoxDnsRules();
     void generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules();
     void generateClientConfigsSplitsSingBoxRoutingProcessNameAndPathRules();
     void generateClientConfigsSplitsMihomoRoutingProcessNameAndPathRules();
@@ -2071,12 +2071,27 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSimpleDnsPackForSingBox
     QCOMPARE(predefined.value(QStringLiteral("full.example.com")).toArray().at(0).toString(), QStringLiteral("5.6.7.8"));
 
     const QJsonArray dnsRules = dns.value(QStringLiteral("rules")).toArray();
+    const QJsonObject hostsRule = findDnsRuleByServer(dnsRules, QStringLiteral("hosts_dns"));
     const QJsonObject directRule = findDnsRuleByServer(dnsRules, QStringLiteral("direct_dns"));
     const QJsonObject remoteRule = findDnsRuleByServer(dnsRules, QStringLiteral("remote_dns"));
+    // Letting the hosts table answer is expressed as a plain exact-domain list. Neither of the two
+    // version-specific spellings can be used: `ip_accept_any` is a response match field that 1.14
+    // rejects outright, and its 1.14 replacement `preferred_by` is an unknown field to 1.13. Every
+    // key in a hosts table is a concrete domain, so the `domain` list says the same thing on both.
+    QVERIFY(hostsRule.value(QStringLiteral("preferred_by")).isUndefined());
+    QVERIFY(hostsRule.value(QStringLiteral("ip_accept_any")).isUndefined());
+    QCOMPARE(hostsRule.value(QStringLiteral("server")).toString(), QStringLiteral("hosts_dns"));
+    const QJsonArray hostsRuleDomains = hostsRule.value(QStringLiteral("domain")).toArray();
+    QVERIFY(jsonArrayContainsString(hostsRuleDomains, QStringLiteral("example.com")));
+    QVERIFY(jsonArrayContainsString(hostsRuleDomains, QStringLiteral("full.example.com")));
     QCOMPARE(directRule.value(QStringLiteral("clash_mode")).toString(), QStringLiteral("Direct"));
-    QCOMPARE(directRule.value(QStringLiteral("strategy")).toString(), QStringLiteral("prefer_ipv4"));
     QCOMPARE(remoteRule.value(QStringLiteral("clash_mode")).toString(), QStringLiteral("Global"));
-    QCOMPARE(remoteRule.value(QStringLiteral("strategy")).toString(), QStringLiteral("prefer_ipv6"));
+    // sing-box 1.14 dropped `strategy` as a DNS rule action option, so the two per-mode strategies
+    // collapse into one global default. The proxy strategy wins because `final` uses that path.
+    QVERIFY(directRule.value(QStringLiteral("strategy")).isUndefined());
+    QVERIFY(remoteRule.value(QStringLiteral("strategy")).isUndefined());
+    QCOMPARE(dns.value(QStringLiteral("strategy")).toString(), QStringLiteral("prefer_ipv6"));
+    QVERIFY(dns.value(QStringLiteral("independent_cache")).isUndefined());
     QCOMPARE(dns.value(QStringLiteral("final")).toString(), QStringLiteral("remote_dns"));
 
     const QJsonObject resolver = generated.primary.root.value(QStringLiteral("route")).toObject()
@@ -2958,12 +2973,18 @@ void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterR
     QVERIFY(foundGeoipRuleAfterResolve);
 }
 
-void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsForMatchingDirectGeosite()
+void ClientConfigWriterTests::generateClientConfigsOmitsDeprecatedFieldsFromSingBoxDnsRules()
 {
+    // sing-box 1.14 rejects response match fields (`ip_cidr`, `ip_is_private`, `ip_accept_any`) and
+    // the `strategy` DNS rule action option unless the rule is rewritten around `evaluate`. This
+    // config switches on everything that used to emit one: a hosts table, the block-binding rule,
+    // per-mode strategies, and a direct routing rule matched by "Direct Expected IPs".
     Config config = baseConfig();
     config.tun().tunModeItem.enableTun = false;
     config.sniffingEnabled = false;
     config.dns().directExpectedIps = QStringLiteral("geoip:cn,1.2.3.0/24");
+    config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv4");
+    config.dns().domainStrategyForProxy = QStringLiteral("UseIPv6");
     config.collection().customRoutingItems = {
         createRoutingItem({
             createRoutingRule(QStringLiteral("direct"), QStringList{QStringLiteral("geosite:cn")})})};
@@ -2974,9 +2995,34 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
     ClientConfigWriter writer;
     const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
 
-    const QJsonArray rules = generated.primary.root.value(QStringLiteral("dns")).toObject().value(QStringLiteral("rules")).toArray();
+    const QJsonObject dns = generated.primary.root.value(QStringLiteral("dns")).toObject();
+    const QJsonArray rules = dns.value(QStringLiteral("rules")).toArray();
+    QVERIFY(!rules.isEmpty());
 
-    bool foundExpectedIpRule = false;
+    const QStringList rejectedFields{
+        QStringLiteral("ip_accept_any"),
+        QStringLiteral("ip_cidr"),
+        QStringLiteral("ip_is_private"),
+        QStringLiteral("match_response"),
+        QStringLiteral("strategy")};
+    for (const QJsonValue& value : rules) {
+        const QJsonObject rule = value.toObject();
+        for (const QString& field : rejectedFields) {
+            QVERIFY2(!rule.contains(field), qPrintable(QStringLiteral("DNS rule still carries %1").arg(field)));
+        }
+    }
+    QVERIFY(dns.value(QStringLiteral("independent_cache")).isUndefined());
+
+    // `preferred_by` is not deprecated, it is version specific: sing-box 1.13 rejects it as an
+    // unknown field. Emitting it would break the older cores this build still supports, so it needs
+    // its own guard rather than a place in the 1.14 rejection list above.
+    for (const QJsonValue& value : rules) {
+        QVERIFY2(
+            !value.toObject().contains(QStringLiteral("preferred_by")),
+            "DNS rule carries the sing-box 1.14-only `preferred_by` item");
+    }
+
+    bool foundDirectGeositeRule = false;
     for (const QJsonValue& value : rules) {
         const QJsonObject rule = value.toObject();
         if (rule.value(QStringLiteral("server")).toString() != QStringLiteral("direct_dns")) {
@@ -2985,13 +3031,14 @@ void ClientConfigWriterTests::generateClientConfigsAddsSingBoxDirectExpectedIpsF
         if (!jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geosite-cn"))) {
             continue;
         }
-        QVERIFY(jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn")));
-        QVERIFY(jsonArrayContainsString(rule.value(QStringLiteral("ip_cidr")).toArray(), QStringLiteral("1.2.3.0/24")));
-        foundExpectedIpRule = true;
+        // A rule set holding only IP entries can never match a query, so it is dropped along with
+        // the CIDR list instead of being left in place for the core to reject.
+        QVERIFY(!jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn")));
+        foundDirectGeositeRule = true;
         break;
     }
 
-    QVERIFY(foundExpectedIpRule);
+    QVERIFY(foundDirectGeositeRule);
 }
 
 void ClientConfigWriterTests::generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules()

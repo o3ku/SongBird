@@ -11,8 +11,7 @@ namespace SingBoxDnsRuleConfig {
 
 void appendModeRules(
     QJsonArray& rules,
-    const Config& config,
-    bool hasPredefinedHosts,
+    const QStringList& predefinedHostDomains,
     bool hasRemoteDnsServer,
     bool hasDirectDnsServer);
 void appendHostRules(QJsonArray& rules, const QMap<QString, QStringList>& hostsMap);

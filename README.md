@@ -38,6 +38,7 @@ SongBird ships three interchangeable core engines — **Xray**, **sing-box** and
 - AnyTLS, Naive and TUIC are sing-box only, so servers using them require the sing-box core.
 - Mihomo does not support WireGuard.
 - When more than one core can run a protocol, sing-box is preferred, then Mihomo, then Xray.
+- The generated sing-box config loads on **sing-box 1.13.x and 1.14.x** alike. sing-box 1.14 removed the `strategy` DNS rule action option and introduced `preferred_by` in its place, so the generator emits neither: the per-rule strategies collapse into the global `dns.strategy`, and the hosts table is reached through a plain exact-domain rule list. `independent_cache` is dropped too, since 1.14 deprecates it and 1.16 removes it.
 
 ## Applications
 

@@ -119,7 +119,7 @@ void CoreUpdateServiceTests::updateFallsBackToBuiltInSingBoxVersionWhenReleaseAp
             if (url.toString().contains(QStringLiteral("api.github.com/repos/SagerNet/sing-box/releases"))) {
                 return OperationResult::fail(QStringLiteral("GitHub API unavailable"));
             }
-            if (url.toString().contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-windows-amd64.zip"))) {
+            if (url.toString().contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-windows-amd64.zip"))) {
                 *content = QByteArray("dummy-package");
                 return OperationResult::ok();
             }
@@ -151,9 +151,9 @@ void CoreUpdateServiceTests::updateFallsBackToBuiltInSingBoxVersionWhenReleaseAp
         requestedUrls.cbegin(),
         requestedUrls.cend(),
         [](const QString& url) {
-            return url.contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-windows-amd64.zip"));
+            return url.contains(QStringLiteral("/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-windows-amd64.zip"));
         }));
-    QVERIFY(result.message.contains(QStringLiteral("v1.13.11")));
+    QVERIFY(result.message.contains(QStringLiteral("v1.14.2")));
 }
 
 void CoreUpdateServiceTests::updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled()
