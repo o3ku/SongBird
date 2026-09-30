@@ -5,7 +5,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-#include "app/CoreStartupCheckpoint.h"
+#include "appcore/CoreStartupCheckpoint.h"
 
 namespace {
 

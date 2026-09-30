@@ -19,6 +19,7 @@ private slots:
     void detectReadyProxyReturnsNulloptWhenNoPortIsReady();
     void reserveProxyPortsRejectsOverlapUntilReleased();
     void takeAvailableProxyPortsReservesDistinctPortsUntilReleased();
+    void takeSocksPortReservesSinglePortUntilReleased();
     void makeUrlTestRuntimeConfigKeepsRoutingAndDnsBehavior();
     void extractBatchPrimaryOutboundDetectsLegacyAndSingBox();
     void assembleBatchConfigsBuildExpectedInboundAndRoutingShape();
@@ -103,6 +104,34 @@ void SpeedTestServiceInternalTests::takeAvailableProxyPortsReservesDistinctPorts
         ports.httpPort,
         ports.locationProbePort));
     SpeedTestPortReservation::release(ports);
+}
+
+void SpeedTestServiceInternalTests::takeSocksPortReservesSinglePortUntilReleased()
+{
+    SpeedTestServiceInternal::resetGlobalState();
+
+    const int first = SpeedTestPortReservation::takeSocksPort();
+    QVERIFY(first > 0);
+    // A single reserved port must block re-reservation of the same port even
+    // with the socks-only variant (httpPort == 0).
+    QVERIFY(!SpeedTestServiceInternal::reserveProxyPorts(first, 0));
+
+    const int second = SpeedTestPortReservation::takeSocksPort();
+    QVERIFY(second > 0);
+    QVERIFY(second != first);
+
+    SpeedTestPortReservation::releaseSocksPort(first);
+    const int reused = SpeedTestPortReservation::takeSocksPort();
+    QVERIFY(reused > 0);
+    SpeedTestPortReservation::releaseSocksPort(reused);
+    SpeedTestPortReservation::releaseSocksPort(second);
+
+    // And a socks-only reservation must not collide with a full triple later:
+    // the ports share one global set.
+    const int single = SpeedTestPortReservation::takeSocksPort();
+    QVERIFY(single > 0);
+    QVERIFY(!SpeedTestServiceInternal::reserveProxyPorts(single, single + 1));
+    SpeedTestPortReservation::releaseSocksPort(single);
 }
 
 void SpeedTestServiceInternalTests::makeUrlTestRuntimeConfigKeepsRoutingAndDnsBehavior()

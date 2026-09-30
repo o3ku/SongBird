@@ -107,40 +107,9 @@ QJsonObject SingBoxRoutingConfigFragments::buildRoute(const Config& config, cons
         SingBoxConfigFragments::appendTunUdpRouteRule(rules, config.tun().tunModeItem);
     }
 
-    QString singBoxDomainStrategy = config.dns().domainStrategy4Singbox.trimmed();
-    if (selectedRouting != nullptr && !selectedRouting->domainStrategy4Singbox.trimmed().isEmpty()) {
-        singBoxDomainStrategy = selectedRouting->domainStrategy4Singbox.trimmed();
-    }
-
-    auto appendResolveRule = [&rules, &singBoxDomainStrategy]() {
-        QJsonObject resolveRule;
-        resolveRule.insert(QStringLiteral("action"), QStringLiteral("resolve"));
-        if (!singBoxDomainStrategy.isEmpty()) {
-            resolveRule.insert(QStringLiteral("strategy"), singBoxDomainStrategy);
-        }
-        rules.append(resolveRule);
-    };
-
-    const QString legacyDomainStrategy = config.dns().domainStrategy.trimmed();
-    const bool reapplyIpRulesAfterResolve = legacyDomainStrategy.compare(QStringLiteral("IPIfNonMatch"), Qt::CaseInsensitive) == 0;
-    QList<RoutingRule> ipRulesAfterResolve;
-    if (legacyDomainStrategy.compare(QStringLiteral("IPOnDemand"), Qt::CaseInsensitive) == 0) {
-        appendResolveRule();
-    }
-
     const QList<RoutingRule> effectiveRules = RoutingConfigFragments::effectiveRoutingRules(config, selectedRouting);
     for (const RoutingRule& rule : effectiveRules) {
         RoutingRuleJsonMapper::appendSingBoxRoutingRule(rules, rule);
-        if (reapplyIpRulesAfterResolve && !RoutingRuleJsonMapper::normalizeRuleValues(rule.ip).isEmpty()) {
-            ipRulesAfterResolve.append(rule);
-        }
-    }
-
-    if (reapplyIpRulesAfterResolve) {
-        appendResolveRule();
-        for (const RoutingRule& rule : ipRulesAfterResolve) {
-            RoutingRuleJsonMapper::appendSingBoxRoutingIpRule(rules, rule);
-        }
     }
 
     if (!rules.isEmpty()) {

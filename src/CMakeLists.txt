@@ -1,94 +1,35 @@
-set(SONGBIRD_SOURCES
-    app/main.cpp
-    app/AppBootstrap.h
-    app/AppBootstrap.cpp
-    app/AppBootstrapObjects.h
-    app/AppBootstrapObjects.cpp
-    app/AppBootstrapWorkflowWiring.cpp
-    app/AppBootstrapServiceWiring.cpp
-    app/AppBootstrapProxyWiring.cpp
-    app/AppBootstrapUiWiring.cpp
-    app/AppBootstrapUpdateWiring.cpp
-    app/AppBootstrapServerWiring.cpp
-    app/AppBootstrapShutdownWiring.cpp
-    app/UiThreadInvocation.h
-    app/FunctionRuntimeAdapters.h
-    app/FunctionRuntimeAdapters.cpp
-    app/AppUpdateCheckCoordinator.h
-    app/AppUpdateCheckCoordinator.cpp
-    app/AppUpdateCheckPresentation.h
-    app/AppUpdateCheckPresentation.cpp
-    app/AppUpdateInstallService.h
-    app/AppUpdateInstallService.cpp
-    app/ApplicationRestartCoordinator.h
-    app/ApplicationRestartCoordinator.cpp
-    app/IUserFeedback.h
-    app/ConfigPathResolver.h
-    app/ConfigBackupCoordinator.h
-    app/ConfigBackupCoordinator.cpp
-    app/DefaultServerSwitchCoordinator.h
-    app/DefaultServerSwitchCoordinator.cpp
-    app/CoreProcessCleanupService.h
-    app/CoreProcessCleanupService.cpp
-    app/CoreDiscoveryService.h
-    app/CoreDiscoveryService.cpp
-    app/CoreStartupCheckpoint.h
-    app/CoreStartupChecklist.h
-    app/CoreStartupChecklist.cpp
-    app/OutboundLocationProbeService.h
-    app/OutboundLocationProbeService.cpp
-    app/BackgroundTaskCoordinator.h
-    app/BackgroundTaskCoordinator.cpp
-    app/BackgroundThreadTracker.h
-    app/BackgroundThreadTracker.cpp
-    app/ProxyRuntimeInterfaces.h
-    app/CoreUpdateCoordinator.h
-    app/CoreUpdateCoordinator.cpp
-    app/CoreUpdatePendingState.h
-    app/CoreUpdatePendingState.cpp
-    app/GeoResourceUpdateCoordinator.h
-    app/GeoResourceUpdateCoordinator.cpp
-    app/ServerCollectionCoordinator.h
-    app/ServerCollectionCoordinator.cpp
-    app/ServerEditorCoordinator.h
-    app/ServerEditorCoordinator.cpp
-    app/SystemProxyCoordinator.h
-    app/SystemProxyCoordinator.cpp
-    app/SubscriptionWorkflowCoordinator.h
-    app/SubscriptionWorkflowCoordinator.cpp
-    app/PostStopAction.h
-    app/ProxyCrashRestartPolicy.h
-    app/ProxyCrashRestartPolicy.cpp
+set(SONGBIRD_SHARED_SOURCES
+    appcore/StartupAdminElevation.h
+    appcore/FunctionRuntimeAdapters.h
+    appcore/FunctionRuntimeAdapters.cpp
+    appcore/CoreProcessCleanupService.h
+    appcore/CoreProcessCleanupService.cpp
+    appcore/CoreDiscoveryService.h
+    appcore/CoreDiscoveryService.cpp
+    appcore/CoreStartupCheckpoint.h
+    appcore/CoreStartupChecklist.h
+    appcore/CoreStartupChecklist.cpp
+    appcore/OutboundLocationProbeService.h
+    appcore/OutboundLocationProbeService.cpp
+    appcore/BackgroundTaskCoordinator.h
+    appcore/BackgroundTaskCoordinator.cpp
+    appcore/BackgroundThreadTracker.h
+    appcore/BackgroundThreadTracker.cpp
+    appcore/ProxyRuntimeInterfaces.h
+    appcore/PostStopAction.h
+    appcore/ProxyCrashRestartPolicy.h
+    appcore/ProxyCrashRestartPolicy.cpp
     domain/models/RuntimeState.h
     domain/models/RuntimeState.cpp
-    app/AppRuntimeResolver.h
-    app/AppRuntimeResolver.cpp
-    app/RuntimeStateSnapshotBuilder.h
-    app/RuntimeStateSnapshotBuilder.cpp
-    app/ProxySession.h
-    app/ProxySession.cpp
-    app/SettingsDialogRunner.h
-    app/SettingsDialogRunner.cpp
-    app/SettingsApplyCoordinator.h
-    app/SettingsApplyCoordinator.cpp
-    app/SettingsWorkflowCoordinator.h
-    app/SettingsWorkflowCoordinator.cpp
-    app/SpeedTestCoordinator.h
-    app/SpeedTestCoordinator.cpp
-    app/SingleInstanceBootstrap.h
-    app/SingleInstanceBootstrap.cpp
-    app/StartupAdminElevation.h
-    app/TunRuntimeService.h
-    app/TunRuntimeService.cpp
-    app/TunAdminMessages.h
-    app/TunModeCoordinator.h
-    app/TunModeCoordinator.cpp
+    appcore/AppRuntimeResolver.h
+    appcore/AppRuntimeResolver.cpp
+    appcore/ProxySession.h
+    appcore/ProxySession.cpp
+    appcore/TunRuntimeService.h
+    appcore/TunRuntimeService.cpp
     common/BackgroundThreadLaunch.h
     common/OperationResult.h
-    common/DataSizeFormatter.h
     common/EndpointParser.h
-    common/GitHubMirrorHelper.h
-    common/GitHubUrls.h
     common/GitHubReleaseParsing.h
     common/GitHubReleaseParsing.cpp
     common/JsonFile.h
@@ -98,30 +39,20 @@ set(SONGBIRD_SOURCES
     common/ProcessRunner.h
     common/ProcessRunner.cpp
     common/ServerDisplayName.h
+    common/StartupSequencer.h
     common/SystemProxyMode.h
     common/TextElision.h
-    common/UrlProbeLatency.h
     common/UserAgent.h
     domain/models/Config.h
-    domain/models/PolicyGroupItem.h
     domain/models/RoutingProfiles.h
     domain/models/RoutingProfiles.cpp
     domain/models/RoutingItem.h
     domain/models/RoutingRule.h
     domain/models/SubItem.h
     domain/models/VmessItem.h
-    platform/IAutoRunService.h
     platform/ISystemProxyService.h
-    platform/windows/SingleInstanceGuard.h
-    platform/windows/SingleInstanceGuard.cpp
-    platform/windows/WindowsAutoRunService.h
-    platform/windows/WindowsAutoRunService.cpp
     platform/windows/WindowsSystemProxyService.h
     platform/windows/WindowsSystemProxyService.cpp
-    platform/windows/WindowsUwpLoopbackService.h
-    platform/windows/WindowsUwpLoopbackService.cpp
-    platform/windows/WindowsUwpLoopbackSupport.h
-    platform/windows/WindowsUwpLoopbackSupport.cpp
     runtime/CoreInfo.h
     runtime/CoreLaunchCompatDecision.h
     runtime/ProtocolCoreCompat.h
@@ -162,12 +93,10 @@ set(SONGBIRD_SOURCES
     runtime/core/CoreCatalog.h
     runtime/core/CoreBackendRegistry.h
     backends/CoreBackendRegistry.cpp
-    backends/mihomo/MihomoCoreDescriptor.h
     backends/mihomo/MihomoConfigFragments.h
     backends/mihomo/MihomoConfigFragments.cpp
     backends/mihomo/MihomoCoreBackend.h
     backends/mihomo/MihomoCoreBackend.cpp
-    backends/singbox/SingBoxCoreDescriptor.h
     backends/singbox/SingBoxConfigFragments.h
     backends/singbox/SingBoxConfigFragments.cpp
     backends/singbox/SingBoxTunCompatConfigFragments.h
@@ -184,7 +113,6 @@ set(SONGBIRD_SOURCES
     backends/singbox/SingBoxRoutingConfigFragments.cpp
     backends/singbox/SingBoxCoreBackend.h
     backends/singbox/SingBoxCoreBackend.cpp
-    backends/xray/XrayCoreDescriptor.h
     backends/xray/XrayConfigFragments.h
     backends/xray/XrayConfigFragments.cpp
     backends/xray/XrayOutboundConfigFragments.h
@@ -231,14 +159,6 @@ set(SONGBIRD_SOURCES
     services/ServerCustomConfigStore.cpp
     services/ServerListOperations.h
     services/ServerListOperations.cpp
-    services/ConfigBackupService.h
-    services/ConfigBackupService.cpp
-    services/ConfigBackupStateDocument.h
-    services/ConfigBackupStateDocument.cpp
-    services/AppUpdateService.h
-    services/AppUpdateService.cpp
-    services/AppUpdateReleaseMetadata.h
-    services/AppUpdateReleaseMetadata.cpp
     services/ServiceTimeouts.h
     services/CoreUpdateOperations.h
     services/CoreUpdateOperations.cpp
@@ -256,8 +176,6 @@ set(SONGBIRD_SOURCES
     services/CoreUpdateReleaseResolution.cpp
     services/CoreUpdateVersion.h
     services/CoreUpdateVersion.cpp
-    services/RoutingService.h
-    services/RoutingService.cpp
     services/SpeedTestBatchConfig.h
     services/SpeedTestBatchConfig.cpp
     services/SpeedTestPortReservation.h
@@ -271,10 +189,6 @@ set(SONGBIRD_SOURCES
     services/SpeedTestUrlProbe.h
     services/SpeedTestUrlProbe.cpp
     services/SpeedTestRequestItem.h
-    services/SpeedTestWorker.h
-    services/SpeedTestWorker.cpp
-    services/SpeedTestController.h
-    services/SpeedTestController.cpp
     services/ProxyAvailabilityCheckService.h
     services/ProxyAvailabilityCheckService.cpp
     services/GeoResourceUpdateService.h
@@ -293,12 +207,6 @@ set(SONGBIRD_SOURCES
     subscription/ClashProxyItemParser.cpp
     subscription/ClashYamlProxyParser.h
     subscription/ClashYamlProxyParser.cpp
-    subscription/ShareUrlBuilder.h
-    subscription/ShareUrlBuilder.cpp
-    subscription/ShareUrlProtocolBuilders.h
-    subscription/ShareUrlProtocolBuilders.cpp
-    subscription/ShareUrlBuilderSupport.h
-    subscription/ShareUrlBuilderSupport.cpp
     subscription/ShareUrlParser.h
     subscription/ShareUrlParser.cpp
     subscription/ShareUrlProtocolParsers.h
@@ -324,6 +232,120 @@ set(SONGBIRD_SOURCES
     subscription/SubscriptionYamlEscape.cpp
     subscription/SubscriptionImportTextParser.h
     subscription/SubscriptionImportTextParser.cpp
+    ui/dialogs/RoutingBaseRouteCard.h
+    ui/dialogs/RoutingBaseRouteCard.cpp
+    ui/dialogs/RoutingCustomRuleSupport.h
+    ui/dialogs/RoutingCustomRuleSupport.cpp
+    ui/dialogs/RoutingSettingsPageWidget.h
+    ui/dialogs/RoutingSettingsPageWidget.cpp
+    ui/dialogs/RoutingSettingsPageWidgetUi.cpp
+    ui/theme/AppTheme.h
+    ui/theme/AppTheme.cpp
+    ui/theme/AppThemePalette.h
+    ui/theme/AppThemePalette.cpp
+    ui/theme/AppThemeStyle.h
+    ui/theme/AppThemeStyle.cpp
+    ui/theme/ServerTableTheme.h
+    ui/theme/ServerTableTheme.cpp
+    resources/app_icons.qrc
+    resources/themes.qrc
+)
+
+set(SONGBIRD_SOURCES
+    app/main.cpp
+    app/AppBootstrap.h
+    app/AppBootstrap.cpp
+    app/AppBootstrapObjects.h
+    app/StartupWindowPolicy.h
+    app/AppBootstrapObjects.cpp
+    app/AppBootstrapWorkflowWiring.cpp
+    app/AppBootstrapServiceWiring.cpp
+    app/AppBootstrapProxyWiring.cpp
+    app/AppBootstrapUiWiring.cpp
+    app/AppBootstrapUpdateWiring.cpp
+    app/AppBootstrapServerWiring.cpp
+    app/AppBootstrapShutdownWiring.cpp
+    app/AppBootstrapMainWindowWiring.cpp
+    app/UiThreadInvocation.h
+    app/AppUpdateCheckCoordinator.h
+    app/AppUpdateCheckCoordinator.cpp
+    app/AppUpdateCheckPresentation.h
+    app/AppUpdateCheckPresentation.cpp
+    app/AppUpdateInstallService.h
+    app/AppUpdateInstallService.cpp
+    app/ApplicationRestartCoordinator.h
+    app/ApplicationRestartCoordinator.cpp
+    app/IUserFeedback.h
+    app/ConfigPathResolver.h
+    app/ConfigBackupCoordinator.h
+    app/ConfigBackupCoordinator.cpp
+    app/DefaultServerSwitchCoordinator.h
+    app/DefaultServerSwitchCoordinator.cpp
+    app/CoreUpdateCoordinator.h
+    app/CoreUpdateCoordinator.cpp
+    app/CoreUpdatePendingState.h
+    app/CoreUpdatePendingState.cpp
+    app/GeoResourceUpdateCoordinator.h
+    app/GeoResourceUpdateCoordinator.cpp
+    app/ServerCollectionCoordinator.h
+    app/ServerCollectionCoordinator.cpp
+    app/ServerEditorCoordinator.h
+    app/ServerEditorCoordinator.cpp
+    app/SystemProxyCoordinator.h
+    app/SystemProxyCoordinator.cpp
+    app/SubscriptionWorkflowCoordinator.h
+    app/SubscriptionWorkflowCoordinator.cpp
+    app/RuntimeStateSnapshotBuilder.h
+    app/RuntimeStateSnapshotBuilder.cpp
+    app/SettingsDialogRunner.h
+    app/SettingsDialogRunner.cpp
+    app/SettingsApplyCoordinator.h
+    app/SettingsApplyCoordinator.cpp
+    app/SettingsWorkflowCoordinator.h
+    app/SettingsWorkflowCoordinator.cpp
+    app/SpeedTestCoordinator.h
+    app/SpeedTestCoordinator.cpp
+    app/SingleInstanceBootstrap.h
+    app/SingleInstanceBootstrap.cpp
+    app/TunAdminMessages.h
+    app/TunModeCoordinator.h
+    app/TunModeCoordinator.cpp
+    common/DataSizeFormatter.h
+    common/GitHubMirrorHelper.h
+    common/GitHubUrls.h
+    common/UrlProbeLatency.h
+    platform/IAutoRunService.h
+    platform/windows/SingleInstanceGuard.h
+    platform/windows/SingleInstanceGuard.cpp
+    platform/windows/WindowsAutoRunService.h
+    platform/windows/WindowsAutoRunService.cpp
+    platform/windows/WindowsUwpLoopbackService.h
+    platform/windows/WindowsUwpLoopbackService.cpp
+    platform/windows/WindowsUwpLoopbackSupport.h
+    platform/windows/WindowsUwpLoopbackSupport.cpp
+    backends/mihomo/MihomoCoreDescriptor.h
+    backends/singbox/SingBoxCoreDescriptor.h
+    backends/xray/XrayCoreDescriptor.h
+    services/ConfigBackupService.h
+    services/ConfigBackupService.cpp
+    services/ConfigBackupStateDocument.h
+    services/ConfigBackupStateDocument.cpp
+    services/AppUpdateService.h
+    services/AppUpdateService.cpp
+    services/AppUpdateReleaseMetadata.h
+    services/AppUpdateReleaseMetadata.cpp
+    services/RoutingService.h
+    services/RoutingService.cpp
+    services/SpeedTestWorker.h
+    services/SpeedTestWorker.cpp
+    services/SpeedTestController.h
+    services/SpeedTestController.cpp
+    subscription/ShareUrlBuilder.h
+    subscription/ShareUrlBuilder.cpp
+    subscription/ShareUrlProtocolBuilders.h
+    subscription/ShareUrlProtocolBuilders.cpp
+    subscription/ShareUrlBuilderSupport.h
+    subscription/ShareUrlBuilderSupport.cpp
     subscription/SubscriptionUrlImportService.h
     subscription/SubscriptionUrlImportService.cpp
     third_party/qrcodegen/qrcodegen.hpp
@@ -347,13 +369,6 @@ set(SONGBIRD_SOURCES
     ui/dialogs/CoreSettingsPageWidgetUi.cpp
     ui/dialogs/CoreSettingsPageSupport.h
     ui/dialogs/CoreSettingsPageSupport.cpp
-    ui/dialogs/RoutingBaseRouteCard.h
-    ui/dialogs/RoutingBaseRouteCard.cpp
-    ui/dialogs/RoutingCustomRuleSupport.h
-    ui/dialogs/RoutingCustomRuleSupport.cpp
-    ui/dialogs/RoutingSettingsPageWidget.h
-    ui/dialogs/RoutingSettingsPageWidget.cpp
-    ui/dialogs/RoutingSettingsPageWidgetUi.cpp
     ui/dialogs/SubscriptionSettingsPageWidget.h
     ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ui/dialogs/SettingsDialog.h
@@ -364,14 +379,6 @@ set(SONGBIRD_SOURCES
     ui/dialogs/UwpLoopbackDialog.cpp
     ui/dialogs/UwpLoopbackDialogSupport.h
     ui/dialogs/UwpLoopbackDialogSupport.cpp
-    ui/theme/AppTheme.h
-    ui/theme/AppTheme.cpp
-    ui/theme/AppThemePalette.h
-    ui/theme/AppThemePalette.cpp
-    ui/theme/AppThemeStyle.h
-    ui/theme/AppThemeStyle.cpp
-    ui/theme/ServerTableTheme.h
-    ui/theme/ServerTableTheme.cpp
     ui/mainwindow/MainWindow.h
     ui/mainwindow/MainWindow.cpp
     ui/mainwindow/ToolbarWidgets.h
@@ -434,9 +441,7 @@ set(SONGBIRD_SOURCES
     ui/models/ServerTableModel.cpp
     ui/qr/QrCodeRenderer.h
     ui/qr/QrCodeRenderer.cpp
-    resources/app_icons.qrc
     resources/toolbar_icons.qrc
-    resources/themes.qrc
     ui/tray/TrayController.h
     ui/tray/TrayController.cpp
     ui/tray/TrayMenuSupport.h
@@ -454,31 +459,6 @@ set(SONGBIRD_TRANSLATION_TS_FILES
 )
 
 set(SONGBIRD_AUTO_SOURCES
-    app/AppRuntimeResolver.h
-    app/AppRuntimeResolver.cpp
-    app/BackgroundTaskCoordinator.h
-    app/BackgroundTaskCoordinator.cpp
-    app/BackgroundThreadTracker.h
-    app/BackgroundThreadTracker.cpp
-    app/CoreDiscoveryService.h
-    app/CoreDiscoveryService.cpp
-    app/CoreProcessCleanupService.h
-    app/CoreProcessCleanupService.cpp
-    app/CoreStartupCheckpoint.h
-    app/CoreStartupChecklist.h
-    app/CoreStartupChecklist.cpp
-    app/FunctionRuntimeAdapters.h
-    app/FunctionRuntimeAdapters.cpp
-    app/OutboundLocationProbeService.h
-    app/OutboundLocationProbeService.cpp
-    app/PostStopAction.h
-    app/ProxyCrashRestartPolicy.h
-    app/ProxyCrashRestartPolicy.cpp
-    app/ProxyRuntimeInterfaces.h
-    app/ProxySession.h
-    app/ProxySession.cpp
-    app/TunRuntimeService.h
-    app/TunRuntimeService.cpp
     auto/main.cpp
     auto/AutoTypes.h
     auto/AutoCountrySelection.h
@@ -497,236 +477,12 @@ set(SONGBIRD_AUTO_SOURCES
     auto/SongBirdAutoCoordinator.cpp
     auto/SongBirdAutoWindow.h
     auto/SongBirdAutoWindow.cpp
-    common/BackgroundThreadLaunch.h
     common/DialogUtils.h
     common/CorePidFile.h
-    common/JsonFile.h
-    common/EndpointParser.h
-    common/GitHubReleaseParsing.h
-    common/GitHubReleaseParsing.cpp
-    common/OperationResult.h
-    common/PortValidator.h
-    common/RoutingValuePattern.h
-    common/RoutingValuePattern.cpp
-    common/ProcessRunner.h
-    common/ProcessRunner.cpp
-    common/ServerDisplayName.h
-    common/SystemProxyMode.h
-    common/TextElision.h
-    common/UserAgent.h
-    domain/models/Config.h
-    domain/models/PolicyGroupItem.h
-    domain/models/RoutingProfiles.h
-    domain/models/RoutingProfiles.cpp
-    domain/models/RoutingItem.h
-    domain/models/RoutingRule.h
-    domain/models/SubItem.h
     domain/models/TunModeItem.h
-    domain/models/RuntimeState.h
-    domain/models/RuntimeState.cpp
-    domain/models/VmessItem.h
-    platform/ISystemProxyService.h
-    platform/windows/WindowsSystemProxyService.h
-    platform/windows/WindowsSystemProxyService.cpp
-    runtime/CoreConfigPreflight.h
-    runtime/CoreConfigPreflight.cpp
-    runtime/CoreInfo.h
-    runtime/CoreProcessOutputBuffer.h
-    runtime/CoreProcessOutputBuffer.cpp
-    runtime/TunAdapterNames.h
-    runtime/ClientConfigWriter.h
-    runtime/ClientConfigWriter.cpp
-    runtime/DnsAddressParser.h
-    runtime/DnsAddressParser.cpp
-    runtime/DnsConfigFragments.h
-    runtime/DnsConfigFragments.cpp
-    runtime/DnsHosts.h
-    runtime/DnsHosts.cpp
-    runtime/ICoreProcessHost.h
-    runtime/LegacyDnsConfigBuilder.h
-    runtime/LegacyDnsConfigBuilder.cpp
-    runtime/ProtocolConfigMapper.h
-    runtime/ProtocolConfigMapper.cpp
-    runtime/CoreLaunchCompatDecision.h
-    runtime/ProtocolCoreCompat.h
-    runtime/QtCoreProcessHost.h
-    runtime/QtCoreProcessHost.cpp
-    runtime/RoutingConfigFragments.h
-    runtime/RoutingConfigFragments.cpp
-    runtime/RoutingRuleJsonMapper.h
-    runtime/RoutingRuleJsonMapper.cpp
-    runtime/RoutingRuleJsonSupport.h
-    runtime/RoutingRuleJsonSupport.cpp
-    runtime/SingBoxDnsConfigBuilder.h
-    runtime/SingBoxDnsConfigBuilder.cpp
-    runtime/SingBoxDnsConfigSupport.h
-    runtime/SingBoxDnsConfigSupport.cpp
-    runtime/SingBoxDnsRuleConfig.h
-    runtime/SingBoxDnsRuleConfig.cpp
-    runtime/SingBoxFakeIpFilter.h
-    runtime/SingBoxFakeIpFilter.cpp
-    runtime/SingBoxRoutingRuleMapper.h
-    runtime/SingBoxRoutingRuleMapper.cpp
     runtime/TunCompatCoreRequirement.h
-    runtime/core/CoreBackendRegistry.h
-    runtime/core/CoreCatalog.h
-    runtime/core/CoreDescriptor.h
-    runtime/core/CoreDescriptorRegistry.h
-    runtime/core/ICoreBackend.h
-    backends/CoreBackendRegistry.cpp
-    backends/mihomo/MihomoConfigFragments.h
-    backends/mihomo/MihomoConfigFragments.cpp
-    backends/mihomo/MihomoCoreBackend.h
-    backends/mihomo/MihomoCoreBackend.cpp
-    backends/singbox/SingBoxConfigFragments.h
-    backends/singbox/SingBoxConfigFragments.cpp
-    backends/singbox/SingBoxCoreBackend.h
-    backends/singbox/SingBoxCoreBackend.cpp
-    backends/singbox/SingBoxOutboundConfigFragments.h
-    backends/singbox/SingBoxOutboundConfigFragments.cpp
-    backends/singbox/SingBoxOutboundConfigSupport.h
-    backends/singbox/SingBoxOutboundConfigSupport.cpp
-    backends/singbox/SingBoxRoutingConfigFragments.h
-    backends/singbox/SingBoxRoutingConfigFragments.cpp
-    backends/singbox/SingBoxTlsConfigFragments.h
-    backends/singbox/SingBoxTlsConfigFragments.cpp
-    backends/singbox/SingBoxTransportConfigFragments.h
-    backends/singbox/SingBoxTransportConfigFragments.cpp
-    backends/singbox/SingBoxTunCompatConfigFragments.h
-    backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    backends/xray/XrayConfigFragments.h
-    backends/xray/XrayConfigFragments.cpp
-    backends/xray/XrayCoreBackend.h
-    backends/xray/XrayCoreBackend.cpp
-    backends/xray/XrayOutboundConfigFragments.h
-    backends/xray/XrayOutboundConfigFragments.cpp
-    backends/xray/XraySecurityConfigFragments.h
-    backends/xray/XraySecurityConfigFragments.cpp
-    backends/xray/XrayStreamConfigFragments.h
-    backends/xray/XrayStreamConfigFragments.cpp
-    backends/xray/XrayTransportConfigFragments.h
-    backends/xray/XrayTransportConfigFragments.cpp
-    persistence/IConfigRepository.h
-    persistence/JsonConfigCollectionSerialization.h
-    persistence/JsonConfigCollectionSerialization.cpp
-    persistence/JsonConfigPolicySerialization.h
-    persistence/JsonConfigPolicySerialization.cpp
-    persistence/JsonConfigRepository.h
-    persistence/JsonConfigRepository.cpp
-    persistence/JsonConfigRootSerialization.h
-    persistence/JsonConfigRootSerialization.cpp
-    persistence/JsonConfigRoutingSerialization.h
-    persistence/JsonConfigRoutingSerialization.cpp
-    persistence/JsonConfigSerialization.h
-    persistence/JsonConfigSerialization.cpp
-    persistence/JsonConfigServerSerialization.h
-    persistence/JsonConfigServerSerialization.cpp
-    persistence/JsonConfigStateSerialization.h
-    persistence/JsonConfigStateSerialization.cpp
-    persistence/JsonConfigSubscriptionSerialization.h
-    persistence/JsonConfigSubscriptionSerialization.cpp
-    persistence/JsonConfigTunSerialization.h
-    persistence/JsonConfigTunSerialization.cpp
-    persistence/JsonConfigUiSerialization.h
-    persistence/JsonConfigUiSerialization.cpp
-    services/ProxyAvailabilityCheckService.h
-    services/ProxyAvailabilityCheckService.cpp
-    services/ServiceTimeouts.h
-    services/CoreUpdateOperations.h
-    services/CoreUpdateOperations.cpp
-    services/CoreUpdateService.h
-    services/CoreUpdateService.cpp
-    services/CoreUpdateInstallFiles.h
-    services/CoreUpdateInstallFiles.cpp
-    services/CoreUpdatePackageDownload.h
-    services/CoreUpdatePackageDownload.cpp
-    services/CoreUpdatePackageInstallation.h
-    services/CoreUpdatePackageInstallation.cpp
-    services/CoreUpdateReleaseMetadata.h
-    services/CoreUpdateReleaseMetadata.cpp
-    services/CoreUpdateReleaseResolution.h
-    services/CoreUpdateReleaseResolution.cpp
-    services/CoreUpdateVersion.h
-    services/CoreUpdateVersion.cpp
-    services/GeoResourceUpdateService.h
-    services/GeoResourceUpdateService.cpp
-    services/GeoResourceDownload.h
-    services/GeoResourceDownload.cpp
-    services/ServerCustomConfigStore.h
-    services/ServerCustomConfigStore.cpp
-    services/ServerListOperations.h
-    services/ServerListOperations.cpp
-    services/ServerService.h
-    services/ServerService.cpp
-    services/SpeedTestBatchConfig.h
-    services/SpeedTestBatchConfig.cpp
-    services/SpeedTestBatchRuntimeRunner.h
-    services/SpeedTestBatchRuntimeRunner.cpp
-    services/SpeedTestPortReservation.h
-    services/SpeedTestPortReservation.cpp
-    services/SpeedTestRequestItem.h
-    services/SpeedTestRuntimeProcess.h
-    services/SpeedTestRuntimeProcess.cpp
-    services/SpeedTestRuntimeRunner.h
-    services/SpeedTestRuntimeRunner.cpp
     services/SpeedTestServiceInternal.h
-    services/SpeedTestUrlProbe.h
-    services/SpeedTestUrlProbe.cpp
-    services/SubscriptionService.h
-    services/SubscriptionService.cpp
-    services/SubscriptionUpdateService.h
-    services/SubscriptionUpdateService.cpp
-    subscription/ClashProxyItemParser.h
-    subscription/ClashProxyItemParser.cpp
-    subscription/ClashSubscriptionParser.h
-    subscription/ClashSubscriptionParser.cpp
-    subscription/ClashYamlProxyParser.h
-    subscription/ClashYamlProxyParser.cpp
-    subscription/CustomConfigTextParser.h
-    subscription/CustomConfigTextParser.cpp
-    subscription/ShareUrlParser.h
-    subscription/ShareUrlParser.cpp
-    subscription/ShareUrlParserSupport.h
-    subscription/ShareUrlParserSupport.cpp
-    subscription/ShareUrlProtocolParsers.h
-    subscription/ShareUrlProtocolParsers.cpp
-    subscription/ShareUrlSingBoxProtocolParsers.cpp
-    subscription/ShareUrlVmessParser.h
-    subscription/ShareUrlVmessParser.cpp
-    subscription/SubscriptionContentParser.h
-    subscription/SubscriptionContentParser.cpp
-    subscription/SubscriptionImportTextParser.h
-    subscription/SubscriptionImportTextParser.cpp
-    subscription/SubscriptionJsonSupport.h
-    subscription/SubscriptionJsonSupport.cpp
-    subscription/SubscriptionSingBoxParser.h
-    subscription/SubscriptionSingBoxParser.cpp
-    subscription/SubscriptionYamlFlowValueParser.h
-    subscription/SubscriptionYamlFlowValueParser.cpp
-    subscription/SubscriptionYamlEscape.h
-    subscription/SubscriptionYamlEscape.cpp
-    subscription/SubscriptionYamlParser.h
-    subscription/SubscriptionYamlParser.cpp
-    subscription/SubscriptionYamlScalarValueParser.h
-    subscription/SubscriptionYamlScalarValueParser.cpp
-    ui/dialogs/RoutingBaseRouteCard.h
-    ui/dialogs/RoutingBaseRouteCard.cpp
-    ui/dialogs/RoutingCustomRuleSupport.h
-    ui/dialogs/RoutingCustomRuleSupport.cpp
-    ui/dialogs/RoutingSettingsPageWidget.h
-    ui/dialogs/RoutingSettingsPageWidget.cpp
-    ui/dialogs/RoutingSettingsPageWidgetUi.cpp
-    ui/theme/AppTheme.h
-    ui/theme/AppTheme.cpp
-    ui/theme/AppThemePalette.h
-    ui/theme/AppThemePalette.cpp
-    ui/theme/AppThemeStyle.h
-    ui/theme/AppThemeStyle.cpp
-    ui/theme/ServerTableTheme.h
-    ui/theme/ServerTableTheme.cpp
     resources/auto_resources.qrc
-    resources/app_icons.qrc
-    resources/themes.qrc
 )
 
 if(WIN32)
@@ -857,6 +613,32 @@ if(MSVC)
     target_compile_options(songbird_core_descriptors PRIVATE /Z7)
 endif()
 
+# Code shared by the SongBird and SongBird-Auto front-ends. It is compiled once
+# and linked into both executables (and into the test targets), so a new shared
+# source only has to be registered in SONGBIRD_SHARED_SOURCES instead of being
+# repeated in two hand-maintained lists.
+add_library(songbird_shared_objs OBJECT
+    ${SONGBIRD_SHARED_SOURCES}
+)
+
+target_include_directories(songbird_shared_objs
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(songbird_shared_objs
+    PUBLIC
+        Qt${QT_VERSION_MAJOR}::Core
+        Qt${QT_VERSION_MAJOR}::Gui
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+        Qt${QT_VERSION_MAJOR}::Svg
+)
+
+if(MSVC)
+    target_compile_options(songbird_shared_objs PRIVATE /Z7)
+endif()
+
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(songbird
         MANUAL_FINALIZATION
@@ -900,6 +682,7 @@ target_compile_definitions(songbird_auto
 target_link_libraries(songbird
     PRIVATE
         songbird_core_descriptors
+        songbird_shared_objs
         Qt${QT_VERSION_MAJOR}::Core
         Qt${QT_VERSION_MAJOR}::Gui
         Qt${QT_VERSION_MAJOR}::Widgets
@@ -910,6 +693,7 @@ target_link_libraries(songbird
 target_link_libraries(songbird_auto
     PRIVATE
         songbird_core_descriptors
+        songbird_shared_objs
         Qt${QT_VERSION_MAJOR}::Core
         Qt${QT_VERSION_MAJOR}::Gui
         Qt${QT_VERSION_MAJOR}::Widgets
@@ -957,6 +741,10 @@ endif()
 
 if(WIN32)
     # Ws2_32 provides ntohs, used when decoding TCP port numbers from GetExtendedTcpTable.
+    # The Win32 imports live in shared sources (CoreProcessCleanupService, TunRuntimeService,
+    # WindowsSystemProxyService), so they are attached to songbird_shared_objs as well and
+    # reach every consumer — including the test targets that link it.
+    target_link_libraries(songbird_shared_objs PUBLIC Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
     target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
     target_link_libraries(songbird_auto PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
 endif()

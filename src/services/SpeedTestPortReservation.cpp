@@ -66,6 +66,33 @@ void release(const Ports& ports)
         ports.locationProbePort);
 }
 
+int takeSocksPort()
+{
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        QTcpServer socksProbe;
+        if (!socksProbe.listen(QHostAddress::LocalHost, 0)) {
+            continue;
+        }
+
+        const int candidate = socksProbe.serverPort();
+        socksProbe.close();
+        if (candidate <= 0) {
+            continue;
+        }
+
+        if (SpeedTestServiceInternal::reserveProxyPorts(candidate, 0)) {
+            return candidate;
+        }
+    }
+
+    return 0;
+}
+
+void releaseSocksPort(int socksPort)
+{
+    SpeedTestServiceInternal::releaseProxyPorts(socksPort, 0);
+}
+
 bool isProxyPortReady(int port)
 {
     QTcpSocket socket;

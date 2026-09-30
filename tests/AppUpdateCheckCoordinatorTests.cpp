@@ -1,7 +1,7 @@
 #include <QtTest>
 
 #include "app/AppUpdateCheckCoordinator.h"
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "app/IUserFeedback.h"
 
 class RecordingFeedback final : public IUserFeedback {

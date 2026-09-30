@@ -10,7 +10,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RuntimeState.h"
@@ -94,6 +94,15 @@ private:
     void wireMainWindowCommands();
     void wireTraySignals();
     void wireWorkflowCoordinators(const std::function<void(QThread*)>& trackBackgroundThread);
+
+    // Startup steps, run in this order by run() through StartupSequencer. They
+    // are the bodies that used to be inlined in run(); keeping them named is
+    // what lets run() stay a pure assembly step.
+    void initializeTray();
+    void adoptManagedSystemProxyOnStartup();
+    void presentMainWindowOnStartup();
+    void scheduleAppUpdateChecks();
+
     void syncWindow();
     void syncStatusIndicators();
     bool reloadConfig();

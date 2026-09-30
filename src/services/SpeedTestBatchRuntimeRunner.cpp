@@ -10,6 +10,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <chrono>
 #include <future>
 #include <optional>
 #include <vector>
@@ -25,6 +26,11 @@ namespace {
 
 constexpr int kBatchProbeTimeoutMs = 3000;
 constexpr int kBatchStartupTimeoutMs = 6000;
+// Probes are cheap (one HTTP request to a loopback SOCKS port), but they all
+// fan out through one core process; an unbounded burst of hundreds of TLS
+// handshakes through that single process contends on its CPU and inflates the
+// latency readings of every node measured in the burst.
+constexpr int kBatchProbeMaxConcurrency = 16;
 namespace BatchConfig = SpeedTestBatchConfig;
 namespace PortPool = SpeedTestPortReservation;
 namespace RuntimeProcess = SpeedTestRuntimeProcess;
@@ -99,29 +105,27 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         return true;
     }
 
-    struct PortReservation {
-        int socksPort = 0;
-        int httpPort = 0;
-        int locationProbePort = 0;
-    };
-    QList<PortReservation> reservations;
-    auto releaseAllPorts = [&reservations]() {
-        for (const PortReservation& r : reservations) {
-            PortPool::release(PortPool::Ports{r.socksPort, r.httpPort, r.locationProbePort});
+    QList<int> reservedSocksPorts;
+    auto releaseAllPorts = [&reservedSocksPorts]() {
+        for (const int socksPort : reservedSocksPorts) {
+            PortPool::releaseSocksPort(socksPort);
         }
-        reservations.clear();
+        reservedSocksPorts.clear();
     };
 
+    // The batch config only opens one SOCKS inbound per entry, so a full
+    // three-port reservation per entry would reserve two ports that are never
+    // bound and make the allocation scan fail more often on large batches.
     for (BatchConfig::ProbeEntry& entry : entries) {
-        const PortPool::Ports ports = PortPool::takeAvailable();
-        if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
+        const int socksPort = PortPool::takeSocksPort();
+        if (socksPort <= 0) {
             log(QStringLiteral("URL Test batch | port allocation failed at entry %1")
-                    .arg(reservations.size()));
+                    .arg(reservedSocksPorts.size()));
             releaseAllPorts();
             return false;
         }
-        entry.socksPort = ports.socksPort;
-        reservations.append({ports.socksPort, ports.httpPort, ports.locationProbePort});
+        entry.socksPort = socksPort;
+        reservedSocksPorts.append(socksPort);
     }
 
     QTemporaryDir temporaryDirectory;
@@ -200,39 +204,75 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         return false;
     }
 
-    // Probe all inbounds concurrently. Each probe is just an HTTP request to
-    // a loopback SOCKS port -- no per-server core startup cost, so we can
-    // safely fire them all at once even for large batches.
-    std::vector<std::future<QString>> futures;
-    futures.reserve(entries.size());
-    for (const BatchConfig::ProbeEntry& entry : entries) {
-        const BatchConfig::ProbeEntry probeEntry = entry;
-        futures.push_back(std::async(std::launch::async, [probeEntry, &cancelled]() -> QString {
-            if (cancelled.load()) {
-                return QCoreApplication::translate("SpeedTestController", "Cancelled");
+    // Probe the inbounds concurrently, capped by a sliding window: each probe
+    // is just an HTTP request to a loopback SOCKS port, but all of them are
+    // served by the one batch core process, so more in-flight probes than
+    // kBatchProbeMaxConcurrency would skew the latency readings of the batch.
+    // Same sliding-window pattern as SpeedTestWorker::runFallbackGroup.
+    struct PendingProbe {
+        int entryIndex = 0;
+        std::future<QString> future;
+    };
+    std::vector<PendingProbe> pending;
+    pending.reserve(kBatchProbeMaxConcurrency);
+
+    auto collectReadyProbes = [&pending, &entries, &cancelled, &log, &emitResult]() {
+        for (auto it = pending.begin(); it != pending.end();) {
+            if (it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+                ++it;
+                continue;
             }
-            const SpeedTestServiceInternal::UrlProbeResult probeResult = UrlProbe::probeSocksWithRetry(
-                probeEntry.socksPort,
-                probeEntry.url,
-                kBatchProbeTimeoutMs,
-                cancelled);
-            return SpeedTestServiceInternal::formatUrlProbeResult(probeResult);
-        }));
-    }
+
+            QString result;
+            try {
+                result = it->future.get();
+            } catch (...) {
+                result = QCoreApplication::translate("SpeedTestController", "Failed");
+            }
+            if (result.trimmed().isEmpty()) {
+                result = QCoreApplication::translate("SpeedTestController", "Failed");
+            }
+            const BatchConfig::ProbeEntry& entry = entries[it->entryIndex];
+            if (!cancelled.load()) {
+                log(QStringLiteral("URL Test result | %1 -> %2").arg(entry.serverName, result));
+                emitResult(entry.indexId, result);
+            }
+            it = pending.erase(it);
+        }
+    };
 
     for (int i = 0; i < entries.size(); ++i) {
-        QString result;
-        try {
-            result = futures[i].get();
-        } catch (...) {
-            result = QCoreApplication::translate("SpeedTestController", "Failed");
+        if (cancelled.load()) {
+            break;
         }
-        if (result.trimmed().isEmpty()) {
-            result = QCoreApplication::translate("SpeedTestController", "Failed");
+
+        const BatchConfig::ProbeEntry probeEntry = entries[i];
+        pending.push_back(PendingProbe{
+            i,
+            std::async(std::launch::async, [probeEntry, &cancelled]() -> QString {
+                if (cancelled.load()) {
+                    return QCoreApplication::translate("SpeedTestController", "Cancelled");
+                }
+                const SpeedTestServiceInternal::UrlProbeResult probeResult = UrlProbe::probeSocksWithRetry(
+                    probeEntry.socksPort,
+                    probeEntry.url,
+                    kBatchProbeTimeoutMs,
+                    cancelled);
+                return SpeedTestServiceInternal::formatUrlProbeResult(probeResult);
+            })});
+
+        while (!cancelled.load() && pending.size() >= kBatchProbeMaxConcurrency) {
+            collectReadyProbes();
+            if (pending.size() >= kBatchProbeMaxConcurrency) {
+                QThread::msleep(25);
+            }
         }
-        if (!cancelled.load()) {
-            log(QStringLiteral("URL Test result | %1 -> %2").arg(entries[i].serverName, result));
-            emitResult(entries[i].indexId, result);
+    }
+
+    while (!pending.empty()) {
+        collectReadyProbes();
+        if (!pending.empty()) {
+            QThread::msleep(25);
         }
     }
 

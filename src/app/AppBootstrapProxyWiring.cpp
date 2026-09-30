@@ -7,11 +7,11 @@
 #include <QCoreApplication>
 #include <QWidget>
 
-#include "app/AppRuntimeResolver.h"
-#include "app/BackgroundTaskCoordinator.h"
-#include "app/OutboundLocationProbeService.h"
-#include "app/ProxyRuntimeInterfaces.h"
-#include "app/ProxySession.h"
+#include "appcore/AppRuntimeResolver.h"
+#include "appcore/BackgroundTaskCoordinator.h"
+#include "appcore/OutboundLocationProbeService.h"
+#include "appcore/ProxyRuntimeInterfaces.h"
+#include "appcore/ProxySession.h"
 #include "app/SystemProxyCoordinator.h"
 #include "app/TunModeCoordinator.h"
 #include "common/AppPlatform.h"

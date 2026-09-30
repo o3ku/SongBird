@@ -7,7 +7,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "common/OperationResult.h"
 
 class QThread;

@@ -16,9 +16,7 @@ public:
         Config& config,
         QList<RoutingItem> items,
         bool enableAdvanced,
-        int selectedIndex,
-        const QString& domainStrategy,
-        const QString& domainMatcher);
+        int selectedIndex);
     OperationResult setRoutingMode(Config& config, const QString& routingModeId);
     OperationResult selectRouting(Config& config, const QString& routingModeId);
 

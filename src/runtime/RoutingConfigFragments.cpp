@@ -67,14 +67,6 @@ QJsonObject RoutingConfigFragments::buildLegacyRouting(const Config& config, con
 {
     QJsonObject routing;
 
-    if (!config.dns().domainStrategy.trimmed().isEmpty()) {
-        routing.insert(QStringLiteral("domainStrategy"), config.dns().domainStrategy.trimmed());
-    }
-
-    if (!config.dns().domainMatcher.trimmed().isEmpty()) {
-        routing.insert(QStringLiteral("domainMatcher"), config.dns().domainMatcher.trimmed());
-    }
-
     QJsonArray rules;
     QJsonObject locationProbeRule;
     locationProbeRule.insert(QStringLiteral("type"), QStringLiteral("field"));

@@ -1,7 +1,7 @@
 #include <QtTest>
 
 #include "app/SettingsDialogApplyPlan.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 
 class SettingsDialogApplyPlanTests : public QObject {
     Q_OBJECT

@@ -8,7 +8,7 @@
 #include <QStringList>
 
 #include "app/IUserFeedback.h"
-#include "app/ProxyRuntimeInterfaces.h"
+#include "appcore/ProxyRuntimeInterfaces.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 

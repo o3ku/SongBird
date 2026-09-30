@@ -1,4 +1,4 @@
-#include "app/BackgroundThreadTracker.h"
+#include "appcore/BackgroundThreadTracker.h"
 
 #include <QThread>
 

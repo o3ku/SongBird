@@ -6,7 +6,7 @@
 #include <QThread>
 
 #include "app/CoreUpdateCoordinator.h"
-#include "app/ProxySession.h"
+#include "appcore/ProxySession.h"
 #include "app/SettingsApplyCoordinator.h"
 #include "app/SettingsWorkflowCoordinator.h"
 #include "app/SubscriptionWorkflowCoordinator.h"

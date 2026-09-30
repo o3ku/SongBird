@@ -79,7 +79,6 @@ QList<RoutingItem> parseCustomRoutingItems(const QJsonArray& array)
         item.locked = false;
         item.builtin = false;
         item.customIcon = readString(object, QStringLiteral("customIcon"));
-        item.domainStrategy4Singbox = readString(object, QStringLiteral("domainStrategyForSingbox"));
         item.rules = parseRoutingRules(object.value(QStringLiteral("rules")).toArray());
         items.append(item);
     }
@@ -100,7 +99,6 @@ QJsonArray toCustomRoutingArray(const QList<RoutingItem>& items)
         writeIfNotEmpty(object, QStringLiteral("url"), item.url);
         writeIfNotDefault(object, QStringLiteral("enabled"), item.enabled, true);
         writeIfNotEmpty(object, QStringLiteral("customIcon"), item.customIcon);
-        writeIfNotEmpty(object, QStringLiteral("domainStrategyForSingbox"), item.domainStrategy4Singbox);
         const QJsonArray rules = toRoutingRuleArray(item.rules);
         writeArrayIfNotEmpty(object, QStringLiteral("rules"), rules);
         array.append(object);

@@ -4,7 +4,7 @@
 #include <QTemporaryDir>
 #include <QFile>
 
-#include "app/CoreStartupCheckpoint.h"
+#include "appcore/CoreStartupCheckpoint.h"
 #include "app/TunRuntimeState.h"
 #include "runtime/CoreConfigPreflight.h"
 #include "runtime/TunAdapterNames.h"

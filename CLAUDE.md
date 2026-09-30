@@ -127,7 +127,7 @@ GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 20
 
 ### 运行时状态机
 
-代理激活由 [ProxySession](src/app/ProxySession.h) 的 `Phase` 驱动：`Stopped` → `EnvironmentCleanup` → `ValidateCoreApplication` → `ValidateRuntimeResources` → `ValidateCoreConfig` → `StartTunRuntime` → `StartCoreProcess` → `CheckOutboundLocation` → `ApplySystemProxy` → `Proxying`（或 `Stopping`）。
+代理激活由 [ProxySession](src/appcore/ProxySession.h) 的 `Phase` 驱动：`Stopped` → `EnvironmentCleanup` → `ValidateCoreApplication` → `ValidateRuntimeResources` → `ValidateCoreConfig` → `StartTunRuntime` → `StartCoreProcess` → `CheckOutboundLocation` → `ApplySystemProxy` → `Proxying`（或 `Stopping`）。
 
 关键不变量：
 

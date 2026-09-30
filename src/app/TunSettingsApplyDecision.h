@@ -139,6 +139,46 @@ inline TunSettingsSaveBehavior evaluateTunSettingsSaveBehavior(
     return behavior;
 }
 
+// Field-by-field equality for the DNS page. Kept here rather than in
+// SettingsDialogApplyPlan.h so the shared runtime hot-apply decision can use
+// it too; the settings plan reuses it instead of duplicating the field list.
+inline bool areDnsConfigFieldsEqual(const DnsConfigState& lhs, const DnsConfigState& rhs)
+{
+    return lhs.enableFragment == rhs.enableFragment
+        && lhs.enableCacheFile4Sbox == rhs.enableCacheFile4Sbox
+        && lhs.defaultFingerprint.trimmed() == rhs.defaultFingerprint.trimmed()
+        && lhs.defaultUserAgent.trimmed() == rhs.defaultUserAgent.trimmed()
+        && lhs.directDns.trimmed() == rhs.directDns.trimmed()
+        && lhs.remoteDns.trimmed() == rhs.remoteDns.trimmed()
+        && lhs.bootstrapDns.trimmed() == rhs.bootstrapDns.trimmed()
+        && lhs.fakeIp == rhs.fakeIp
+        && lhs.globalFakeIp == rhs.globalFakeIp
+        && lhs.serveStale == rhs.serveStale
+        && lhs.parallelQuery == rhs.parallelQuery
+        && lhs.directExpectedIps.trimmed() == rhs.directExpectedIps.trimmed()
+        && lhs.useSystemHosts == rhs.useSystemHosts
+        && lhs.addCommonHosts == rhs.addCommonHosts
+        && lhs.blockBindingQuery == rhs.blockBindingQuery
+        && lhs.domainStrategyForFreedom.trimmed() == rhs.domainStrategyForFreedom.trimmed()
+        && lhs.domainStrategyForProxy.trimmed() == rhs.domainStrategyForProxy.trimmed()
+        && lhs.dnsHosts.trimmed() == rhs.dnsHosts.trimmed()
+        && lhs.defaultAllowInsecure == rhs.defaultAllowInsecure;
+}
+
+// Core-page fields that are baked into the generated core config. Every one of
+// these is read by a backend fragment, so changing it must regenerate the config.
+inline bool areCoreConfigFieldsEqual(const Config& previous, const Config& updated)
+{
+    return previous.dns().enableCacheFile4Sbox == updated.dns().enableCacheFile4Sbox
+        && previous.mux4SboxProtocol.trimmed() == updated.mux4SboxProtocol.trimmed()
+        && previous.dns().enableFragment == updated.dns().enableFragment
+        && previous.dns().defaultUserAgent.trimmed() == updated.dns().defaultUserAgent.trimmed()
+        && normalizedCoreTypeItemsForComparison(previous)
+            == normalizedCoreTypeItemsForComparison(updated)
+        && previous.tun().tunModeItem.enableLegacyProtect
+            == updated.tun().tunModeItem.enableLegacyProtect;
+}
+
 inline bool shouldHotApplyRuntimeSettings(
     const Config& previous,
     const Config& updated,
@@ -146,12 +186,13 @@ inline bool shouldHotApplyRuntimeSettings(
 {
     const int previousLocalPort = previous.localPort > 0 ? previous.localPort : 10808;
     const int updatedLocalPort = updated.localPort > 0 ? updated.localPort : 10808;
-    const QList<CoreTypeItem> previousCoreTypeItems = normalizedCoreTypeItemsForComparison(previous);
-    const QList<CoreTypeItem> updatedCoreTypeItems = normalizedCoreTypeItemsForComparison(updated);
     return !tunDecision.requiresAdminForConfiguredTun
         && (previousLocalPort != updatedLocalPort
+            || previous.sniffingEnabled != updated.sniffingEnabled
+            || previous.routeOnly != updated.routeOnly
             || previous.allowLanConnection != updated.allowLanConnection
-            || previousCoreTypeItems != updatedCoreTypeItems
+            || !areDnsConfigFieldsEqual(previous.dns(), updated.dns())
+            || !areCoreConfigFieldsEqual(previous, updated)
             || previous.collection().routingModeId != updated.collection().routingModeId
             || previous.collection().customRoutingItems != updated.collection().customRoutingItems
             || previous.collection().routingCustomRules != updated.collection().routingCustomRules

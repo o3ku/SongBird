@@ -1,4 +1,4 @@
-#include "app/CoreProcessCleanupService.h"
+#include "appcore/CoreProcessCleanupService.h"
 
 #include <QCoreApplication>
 #include <QSet>

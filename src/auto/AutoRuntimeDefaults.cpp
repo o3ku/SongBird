@@ -1,6 +1,6 @@
 #include "auto/AutoRuntimeDefaults.h"
 
-#include "app/OutboundLocationProbeService.h"
+#include "appcore/OutboundLocationProbeService.h"
 #include "common/PortValidator.h"
 #include "common/SystemProxyMode.h"
 

@@ -1071,8 +1071,8 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     config.dns().remoteDns = QStringLiteral("https://one.example/dns-query");
     config.dns().directDns = QStringLiteral("https://two.example/dns-query");
     config.dns().bootstrapDns = QStringLiteral("1.1.1.1");
-    config.dns().domainStrategyForFreedom = QStringLiteral("PreferIPv6");
-    config.dns().domainStrategyForProxy = QStringLiteral("PreferIPv4");
+    config.dns().domainStrategyForFreedom = QStringLiteral("UseIPv6");
+    config.dns().domainStrategyForProxy = QStringLiteral("UseIPv4");
     config.dns().useSystemHosts = true;
     config.dns().addCommonHosts = true;
     config.dns().blockBindingQuery = true;
@@ -1099,6 +1099,12 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     QVERIFY(remoteDnsEdit != nullptr);
     QVERIFY(freedomCombo != nullptr);
     QVERIFY(proxyCombo != nullptr);
+
+    // Xray's routing-only values must not be on offer: this combo's value is written into the
+    // outbound strategy verbatim, where Xray does not accept them.
+    QCOMPARE(freedomCombo->findText(QStringLiteral("IPIfNonMatch")), -1);
+    QCOMPARE(freedomCombo->findText(QStringLiteral("IPOnDemand")), -1);
+    QVERIFY(freedomCombo->findText(QStringLiteral("UseIPv4v6")) >= 0);
     QVERIFY(directExpectedIpsEdit != nullptr);
     QVERIFY(dnsHostsEdit != nullptr);
     QVERIFY(useSystemHostsCheck != nullptr);
@@ -1108,8 +1114,8 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     QVERIFY(globalFakeIpCheck != nullptr);
 
     QCOMPARE(remoteDnsEdit->text(), QStringLiteral("https://one.example/dns-query"));
-    QCOMPARE(freedomCombo->currentText(), QStringLiteral("PreferIPv6"));
-    QCOMPARE(proxyCombo->currentText(), QStringLiteral("PreferIPv4"));
+    QCOMPARE(freedomCombo->currentText(), QStringLiteral("UseIPv6"));
+    QCOMPARE(proxyCombo->currentText(), QStringLiteral("UseIPv4"));
     QVERIFY(useSystemHostsCheck->isChecked());
     QVERIFY(addCommonHostsCheck->isChecked());
     QVERIFY(blockBindingQueryCheck->isChecked());
@@ -1119,8 +1125,8 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     QCOMPARE(dnsHostsEdit->toPlainText(), QStringLiteral("example.com 1.2.3.4"));
 
     remoteDnsEdit->setText(QStringLiteral("https://changed.example/dns-query"));
-    freedomCombo->setCurrentText(QStringLiteral("OnlyIPv4"));
-    proxyCombo->setCurrentText(QStringLiteral("OnlyIPv6"));
+    freedomCombo->setCurrentText(QStringLiteral("ForceIPv4"));
+    proxyCombo->setCurrentText(QStringLiteral("ForceIPv6"));
     useSystemHostsCheck->setChecked(false);
     addCommonHostsCheck->setChecked(false);
     blockBindingQueryCheck->setChecked(false);
@@ -1129,8 +1135,8 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
 
     const Config updated = dialog.config();
     QCOMPARE(updated.dns().remoteDns, QStringLiteral("https://changed.example/dns-query"));
-    QCOMPARE(updated.dns().domainStrategyForFreedom, QStringLiteral("OnlyIPv4"));
-    QCOMPARE(updated.dns().domainStrategyForProxy, QStringLiteral("OnlyIPv6"));
+    QCOMPARE(updated.dns().domainStrategyForFreedom, QStringLiteral("ForceIPv4"));
+    QCOMPARE(updated.dns().domainStrategyForProxy, QStringLiteral("ForceIPv6"));
     QVERIFY(!updated.dns().useSystemHosts);
     QVERIFY(!updated.dns().addCommonHosts);
     QVERIFY(!updated.dns().blockBindingQuery);

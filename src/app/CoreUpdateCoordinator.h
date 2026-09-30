@@ -7,7 +7,7 @@
 #include <QPointer>
 #include <QString>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "app/CoreUpdatePendingState.h"
 #include "common/OperationResult.h"
 #include "domain/models/VmessItem.h"

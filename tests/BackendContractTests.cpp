@@ -77,6 +77,7 @@ private slots:
     void routingValueParsingDoesNotMistakeAddressesForPrefixes();
     void unsupportedRoutingValuesAreReported();
     void dnsRuleFieldsFollowTheSharedPrefixVocabulary();
+    void dnsDomainStrategyMapsUiVocabularyToSingBoxValues();
 };
 
 void BackendContractTests::everyRegisteredCoreHasBackend()
@@ -271,6 +272,46 @@ void BackendContractTests::dnsRuleFieldsFollowTheSharedPrefixVocabulary()
         QVERIFY2(!SingBoxDnsConfigSupport::appendDomainField(rule, value, true), qPrintable(value));
         QVERIFY2(rule.isEmpty(), qPrintable(value));
     }
+}
+
+void BackendContractTests::dnsDomainStrategyMapsUiVocabularyToSingBoxValues()
+{
+    // The settings combo stores Xray's address-strategy names; sing-box needs its own four
+    // `strategy` values. A bare family restricts resolution to that family, a combined spelling
+    // prefers one family and falls back to the other, and the legacy Prefer*/Only* names older
+    // configs may still carry keep meaning the same two things.
+    const auto mapped = [](const QString& value) {
+        return SingBoxDnsConfigSupport::mapDomainStrategy(value);
+    };
+
+    QCOMPARE(mapped(QStringLiteral("UseIPv4")), QStringLiteral("ipv4_only"));
+    QCOMPARE(mapped(QStringLiteral("UseIPv6")), QStringLiteral("ipv6_only"));
+    QCOMPARE(mapped(QStringLiteral("UseIPv4v6")), QStringLiteral("prefer_ipv4"));
+    QCOMPARE(mapped(QStringLiteral("UseIPv6v4")), QStringLiteral("prefer_ipv6"));
+    QCOMPARE(mapped(QStringLiteral("ForceIPv4")), QStringLiteral("ipv4_only"));
+    QCOMPARE(mapped(QStringLiteral("ForceIPv6")), QStringLiteral("ipv6_only"));
+    QCOMPARE(mapped(QStringLiteral("ForceIPv4v6")), QStringLiteral("prefer_ipv4"));
+    QCOMPARE(mapped(QStringLiteral("ForceIPv6v4")), QStringLiteral("prefer_ipv6"));
+
+    // Legacy spellings kept for saved configs.
+    QCOMPARE(mapped(QStringLiteral("PreferIPv4")), QStringLiteral("prefer_ipv4"));
+    QCOMPARE(mapped(QStringLiteral("PreferIPv6")), QStringLiteral("prefer_ipv6"));
+    QCOMPARE(mapped(QStringLiteral("OnlyIPv4")), QStringLiteral("ipv4_only"));
+    QCOMPARE(mapped(QStringLiteral("OnlyIPv6")), QStringLiteral("ipv6_only"));
+
+    // Case and surrounding whitespace are part of the same vocabulary.
+    QCOMPARE(mapped(QStringLiteral("  useipv4 ")), QStringLiteral("ipv4_only"));
+
+    // Everything else stays unmapped rather than becoming an invalid sing-box strategy: AsIs
+    // leaves the choice to the core, UseIP / ForceIP name both families, and Xray's routing-only
+    // IPIfNonMatch / IPOnDemand are no longer offered by the page but may still sit in a saved
+    // config.
+    QVERIFY(mapped(QStringLiteral("AsIs")).isEmpty());
+    QVERIFY(mapped(QStringLiteral("UseIP")).isEmpty());
+    QVERIFY(mapped(QStringLiteral("ForceIP")).isEmpty());
+    QVERIFY(mapped(QStringLiteral("IPIfNonMatch")).isEmpty());
+    QVERIFY(mapped(QStringLiteral("IPOnDemand")).isEmpty());
+    QVERIFY(mapped(QString()).isEmpty());
 }
 
 QTEST_MAIN(BackendContractTests)

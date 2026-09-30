@@ -8,7 +8,7 @@
 #include <QMessageBox>
 #include <QWidget>
 
-#include "app/FunctionRuntimeAdapters.h"
+#include "appcore/FunctionRuntimeAdapters.h"
 #include "app/IUserFeedback.h"
 #include "app/SpeedTestCoordinator.h"
 #include "common/DialogUtils.h"

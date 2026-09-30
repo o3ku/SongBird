@@ -11,14 +11,14 @@
 #include <QStringList>
 #include <QTimer>
 
-#include "app/AppRuntimeResolver.h"
-#include "app/BackgroundTaskCoordinator.h"
-#include "app/CoreProcessCleanupService.h"
-#include "app/CoreDiscoveryService.h"
-#include "app/FunctionRuntimeAdapters.h"
-#include "app/OutboundLocationProbeService.h"
-#include "app/ProxySession.h"
-#include "app/TunRuntimeService.h"
+#include "appcore/AppRuntimeResolver.h"
+#include "appcore/BackgroundTaskCoordinator.h"
+#include "appcore/CoreProcessCleanupService.h"
+#include "appcore/CoreDiscoveryService.h"
+#include "appcore/FunctionRuntimeAdapters.h"
+#include "appcore/OutboundLocationProbeService.h"
+#include "appcore/ProxySession.h"
+#include "appcore/TunRuntimeService.h"
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
 #include "persistence/JsonConfigRepository.h"

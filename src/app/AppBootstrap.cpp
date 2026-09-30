@@ -1,25 +1,26 @@
 #include "app/AppBootstrap.h"
 #include "app/AppBootstrapObjects.h"
 #include "app/UiThreadInvocation.h"
-#include "app/FunctionRuntimeAdapters.h"
+#include "appcore/FunctionRuntimeAdapters.h"
 #include "app/AppUpdateInstallService.h"
 #include "app/AppUpdateCheckCoordinator.h"
 #include "app/ApplicationRestartCoordinator.h"
-#include "app/AppRuntimeResolver.h"
+#include "appcore/AppRuntimeResolver.h"
 #include "app/RuntimeStateSnapshotBuilder.h"
-#include "app/BackgroundTaskCoordinator.h"
-#include "app/BackgroundThreadTracker.h"
+#include "app/StartupWindowPolicy.h"
+#include "appcore/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundThreadTracker.h"
 #include "app/ConfigBackupCoordinator.h"
 #include "app/ConfigPathResolver.h"
-#include "app/CoreProcessCleanupService.h"
-#include "app/CoreDiscoveryService.h"
+#include "appcore/CoreProcessCleanupService.h"
+#include "appcore/CoreDiscoveryService.h"
 #include "app/CoreUpdateCoordinator.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "app/GeoResourceUpdateCoordinator.h"
 #include "app/IUserFeedback.h"
-#include "app/OutboundLocationProbeService.h"
-#include "app/ProxyRuntimeInterfaces.h"
-#include "app/ProxySession.h"
+#include "appcore/OutboundLocationProbeService.h"
+#include "appcore/ProxyRuntimeInterfaces.h"
+#include "appcore/ProxySession.h"
 #include "domain/models/RuntimeState.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
@@ -27,6 +28,7 @@
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "common/GitHubUrls.h"
+#include "common/StartupSequencer.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -50,7 +52,7 @@
 #include <memory>
 #include <optional>
 
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 #include "app/SettingsApplyCoordinator.h"
 #include "app/SettingsDialogRunner.h"
 #include "app/SettingsWorkflowCoordinator.h"
@@ -58,7 +60,7 @@
 #include "app/SystemProxyCoordinator.h"
 #include "app/TunModeCoordinator.h"
 #include "app/TunRuntimeState.h"
-#include "app/TunRuntimeService.h"
+#include "appcore/TunRuntimeService.h"
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
@@ -199,32 +201,68 @@ bool AppBootstrap::run()
     wireServerCoordinators();
     wireShutdownHooks();
 
-    cleanupOrphanCoreProcesses();
-    wireMainWindow();
+    // The startup tail is declared as data instead of being inlined here: each
+    // entry only calls a named method, and the single gate aborts the sequence
+    // when the config cannot be reloaded, which is exactly what run() reports
+    // as a startup failure.
+    StartupSequencer sequencer;
+    sequencer.addStep(QStringLiteral("cleanup-orphan-core-processes"), [this]() { cleanupOrphanCoreProcesses(); });
+    sequencer.addStep(QStringLiteral("wire-main-window"), [this]() { wireMainWindow(); });
+    sequencer.addStep(QStringLiteral("initialize-tray"), [this]() { initializeTray(); });
+    sequencer.addStep(QStringLiteral("refresh-existing-core-types"), [this]() { refreshExistingCoreTypes(); });
+    sequencer.addGate(QStringLiteral("reload-config"), [this]() { return reloadConfig(); });
+    sequencer.addStep(QStringLiteral("backup-config"), [this]() { autoBackupCurrentConfig(); });
+    sequencer.addStep(QStringLiteral("adopt-managed-system-proxy"), [this]() { adoptManagedSystemProxyOnStartup(); });
+    sequencer.addStep(QStringLiteral("present-main-window"), [this]() { presentMainWindowOnStartup(); });
+    sequencer.addStep(QStringLiteral("schedule-app-update-checks"), [this]() { scheduleAppUpdateChecks(); });
+
+    return sequencer.runAll();
+}
+
+void AppBootstrap::initializeTray()
+{
     objects_->mainWindow->setHideToTrayEnabled(objects_->trayController->initialize());
-    refreshExistingCoreTypes();
-    if (!reloadConfig()) {
-        return false;
+}
+
+void AppBootstrap::adoptManagedSystemProxyOnStartup()
+{
+    if (objects_->systemProxyService == nullptr) {
+        return;
     }
-    autoBackupCurrentConfig();
-    if (objects_->systemProxyService != nullptr) {
-        const bool managedSystemProxyActive = shouldAdoptManagedSystemProxyOnStartup(
-            normalizeSystemProxyMode(config_.sysProxyType),
-            config_.ui().mainProxyEnabled,
-            objects_->systemProxyService->isEnabled());
-        objects_->proxySession->adoptManagedSystemProxy(managedSystemProxyActive);
-    }
+
+    const bool managedSystemProxyActive = shouldAdoptManagedSystemProxyOnStartup(
+        normalizeSystemProxyMode(config_.sysProxyType),
+        config_.ui().mainProxyEnabled,
+        objects_->systemProxyService->isEnabled());
+    objects_->proxySession->adoptManagedSystemProxy(managedSystemProxyActive);
+}
+
+void AppBootstrap::presentMainWindowOnStartup()
+{
     objects_->mainWindow->show();
-    if (startHidden_ || !config_.ui().showMainOnStartup) {
-        if (objects_->trayController != nullptr && objects_->trayController->isAvailable()) {
-            objects_->mainWindow->hide();
-        } else {
-            objects_->mainWindow->showMinimized();
-            appendResult(OperationResult::ok(QCoreApplication::translate(
-                "AppBootstrap", "Start hidden requested, but the system tray is unavailable. The window was minimized instead.")));
-        }
+
+    const bool hideRequested = startHidden_ || !config_.ui().showMainOnStartup;
+    const bool trayAvailable =
+        objects_->trayController != nullptr && objects_->trayController->isAvailable();
+
+    switch (decideStartupWindowAction(hideRequested, trayAvailable)) {
+    case StartupWindowAction::ShowNormally:
+        break;
+    case StartupWindowAction::HideToTray:
+        objects_->mainWindow->hide();
+        break;
+    case StartupWindowAction::ShowMinimizedWithoutTray:
+        objects_->mainWindow->showMinimized();
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "Start hidden requested, but the system tray is unavailable. The window was minimized instead.")));
+        break;
     }
+
     uiReady_ = true;
+}
+
+void AppBootstrap::scheduleAppUpdateChecks()
+{
     QTimer::singleShot(0, objects_->mainWindow.get(), [this]() {
         applyStartupSystemProxyPreference();
     });
@@ -237,348 +275,10 @@ bool AppBootstrap::run()
         checkAppUpdates(false);
     });
     appUpdateTimer->start();
-
-    return true;
 }
 
-void AppBootstrap::wireMainWindow()
-{
-    if (objects_->appUpdateCheckCoordinator != nullptr) {
-        QObject::connect(
-            objects_->appUpdateCheckCoordinator.get(),
-            &AppUpdateCheckCoordinator::updateAvailable,
-            objects_->mainWindow.get(),
-            [this](const AppUpdateCheckResult& result, const QString&) {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->setAvailableAppUpdateVersion(result.latestVersion);
-                }
-            });
-        QObject::connect(
-            objects_->appUpdateCheckCoordinator.get(),
-            &AppUpdateCheckCoordinator::updateUnavailable,
-            objects_->mainWindow.get(),
-            [this]() {
-                if (objects_->mainWindow != nullptr) {
-                    objects_->mainWindow->clearAvailableAppUpdateVersion();
-                }
-            });
-    }
-    wireProxySessionSignals();
-    wireRuntimeStateSignals();
-    wireBackgroundTaskSignals();
-    wireMainWindowCommands();
-    wireTraySignals();
-}
-
-void AppBootstrap::wireProxySessionSignals()
-{
-    QObject::connect(objects_->proxySession.get(), &ProxySession::phaseChanged,
-                     objects_->mainWindow.get(), [this](ProxySession::Phase phase) {
-                         Q_UNUSED(phase);
-                         syncStatusIndicators();
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::checklistUpdated,
-                     objects_->mainWindow.get(), &MainWindow::setCoreStartupChecklist);
-    QObject::connect(objects_->proxySession.get(), &ProxySession::checklistCleared,
-                     objects_->mainWindow.get(), &MainWindow::clearCoreStartupChecklist);
-    QObject::connect(objects_->proxySession.get(), &ProxySession::statusSyncRequested,
-                     objects_->mainWindow.get(), [this]() {
-                         syncStatusIndicators();
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::coreOutput,
-                     objects_->mainWindow.get(), [this](const QString& line) { appendResult(OperationResult::ok(line)); });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::auxiliaryCoreOutput,
-                     objects_->mainWindow.get(), [this](const QString& line) {
-                         appendResult(OperationResult::ok(QStringLiteral("tun-compat | %1").arg(line)));
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::failed,
-                     objects_->mainWindow.get(), [this](const QString& reason) {
-                         appendResult(OperationResult::fail(reason));
-                         saveSystemProxyMode(SystemProxyMode::ForcedClear);
-                         if (setCurrentActivationPending_) {
-                             appendResult(OperationResult::fail(
-                                 QCoreApplication::translate(
-                                     "AppBootstrap",
-                                     "Node set successfully. It may be inaccessible. Please verify manually.")));
-                             setCurrentActivationPending_ = false;
-                         }
-                         syncStatusIndicators();
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::activated,
-                     objects_->mainWindow.get(), [this]() {
-                         setCurrentActivationPending_ = false;
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::stopped,
-                     objects_->mainWindow.get(), [this]() {
-                         syncStatusIndicators();
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::logMessage,
-                     objects_->mainWindow.get(), [this](const QString& msg) { appendResult(OperationResult::ok(msg)); });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::coreUpdateResumeRequested,
-                     objects_->mainWindow.get(), [this]() {
-                         if (objects_->coreUpdateCoordinator != nullptr) {
-                             objects_->coreUpdateCoordinator->continuePendingCoreUpdate();
-                         }
-                     });
-    QObject::connect(objects_->proxySession.get(), &ProxySession::serverSwitchResumeRequested,
-                     objects_->mainWindow.get(), [this](const QString& indexId, bool enableTun, bool showOverlay) {
-                         if (objects_->defaultServerSwitchCoordinator != nullptr) {
-                             objects_->defaultServerSwitchCoordinator->scheduleSwitchAfterCoreStopped(
-                                 indexId,
-                                 enableTun,
-                                 showOverlay);
-                         }
-                     });
-    objects_->proxySession->setCoreSwitchConfirmation([this](const CoreLaunchCompatDecision& decision) {
-        if (DialogUtils::askYesNoQuestion(
-                objects_->mainWindow.get(),
-                QCoreApplication::translate("AppBootstrap", "Core Compatibility"),
-                coreLaunchCompatSwitchPrompt(decision),
-                QMessageBox::Yes)
-            != QMessageBox::Yes) {
-            return false;
-        }
-
-        // Persist the switch so the prompt does not reappear on every start.
-        for (CoreTypeItem& item : config_.policy().coreTypeItems) {
-            if (item.configType == static_cast<int>(decision.configType)) {
-                item.coreType = static_cast<int>(decision.resolvedCore);
-            }
-        }
-        if (objects_->serverService != nullptr) {
-            const OperationResult saveResult = objects_->serverService->save(config_);
-            if (!saveResult.success) {
-                appendResult(OperationResult::fail(QStringLiteral("%1 %2").arg(
-                    QCoreApplication::translate("AppBootstrap", "Failed to save settings."),
-                    saveResult.message)));
-            }
-        }
-        return true;
-    });
-}
-
-void AppBootstrap::wireRuntimeStateSignals()
-{
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::snapshotApplied,
-                     objects_->mainWindow.get(), &MainWindow::applyRuntimeState);
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::currentServerChanged,
-                     objects_->trayController.get(), [this](const QString& name, const QString&, const QString&) {
-                         if (objects_->trayController != nullptr) {
-                             objects_->trayController->setCurrentServerName(name);
-                         }
-                     });
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::proxyUiStateChanged,
-                     objects_->trayController.get(), [this](ProxyUiState state) {
-                         if (objects_->trayController == nullptr) {
-                             return;
-                         }
-                         objects_->trayController->setProxyUiState(state);
-                     });
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::systemProxyStateChanged,
-                     objects_->trayController.get(), [this](int mode, bool enabled) {
-                         if (objects_->trayController != nullptr) {
-                             objects_->trayController->setSystemProxyState(mode, enabled);
-                         }
-                     });
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::autoRunChanged,
-                     objects_->trayController.get(), [this](bool enabled) {
-                         if (objects_->trayController != nullptr) {
-                             objects_->trayController->setAutoRunEnabled(enabled);
-                         }
-                     });
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::routingStatusChanged,
-                     objects_->trayController.get(), [this](const QString& routingText, const QString&) {
-                         if (objects_->trayController != nullptr) {
-                             objects_->trayController->setRoutingSummary(routingText);
-                         }
-                     });
-}
-
-void AppBootstrap::wireBackgroundTaskSignals()
-{
-    QObject::connect(objects_->backgroundTasks.get(), &BackgroundTaskCoordinator::runningChanged,
-                     objects_->mainWindow.get(), &MainWindow::setBackgroundTaskRunning);
-    QObject::connect(objects_->backgroundTasks.get(), &BackgroundTaskCoordinator::descriptionChanged,
-                     objects_->mainWindow.get(), &MainWindow::setBackgroundTaskDescription);
-    QObject::connect(objects_->backgroundTasks.get(), &BackgroundTaskCoordinator::runningChanged,
-                     objects_->trayController.get(), &TrayController::setBackgroundTaskRunning);
-    QObject::connect(objects_->backgroundTasks.get(), &BackgroundTaskCoordinator::descriptionChanged,
-                     objects_->trayController.get(), &TrayController::setBackgroundTaskDescription);
-}
-
-void AppBootstrap::wireMainWindowCommands()
-{
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::addServerRequested, objects_->mainWindow.get(), [this]() {
-        if (objects_->serverEditorCoordinator != nullptr) {
-            objects_->serverEditorCoordinator->addServer();
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::editServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
-        if (objects_->serverEditorCoordinator != nullptr) {
-            objects_->serverEditorCoordinator->editServer(indexId);
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::importFromClipboardRequested, objects_->mainWindow.get(), [this]() {
-        importFromClipboard();
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::updateSubscriptionsRequested, objects_->mainWindow.get(), [this]() {
-        if (objects_->subscriptionWorkflowCoordinator != nullptr) {
-            objects_->subscriptionWorkflowCoordinator->updateAll();
-        }
-    });
-    QObject::connect(
-        objects_->mainWindow.get(),
-        &MainWindow::updateCurrentSubscriptionRequested,
-        objects_->mainWindow.get(),
-        [this](const QString& subscriptionId) {
-            updateCurrentSubscription(subscriptionId);
-        });
-    QObject::connect(
-        objects_->mainWindow.get(),
-        &MainWindow::updateCurrentSubscriptionViaProxyRequested,
-        objects_->mainWindow.get(),
-        [this](const QString& subscriptionId) {
-            updateCurrentSubscriptionViaProxy(subscriptionId);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::hideSubscriptionRequested, objects_->mainWindow.get(), [this](const QString& subscriptionId) {
-        if (objects_->serverCollectionCoordinator != nullptr) {
-            objects_->serverCollectionCoordinator->hideSubscription(subscriptionId);
-        }
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::deleteSubscriptionRequested, objects_->mainWindow.get(), [this](const QString& subscriptionId) {
-        if (objects_->serverCollectionCoordinator != nullptr) {
-            objects_->serverCollectionCoordinator->deleteSubscription(subscriptionId);
-        }
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::updateCoreRequested, objects_->mainWindow.get(), [this](int coreTypeValue) {
-        if (objects_->coreUpdateCoordinator == nullptr) {
-            return;
-        }
-
-        CoreUpdateCoordinator::Request request;
-        request.coreTypeValue = coreTypeValue;
-        request.startAfterSuccess = false;
-        request.progressContext = objects_->mainWindow.get();
-        request.dialogParent = objects_->mainWindow.get();
-        objects_->coreUpdateCoordinator->updateCore(request);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::updateGeoResourcesRequested, objects_->mainWindow.get(), [this]() {
-        if (objects_->geoResourceUpdateCoordinator != nullptr) {
-            objects_->geoResourceUpdateCoordinator->updateGeoResources();
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::enableSystemProxyRequested, objects_->mainWindow.get(), [this]() {
-        enableSystemProxy(true);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::retryCoreStartupRequested, objects_->mainWindow.get(), [this]() {
-        retryCoreStartup(true);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::disableSystemProxyRequested, objects_->mainWindow.get(), [this]() {
-        disableSystemProxy();
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::tunEnabledChanged, objects_->mainWindow.get(), [this](bool enabled) {
-        setTunEnabled(enabled);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::routingModeSelected, objects_->mainWindow.get(), [this](const QString& routingModeId) {
-        const QString previousRoutingModeId = config_.collection().routingModeId;
-        const OperationResult result = objects_->routingService->setRoutingMode(config_, routingModeId);
-        handleRoutingSelectionResult(result, previousRoutingModeId);
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::settingsRequested, objects_->mainWindow.get(), [this]() {
-        openSettingsDialog();
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::openSettingsAtSubscriptionsTabRequested, objects_->mainWindow.get(), [this]() {
-        openSettingsDialog(1);
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::openSettingsAtRoutingTabRequested, objects_->mainWindow.get(), [this]() {
-        openSettingsDialog(2);
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::aboutRequested, objects_->mainWindow.get(), [this]() {
-        openAboutDialog();
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::checkAppUpdateRequested, objects_->mainWindow.get(), [this]() {
-        checkAppUpdates(true);
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::downloadAppUpdateRequested, objects_->mainWindow.get(), [this]() {
-        if (objects_->appUpdateCheckCoordinator != nullptr) {
-            objects_->appUpdateCheckCoordinator->downloadLatestAvailableUpdate(objects_->mainWindow.get());
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::uwpLoopbackRequested, objects_->mainWindow.get(), [this]() {
-        openUwpLoopbackDialog();
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::removeServersRequested, objects_->mainWindow.get(), [this](const QStringList& indexIds) {
-        if (objects_->serverCollectionCoordinator != nullptr) {
-            objects_->serverCollectionCoordinator->removeServers(indexIds);
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::moveServersRequested, objects_->mainWindow.get(), [this](const QStringList& indexIds, int operation) {
-        if (objects_->serverCollectionCoordinator != nullptr) {
-            objects_->serverCollectionCoordinator->moveServers(indexIds, static_cast<ServerMoveOperation>(operation));
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::reorderServersRequested, objects_->mainWindow.get(), [this](const QStringList& orderedIndexIds) {
-        if (objects_->serverCollectionCoordinator != nullptr) {
-            objects_->serverCollectionCoordinator->reorderServers(orderedIndexIds);
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::setDefaultServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
-        if (objects_->defaultServerSwitchCoordinator != nullptr) {
-            objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
-        }
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::setDefaultServerWithTunRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
-        if (objects_->defaultServerSwitchCoordinator != nullptr) {
-            objects_->defaultServerSwitchCoordinator->setDefaultServerWithTun(indexId);
-        }
-    });
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::testServersRequested, objects_->mainWindow.get(), [this](const QStringList& indexIds) {
-        if (objects_->speedTestCoordinator != nullptr) {
-            objects_->speedTestCoordinator->startSpeedTest(indexIds);
-        }
-    });
-
-    QObject::connect(objects_->mainWindow.get(), &MainWindow::hiddenToTray, objects_->mainWindow.get(), [this]() {
-        objects_->mainWindow->appendLog(QStringLiteral("Main window hidden to tray."));
-    });
-}
-
-void AppBootstrap::wireTraySignals()
-{
-    QObject::connect(objects_->trayController.get(), &TrayController::defaultServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
-        if (objects_->defaultServerSwitchCoordinator != nullptr) {
-            objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
-        }
-    });
-
-    QObject::connect(objects_->trayController.get(), &TrayController::routingRequested, objects_->mainWindow.get(), [this](const QString& routingModeId) {
-        const QString previousRoutingModeId = config_.collection().routingModeId;
-        const OperationResult result = objects_->routingService->selectRouting(config_, routingModeId);
-        handleRoutingSelectionResult(result, previousRoutingModeId);
-    });
-
-    QObject::connect(objects_->trayController.get(), &TrayController::autoRunToggled, objects_->mainWindow.get(), [this](bool enabled) {
-        setAutoRunEnabled(enabled);
-    });
-
-    QObject::connect(objects_->trayController.get(), &TrayController::quitRequested, objects_->mainWindow.get(), [this]() {
-        objects_->mainWindow->requestExit();
-    });
-}
+// wireMainWindow() and the signal-wiring methods it drives now live in
+// AppBootstrapMainWindowWiring.cpp so this file stays a pure composition root.
 
 void AppBootstrap::syncWindow()
 {

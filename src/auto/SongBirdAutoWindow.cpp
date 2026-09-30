@@ -32,7 +32,7 @@
 
 #include "auto/AutoCountrySelection.h"
 #include "auto/SongBirdAutoCoordinator.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "common/TextElision.h"

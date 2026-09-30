@@ -29,9 +29,7 @@ OperationResult RoutingService::saveRouting(
     Config& config,
     QList<RoutingItem> items,
     bool enableAdvanced,
-    int selectedIndex,
-    const QString& domainStrategy,
-    const QString& domainMatcher)
+    int selectedIndex)
 {
     normalizeRoutingItems(items);
 
@@ -57,8 +55,6 @@ OperationResult RoutingService::saveRouting(
         }
     }
 
-    config.dns().domainStrategy = domainStrategy.trimmed();
-    config.dns().domainMatcher = domainMatcher.trimmed();
     Q_UNUSED(enableAdvanced);
     config.collection().customRoutingItems = RoutingProfiles::customRoutingItemsFromRuntime(items);
     if (!selectedRoutingModeId.isEmpty()) {

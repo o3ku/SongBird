@@ -1,4 +1,4 @@
-#include "app/ProxySession.h"
+#include "appcore/ProxySession.h"
 
 #include <utility>
 
@@ -19,7 +19,7 @@
 #include <QThread>
 #include <QTimer>
 
-#include "app/OutboundLocationProbeService.h"
+#include "appcore/OutboundLocationProbeService.h"
 #include "app/TunSettingsApplyDecision.h"
 #include "app/TunRuntimeState.h"
 #include "common/BackgroundThreadLaunch.h"

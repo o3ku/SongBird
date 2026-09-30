@@ -24,7 +24,6 @@ void read(const QJsonObject& root, RootConfigState& config)
     if (!inbounds.isEmpty() && inbounds.at(0).isObject()) {
         const QJsonObject inbound = inbounds.at(0).toObject();
         config.localPort = readInt(inbound, QStringLiteral("localPort"), 10808);
-        config.localProtocol = readString(inbound, QStringLiteral("protocol"), QStringLiteral("socks"));
         config.udpEnabled = readBool(inbound, QStringLiteral("udpEnabled"), true);
         config.sniffingEnabled = readBool(inbound, QStringLiteral("sniffingEnabled"), true);
         config.routeOnly = readBool(inbound, QStringLiteral("routeOnly"), false);
@@ -94,9 +93,6 @@ void read(const QJsonObject& root, RootConfigState& config)
     config.dns().domainStrategyForProxy = readString(root, QStringLiteral("domainStrategyForProxy"));
     config.dns().dnsHosts = readString(root, QStringLiteral("dnsHosts"));
     config.dns().defaultAllowInsecure = readBool(root, QStringLiteral("defaultAllowInsecure"), false);
-    config.dns().domainStrategy = readString(root, QStringLiteral("domainStrategy"));
-    config.dns().domainStrategy4Singbox = readString(root, QStringLiteral("domainStrategyForSingbox"));
-    config.dns().domainMatcher = readString(root, QStringLiteral("domainMatcher"));
     config.ignoreGeoUpdateCore = readBool(root, QStringLiteral("ignoreGeoUpdateCore"), false);
     config.systemProxyAdvancedProtocol = readString(root, QStringLiteral("systemProxyAdvancedProtocol"));
     config.checkPreReleaseUpdate = readBool(root, QStringLiteral("checkPreReleaseUpdate"), false);
@@ -111,7 +107,6 @@ void write(QJsonObject& root, const RootConfigState& config)
 
     QJsonObject inbound;
     writeIfNotDefault(inbound, QStringLiteral("localPort"), config.localPort, 10808);
-    writeIfNotDefault(inbound, QStringLiteral("protocol"), config.localProtocol, QStringLiteral("socks"));
     writeIfNotDefault(inbound, QStringLiteral("udpEnabled"), config.udpEnabled, true);
     writeIfNotDefault(inbound, QStringLiteral("sniffingEnabled"), config.sniffingEnabled, true);
     writeIfNotDefault(inbound, QStringLiteral("routeOnly"), config.routeOnly, false);
@@ -173,9 +168,6 @@ void write(QJsonObject& root, const RootConfigState& config)
     writeIfNotDefault(root, QStringLiteral("defaultAllowInsecure"), config.dns().defaultAllowInsecure, false);
     writeIfNotEmpty(root, QStringLiteral("defaultFingerprint"), config.dns().defaultFingerprint);
     writeIfNotEmpty(root, QStringLiteral("defaultUserAgent"), config.dns().defaultUserAgent);
-    writeIfNotEmpty(root, QStringLiteral("domainStrategy"), config.dns().domainStrategy);
-    writeIfNotEmpty(root, QStringLiteral("domainStrategyForSingbox"), config.dns().domainStrategy4Singbox);
-    writeIfNotEmpty(root, QStringLiteral("domainMatcher"), config.dns().domainMatcher);
     writeIfNotDefault(root, QStringLiteral("ignoreGeoUpdateCore"), config.ignoreGeoUpdateCore, false);
     writeIfNotEmpty(root, QStringLiteral("systemProxyAdvancedProtocol"), config.systemProxyAdvancedProtocol);
     writeIfNotDefault(root, QStringLiteral("checkPreReleaseUpdate"), config.checkPreReleaseUpdate, false);

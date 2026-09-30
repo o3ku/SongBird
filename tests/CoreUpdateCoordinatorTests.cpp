@@ -1,6 +1,6 @@
 #include <QtTest/QtTest>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "app/CoreUpdateCoordinator.h"
 
 class CoreUpdateCoordinatorTests : public QObject {

@@ -7,7 +7,7 @@
 #include <QString>
 #include <QUrl>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "app/IUserFeedback.h"
 #include "common/OperationResult.h"
 #include "services/AppUpdateService.h"

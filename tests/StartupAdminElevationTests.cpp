@@ -2,7 +2,7 @@
 #include <QJsonObject>
 
 #include "app/ConfigPathResolver.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 
 class StartupAdminElevationTests : public QObject {
     Q_OBJECT

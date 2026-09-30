@@ -12,6 +12,9 @@ private slots:
     void enablingTunWithoutElevationAlsoPersistsProxyOn();
     void changingTunParametersWhileTunDisabledDoesNotCountAsRuntimeChange();
     void configuredTunWithoutElevationBlocksOtherRuntimeHotApply();
+    void dnsChangeRequestsRuntimeHotApply();
+    void coreFieldChangeRequestsRuntimeHotApply();
+    void sniffingChangeRequestsRuntimeHotApply();
 };
 
 void TunSettingsApplyDecisionTests::enablingTunWhileCoreRunningRequestsRestartWhenElevated()
@@ -113,6 +116,46 @@ void TunSettingsApplyDecisionTests::configuredTunWithoutElevationBlocksOtherRunt
     QVERIFY(!decision.tunSettingsChanged);
     QVERIFY(decision.requiresAdminForConfiguredTun);
     QVERIFY(!shouldHotApplyRuntimeSettings(previous, updated, decision));
+}
+
+void TunSettingsApplyDecisionTests::dnsChangeRequestsRuntimeHotApply()
+{
+    Config previous;
+    Config updated = previous;
+    updated.dns().remoteDns = QStringLiteral("https://dns.google/dns-query");
+
+    const TunSettingsApplyDecision decision =
+        evaluateTunSettingsApply(previous, updated, true, true, true);
+
+    QVERIFY(!decision.tunSettingsChanged);
+    QVERIFY(!decision.requiresAdminForConfiguredTun);
+    QVERIFY(shouldHotApplyRuntimeSettings(previous, updated, decision));
+}
+
+void TunSettingsApplyDecisionTests::coreFieldChangeRequestsRuntimeHotApply()
+{
+    Config previous;
+    Config updated = previous;
+    updated.mux4SboxProtocol = QStringLiteral("smux");
+
+    const TunSettingsApplyDecision decision =
+        evaluateTunSettingsApply(previous, updated, true, true, true);
+
+    QVERIFY(!decision.tunRuntimeChanged);
+    QVERIFY(shouldHotApplyRuntimeSettings(previous, updated, decision));
+}
+
+void TunSettingsApplyDecisionTests::sniffingChangeRequestsRuntimeHotApply()
+{
+    Config previous;
+    Config updated = previous;
+    updated.sniffingEnabled = !previous.sniffingEnabled;
+
+    const TunSettingsApplyDecision decision =
+        evaluateTunSettingsApply(previous, updated, true, true, true);
+
+    QVERIFY(!decision.tunRuntimeChanged);
+    QVERIFY(shouldHotApplyRuntimeSettings(previous, updated, decision));
 }
 
 QTEST_MAIN(TunSettingsApplyDecisionTests)

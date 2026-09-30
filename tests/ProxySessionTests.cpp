@@ -10,9 +10,9 @@
 #include <optional>
 #include <utility>
 
-#include "app/BackgroundTaskCoordinator.h"
-#include "app/OutboundLocationProbeService.h"
-#include "app/ProxySession.h"
+#include "appcore/BackgroundTaskCoordinator.h"
+#include "appcore/OutboundLocationProbeService.h"
+#include "appcore/ProxySession.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/ICoreProcessHost.h"
 

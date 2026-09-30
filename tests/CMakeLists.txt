@@ -2,10 +2,11 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test Widgets Network Svg)
 
 link_libraries(songbird_core_descriptors)
 
-set(SONGBIRD_COMMON_DOMAIN_TEST_SOURCES
-    ../src/domain/models/RoutingProfiles.h
-    ../src/domain/models/RoutingProfiles.cpp
-)
+# Shared production code is compiled once into songbird_shared_objs (defined in
+# src/CMakeLists.txt) and linked by every test target below, so the per-test
+# source lists only need test-only files and the production files that are not
+# shared. RoutingProfiles.cpp used to be added to every target explicitly; it
+# belongs to the shared library now.
 
 find_program(SONGBIRD_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
 if(SONGBIRD_POWERSHELL_EXECUTABLE)
@@ -76,11 +77,6 @@ function(songbird_add_qt_test target_name test_name)
         add_executable(${target_name} ${SONGBIRD_TEST_SOURCES})
     endif()
 
-    target_sources(${target_name}
-        PRIVATE
-            ${SONGBIRD_COMMON_DOMAIN_TEST_SOURCES}
-    )
-
     target_include_directories(${target_name}
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../src
@@ -88,6 +84,7 @@ function(songbird_add_qt_test target_name test_name)
 
     target_link_libraries(${target_name}
         PRIVATE
+            songbird_shared_objs
             ${SONGBIRD_TEST_LIBRARIES}
     )
 
@@ -125,19 +122,6 @@ set(SONGBIRD_SHARE_URL_TEST_SOURCES
     ../src/subscription/ShareUrlProtocolBuilders.cpp
     ../src/subscription/ShareUrlBuilderSupport.h
     ../src/subscription/ShareUrlBuilderSupport.cpp
-    ../src/subscription/ShareUrlParser.h
-    ../src/subscription/ShareUrlParser.cpp
-    ../src/subscription/ShareUrlProtocolParsers.h
-    ../src/subscription/ShareUrlProtocolParsers.cpp
-    ../src/subscription/ShareUrlSingBoxProtocolParsers.cpp
-    ../src/subscription/ShareUrlVmessParser.h
-    ../src/subscription/ShareUrlVmessParser.cpp
-    ../src/subscription/ShareUrlParserSupport.h
-    ../src/subscription/ShareUrlParserSupport.cpp
-    ../src/subscription/SubscriptionImportTextParser.h
-    ../src/subscription/SubscriptionImportTextParser.cpp
-    ../src/common/EndpointParser.h
-    ../src/common/PortValidator.h
 )
 
 songbird_add_qt_test(songbird_share_url_tests share-url-transports
@@ -169,8 +153,6 @@ songbird_add_qt_test(songbird_add_server_dialog_tests add-server-dialog-roundtri
 
 set(SONGBIRD_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
     ../src/ui/dialogs/CoreSettingsPageWidget.h
     ../src/ui/dialogs/CoreSettingsPageWidget.cpp
     ../src/ui/dialogs/CoreSettingsPageWidgetUi.cpp
@@ -180,28 +162,12 @@ set(SONGBIRD_SETTINGS_DIALOG_TEST_SOURCES
     ../src/ui/dialogs/DnsSettingsPageWidget.cpp
     ../src/ui/dialogs/GeneralSettingsPageWidget.h
     ../src/ui/dialogs/GeneralSettingsPageWidget.cpp
-    ../src/ui/dialogs/RoutingBaseRouteCard.h
-    ../src/ui/dialogs/RoutingBaseRouteCard.cpp
-    ../src/ui/dialogs/RoutingCustomRuleSupport.h
-    ../src/ui/dialogs/RoutingCustomRuleSupport.cpp
-    ../src/ui/dialogs/RoutingSettingsPageWidget.h
-    ../src/ui/dialogs/RoutingSettingsPageWidget.cpp
-    ../src/ui/dialogs/RoutingSettingsPageWidgetUi.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.cpp
     ../src/ui/dialogs/SettingsDialog.h
     ../src/ui/dialogs/SettingsDialog.cpp
     ../src/ui/dialogs/TunSettingsPageWidget.h
     ../src/ui/dialogs/TunSettingsPageWidget.cpp
-    ../src/ui/theme/AppTheme.h
-    ../src/ui/theme/AppTheme.cpp
-    ../src/ui/theme/AppThemePalette.h
-    ../src/ui/theme/AppThemePalette.cpp
-    ../src/ui/theme/AppThemeStyle.h
-    ../src/ui/theme/AppThemeStyle.cpp
-    ../src/ui/theme/ServerTableTheme.h
-    ../src/ui/theme/ServerTableTheme.cpp
-    ../src/resources/themes.qrc
 )
 
 songbird_add_qt_test(songbird_settings_dialog_tests settings-dialog-download
@@ -242,19 +208,9 @@ set(SONGBIRD_SETTINGS_APPLY_COORDINATOR_TEST_SOURCES
     ../src/app/SettingsApplyCoordinator.h
     ../src/app/SettingsApplyCoordinator.cpp
     ../src/app/SettingsDialogApplyPlan.h
-    ../src/app/StartupAdminElevation.h
     ../src/app/TunAdminMessages.h
     ../src/app/TunSettingsApplyDecision.h
-    ../src/persistence/IConfigRepository.h
     ../src/platform/IAutoRunService.h
-    ../src/services/ServerService.h
-    ../src/services/ServerService.cpp
-    ../src/services/ServerCustomConfigStore.h
-    ../src/services/ServerCustomConfigStore.cpp
-    ../src/services/ServerListOperations.h
-    ../src/services/ServerListOperations.cpp
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
 )
 
 songbird_add_qt_test(songbird_settings_apply_coordinator_tests settings-apply-coordinator
@@ -269,15 +225,6 @@ set(SONGBIRD_SERVER_COLLECTION_COORDINATOR_TEST_SOURCES
     ServerCollectionCoordinatorTests.cpp
     ../src/app/ServerCollectionCoordinator.h
     ../src/app/ServerCollectionCoordinator.cpp
-    ../src/persistence/IConfigRepository.h
-    ../src/services/ServerService.h
-    ../src/services/ServerService.cpp
-    ../src/services/ServerCustomConfigStore.h
-    ../src/services/ServerCustomConfigStore.cpp
-    ../src/services/ServerListOperations.h
-    ../src/services/ServerListOperations.cpp
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
 )
 
 # Pins the coordinator's reaction to a removal that was applied but leaked a managed config file:
@@ -305,80 +252,9 @@ songbird_add_qt_test(songbird_startup_admin_elevation_tests startup-admin-elevat
 
 set(SONGBIRD_APP_BOOTSTRAP_TUN_RUNTIME_TEST_SOURCES
     AppBootstrapTunRuntimeTests.cpp
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
     TestSupport.h
-    ../src/app/CoreStartupCheckpoint.h
-    ../src/common/ProcessRunner.h
-    ../src/common/ProcessRunner.cpp
-    ../src/runtime/CoreConfigPreflight.h
-    ../src/runtime/CoreConfigPreflight.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreDescriptor.h
-    ../src/runtime/core/CoreDescriptorRegistry.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
     ../src/backends/xray/XrayCoreDescriptor.h
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 songbird_add_qt_test(songbird_app_bootstrap_tun_runtime_tests app-bootstrap-tun-runtime
@@ -393,121 +269,8 @@ songbird_add_qt_test(songbird_app_bootstrap_tun_runtime_tests app-bootstrap-tun-
 # variable of its own so the system-proxy coordinator tests can reuse it rather than copying ~115
 # lines -- a copy would drift the moment either side gains a file.
 set(SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/app/BackgroundTaskCoordinator.h
-    ../src/app/BackgroundTaskCoordinator.cpp
-    ../src/app/BackgroundThreadTracker.h
-    ../src/app/BackgroundThreadTracker.cpp
-    ../src/app/OutboundLocationProbeService.h
-    ../src/app/OutboundLocationProbeService.cpp
-    ../src/app/PostStopAction.h
-    ../src/app/CoreStartupChecklist.h
-    ../src/app/CoreStartupChecklist.cpp
-    ../src/app/ProxyCrashRestartPolicy.h
-    ../src/app/ProxyCrashRestartPolicy.cpp
-    ../src/app/ProxySession.h
-    ../src/app/ProxySession.cpp
-    ../src/app/ProxyRuntimeInterfaces.h
-    ../src/common/JsonFile.h
-    ../src/runtime/ClientConfigWriter.h
-    ../src/runtime/ClientConfigWriter.cpp
-    ../src/common/ProcessRunner.h
-    ../src/common/ProcessRunner.cpp
-    ../src/runtime/CoreConfigPreflight.h
-    ../src/runtime/CoreConfigPreflight.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ICoreProcessHost.h
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreDescriptor.h
-    ../src/runtime/core/CoreDescriptorRegistry.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
     ../src/backends/xray/XrayCoreDescriptor.h
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
-    ../src/services/CoreUpdateService.h
-    ../src/services/CoreUpdateService.cpp
-    ../src/common/JsonFile.h
-    ../src/services/CoreUpdateInstallFiles.h
-    ../src/services/CoreUpdateInstallFiles.cpp
-    ../src/services/CoreUpdatePackageDownload.h
-    ../src/services/CoreUpdatePackageDownload.cpp
-    ../src/services/CoreUpdatePackageInstallation.h
-    ../src/services/CoreUpdatePackageInstallation.cpp
-    ../src/services/CoreUpdateReleaseMetadata.h
-    ../src/services/CoreUpdateReleaseMetadata.cpp
-    ../src/services/CoreUpdateReleaseResolution.h
-    ../src/services/CoreUpdateReleaseResolution.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateOperations.h
-    ../src/services/CoreUpdateOperations.cpp
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
-    ../src/common/JsonFile.h
-    ../src/services/GeoResourceUpdateService.h
-    ../src/services/GeoResourceUpdateService.cpp
-    ../src/services/GeoResourceDownload.h
-    ../src/services/GeoResourceDownload.cpp
 )
 
 set(SONGBIRD_PROXY_SESSION_TEST_SOURCES
@@ -524,6 +287,36 @@ songbird_add_qt_test(songbird_proxy_session_tests proxy-session-state
         Qt${QT_VERSION_MAJOR}::Network
 )
 
+# The only suite that exercises the real QProcess-backed host: the behaviour it covers is how Qt
+# drives a child process on Windows, which no stand-in can reproduce.
+set(SONGBIRD_CORE_PROCESS_HOST_TEST_SOURCES
+    CoreProcessHostTests.cpp
+    ../src/common/CorePidFile.h
+)
+
+songbird_add_qt_test(songbird_core_process_host_tests core-process-host
+    SOURCES
+        ${SONGBIRD_CORE_PROCESS_HOST_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# Guards the tab bar's scroll-button arrows. They are the one place in the app where a QToolButton is
+# only 16px wide, which is exactly the width at which the unscoped QToolButton padding in
+# AppTheme.qss.in wipes out the arrow's contents rect, so the buttons silently degrade to empty boxes.
+set(SONGBIRD_TAB_BAR_SCROLL_BUTTON_TEST_SOURCES
+    TabBarScrollButtonTests.cpp
+)
+
+songbird_add_qt_test(songbird_tab_bar_scroll_button_tests tab-bar-scroll-buttons
+    SOURCES
+        ${SONGBIRD_TAB_BAR_SCROLL_BUTTON_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Svg
+)
+
 # Drives SystemProxyCoordinator through a stand-in ISystemProxyService, which is the only way to
 # reach its failure branch: the real service writes HKCU and cannot be made to refuse a write.
 # It needs ProxySession.cpp because the coordinator also calls into the session on the exit paths,
@@ -532,13 +325,6 @@ set(SONGBIRD_SYSTEM_PROXY_COORDINATOR_TEST_SOURCES
     SystemProxyCoordinatorTests.cpp
     ../src/app/SystemProxyCoordinator.h
     ../src/app/SystemProxyCoordinator.cpp
-    ../src/platform/ISystemProxyService.h
-    ../src/services/ServerService.h
-    ../src/services/ServerService.cpp
-    ../src/services/ServerCustomConfigStore.h
-    ../src/services/ServerCustomConfigStore.cpp
-    ../src/services/ServerListOperations.h
-    ../src/services/ServerListOperations.cpp
     ${SONGBIRD_PROXY_RUNTIME_TEST_DEPENDENCIES}
 )
 
@@ -553,100 +339,12 @@ songbird_add_qt_test(songbird_system_proxy_coordinator_tests system-proxy-coordi
 
 set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     CoreUpdateCoordinatorTests.cpp
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/app/BackgroundTaskCoordinator.h
-    ../src/app/BackgroundTaskCoordinator.cpp
     ../src/app/CoreUpdateCoordinator.h
     ../src/app/CoreUpdateCoordinator.cpp
     ../src/app/CoreUpdatePendingState.h
     ../src/app/CoreUpdatePendingState.cpp
-    ../src/services/CoreUpdateService.h
-    ../src/services/CoreUpdateService.cpp
-    ../src/common/JsonFile.h
-    ../src/services/CoreUpdateInstallFiles.h
-    ../src/services/CoreUpdateInstallFiles.cpp
-    ../src/services/CoreUpdatePackageDownload.h
-    ../src/services/CoreUpdatePackageDownload.cpp
-    ../src/services/CoreUpdatePackageInstallation.h
-    ../src/services/CoreUpdatePackageInstallation.cpp
-    ../src/services/CoreUpdateReleaseMetadata.h
-    ../src/services/CoreUpdateReleaseMetadata.cpp
-    ../src/services/CoreUpdateReleaseResolution.h
-    ../src/services/CoreUpdateReleaseResolution.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateOperations.h
-    ../src/services/CoreUpdateOperations.cpp
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreDescriptor.h
-    ../src/runtime/core/CoreDescriptorRegistry.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
     ../src/backends/singbox/SingBoxCoreDescriptor.h
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
     ../src/backends/xray/XrayCoreDescriptor.h
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 songbird_add_qt_test(songbird_core_update_coordinator_tests core-update-coordinator
@@ -660,8 +358,6 @@ songbird_add_qt_test(songbird_core_update_coordinator_tests core-update-coordina
 
 set(SONGBIRD_RUNTIME_STATE_TEST_SOURCES
     RuntimeStateTests.cpp
-    ../src/domain/models/RuntimeState.h
-    ../src/domain/models/RuntimeState.cpp
 )
 
 songbird_add_qt_test(songbird_runtime_state_tests runtime-state
@@ -680,8 +376,6 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/subscription/ShareUrlProtocolBuilders.cpp
     ../src/subscription/ShareUrlBuilderSupport.h
     ../src/subscription/ShareUrlBuilderSupport.cpp
-    ../src/subscription/ShareUrlParserSupport.h
-    ../src/subscription/ShareUrlParserSupport.cpp
     ../src/third_party/qrcodegen/qrcodegen.hpp
     ../src/third_party/qrcodegen/qrcodegen.cpp
     ../src/ui/mainwindow/MainWindow.h
@@ -748,17 +442,7 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/models/ServerTableModel.cpp
     ../src/ui/qr/QrCodeRenderer.h
     ../src/ui/qr/QrCodeRenderer.cpp
-    ../src/ui/theme/AppTheme.h
-    ../src/ui/theme/AppTheme.cpp
-    ../src/ui/theme/AppThemePalette.h
-    ../src/ui/theme/AppThemePalette.cpp
-    ../src/ui/theme/AppThemeStyle.h
-    ../src/ui/theme/AppThemeStyle.cpp
-    ../src/ui/theme/ServerTableTheme.h
-    ../src/ui/theme/ServerTableTheme.cpp
-    ../src/resources/app_icons.qrc
     ../src/resources/toolbar_icons.qrc
-    ../src/resources/themes.qrc
 )
 
 songbird_add_qt_test(songbird_main_window_tests main-window-log-scroll
@@ -772,73 +456,7 @@ songbird_add_qt_test(songbird_main_window_tests main-window-log-scroll
 )
 
 set(SONGBIRD_BACKEND_STACK_SOURCES
-    ../src/common/JsonFile.h
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
-    ../src/runtime/ClientConfigWriter.h
-    ../src/runtime/ClientConfigWriter.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
+
 )
 
 set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
@@ -881,29 +499,6 @@ songbird_add_qt_test(songbird_tun_compat_core_requirement_tests tun-compat-core-
 
 set(SONGBIRD_JSON_CONFIG_REPOSITORY_TEST_SOURCES
     JsonConfigRepositoryTests.cpp
-    ../src/common/JsonFile.h
-    ../src/persistence/JsonConfigRepository.h
-    ../src/persistence/JsonConfigRepository.cpp
-    ../src/persistence/JsonConfigCollectionSerialization.h
-    ../src/persistence/JsonConfigCollectionSerialization.cpp
-    ../src/persistence/JsonConfigServerSerialization.h
-    ../src/persistence/JsonConfigServerSerialization.cpp
-    ../src/persistence/JsonConfigRoutingSerialization.h
-    ../src/persistence/JsonConfigRoutingSerialization.cpp
-    ../src/persistence/JsonConfigSubscriptionSerialization.h
-    ../src/persistence/JsonConfigSubscriptionSerialization.cpp
-    ../src/persistence/JsonConfigPolicySerialization.h
-    ../src/persistence/JsonConfigPolicySerialization.cpp
-    ../src/persistence/JsonConfigRootSerialization.h
-    ../src/persistence/JsonConfigRootSerialization.cpp
-    ../src/persistence/JsonConfigSerialization.h
-    ../src/persistence/JsonConfigSerialization.cpp
-    ../src/persistence/JsonConfigStateSerialization.h
-    ../src/persistence/JsonConfigStateSerialization.cpp
-    ../src/persistence/JsonConfigTunSerialization.h
-    ../src/persistence/JsonConfigTunSerialization.cpp
-    ../src/persistence/JsonConfigUiSerialization.h
-    ../src/persistence/JsonConfigUiSerialization.cpp
 )
 
 songbird_add_qt_test(songbird_json_config_repository_tests json-config-repository-defaults
@@ -916,7 +511,6 @@ songbird_add_qt_test(songbird_json_config_repository_tests json-config-repositor
 
 set(SONGBIRD_CONFIG_BACKUP_STATE_DOCUMENT_TEST_SOURCES
     ConfigBackupStateDocumentTests.cpp
-    ../src/common/JsonFile.h
     ../src/services/ConfigBackupStateDocument.h
     ../src/services/ConfigBackupStateDocument.cpp
 )
@@ -931,8 +525,6 @@ songbird_add_qt_test(songbird_config_backup_state_document_tests config-backup-s
 
 set(SONGBIRD_PROXY_AVAILABILITY_CHECK_TEST_SOURCES
     ProxyAvailabilityCheckServiceTests.cpp
-    ../src/services/ProxyAvailabilityCheckService.h
-    ../src/services/ProxyAvailabilityCheckService.cpp
 )
 
 songbird_add_qt_test(songbird_proxy_availability_check_tests proxy-availability-check
@@ -946,14 +538,6 @@ songbird_add_qt_test(songbird_proxy_availability_check_tests proxy-availability-
 
 set(SONGBIRD_SPEED_TEST_SERVICE_INTERNAL_TEST_SOURCES
     SpeedTestServiceInternalTests.cpp
-    ../src/services/SpeedTestBatchConfig.h
-    ../src/services/SpeedTestBatchConfig.cpp
-    ../src/services/SpeedTestPortReservation.h
-    ../src/services/SpeedTestPortReservation.cpp
-    ../src/services/SpeedTestRuntimeProcess.h
-    ../src/services/SpeedTestRuntimeProcess.cpp
-    ../src/services/SpeedTestUrlProbe.h
-    ../src/services/SpeedTestUrlProbe.cpp
 )
 
 songbird_add_qt_test(songbird_speed_test_service_internal_tests speed-test-service-internal
@@ -965,10 +549,21 @@ songbird_add_qt_test(songbird_speed_test_service_internal_tests speed-test-servi
         Qt${QT_VERSION_MAJOR}::Network
 )
 
+set(SONGBIRD_SPEED_TEST_COORDINATOR_LOGIC_TEST_SOURCES
+    SpeedTestCoordinatorLogicTests.cpp
+    ../src/app/SpeedTestCoordinatorLogic.h
+)
+
+songbird_add_qt_test(songbird_speed_test_coordinator_logic_tests speed-test-coordinator-logic
+    SOURCES
+        ${SONGBIRD_SPEED_TEST_COORDINATOR_LOGIC_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_SUBSCRIPTION_SERVICE_TEST_SOURCES
     SubscriptionServiceTests.cpp
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
 )
 
 songbird_add_qt_test(songbird_subscription_service_tests subscription-service
@@ -981,10 +576,6 @@ songbird_add_qt_test(songbird_subscription_service_tests subscription-service
 
 set(SONGBIRD_SUBSCRIPTION_URL_IMPORT_SERVICE_TEST_SOURCES
     SubscriptionUrlImportServiceTests.cpp
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
-    ../src/subscription/SubscriptionImportTextParser.h
-    ../src/subscription/SubscriptionImportTextParser.cpp
     ../src/subscription/SubscriptionUrlImportService.h
     ../src/subscription/SubscriptionUrlImportService.cpp
 )
@@ -1012,12 +603,29 @@ songbird_add_qt_test(songbird_routing_service_tests routing-service
 
 set(SONGBIRD_SYSTEM_PROXY_MODE_TEST_SOURCES
     SystemProxyModeTests.cpp
-    ../src/common/SystemProxyMode.h
 )
 
 songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
     SOURCES
         ${SONGBIRD_SYSTEM_PROXY_MODE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# StartupSequencer is the abort-on-failure primitive AppBootstrap::run() drives its startup
+# tail through, and decideStartupWindowAction is the tray-less fallback branch that used to be
+# an untested nested if inside run(). Both are pure and dependency-free, so they get a target of
+# their own rather than dragging in the whole AppBootstrap link chain.
+set(SONGBIRD_STARTUP_SEQUENCER_TEST_SOURCES
+    StartupSequencerTests.cpp
+    ../src/common/StartupSequencer.h
+    ../src/app/StartupWindowPolicy.h
+)
+
+songbird_add_qt_test(songbird_startup_sequencer_tests startup-sequencer
+    SOURCES
+        ${SONGBIRD_STARTUP_SEQUENCER_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
@@ -1029,10 +637,7 @@ songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
 # gets a small target of its own rather than dragging in the ProxySession chain.
 set(SONGBIRD_PROXY_CRASH_RESTART_POLICY_TEST_SOURCES
     ProxyCrashRestartPolicyTests.cpp
-    ../src/app/ProxyCrashRestartPolicy.h
-    ../src/app/ProxyCrashRestartPolicy.cpp
     ../src/app/TunRuntimeState.h
-    ../src/runtime/core/CoreCatalog.h
 )
 
 songbird_add_qt_test(songbird_proxy_crash_restart_policy_tests proxy-crash-restart-policy
@@ -1067,8 +672,6 @@ set(SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES
     ../src/auto/AutoCountrySupport.h
     ../src/auto/AutoCountrySupport.cpp
     ../src/auto/AutoTypes.h
-    ../src/services/SpeedTestRequestItem.h
-    ../src/common/ServerDisplayName.h
 )
 
 songbird_add_qt_test(songbird_auto_country_inference_tests auto-country-inference
@@ -1083,9 +686,6 @@ set(SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES
     AutoRuntimeDefaultsTests.cpp
     ../src/auto/AutoRuntimeDefaults.h
     ../src/auto/AutoRuntimeDefaults.cpp
-    ../src/app/OutboundLocationProbeService.h
-    ../src/common/PortValidator.h
-    ../src/common/SystemProxyMode.h
 )
 
 songbird_add_qt_test(songbird_auto_runtime_defaults_tests auto-runtime-defaults
@@ -1101,8 +701,6 @@ set(SONGBIRD_AUTO_COORDINATOR_LOGIC_TEST_SOURCES
     ../src/auto/AutoCoordinatorLogic.h
     ../src/auto/AutoCoordinatorLogic.cpp
     ../src/auto/AutoTypes.h
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
 )
 
 songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logic
@@ -1115,7 +713,6 @@ songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logi
 
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
-    ../src/common/UserAgent.h
 )
 
 songbird_add_qt_test(songbird_user_agent_tests user-agent
@@ -1147,15 +744,8 @@ set(SONGBIRD_APP_UPDATE_SERVICE_TEST_SOURCES
     ../src/services/AppUpdateService.cpp
     ../src/services/AppUpdateReleaseMetadata.h
     ../src/services/AppUpdateReleaseMetadata.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/common/OperationResult.h
-    ../src/common/UserAgent.h
 )
 
 songbird_add_qt_test(songbird_app_update_service_tests app-update-service
@@ -1173,22 +763,13 @@ set(SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES
     ../src/app/AppUpdateCheckCoordinator.cpp
     ../src/app/AppUpdateCheckPresentation.h
     ../src/app/AppUpdateCheckPresentation.cpp
-    ../src/app/BackgroundTaskCoordinator.h
-    ../src/app/BackgroundTaskCoordinator.cpp
     ../src/app/IUserFeedback.h
     ../src/services/AppUpdateService.h
     ../src/services/AppUpdateService.cpp
     ../src/services/AppUpdateReleaseMetadata.h
     ../src/services/AppUpdateReleaseMetadata.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/common/OperationResult.h
-    ../src/common/UserAgent.h
 )
 
 songbird_add_qt_test(songbird_app_update_check_coordinator_tests app-update-check-coordinator
@@ -1204,90 +785,6 @@ songbird_add_qt_test(songbird_app_update_check_coordinator_tests app-update-chec
 
 set(SONGBIRD_CORE_UPDATE_SERVICE_TEST_SOURCES
     CoreUpdateServiceTests.cpp
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/services/CoreUpdateService.h
-    ../src/services/CoreUpdateService.cpp
-    ../src/common/JsonFile.h
-    ../src/services/CoreUpdateInstallFiles.h
-    ../src/services/CoreUpdateInstallFiles.cpp
-    ../src/services/CoreUpdatePackageDownload.h
-    ../src/services/CoreUpdatePackageDownload.cpp
-    ../src/services/CoreUpdatePackageInstallation.h
-    ../src/services/CoreUpdatePackageInstallation.cpp
-    ../src/services/CoreUpdateReleaseMetadata.h
-    ../src/services/CoreUpdateReleaseMetadata.cpp
-    ../src/services/CoreUpdateReleaseResolution.h
-    ../src/services/CoreUpdateReleaseResolution.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateOperations.h
-    ../src/services/CoreUpdateOperations.cpp
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
 )
 
 songbird_add_qt_test(songbird_core_update_service_tests core-update-service
@@ -1301,11 +798,6 @@ songbird_add_qt_test(songbird_core_update_service_tests core-update-service
 
 set(SONGBIRD_GEO_RESOURCE_UPDATE_SERVICE_TEST_SOURCES
     GeoResourceUpdateServiceTests.cpp
-    ../src/common/JsonFile.h
-    ../src/services/GeoResourceUpdateService.h
-    ../src/services/GeoResourceUpdateService.cpp
-    ../src/services/GeoResourceDownload.h
-    ../src/services/GeoResourceDownload.cpp
 )
 
 songbird_add_qt_test(songbird_geo_resource_update_service_tests geo-resource-update-service
@@ -1319,41 +811,6 @@ songbird_add_qt_test(songbird_geo_resource_update_service_tests geo-resource-upd
 
 set(SONGBIRD_SUBSCRIPTION_PARSER_TEST_SOURCES
     SubscriptionParserTests.cpp
-    ../src/subscription/SubscriptionContentParser.h
-    ../src/subscription/SubscriptionContentParser.cpp
-    ../src/subscription/SubscriptionSingBoxParser.h
-    ../src/subscription/SubscriptionSingBoxParser.cpp
-    ../src/subscription/ClashSubscriptionParser.h
-    ../src/subscription/ClashSubscriptionParser.cpp
-    ../src/subscription/ClashProxyItemParser.h
-    ../src/subscription/ClashProxyItemParser.cpp
-    ../src/subscription/ClashYamlProxyParser.h
-    ../src/subscription/ClashYamlProxyParser.cpp
-    ../src/subscription/SubscriptionJsonSupport.h
-    ../src/subscription/SubscriptionJsonSupport.cpp
-    ../src/subscription/SubscriptionYamlParser.h
-    ../src/subscription/SubscriptionYamlParser.cpp
-    ../src/subscription/SubscriptionYamlScalarValueParser.h
-    ../src/subscription/SubscriptionYamlScalarValueParser.cpp
-    ../src/subscription/SubscriptionYamlFlowValueParser.h
-    ../src/subscription/SubscriptionYamlFlowValueParser.cpp
-    ../src/subscription/SubscriptionYamlEscape.h
-    ../src/subscription/SubscriptionYamlEscape.cpp
-    ../src/subscription/CustomConfigTextParser.h
-    ../src/subscription/CustomConfigTextParser.cpp
-    ../src/subscription/ShareUrlParser.h
-    ../src/subscription/ShareUrlParser.cpp
-    ../src/subscription/ShareUrlProtocolParsers.h
-    ../src/subscription/ShareUrlProtocolParsers.cpp
-    ../src/subscription/ShareUrlSingBoxProtocolParsers.cpp
-    ../src/subscription/ShareUrlVmessParser.h
-    ../src/subscription/ShareUrlVmessParser.cpp
-    ../src/subscription/ShareUrlParserSupport.h
-    ../src/subscription/ShareUrlParserSupport.cpp
-    ../src/subscription/SubscriptionImportTextParser.h
-    ../src/subscription/SubscriptionImportTextParser.cpp
-    ../src/common/EndpointParser.h
-    ../src/common/PortValidator.h
 )
 
 songbird_add_qt_test(songbird_subscription_parser_tests subscription-parser
@@ -1367,12 +824,6 @@ songbird_add_qt_test(songbird_subscription_parser_tests subscription-parser
 
 set(SONGBIRD_SERVER_SERVICE_TEST_SOURCES
     ServerServiceTests.cpp
-    ../src/services/ServerService.h
-    ../src/services/ServerService.cpp
-    ../src/services/ServerCustomConfigStore.h
-    ../src/services/ServerCustomConfigStore.cpp
-    ../src/services/ServerListOperations.h
-    ../src/services/ServerListOperations.cpp
 )
 
 songbird_add_qt_test(songbird_server_service_tests server-service
@@ -1397,199 +848,15 @@ songbird_add_qt_test(songbird_protocol_core_compat_tests protocol-core-compat
 
 set(SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
     EndToEndSmokeTests.cpp
-    ../src/common/RoutingValuePattern.h
-    ../src/common/RoutingValuePattern.cpp
     ../src/common/GitHubMirrorHelper.h
     ../src/common/GitHubUrls.h
-    ../src/common/GitHubReleaseParsing.h
-    ../src/common/GitHubReleaseParsing.cpp
-    ../src/common/SystemProxyMode.h
-    ../src/common/JsonFile.h
-    ../src/persistence/IConfigRepository.h
-    ../src/persistence/JsonConfigRepository.h
-    ../src/persistence/JsonConfigRepository.cpp
-    ../src/persistence/JsonConfigSerialization.h
-    ../src/persistence/JsonConfigSerialization.cpp
-    ../src/persistence/JsonConfigRootSerialization.h
-    ../src/persistence/JsonConfigRootSerialization.cpp
-    ../src/persistence/JsonConfigCollectionSerialization.h
-    ../src/persistence/JsonConfigCollectionSerialization.cpp
-    ../src/persistence/JsonConfigServerSerialization.h
-    ../src/persistence/JsonConfigServerSerialization.cpp
-    ../src/persistence/JsonConfigRoutingSerialization.h
-    ../src/persistence/JsonConfigRoutingSerialization.cpp
-    ../src/persistence/JsonConfigSubscriptionSerialization.h
-    ../src/persistence/JsonConfigSubscriptionSerialization.cpp
-    ../src/persistence/JsonConfigPolicySerialization.h
-    ../src/persistence/JsonConfigPolicySerialization.cpp
-    ../src/persistence/JsonConfigStateSerialization.h
-    ../src/persistence/JsonConfigStateSerialization.cpp
-    ../src/persistence/JsonConfigTunSerialization.h
-    ../src/persistence/JsonConfigTunSerialization.cpp
-    ../src/persistence/JsonConfigUiSerialization.h
-    ../src/persistence/JsonConfigUiSerialization.cpp
-    ../src/common/JsonFile.h
-    ../src/runtime/ClientConfigWriter.h
-    ../src/runtime/ClientConfigWriter.cpp
-    ../src/runtime/DnsConfigFragments.h
-    ../src/runtime/DnsConfigFragments.cpp
-    ../src/runtime/DnsAddressParser.h
-    ../src/runtime/DnsAddressParser.cpp
-    ../src/runtime/DnsHosts.h
-    ../src/runtime/DnsHosts.cpp
-    ../src/runtime/LegacyDnsConfigBuilder.h
-    ../src/runtime/LegacyDnsConfigBuilder.cpp
-    ../src/runtime/SingBoxFakeIpFilter.h
-    ../src/runtime/SingBoxFakeIpFilter.cpp
-    ../src/runtime/SingBoxDnsConfigSupport.h
-    ../src/runtime/SingBoxDnsConfigSupport.cpp
-    ../src/runtime/SingBoxDnsRuleConfig.h
-    ../src/runtime/SingBoxDnsRuleConfig.cpp
-    ../src/runtime/SingBoxDnsConfigBuilder.h
-    ../src/runtime/SingBoxDnsConfigBuilder.cpp
-    ../src/runtime/ProtocolConfigMapper.h
-    ../src/runtime/ProtocolConfigMapper.cpp
-    ../src/runtime/RoutingConfigFragments.h
-    ../src/runtime/RoutingConfigFragments.cpp
-    ../src/runtime/RoutingRuleJsonMapper.h
-    ../src/runtime/RoutingRuleJsonMapper.cpp
-    ../src/runtime/RoutingRuleJsonSupport.h
-    ../src/runtime/RoutingRuleJsonSupport.cpp
-    ../src/runtime/SingBoxRoutingRuleMapper.h
-    ../src/runtime/SingBoxRoutingRuleMapper.cpp
-    ../src/runtime/core/ICoreBackend.h
-    ../src/runtime/core/CoreCatalog.h
-    ../src/runtime/core/CoreBackendRegistry.h
-    ../src/backends/CoreBackendRegistry.cpp
-    ../src/backends/mihomo/MihomoConfigFragments.h
-    ../src/backends/mihomo/MihomoConfigFragments.cpp
-    ../src/backends/mihomo/MihomoCoreBackend.h
-    ../src/backends/mihomo/MihomoCoreBackend.cpp
-    ../src/backends/singbox/SingBoxConfigFragments.h
-    ../src/backends/singbox/SingBoxConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.h
-    ../src/backends/singbox/SingBoxTunCompatConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.h
-    ../src/backends/singbox/SingBoxOutboundConfigFragments.cpp
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.h
-    ../src/backends/singbox/SingBoxOutboundConfigSupport.cpp
-    ../src/backends/singbox/SingBoxTlsConfigFragments.h
-    ../src/backends/singbox/SingBoxTlsConfigFragments.cpp
-    ../src/backends/singbox/SingBoxTransportConfigFragments.h
-    ../src/backends/singbox/SingBoxTransportConfigFragments.cpp
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.h
-    ../src/backends/singbox/SingBoxRoutingConfigFragments.cpp
-    ../src/backends/singbox/SingBoxCoreBackend.h
-    ../src/backends/singbox/SingBoxCoreBackend.cpp
-    ../src/backends/xray/XrayConfigFragments.h
-    ../src/backends/xray/XrayConfigFragments.cpp
-    ../src/backends/xray/XrayOutboundConfigFragments.h
-    ../src/backends/xray/XrayOutboundConfigFragments.cpp
-    ../src/backends/xray/XrayStreamConfigFragments.h
-    ../src/backends/xray/XrayStreamConfigFragments.cpp
-    ../src/backends/xray/XrayTransportConfigFragments.h
-    ../src/backends/xray/XrayTransportConfigFragments.cpp
-    ../src/backends/xray/XraySecurityConfigFragments.h
-    ../src/backends/xray/XraySecurityConfigFragments.cpp
-    ../src/backends/xray/XrayCoreBackend.h
-    ../src/backends/xray/XrayCoreBackend.cpp
     ../src/runtime/CoreLifecycleService.h
     ../src/runtime/CoreLifecycleService.cpp
-    ../src/runtime/ICoreProcessHost.h
-    ../src/runtime/CoreProcessOutputBuffer.h
-    ../src/runtime/CoreProcessOutputBuffer.cpp
-    ../src/runtime/ProtocolCoreCompat.h
-    ../src/runtime/QtCoreProcessHost.h
-    ../src/runtime/QtCoreProcessHost.cpp
     ../src/runtime/TunCompatCoreRequirement.h
-    ../src/services/CoreUpdateService.h
-    ../src/services/CoreUpdateService.cpp
-    ../src/common/JsonFile.h
-    ../src/services/CoreUpdateInstallFiles.h
-    ../src/services/CoreUpdateInstallFiles.cpp
-    ../src/services/CoreUpdatePackageDownload.h
-    ../src/services/CoreUpdatePackageDownload.cpp
-    ../src/services/CoreUpdatePackageInstallation.h
-    ../src/services/CoreUpdatePackageInstallation.cpp
-    ../src/services/CoreUpdateReleaseMetadata.h
-    ../src/services/CoreUpdateReleaseMetadata.cpp
-    ../src/services/CoreUpdateReleaseResolution.h
-    ../src/services/CoreUpdateReleaseResolution.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/CoreUpdateOperations.h
-    ../src/services/CoreUpdateOperations.cpp
-    ../src/services/CoreUpdateVersion.h
-    ../src/services/CoreUpdateVersion.cpp
-    ../src/common/JsonFile.h
-    ../src/services/GeoResourceUpdateService.h
-    ../src/services/GeoResourceUpdateService.cpp
-    ../src/services/GeoResourceDownload.h
-    ../src/services/GeoResourceDownload.cpp
-    ../src/services/ProxyAvailabilityCheckService.h
-    ../src/services/ProxyAvailabilityCheckService.cpp
     ../src/services/SpeedTestServiceInternal.h
-    ../src/services/SpeedTestPortReservation.h
-    ../src/services/SpeedTestPortReservation.cpp
-    ../src/services/SpeedTestUrlProbe.h
-    ../src/services/SpeedTestUrlProbe.cpp
-    ../src/services/SubscriptionService.h
-    ../src/services/SubscriptionService.cpp
-    ../src/services/ServiceTimeouts.h
-    ../src/services/SubscriptionUpdateService.h
-    ../src/services/SubscriptionUpdateService.cpp
-    ../src/subscription/CustomConfigTextParser.h
-    ../src/subscription/CustomConfigTextParser.cpp
-    ../src/subscription/ShareUrlParser.h
-    ../src/subscription/ShareUrlParser.cpp
-    ../src/subscription/ShareUrlProtocolParsers.h
-    ../src/subscription/ShareUrlProtocolParsers.cpp
-    ../src/subscription/ShareUrlSingBoxProtocolParsers.cpp
-    ../src/subscription/ShareUrlVmessParser.h
-    ../src/subscription/ShareUrlVmessParser.cpp
-    ../src/subscription/ShareUrlParserSupport.h
-    ../src/subscription/ShareUrlParserSupport.cpp
-    ../src/subscription/SubscriptionContentParser.h
-    ../src/subscription/SubscriptionContentParser.cpp
-    ../src/subscription/SubscriptionSingBoxParser.h
-    ../src/subscription/SubscriptionSingBoxParser.cpp
-    ../src/subscription/ClashSubscriptionParser.h
-    ../src/subscription/ClashSubscriptionParser.cpp
-    ../src/subscription/ClashProxyItemParser.h
-    ../src/subscription/ClashProxyItemParser.cpp
-    ../src/subscription/ClashYamlProxyParser.h
-    ../src/subscription/ClashYamlProxyParser.cpp
-    ../src/subscription/SubscriptionJsonSupport.h
-    ../src/subscription/SubscriptionJsonSupport.cpp
-    ../src/subscription/SubscriptionYamlParser.h
-    ../src/subscription/SubscriptionYamlParser.cpp
-    ../src/subscription/SubscriptionYamlScalarValueParser.h
-    ../src/subscription/SubscriptionYamlScalarValueParser.cpp
-    ../src/subscription/SubscriptionYamlFlowValueParser.h
-    ../src/subscription/SubscriptionYamlFlowValueParser.cpp
-    ../src/subscription/SubscriptionYamlEscape.h
-    ../src/subscription/SubscriptionYamlEscape.cpp
-    ../src/common/EndpointParser.h
-    ../src/subscription/SubscriptionImportTextParser.h
-    ../src/subscription/SubscriptionImportTextParser.cpp
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.h
     ../src/ui/dialogs/SubscriptionSettingsPageWidget.cpp
-    ../src/ui/theme/AppTheme.h
-    ../src/ui/theme/AppTheme.cpp
-    ../src/ui/theme/AppThemePalette.h
-    ../src/ui/theme/AppThemePalette.cpp
-    ../src/ui/theme/AppThemeStyle.h
-    ../src/ui/theme/AppThemeStyle.cpp
-    ../src/ui/theme/ServerTableTheme.h
-    ../src/ui/theme/ServerTableTheme.cpp
-    ../src/resources/themes.qrc
 )
-
-if(WIN32)
-    list(APPEND SONGBIRD_END_TO_END_SMOKE_TEST_SOURCES
-        ../src/platform/windows/WindowsSystemProxyService.h
-        ../src/platform/windows/WindowsSystemProxyService.cpp
-    )
-endif()
 
 songbird_add_qt_test(songbird_end_to_end_smoke_tests end-to-end-smoke
     SOURCES

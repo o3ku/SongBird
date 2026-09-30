@@ -1,4 +1,4 @@
-#include "app/CoreDiscoveryService.h"
+#include "appcore/CoreDiscoveryService.h"
 
 #include <QCoreApplication>
 #include <QDir>

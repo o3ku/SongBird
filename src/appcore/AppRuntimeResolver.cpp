@@ -1,4 +1,4 @@
-#include "app/AppRuntimeResolver.h"
+#include "appcore/AppRuntimeResolver.h"
 
 #include <utility>
 
@@ -6,7 +6,7 @@
 #include <QDir>
 #include <QFileInfo>
 
-#include "app/CoreDiscoveryService.h"
+#include "appcore/CoreDiscoveryService.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"

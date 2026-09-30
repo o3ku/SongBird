@@ -79,7 +79,7 @@ void RoutingServiceTests::saveRoutingTrimsRemarksAndRemovesEmptyRules()
     items[0].rules.append(makeRule(QStringLiteral("proxy"), {QStringLiteral("  google.com  ")}));
     items[0].rules.append(RoutingRule{});
 
-    const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 0);
     QVERIFY(result.success);
     QCOMPARE(mock.config_.collection().customRoutingItems[0].remarks, QStringLiteral("proxy"));
     QCOMPARE(mock.config_.collection().customRoutingItems[0].rules.size(), 1);
@@ -97,7 +97,7 @@ void RoutingServiceTests::saveRoutingDeduplicatesValues()
     items[0].rules.append(makeRule(QStringLiteral("direct"),
         {QStringLiteral("a.com"), QStringLiteral("a.com"), QStringLiteral("b.com")}));
 
-    const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 0);
     QVERIFY(result.success);
     const QStringList expected = {QStringLiteral("a.com"), QStringLiteral("b.com")};
     QCOMPARE(mock.config_.collection().customRoutingItems[0].rules[0].domain, expected);
@@ -115,7 +115,7 @@ void RoutingServiceTests::saveRoutingRemovesUnmeaningfulRules()
     emptyRule.type = QStringLiteral("  ");
     items[0].rules.append(emptyRule);
 
-    const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 0);
     QVERIFY(result.success);
     QVERIFY(mock.config_.collection().customRoutingItems[0].rules.isEmpty());
 }
@@ -131,7 +131,7 @@ void RoutingServiceTests::saveRoutingLocksSelectedIndex()
     items.append(makeItem(QStringLiteral("B")));
     items.append(makeItem(QStringLiteral("C")));
 
-    const OperationResult result = service.saveRouting(config, items, true, 1, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 1);
     QVERIFY(result.success);
     QCOMPARE(mock.config_.collection().customRoutingItems[0].locked, false);
     QCOMPARE(mock.config_.collection().customRoutingItems[1].locked, false);
@@ -149,7 +149,7 @@ void RoutingServiceTests::saveRoutingClampsInvalidSelectedIndex()
     items.append(makeItem(QStringLiteral("A")));
     items.append(makeItem(QStringLiteral("B")));
 
-    const OperationResult result = service.saveRouting(config, items, true, 99, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 99);
     QVERIFY(result.success);
     QCOMPARE(mock.config_.collection().customRoutingItems[0].locked, false);
     QCOMPARE(mock.config_.collection().customRoutingItems[1].locked, false);
@@ -166,7 +166,7 @@ void RoutingServiceTests::saveRoutingReturnsFailWhenRepositorySaveFails()
     QList<RoutingItem> items;
     items.append(makeItem(QStringLiteral("A")));
 
-    const OperationResult result = service.saveRouting(config, items, true, 0, {}, {});
+    const OperationResult result = service.saveRouting(config, items, true, 0);
     QVERIFY(!result.success);
 }
 
@@ -249,7 +249,7 @@ void RoutingServiceTests::normalizeValuesRemovesEmptyAndDuplicates()
     items[0].rules.append(makeRule(QStringLiteral("tag"),
         {QStringLiteral(""), QStringLiteral("  "), QStringLiteral("a.com"), QStringLiteral("a.com")}));
 
-    service.saveRouting(config, items, true, 0, {}, {});
+    service.saveRouting(config, items, true, 0);
     QCOMPARE(mock.config_.collection().customRoutingItems[0].rules[0].domain, QStringList{QStringLiteral("a.com")});
 }
 
@@ -265,7 +265,7 @@ void RoutingServiceTests::isMeaningfulRuleRejectsEmptyRule()
     rule.enabled = true;
     items[0].rules.append(rule);
 
-    service.saveRouting(config, items, true, 0, {}, {});
+    service.saveRouting(config, items, true, 0);
     QVERIFY(mock.config_.collection().customRoutingItems[0].rules.isEmpty());
 }
 
@@ -282,7 +282,7 @@ void RoutingServiceTests::isMeaningfulRuleAcceptsRuleWithOnlyOutboundTag()
     rule.enabled = true;
     items[0].rules.append(rule);
 
-    service.saveRouting(config, items, true, 0, {}, {});
+    service.saveRouting(config, items, true, 0);
     QCOMPARE(mock.config_.collection().customRoutingItems[0].rules.size(), 1);
 }
 

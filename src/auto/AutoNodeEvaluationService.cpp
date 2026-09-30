@@ -12,7 +12,7 @@
 #include <optional>
 #include <vector>
 
-#include "app/OutboundLocationProbeService.h"
+#include "appcore/OutboundLocationProbeService.h"
 #include "auto/AutoCountrySupport.h"
 #include "common/ServerDisplayName.h"
 #include "runtime/ClientConfigWriter.h"

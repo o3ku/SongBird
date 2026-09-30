@@ -101,7 +101,19 @@ OperationResult QtCoreProcessHost::stop(bool immediate)
         return OperationResult::ok(QCoreApplication::translate("QtCoreProcessHost", "Core process stopped."));
     }
 
+    // A graceful stop request cannot reach a core engine on Windows. QProcess::terminate() only
+    // posts WM_CLOSE to the child's top-level windows and to its main thread
+    // (qtbase/src/corelib/io/qprocess_win.cpp), and the cores are console applications: they own
+    // no windows and never pump messages, so nothing handles the message and the process is in
+    // fact stopped by the forced kill further down. Waiting out the grace period before it was
+    // therefore pure latency on the only platform this ships on, and it was paid on every stop --
+    // including every server switch, which cannot start the new core until the old one has
+    // released its ports, and every shutdown, which stops the core synchronously.
+#ifdef Q_OS_WIN
+    process_->kill();
+#else
     process_->terminate();
+#endif
     if (immediate) {
         if (!process_->waitForFinished(1500)) {
             process_->kill();

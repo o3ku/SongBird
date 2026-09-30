@@ -1,4 +1,4 @@
-#include "app/ProxyCrashRestartPolicy.h"
+#include "appcore/ProxyCrashRestartPolicy.h"
 
 #include <algorithm>
 

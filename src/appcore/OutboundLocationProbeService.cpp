@@ -1,4 +1,4 @@
-#include "app/OutboundLocationProbeService.h"
+#include "appcore/OutboundLocationProbeService.h"
 
 #include <QByteArray>
 #include <QCoreApplication>

@@ -13,7 +13,7 @@
 #include "app/AppUpdateCheckCoordinator.h"
 #include "app/CoreUpdateCoordinator.h"
 #include "app/GeoResourceUpdateCoordinator.h"
-#include "app/ProxySession.h"
+#include "appcore/ProxySession.h"
 #include "app/UiThreadInvocation.h"
 #include "common/DialogUtils.h"
 #include "domain/models/Config.h"

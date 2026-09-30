@@ -46,26 +46,29 @@ inline std::set<int>& reservedProxyPorts()
     return ports;
 }
 
+// httpPort == 0 means "reserve only the SOCKS port" (batch runner path, one
+// SOCKS inbound per entry); a zero locationProbePort is likewise ignored.
 inline bool reserveProxyPorts(int socksPort, int httpPort, int locationProbePort = 0)
 {
     if (socksPort <= 0
-        || httpPort <= 0
-        || socksPort == httpPort
+        || (httpPort != 0 && (httpPort <= 0 || socksPort == httpPort))
         || locationProbePort == socksPort
-        || locationProbePort == httpPort) {
+        || (httpPort != 0 && locationProbePort == httpPort)) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(reservedProxyPortsMutex());
     std::set<int>& ports = reservedProxyPorts();
     if (ports.contains(socksPort)
-        || ports.contains(httpPort)
+        || (httpPort > 0 && ports.contains(httpPort))
         || (locationProbePort > 0 && ports.contains(locationProbePort))) {
         return false;
     }
 
     ports.insert(socksPort);
-    ports.insert(httpPort);
+    if (httpPort > 0) {
+        ports.insert(httpPort);
+    }
     if (locationProbePort > 0) {
         ports.insert(locationProbePort);
     }
@@ -77,7 +80,9 @@ inline void releaseProxyPorts(int socksPort, int httpPort, int locationProbePort
     std::lock_guard<std::mutex> lock(reservedProxyPortsMutex());
     std::set<int>& ports = reservedProxyPorts();
     ports.erase(socksPort);
-    ports.erase(httpPort);
+    if (httpPort > 0) {
+        ports.erase(httpPort);
+    }
     if (locationProbePort > 0) {
         ports.erase(locationProbePort);
     }

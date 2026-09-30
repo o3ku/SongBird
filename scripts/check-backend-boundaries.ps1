@@ -130,6 +130,7 @@ foreach ($dir in $legacyBackendDirs) {
 
 $consumerDirs = @(
     (Join-Path $root "app"),
+    (Join-Path $root "appcore"),
     (Join-Path $root "ui"),
     (Join-Path $root "services"),
     (Join-Path $root "runtime")
@@ -147,7 +148,7 @@ $backendDir = Join-Path $root "backends"
 if (-not (Test-Path $backendDir)) {
     Stop-CheckWithError "Backend directory '$backendDir' does not exist, so the reverse-direction rule would scan nothing. Refusing to report a pass."
 }
-$matches = Find-MatchingLines -Pattern '#include\s+"(app|ui|services|platform)/' -Roots @($backendDir)
+$matches = Find-MatchingLines -Pattern '#include\s+"(app|appcore|ui|services|platform)/' -Roots @($backendDir)
 foreach ($match in $matches) {
     $violations.Add("Backend may not include application/service/UI/platform layer: $match")
 }

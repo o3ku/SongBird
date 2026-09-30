@@ -209,10 +209,10 @@ $messageHelpers = @(
     # for it: crashSummary() the core/exit-kind sentence, the two *Message() the frame around it.
     # All four were bare QStringLiteral() until 2026-09-20, so the whole restart path was
     # English-only; registering them is what keeps it from regressing.
-    @{ File = 'src/app/ProxyCrashRestartPolicy.cpp'; Function = 'crashSummary' }
-    @{ File = 'src/app/ProxyCrashRestartPolicy.cpp'; Function = 'restartDisabledMessage' }
-    @{ File = 'src/app/ProxyCrashRestartPolicy.cpp'; Function = 'restartingMessage' }
-    @{ File = 'src/app/ProxyCrashRestartPolicy.cpp'; Function = 'decide' }
+    @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'crashSummary' }
+    @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'restartDisabledMessage' }
+    @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'restartingMessage' }
+    @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'decide' }
 
     # The speed-test / auto-node result vocabulary. These are the "result" text a node row
     # shows when a probe fails or is skipped, so they are user-visible prose rather than

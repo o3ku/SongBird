@@ -11,19 +11,31 @@
 
 namespace {
 
+// Xray reads these values verbatim, and the sing-box mapping in
+// SingBoxDnsConfigSupport::mapDomainStrategy understands the same spellings (the
+// legacy Prefer*/Only* names are still accepted for saved configs). Offering
+// anything outside this list would silently reach a core unmapped.
+//
+// The list is the enumeration both cores accept where the value lands: Xray's
+// outbound `targetStrategy` / `sockopt.domainStrategy` and sing-box's
+// `dns.strategy`. AsIs is the one exception, because it says "let the core
+// decide" and so intentionally maps to no sing-box strategy. Xray's routing-only
+// IPIfNonMatch / IPOnDemand are deliberately absent: they belong to
+// `routing.domainStrategy`, and this value is written verbatim into the outbound
+// strategy above, where Xray would reject them.
 QStringList domainStrategyOptions()
 {
     return {
         QString(),
         QStringLiteral("AsIs"),
-        QStringLiteral("IPIfNonMatch"),
-        QStringLiteral("IPOnDemand"),
-        QStringLiteral("PreferIPv4"),
-        QStringLiteral("PreferIPv6"),
-        QStringLiteral("PreferIPv4v6"),
-        QStringLiteral("PreferIPv6v4"),
-        QStringLiteral("OnlyIPv4"),
-        QStringLiteral("OnlyIPv6")};
+        QStringLiteral("UseIPv4"),
+        QStringLiteral("UseIPv6"),
+        QStringLiteral("UseIPv4v6"),
+        QStringLiteral("UseIPv6v4"),
+        QStringLiteral("ForceIPv4"),
+        QStringLiteral("ForceIPv6"),
+        QStringLiteral("ForceIPv4v6"),
+        QStringLiteral("ForceIPv6v4")};
 }
 
 } // namespace

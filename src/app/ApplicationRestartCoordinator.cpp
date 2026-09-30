@@ -9,7 +9,7 @@
 
 #include "app/AppUpdateInstallService.h"
 #include "app/SingleInstanceBootstrap.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 #include "app/TunAdminMessages.h"
 #include "common/DialogUtils.h"
 #include "common/OperationResult.h"

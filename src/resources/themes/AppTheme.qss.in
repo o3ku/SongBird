@@ -87,6 +87,12 @@ QWidget#settingsActionBar { background: @surface@; border: none; border-top: 1px
 QTabWidget#routingCustomRuleTabs::pane { background: @surface@; border: none; }
 QTabWidget#coreDetailTabs::pane { background: @surface@; border: none; }
 QTabBar#settingsTabBar, QTabBar#subscriptionTabBar, QTabWidget#routingCustomRuleTabs QTabBar { background: transparent; border: none; }
+/* The two scroll buttons of an overflowing tab bar are plain QToolButtons created by QTabBar itself,
+   and it lays them out 16px wide. The unscoped QToolButton rule above gives every tool button 8px of
+   horizontal padding, and QStyleSheetStyle paints the arrow into the rule's contents rect, so at 16px
+   the content rect collapses to nothing and the button shows up as an empty box. Drop the padding
+   here: the arrow then comes from the base style and picks up `color` through QPalette::ButtonText. */
+QTabBar QToolButton { padding: 0px; }
 QTabBar#settingsTabBar::tab, QTabBar#subscriptionTabBar::tab { background: transparent; color: @textMuted@; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; outline: none; }
 QTabBar#subscriptionTabBar::tab { background: @surface@; border: 1px solid @border@; padding: 5px 16px; margin: 0px 2px 0px 0px; }
 QTabBar#settingsTabBar::tab:selected { background: @activeBackground@; color: @tabSelectedText@; }

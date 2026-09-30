@@ -3,7 +3,7 @@
 #include <QProcess>
 #include <QTranslator>
 
-#include "app/ProxyCrashRestartPolicy.h"
+#include "appcore/ProxyCrashRestartPolicy.h"
 
 namespace {
 

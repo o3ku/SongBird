@@ -109,9 +109,6 @@ private slots:
     void generateClientConfigsMapsSingBoxBlockRoutingRuleToRejectAction();
     void generateClientConfigsTreatsPlainSingBoxRoutingDomainsAsKeywords();
     void generateClientConfigsSplitsSingBoxRoutingPortsIntoPortAndRangeFields();
-    void generateClientConfigsAddsSingBoxResolveRuleBeforeUserRulesForIpOnDemand();
-    void generateClientConfigsAddsSingBoxResolveRuleAfterUserRulesForIpIfNonMatch();
-    void generateClientConfigsReappliesSingBoxIpRulesAfterResolveForIpIfNonMatch();
     void generateClientConfigsOmitsDeprecatedFieldsFromSingBoxDnsRules();
     void generateClientConfigsCarriesLegacyRoutingNetworkIntoProcessRules();
     void generateClientConfigsSplitsSingBoxRoutingProcessNameAndPathRules();
@@ -2090,7 +2087,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSimpleDnsPackForSingBox
     // collapse into one global default. The proxy strategy wins because `final` uses that path.
     QVERIFY(directRule.value(QStringLiteral("strategy")).isUndefined());
     QVERIFY(remoteRule.value(QStringLiteral("strategy")).isUndefined());
-    QCOMPARE(dns.value(QStringLiteral("strategy")).toString(), QStringLiteral("prefer_ipv6"));
+    QCOMPARE(dns.value(QStringLiteral("strategy")).toString(), QStringLiteral("ipv6_only"));
     QVERIFY(dns.value(QStringLiteral("independent_cache")).isUndefined());
     QCOMPARE(dns.value(QStringLiteral("final")).toString(), QStringLiteral("remote_dns"));
 
@@ -2098,7 +2095,7 @@ void ClientConfigWriterTests::generateClientConfigsBuildsSimpleDnsPackForSingBox
                                      .value(QStringLiteral("default_domain_resolver"))
                                      .toObject();
     QCOMPARE(resolver.value(QStringLiteral("server")).toString(), QStringLiteral("direct_dns"));
-    QCOMPARE(resolver.value(QStringLiteral("strategy")).toString(), QStringLiteral("prefer_ipv4"));
+    QCOMPARE(resolver.value(QStringLiteral("strategy")).toString(), QStringLiteral("ipv4_only"));
 
     const QJsonArray routeRules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
     bool foundHostsResolveRule = false;
@@ -2858,119 +2855,6 @@ void ClientConfigWriterTests::generateClientConfigsSplitsSingBoxRoutingPortsInto
     }
 
     QVERIFY(foundPortRule);
-}
-
-void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleBeforeUserRulesForIpOnDemand()
-{
-    Config config = baseConfig();
-    config.tun().tunModeItem.enableTun = false;
-    config.sniffingEnabled = false;
-    config.dns().domainStrategy = QStringLiteral("IPOnDemand");
-    config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv6");
-    config.collection().customRoutingItems = {
-        createRoutingItem({
-            createRoutingRule(QStringLiteral("proxy"), QStringList{QStringLiteral("geosite:google")})})};
-    VmessItem server = baseServer();
-    server.coreType = CoreType::SingBox;
-
-    ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
-
-    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
-
-    int resolveRuleIndex = -1;
-    int ruleSetRuleIndex = -1;
-    for (int i = 0; i < rules.size(); ++i) {
-        const QJsonObject rule = rules.at(i).toObject();
-        if (rule.value(QStringLiteral("action")).toString() == QStringLiteral("resolve")
-            && rule.value(QStringLiteral("strategy")).toString() == QStringLiteral("prefer_ipv6")) {
-            resolveRuleIndex = i;
-        }
-        if (jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geosite-google"))) {
-            ruleSetRuleIndex = i;
-        }
-    }
-
-    QVERIFY(resolveRuleIndex >= 0);
-    QVERIFY(ruleSetRuleIndex >= 0);
-    QVERIFY(resolveRuleIndex < ruleSetRuleIndex);
-}
-
-void ClientConfigWriterTests::generateClientConfigsAddsSingBoxResolveRuleAfterUserRulesForIpIfNonMatch()
-{
-    Config config = baseConfig();
-    config.tun().tunModeItem.enableTun = false;
-    config.sniffingEnabled = false;
-    config.dns().domainStrategy = QStringLiteral("IPIfNonMatch");
-    config.dns().domainStrategy4Singbox = QStringLiteral("prefer_ipv4");
-    RoutingItem route = createRoutingItem({
-        createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})});
-    route.domainStrategy4Singbox = QStringLiteral("ipv6_only");
-    config.collection().customRoutingItems = {route};
-    VmessItem server = baseServer();
-    server.coreType = CoreType::SingBox;
-
-    ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
-
-    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
-
-    int resolveRuleIndex = -1;
-    int firstGeoipRuleIndex = -1;
-    for (int i = 0; i < rules.size(); ++i) {
-        const QJsonObject rule = rules.at(i).toObject();
-        if (rule.value(QStringLiteral("action")).toString() == QStringLiteral("resolve")
-            && rule.value(QStringLiteral("strategy")).toString() == QStringLiteral("ipv6_only")) {
-            resolveRuleIndex = i;
-        }
-        if (firstGeoipRuleIndex < 0
-            && jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn"))) {
-            firstGeoipRuleIndex = i;
-        }
-    }
-
-    QVERIFY(resolveRuleIndex >= 0);
-    QVERIFY(firstGeoipRuleIndex >= 0);
-    QVERIFY(resolveRuleIndex > firstGeoipRuleIndex);
-}
-
-void ClientConfigWriterTests::generateClientConfigsReappliesSingBoxIpRulesAfterResolveForIpIfNonMatch()
-{
-    Config config = baseConfig();
-    config.tun().tunModeItem.enableTun = false;
-    config.sniffingEnabled = false;
-    config.dns().domainStrategy = QStringLiteral("IPIfNonMatch");
-    config.collection().customRoutingItems = {
-        createRoutingItem({
-            createRoutingRule(QStringLiteral("proxy"), {}, QStringList{QStringLiteral("geoip:cn")})})};
-    VmessItem server = baseServer();
-    server.coreType = CoreType::SingBox;
-
-    ClientConfigWriter writer;
-    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
-
-    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
-
-    int resolveRuleIndex = -1;
-    int geoipRuleCount = 0;
-    bool foundGeoipRuleAfterResolve = false;
-    for (int i = 0; i < rules.size(); ++i) {
-        const QJsonObject rule = rules.at(i).toObject();
-        if (rule.value(QStringLiteral("action")).toString() == QStringLiteral("resolve")) {
-            resolveRuleIndex = i;
-        }
-        if (jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geoip-cn"))
-            && rule.value(QStringLiteral("outbound")).toString() == QStringLiteral("proxy")) {
-            ++geoipRuleCount;
-            if (resolveRuleIndex >= 0 && i > resolveRuleIndex) {
-                foundGeoipRuleAfterResolve = true;
-            }
-        }
-    }
-
-    QVERIFY(resolveRuleIndex >= 0);
-    QCOMPARE(geoipRuleCount, 2);
-    QVERIFY(foundGeoipRuleAfterResolve);
 }
 
 void ClientConfigWriterTests::generateClientConfigsOmitsDeprecatedFieldsFromSingBoxDnsRules()

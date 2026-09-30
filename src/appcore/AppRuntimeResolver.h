@@ -6,7 +6,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/ProxyRuntimeInterfaces.h"
+#include "appcore/ProxyRuntimeInterfaces.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 

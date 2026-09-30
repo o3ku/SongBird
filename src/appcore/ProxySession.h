@@ -11,13 +11,13 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/BackgroundTaskCoordinator.h"
-#include "app/BackgroundThreadTracker.h"
-#include "app/CoreStartupCheckpoint.h"
-#include "app/CoreStartupChecklist.h"
-#include "app/PostStopAction.h"
-#include "app/ProxyCrashRestartPolicy.h"
-#include "app/ProxyRuntimeInterfaces.h"
+#include "appcore/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundThreadTracker.h"
+#include "appcore/CoreStartupCheckpoint.h"
+#include "appcore/CoreStartupChecklist.h"
+#include "appcore/PostStopAction.h"
+#include "appcore/ProxyCrashRestartPolicy.h"
+#include "appcore/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
@@ -97,12 +97,14 @@ public:
     bool isManagedProxyActive() const;
     void adoptManagedSystemProxy(bool active);
     void requestChecklistOverlay();
-#ifdef QT_TESTLIB_LIB
+    // Deliberately not gated on QT_TESTLIB_LIB: ProxySession.cpp is compiled once
+    // into songbird_shared_objs and linked by both the app and the test targets, so
+    // a member that only exists under a test-only macro would be missing from
+    // whichever side did not define it.
     void handleCoreExitedForTest(int exitCode, QProcess::ExitStatus status, bool stopRequested, bool auxiliary)
     {
         handleCoreExited(exitCode, static_cast<int>(status), stopRequested, auxiliary);
     }
-#endif
 
 signals:
     void phaseChanged(Phase phase);

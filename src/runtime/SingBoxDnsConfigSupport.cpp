@@ -148,18 +148,45 @@ bool isCustomDnsObjectText(const QString& value)
 
 QString mapDomainStrategy(const QString& strategy)
 {
-    if (strategy.startsWith(QStringLiteral("UseIPv4"), Qt::CaseInsensitive)) {
-        return QStringLiteral("prefer_ipv4");
+    // The settings page stores Xray's address-strategy names, which the Xray fragments write
+    // verbatim, so this is the one place where that vocabulary becomes one of sing-box's four
+    // `strategy` values. Xray's own definitions are the source of truth here: a bare family
+    // (`UseIPv4` / `ForceIPv4`) means "only resolve that family", while the combined spellings
+    // (`UseIPv4v6` / `ForceIPv4v6`) mean "resolve this family first and fall back to the other one
+    // only when it yields nothing" — that is exactly `prefer_*`. Collapsing a combined spelling
+    // into `*_only` would strand IPv4-only or IPv6-only destinations.
+    //
+    // `Use*` and `Force*` differ only in what Xray does when resolution fails (fall back to AsIs
+    // versus refuse the connection), which sing-box cannot express, so both spellings of a family
+    // share one value here. The legacy Prefer*/Only* names older configs may still carry mean the
+    // same two things and are accepted alongside them. Values outside this vocabulary (`AsIs`,
+    // the both-families `UseIP` / `ForceIP`) return nothing, leaving sing-box on its own default.
+    const QString normalized = strategy.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return {};
     }
-    if (strategy.startsWith(QStringLiteral("UseIPv6"), Qt::CaseInsensitive)) {
-        return QStringLiteral("prefer_ipv6");
-    }
-    if (strategy.startsWith(QStringLiteral("ForceIPv4"), Qt::CaseInsensitive)) {
+
+    if (normalized == QStringLiteral("useipv4")
+        || normalized == QStringLiteral("forceipv4")
+        || normalized == QStringLiteral("onlyipv4")) {
         return QStringLiteral("ipv4_only");
     }
-    if (strategy.startsWith(QStringLiteral("ForceIPv6"), Qt::CaseInsensitive)) {
+    if (normalized == QStringLiteral("useipv6")
+        || normalized == QStringLiteral("forceipv6")
+        || normalized == QStringLiteral("onlyipv6")) {
         return QStringLiteral("ipv6_only");
     }
+    if (normalized == QStringLiteral("useipv4v6")
+        || normalized == QStringLiteral("forceipv4v6")
+        || normalized == QStringLiteral("preferipv4")) {
+        return QStringLiteral("prefer_ipv4");
+    }
+    if (normalized == QStringLiteral("useipv6v4")
+        || normalized == QStringLiteral("forceipv6v4")
+        || normalized == QStringLiteral("preferipv6")) {
+        return QStringLiteral("prefer_ipv6");
+    }
+
     return {};
 }
 

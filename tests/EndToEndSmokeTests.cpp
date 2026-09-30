@@ -311,7 +311,6 @@ void addSingBoxPolicy(Config& config)
 Config createSmokeConfig()
 {
     Config config;
-    config.localProtocol = QStringLiteral("socks");
     config.udpEnabled = true;
     config.sniffingEnabled = true;
     config.routeOnly = false;

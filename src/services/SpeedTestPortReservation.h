@@ -16,6 +16,14 @@ struct Ports {
 
 Ports takeAvailable();
 void release(const Ports& ports);
+
+// Single-port variant for the batch runner: it only opens one SOCKS inbound
+// per entry, so reserving the full socks/http/location-probe triple per entry
+// wasted two thirds of the temporary ports and made the "find three free
+// ports" scan fail more often on large batches, which silently downgraded
+// the whole group to the slow per-item path.
+int takeSocksPort();
+void releaseSocksPort(int socksPort);
 bool isProxyPortReady(int port);
 std::optional<SpeedTestServiceInternal::ReadyProxy> waitForProxy(
     int socksPort,

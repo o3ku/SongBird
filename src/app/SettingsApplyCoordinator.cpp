@@ -6,7 +6,7 @@
 #include <QSet>
 
 #include "app/SettingsDialogApplyPlan.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 #include "app/TunAdminMessages.h"
 #include "platform/IAutoRunService.h"
 #include "services/ServerService.h"

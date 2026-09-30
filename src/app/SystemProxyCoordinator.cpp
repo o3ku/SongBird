@@ -7,7 +7,7 @@
 #include <QCoreApplication>
 #include <QStringList>
 
-#include "app/ProxySession.h"
+#include "appcore/ProxySession.h"
 #include "common/RoutingValuePattern.h"
 #include "platform/ISystemProxyService.h"
 #include "runtime/RoutingConfigFragments.h"

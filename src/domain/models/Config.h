@@ -7,7 +7,6 @@
 #include <QString>
 
 #include "domain/models/CoreTypeItem.h"
-#include "domain/models/PolicyGroupItem.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/SubItem.h"
 #include "domain/models/TunModeItem.h"
@@ -38,9 +37,6 @@ struct DnsConfigState {
     QString domainStrategyForProxy;
     QString dnsHosts;
     bool defaultAllowInsecure = false;
-    QString domainStrategy;
-    QString domainStrategy4Singbox;
-    QString domainMatcher;
 };
 
 struct UiConfigState {
@@ -83,7 +79,6 @@ struct RootConfigState {
     int localPort = 10808;
     int localHttpPort = 0;
     int localLocationProbePort = 0;
-    QString localProtocol = QStringLiteral("socks");
     bool udpEnabled = true;
     bool sniffingEnabled = true;
     bool routeOnly = false;
@@ -114,7 +109,6 @@ struct TunConfigState {
 
 struct PolicyConfigState {
     QList<CoreTypeItem> coreTypeItems;
-    QList<PolicyGroupItem> policyGroups;
 };
 
 struct Config : RootConfigState {

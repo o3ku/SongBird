@@ -1,7 +1,7 @@
 #include <QtTest/QtTest>
 
 #include "auto/AutoRuntimeDefaults.h"
-#include "app/OutboundLocationProbeService.h"
+#include "appcore/OutboundLocationProbeService.h"
 #include "common/SystemProxyMode.h"
 
 class AutoRuntimeDefaultsTests : public QObject

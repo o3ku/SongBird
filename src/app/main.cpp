@@ -16,7 +16,7 @@
 
 #include "app/AppBootstrap.h"
 #include "app/ConfigPathResolver.h"
-#include "app/StartupAdminElevation.h"
+#include "appcore/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
@@ -24,7 +24,7 @@
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "2.4.3"
+#define SONGBIRD_APP_VERSION "2.4.4"
 #endif
 
 namespace {

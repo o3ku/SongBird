@@ -6,7 +6,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/CoreStartupCheckpoint.h"
+#include "appcore/CoreStartupCheckpoint.h"
 
 class QObject;
 

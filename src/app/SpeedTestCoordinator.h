@@ -5,8 +5,9 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
-#include "app/BackgroundTaskCoordinator.h"
+#include "appcore/BackgroundTaskCoordinator.h"
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
@@ -44,7 +45,15 @@ private:
     void handleTestResultReady(const QString& indexId, const QString& result);
     void handleFinished(const QString& summary);
 
+    void saveDirtyResults();
+
     Dependencies deps_;
     BackgroundTaskCoordinator::Token speedTestTaskToken_;
     bool speedTestResultsDirty_ = false;
+    // Partial-result checkpointing: results are normally persisted once at
+    // the end of the batch, so a cancel (or crash) mid-batch used to discard
+    // everything already measured. While a batch runs, this timer periodically
+    // flushes the accumulated results; the cancel path flushes once more.
+    QTimer partialResultsSaveTimer_;
+    int resultsSinceLastSave_ = 0;
 };

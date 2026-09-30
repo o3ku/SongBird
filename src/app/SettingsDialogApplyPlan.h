@@ -67,25 +67,7 @@ inline bool areSettingsSubscriptionsEqual(const QList<SubItem>& lhs, const QList
 
 inline bool areSettingsDnsFieldsEqual(const DnsConfigState& lhs, const DnsConfigState& rhs)
 {
-    return lhs.enableFragment == rhs.enableFragment
-        && lhs.enableCacheFile4Sbox == rhs.enableCacheFile4Sbox
-        && lhs.defaultFingerprint.trimmed() == rhs.defaultFingerprint.trimmed()
-        && lhs.defaultUserAgent.trimmed() == rhs.defaultUserAgent.trimmed()
-        && lhs.directDns.trimmed() == rhs.directDns.trimmed()
-        && lhs.remoteDns.trimmed() == rhs.remoteDns.trimmed()
-        && lhs.bootstrapDns.trimmed() == rhs.bootstrapDns.trimmed()
-        && lhs.fakeIp == rhs.fakeIp
-        && lhs.globalFakeIp == rhs.globalFakeIp
-        && lhs.serveStale == rhs.serveStale
-        && lhs.parallelQuery == rhs.parallelQuery
-        && lhs.directExpectedIps.trimmed() == rhs.directExpectedIps.trimmed()
-        && lhs.useSystemHosts == rhs.useSystemHosts
-        && lhs.addCommonHosts == rhs.addCommonHosts
-        && lhs.blockBindingQuery == rhs.blockBindingQuery
-        && lhs.domainStrategyForFreedom.trimmed() == rhs.domainStrategyForFreedom.trimmed()
-        && lhs.domainStrategyForProxy.trimmed() == rhs.domainStrategyForProxy.trimmed()
-        && lhs.dnsHosts.trimmed() == rhs.dnsHosts.trimmed()
-        && lhs.defaultAllowInsecure == rhs.defaultAllowInsecure;
+    return areDnsConfigFieldsEqual(lhs, rhs);
 }
 
 inline bool areSettingsRoutingRulesEqual(const RoutingRule& lhs, const RoutingRule& rhs)
@@ -124,7 +106,6 @@ inline bool areSettingsRoutingItemsEqual(const RoutingItem& lhs, const RoutingIt
         && lhs.enabled == rhs.enabled
         && lhs.builtin == rhs.builtin
         && lhs.customIcon.trimmed() == rhs.customIcon.trimmed()
-        && lhs.domainStrategy4Singbox.trimmed() == rhs.domainStrategy4Singbox.trimmed()
         && areSettingsRoutingRuleListsEqual(lhs.rules, rhs.rules);
 }
 
@@ -162,14 +143,7 @@ inline bool areSettingsGeneralFieldsEqual(const Config& previousConfig, const Co
 
 inline bool areSettingsCoreFieldsEqual(const Config& previousConfig, const Config& updatedConfig)
 {
-    return previousConfig.dns().enableCacheFile4Sbox == updatedConfig.dns().enableCacheFile4Sbox
-        && previousConfig.mux4SboxProtocol.trimmed() == updatedConfig.mux4SboxProtocol.trimmed()
-        && previousConfig.dns().enableFragment == updatedConfig.dns().enableFragment
-        && previousConfig.dns().defaultUserAgent.trimmed() == updatedConfig.dns().defaultUserAgent.trimmed()
-        && normalizedCoreTypeItemsForComparison(previousConfig)
-            == normalizedCoreTypeItemsForComparison(updatedConfig)
-        && previousConfig.tun().tunModeItem.enableLegacyProtect
-            == updatedConfig.tun().tunModeItem.enableLegacyProtect;
+    return areCoreConfigFieldsEqual(previousConfig, updatedConfig);
 }
 
 inline bool areSettingsTunFieldsEqual(const Config& previousConfig, const Config& updatedConfig)

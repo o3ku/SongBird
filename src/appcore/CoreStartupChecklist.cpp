@@ -1,4 +1,4 @@
-#include "app/CoreStartupChecklist.h"
+#include "appcore/CoreStartupChecklist.h"
 
 #include <QCoreApplication>
 #include <QDateTime>

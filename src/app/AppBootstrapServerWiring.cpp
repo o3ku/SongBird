@@ -8,7 +8,7 @@
 #include <QWidget>
 
 #include "app/DefaultServerSwitchCoordinator.h"
-#include "app/ProxySession.h"
+#include "appcore/ProxySession.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
 #include "domain/models/Config.h"
