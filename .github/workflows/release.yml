@@ -38,8 +38,12 @@ concurrency:
 
 env:
   VCPKG_TRIPLET: x64-windows-static-md
-  # Cache compiled vcpkg packages between runs; the first run builds Qt5 from
-  # source and is slow, later runs restore from this directory.
+  # vcpkg keeps its own per-package binary cache in this directory, and the
+  # Actions cache below moves that directory between runs. Both layers are
+  # needed, and they answer different questions: the Actions cache decides
+  # whether the store is present at all, and vcpkg then decides *per package*,
+  # by ABI hash, whether an archive in that store may be reused. `clear` drops
+  # the default location so the store exists in exactly one place.
   VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
 
 jobs:
@@ -55,6 +59,12 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
+          # A hit on this exact key is not what we are after - cache keys are
+          # immutable, so every run saves under its own key (see "Save vcpkg
+          # cache") and this key is normally absent. The restore-key prefix below
+          # is what does the work: it matches every save ever made for this
+          # triplet, and GitHub returns the most recently created one, which is
+          # the store most likely to still satisfy vcpkg's ABI hashes.
           key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
           restore-keys: |
             vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
@@ -68,19 +78,90 @@ jobs:
       - name: Install Qt5 (static)
         shell: pwsh
         run: |
+          # Which cache entry the restore above picked is the first thing worth
+          # knowing when a build unexpectedly recompiles Qt5, so record it.
+          Write-Host "vcpkg cache restored from: ${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/vcpkg_cache" | Out-Null
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
             "qt5-base:$env:VCPKG_TRIPLET" `
             "qt5-svg:$env:VCPKG_TRIPLET"
 
+      - name: Prune vcpkg cache to this run's packages
+        # Keep the store bounded. vcpkg names every archive after the package's
+        # ABI hash, and that hash covers the compiler version, the vcpkg tool
+        # version and the port recipes - all of which change whenever GitHub
+        # updates the runner image. A store that only ever grows therefore gains
+        # a second complete copy of Qt5 (~1 GB) on each such update, and once a
+        # single cache entry no longer fits the repository's 10 GB cache budget
+        # the save fails and caching stops working altogether. The archives worth
+        # keeping are exactly the ones vcpkg recorded in its installed status
+        # file, so drop everything else.
+        if: always()
+        shell: pwsh
+        run: |
+          $root = "${{ github.workspace }}/vcpkg_cache"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $status = "$env:VCPKG_INSTALLATION_ROOT/installed/vcpkg/status"
+          # Every "Abi:" line belongs to an installed package: stanzas for
+          # packages that are not installed, and the feature pseudo-packages of
+          # an installed one, carry no Abi field at all.
+          $keep = @{}
+          if (Test-Path $status) {
+            foreach ($m in [regex]::Matches((Get-Content -Raw $status), '(?m)^Abi: (.+)$')) {
+              $keep[$m.Groups[1].Value.Trim()] = $true
+            }
+          }
+          if ($keep.Count -eq 0) {
+            # Pruning against an empty set would delete the entire store, so when
+            # the status file cannot be read, leave it alone and say so. A store
+            # that grows is a nuisance; a store that was thrown away costs 1h23m
+            # of Qt5 compilation.
+            Write-Warning "vcpkg cache: no installed packages found in $status - skipping the prune"
+            exit 0
+          }
+          $kept = 0
+          $removed = 0
+          Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
+            ForEach-Object {
+              # Only files named like an ABI hash are candidates, so an
+              # unexpected on-disk layout degrades to "nothing is pruned" rather
+              # than "everything is pruned".
+              if ($keep.ContainsKey($_.BaseName)) {
+                $kept++
+              } else {
+                Remove-Item -LiteralPath $_.FullName -Force
+                $removed++
+              }
+            }
+          # A run that was killed mid-upload can leave "<abi>.zip.<pid>" behind.
+          Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip\.\d+$' } |
+            Remove-Item -Force
+          Write-Host "vcpkg cache: kept $kept archive(s), removed $removed superseded archive(s)"
+
       - name: Save vcpkg cache
         # Save right after the expensive Qt5 build, and even when a later step
         # fails, so a failed run does not discard hours of compilation.
-        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        #
+        # The key is unique per run on purpose. Cache keys are immutable, so a
+        # fixed key can only ever be written once; the earlier version of this
+        # workflow coped with that by skipping the save whenever the restore had
+        # hit, which meant that on the day the runner image bumped the compiler
+        # or a port - changing every ABI hash at once - each run rebuilt Qt5 from
+        # source for 1h23m and then discarded the result, forever. Saving under a
+        # fresh key each time makes that impossible; the restore-key prefix above
+        # still finds the newest save. The price is a redundant upload of the
+        # store on runs that changed nothing, which is cheap next to a rebuild.
+        #
+        # The attempt number is part of the key because re-running a job keeps the
+        # run id: without it a re-run would try to save under a key that already
+        # exists and fail the step.
+        if: always()
         uses: actions/cache/save@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1

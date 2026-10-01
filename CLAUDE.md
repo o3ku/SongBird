@@ -61,7 +61,9 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 由 GitHub Actions 完成，见 [.github/workflows/release.yml](.github/workflows/release.yml)。推送 `v*` 标签即触发：vcpkg 装 Qt5 → 构建 Release → `ctest -LE smoke` → `gh release create` 上传 `songbird.exe`。也可用 `workflow_dispatch` 手动触发（不发布）。
 
-首次运行需从源码编译 Qt5（约 1.5 小时），之后命中 `vcpkg_cache` 缓存。缓存用 `cache/restore` + `cache/save`（`if: always()`）分离，确保构建失败时不丢弃已编译产物。
+首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。`cache/restore` 用固定 key 加前缀 `restore-keys` 取最近一次保存；`cache/save` 每次运行都用唯一 key（`run_id`-`run_attempt`）并带 `if: always()`。
+
+**保存端绝不能按 `cache-hit` 跳过**：Actions 的缓存 key 不可覆盖，一旦跳过，ABI 整批变化那天编译出来的产物会被**永远**丢弃，之后每次运行都重新编译 Qt5（2026-09 实测每次 1h23m，而缓存条目停留在漂移前的 09-23）。保存前还有一步「按本次实际安装的包裁剪仓库」（`installed/vcpkg/status` 里的 `Abi:` 行即保留集），把仓库稳定在单一 ABI 世代（约 1 GB）；否则它每随镜像漂移一次就多一份完整 Qt5，最终超出仓库 10 GB 缓存额度、保存失败、缓存彻底失效。
 
 GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 2025-09 起改为每小时一次），所以 workflow 里有一条每周两次（周一/周四 UTC 03:00）的 `schedule` 保活：它跑在默认分支上，`Restore vcpkg cache` 本身即刷新最后访问时间，`Publish GitHub release` 因 ref 不是 tag 而保持跳过，同时兼作 main 的每周构建+测试健康检查。这个保活不是多余的——2026-08-17 之后的 5 周闲置导致缓存被驱逐，下一次构建耗时 **1h49m51s**，而暖缓存只需 **19m44s**。
 
