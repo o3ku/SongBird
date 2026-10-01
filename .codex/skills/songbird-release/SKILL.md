@@ -40,7 +40,11 @@ What CI guarantees that a local build does not:
    - Do not write the version, commit, tag, push, or publish until confirmed.
 
 3. Write the confirmed version.
-   - Update only the root `CMakeLists.txt` `project(SongBird VERSION ...)` value unless the codebase has another authoritative version source.
+   - Update the root `CMakeLists.txt` `project(SongBird VERSION ...)` value.
+   - The version lives in **three** places and all three must match. `src/CMakeLists.txt`
+     (lines defining `SONGBIRD_APP_VERSION="${PROJECT_VERSION}"`) covers the CMake build, but
+     `src/app/main.cpp` and `src/auto/main.cpp` each carry an `#ifndef SONGBIRD_APP_VERSION`
+     fallback that is bumped by hand.
    - Preserve existing formatting.
 
 4. Verify UI language and Chinese translation coverage.
@@ -61,12 +65,22 @@ What CI guarantees that a local build does not:
 5. Run the test suite locally before tagging.
    - CI runs `ctest -LE smoke` and refuses to publish when it fails, but a local run
      catches the failure before a tag exists and has to be re-pushed.
-   - Run the repository test suite. The normal test flow uses the debug preset with tests enabled:
+   - Run the repository test suite. Do **not** use the `msvc-debug` preset: it is dead on this
+     machine, because its cached compiler is `scoop/shims/clang++.exe` and the `llvm` app behind
+     that shim has been removed, so it fails with
+     `Could not create process ... scoop\apps\llvm\current\bin\clang++.exe`. Configure a test tree
+     with the MSVC toolchain instead, and put Qt's `bin` on `PATH` before ctest or every QtTest
+     executable exits 127 immediately:
      ```powershell
-     cmake --preset msvc-debug -DBUILD_TEST=ON
-     cmake --build --preset msvc-debug --parallel
-     ctest --test-dir build/msvc-debug --output-on-failure
+     $env:PATH = 'D:/local/Qt5/5.15.2/msvc2019_64/bin;' + $env:PATH
+     cmake -S . -B build/msvc-tests -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TEST=ON
+     cmake --build build/msvc-tests --parallel
+     ctest --test-dir build/msvc-tests --output-on-failure
      ```
+   - On a fresh MSVC tree the full build stops at `SongBird.exe` / `SongBirdAuto.exe` with a
+     pre-existing `mt.exe : command line error c10100a7` manifest failure that has nothing to do
+     with the source. It does not touch the test targets: build those individually and treat
+     `unexpected failures: none` as a clean run.
    - The `smoke`-labelled tests download cores and subscriptions and start real processes,
      so they are excluded here and in CI.
    - Stop and report failures instead of tagging.
