@@ -1,6 +1,6 @@
 #include <QtTest>
 
-#include "app/TunSettingsApplyDecision.h"
+#include "appcore/TunSettingsApplyDecision.h"
 
 class TunSettingsApplyDecisionTests : public QObject {
     Q_OBJECT

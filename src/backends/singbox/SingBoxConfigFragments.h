@@ -26,7 +26,9 @@ public:
 
     static QJsonObject buildTunCompatDns();
     static QJsonObject buildTunCompatRoute(const Config& config);
+    static QJsonObject buildTunCompatDirectRoute(const Config& config);
     static QJsonArray buildTunCompatOutbounds(const Config& config);
+    static QJsonArray buildTunCompatDirectOutbounds();
     static QJsonObject buildTunCompatPrivateAddressDirectRule();
     static QJsonArray buildTunCompatRejectRules();
     static void appendTunCompatProcessRules(QJsonArray& rules);

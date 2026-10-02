@@ -61,12 +61,12 @@ QString compactLatencyText(qint64 latencyMs)
 QString availabilityText(const AutoNodeEvaluation& evaluation)
 {
     if (!evaluation.tested) {
-        return QCoreApplication::translate("SongBirdAutoWindow", "Pending");
+        return QStringLiteral("Pending");
     }
     if (evaluation.available) {
-        return QCoreApplication::translate("SongBirdAutoWindow", "OK");
+        return QStringLiteral("OK");
     }
-    return evaluation.error.trimmed().isEmpty() ? QCoreApplication::translate("SongBirdAutoWindow", "Failed") : evaluation.error.trimmed();
+    return evaluation.error.trimmed().isEmpty() ? QStringLiteral("Failed") : evaluation.error.trimmed();
 }
 
 int evaluationSortRank(const AutoNodeEvaluation& evaluation)
@@ -160,13 +160,13 @@ void configureNodeTable(QTableWidget* table)
 {
     table->setColumnCount(7);
     table->setHorizontalHeaderLabels({
-        QObject::tr("Current"),
-        QObject::tr("Node"),
-        QObject::tr("Country"),
-        QObject::tr("Location"),
-        QObject::tr("Latency"),
-        QObject::tr("State"),
-        QObject::tr("Checked")});
+        QStringLiteral("Current"),
+        QStringLiteral("Node"),
+        QStringLiteral("Country"),
+        QStringLiteral("Location"),
+        QStringLiteral("Latency"),
+        QStringLiteral("State"),
+        QStringLiteral("Checked")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     table->horizontalHeader()->setSectionsClickable(true);
     table->horizontalHeader()->setSortIndicatorShown(true);
@@ -214,10 +214,10 @@ void SongBirdAutoWindow::buildUi()
 
     auto* topActions = new QHBoxLayout();
     topActions->setSpacing(8);
-    subscriptionsButton_ = new QPushButton(tr("Subscriptions"), central);
+    subscriptionsButton_ = new QPushButton(QStringLiteral("Subscriptions"), central);
     subscriptionsButton_->setMinimumHeight(36);
     topActions->addWidget(subscriptionsButton_);
-    routingButton_ = new QPushButton(tr("Routing"), central);
+    routingButton_ = new QPushButton(QStringLiteral("Routing"), central);
     routingButton_->setObjectName(QStringLiteral("routingButton"));
     routingButton_->setMinimumHeight(36);
     topActions->addWidget(routingButton_);
@@ -225,11 +225,11 @@ void SongBirdAutoWindow::buildUi()
     strategyCombo_->setObjectName(QStringLiteral("strategyCombo"));
     strategyCombo_->setMinimumHeight(36);
     strategyCombo_->setFixedWidth(128);
-    strategyCombo_->addItem(tr("Lowest latency"), kStrategyLowestLatency);
-    strategyCombo_->addItem(tr("First available"), kStrategyFirstAvailable);
+    strategyCombo_->addItem(QStringLiteral("Lowest latency"), kStrategyLowestLatency);
+    strategyCombo_->addItem(QStringLiteral("First available"), kStrategyFirstAvailable);
     topActions->addWidget(strategyCombo_);
     topActions->addStretch(1);
-    tunButton_ = new QPushButton(tr("TUN"), central);
+    tunButton_ = new QPushButton(QStringLiteral("TUN"), central);
     tunButton_->setObjectName(QStringLiteral("tunToggleButton"));
     tunButton_->setCheckable(true);
     tunButton_->setMinimumHeight(36);
@@ -244,12 +244,12 @@ void SongBirdAutoWindow::buildUi()
     countryCombo_->setFixedWidth(220);
     countryCombo_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     countryRow->addWidget(countryCombo_);
-    nodesButton_ = new QPushButton(tr("Nodes"), central);
+    nodesButton_ = new QPushButton(QStringLiteral("Nodes"), central);
     nodesButton_->setMinimumHeight(44);
     countryRow->addWidget(nodesButton_);
     root->addLayout(countryRow);
 
-    runButton_ = new QPushButton(tr("Start"), central);
+    runButton_ = new QPushButton(QStringLiteral("Start"), central);
     runButton_->setMinimumHeight(52);
     root->addWidget(runButton_);
 
@@ -272,7 +272,7 @@ void SongBirdAutoWindow::buildUi()
     logsStatusLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     logsStatusLabel_->installEventFilter(this);
     statusBar()->addPermanentWidget(logsStatusLabel_, 1);
-    statusBar()->showMessage(tr("Initializing"));
+    statusBar()->showMessage(QStringLiteral("Initializing"));
     applyCompactStyle();
     updateRunButtonState();
     setTunEnabled(coordinator_.isTunEnabled());
@@ -283,13 +283,13 @@ void SongBirdAutoWindow::buildUi()
 void SongBirdAutoWindow::buildTray()
 {
     trayMenu_ = new QMenu(this);
-    trayShowAction_ = trayMenu_->addAction(tr("Show SongBirdAuto"));
-    trayRunAction_ = trayMenu_->addAction(tr("Start"));
-    trayTunAction_ = trayMenu_->addAction(tr("Enable TUN"));
+    trayShowAction_ = trayMenu_->addAction(QStringLiteral("Show SongBirdAuto"));
+    trayRunAction_ = trayMenu_->addAction(QStringLiteral("Start"));
+    trayTunAction_ = trayMenu_->addAction(QStringLiteral("Enable TUN"));
     trayTunAction_->setCheckable(true);
-    trayCountriesMenu_ = trayMenu_->addMenu(tr("Country"));
+    trayCountriesMenu_ = trayMenu_->addMenu(QStringLiteral("Country"));
     trayMenu_->addSeparator();
-    trayExitAction_ = trayMenu_->addAction(tr("Exit"));
+    trayExitAction_ = trayMenu_->addAction(QStringLiteral("Exit"));
 
     trayIcon_ = new QSystemTrayIcon(this);
     trayIcon_->setIcon(windowIcon());
@@ -416,8 +416,8 @@ void SongBirdAutoWindow::closeEvent(QCloseEvent* event)
     if (!trayCloseMessageShown_) {
         trayCloseMessageShown_ = true;
         trayIcon_->showMessage(
-            tr("SongBirdAuto"),
-            tr("SongBirdAuto is still running in the tray."),
+            QStringLiteral("SongBirdAuto"),
+            QStringLiteral("SongBirdAuto is still running in the tray."),
             QSystemTrayIcon::Information,
             2500);
     }
@@ -469,10 +469,10 @@ void SongBirdAutoWindow::updateTrayMenu()
     }
 
     const bool activationPending = isActivationPending();
-    trayShowAction_->setText(isVisible() ? tr("Show SongBirdAuto") : tr("Show SongBirdAuto"));
-    trayRunAction_->setText(activationPending ? tr("Starting Proxy") : (running_ ? tr("Stop Proxy") : tr("Start Proxy")));
+    trayShowAction_->setText(isVisible() ? QStringLiteral("Show SongBirdAuto") : QStringLiteral("Show SongBirdAuto"));
+    trayRunAction_->setText(activationPending ? QStringLiteral("Starting Proxy") : (running_ ? QStringLiteral("Stop Proxy") : QStringLiteral("Start Proxy")));
     trayRunAction_->setEnabled(!busy_ && !activationPending);
-    trayTunAction_->setText(tunEnabled_ ? tr("Disable TUN") : tr("Enable TUN"));
+    trayTunAction_->setText(tunEnabled_ ? QStringLiteral("Disable TUN") : QStringLiteral("Enable TUN"));
     trayTunAction_->setChecked(tunEnabled_);
     trayTunAction_->setEnabled(!activationPending && !(busy_ && !running_));
 
@@ -488,7 +488,7 @@ void SongBirdAutoWindow::updateTrayMenu()
         });
     }
     if (trayCountriesMenu_->actions().isEmpty()) {
-        auto* emptyAction = trayCountriesMenu_->addAction(tr("No countries"));
+        auto* emptyAction = trayCountriesMenu_->addAction(QStringLiteral("No countries"));
         emptyAction->setEnabled(false);
     }
     updateTrayToolTip();
@@ -503,8 +503,8 @@ void SongBirdAutoWindow::updateTrayToolTip()
     QStringList lines;
     lines.append(QStringLiteral("SongBirdAuto"));
     lines.append(isActivationPending()
-        ? tr("Proxy starting")
-        : (running_ ? tr("Proxy running") : tr("Proxy stopped")));
+        ? QStringLiteral("Proxy starting")
+        : (running_ ? QStringLiteral("Proxy running") : QStringLiteral("Proxy stopped")));
     if (!currentCountryDisplay_.isEmpty()) {
         lines.append(currentCountryDisplay_);
     }
@@ -704,7 +704,7 @@ void SongBirdAutoWindow::applyCompactStyle()
 void SongBirdAutoWindow::showSubscriptionEditor()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Subscriptions"));
+    dialog.setWindowTitle(QStringLiteral("Subscriptions"));
     dialog.resize(420, 520);
     auto* layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(14, 14, 14, 14);
@@ -712,7 +712,7 @@ void SongBirdAutoWindow::showSubscriptionEditor()
 
     auto* editor = new QPlainTextEdit(&dialog);
     editor->setPlainText(subscriptionDraftText_);
-    editor->setPlaceholderText(tr("One subscription URL per line"));
+    editor->setPlaceholderText(QStringLiteral("One subscription URL per line"));
     layout->addWidget(editor, 1);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
@@ -734,7 +734,7 @@ void SongBirdAutoWindow::showSubscriptionEditor()
 void SongBirdAutoWindow::showNodeTable()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Nodes"));
+    dialog.setWindowTitle(QStringLiteral("Nodes"));
     dialog.resize(620, 560);
     auto* layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(14, 14, 14, 14);
@@ -754,7 +754,7 @@ void SongBirdAutoWindow::showNodeTable()
 void SongBirdAutoWindow::showLogPanel()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Logs"));
+    dialog.setWindowTitle(QStringLiteral("Logs"));
     dialog.resize(430, 560);
     auto* layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(14, 14, 14, 14);
@@ -779,11 +779,11 @@ bool SongBirdAutoWindow::ensureTunAdminReadyForStart()
 
     if (DialogUtils::askYesNoQuestion(
             this,
-            tr("Administrator Permission"),
-            tr("TUN requires administrator privileges.\nRestart SongBirdAuto as administrator and start proxy now?"),
+            QStringLiteral("Administrator Permission"),
+            QStringLiteral("TUN requires administrator privileges.\nRestart SongBirdAuto as administrator and start proxy now?"),
             QMessageBox::Yes)
         != QMessageBox::Yes) {
-        appendLog(tr("TUN start canceled because administrator privileges are required."));
+        appendLog(QStringLiteral("TUN start canceled because administrator privileges are required."));
         return false;
     }
 
@@ -798,9 +798,9 @@ bool SongBirdAutoWindow::ensureTunAdminReadyForStart()
     if (!restartProcessAsAdministrator(QCoreApplication::applicationFilePath(), arguments)) {
         DialogUtils::showWarning(
             this,
-            tr("Administrator Permission"),
-            tr("Failed to restart SongBirdAuto with administrator privileges."));
-        appendLog(tr("Failed to restart SongBirdAuto with administrator privileges."));
+            QStringLiteral("Administrator Permission"),
+            QStringLiteral("Failed to restart SongBirdAuto with administrator privileges."));
+        appendLog(QStringLiteral("Failed to restart SongBirdAuto with administrator privileges."));
         return false;
     }
 
@@ -839,7 +839,7 @@ void SongBirdAutoWindow::saveSubscriptionUrlsIfChanged()
 void SongBirdAutoWindow::showRoutingSettings()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Routing"));
+    dialog.setWindowTitle(QStringLiteral("Routing"));
     dialog.resize(720, 540);
     auto* layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(14, 14, 14, 14);
@@ -864,7 +864,7 @@ void SongBirdAutoWindow::showRoutingSettings()
             routingPage->routingItems(),
             routingPage->routingCustomRules(),
             routingPage->settingsRoutingRuleTabKey())) {
-        DialogUtils::showWarning(this, tr("Routing"), tr("Failed to save routing settings."));
+        DialogUtils::showWarning(this, QStringLiteral("Routing"), QStringLiteral("Failed to save routing settings."));
     }
 }
 
@@ -1028,8 +1028,8 @@ void SongBirdAutoWindow::refreshLogStatusLabel()
         : logStatusText_;
     logsStatusLabel_->setText(visibleText);
     logsStatusLabel_->setToolTip(logStatusText_.isEmpty()
-        ? tr("Click to open logs.")
-        : QStringLiteral("%1\n%2").arg(logStatusText_, tr("Click to open logs.")));
+        ? QStringLiteral("Click to open logs.")
+        : QStringLiteral("%1\n%2").arg(logStatusText_, QStringLiteral("Click to open logs.")));
 }
 
 void SongBirdAutoWindow::updateRunButtonState()
@@ -1044,13 +1044,13 @@ void SongBirdAutoWindow::updateRunButtonState()
     }
     if (activationPending) {
         const int dotCount = (runButtonAnimationFrame_ % 3) + 1;
-        runButton_->setText(tr("Starting%1").arg(QString(dotCount, QLatin1Char('.'))));
+        runButton_->setText(QStringLiteral("Starting%1").arg(QString(dotCount, QLatin1Char('.'))));
         runButton_->setProperty("mode", QStringLiteral("starting"));
         runButton_->setEnabled(false);
         startRunButtonAnimation();
     } else {
         stopRunButtonAnimation();
-        runButton_->setText(running_ ? tr("Stop") : tr("Start"));
+        runButton_->setText(running_ ? QStringLiteral("Stop") : QStringLiteral("Start"));
         runButton_->setProperty("mode", running_ ? QStringLiteral("stop") : QStringLiteral("start"));
         runButton_->setEnabled(!busy_);
     }
@@ -1199,6 +1199,6 @@ void SongBirdAutoWindow::updateTunButtonState()
     const bool blocked = isActivationPending() || (busy_ && !running_);
     tunButton_->setEnabled(!blocked);
     tunButton_->setChecked(tunEnabled_);
-    tunButton_->setToolTip(tunEnabled_ ? tr("Disable TUN") : tr("Enable TUN"));
+    tunButton_->setToolTip(tunEnabled_ ? QStringLiteral("Disable TUN") : QStringLiteral("Enable TUN"));
     AppTheme::refreshStyle(tunButton_);
 }

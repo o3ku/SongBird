@@ -20,9 +20,10 @@
 #include <QTimer>
 
 #include "appcore/OutboundLocationProbeService.h"
-#include "app/TunSettingsApplyDecision.h"
-#include "app/TunRuntimeState.h"
+#include "appcore/TunSettingsApplyDecision.h"
+#include "appcore/TunRuntimeState.h"
 #include "common/BackgroundThreadLaunch.h"
+#include "common/ThreadShutdown.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/CoreConfigPreflight.h"
 #include "runtime/TunCompatCoreRequirement.h"
@@ -150,7 +151,17 @@ ProxySession::~ProxySession()
     shuttingDown_ = true;
     lifetimeGuard_.reset();
     cancelPendingCoreRestarts();
-    backgroundThreads_.waitForAll();
+    if (!backgroundThreads_.waitForAll()) {
+        // A worker outlived the whole shutdown budget, so it can still reach this object: the
+        // workers call QMetaObject::invokeMethod(this, ...) from their own thread, which
+        // dereferences `this`. This destructor may therefore neither complete (that frees what the
+        // worker is about to touch) nor keep waiting (that is the unbounded hang being fixed).
+        // Every production ProxySession lives for the whole process -- AppBootstrapObjects and
+        // SongBirdAutoCoordinator each own exactly one, created once and never reset -- so the
+        // only honest remaining action is to end the process without unwinding.
+        abandonProcessAfterStuckThread(
+            QStringLiteral("ProxySession was destroyed with a background thread still running"));
+    }
 }
 
 void ProxySession::setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation)

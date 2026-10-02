@@ -11,6 +11,18 @@
 #include "domain/models/VmessItem.h"
 #include "runtime/core/CoreDescriptor.h"
 
+// What an auxiliary TUN device should do with the traffic it captures.
+//
+// A TUN device is created by a core process of its own, separate from the proxy session, so the
+// front end has to say which of the two states that process is in.
+enum class AuxiliaryTunRouting {
+    // Relay captured traffic into the local proxy listener. Used while the proxy session runs.
+    RelayToLocalProxy,
+    // Carry no proxy traffic at all: everything goes direct or is blocked. Used while the proxy
+    // session is down so the adapter stays alive instead of being torn down and recreated.
+    DirectOnly,
+};
+
 struct CoreUpdateAssetPolicy {
     QString builtInFallbackTagName;
     QString builtInFallbackAssetName64;
@@ -38,9 +50,12 @@ public:
     virtual QString extractVersionFromOutput(const QString& output) const = 0;
     virtual OperationResult validateServer(const VmessItem& server) const = 0;
     virtual QJsonObject buildClientRoot(const Config& config, const VmessItem& server) const = 0;
-    virtual QJsonObject buildAuxiliaryTunClientRoot(const Config& config) const
+    // Root for an auxiliary core process whose only job is to create a TUN device.
+    // Returns an empty object when the core cannot back a TUN device.
+    virtual QJsonObject buildAuxiliaryTunClientRoot(const Config& config, AuxiliaryTunRouting routing) const
     {
         Q_UNUSED(config)
+        Q_UNUSED(routing)
         return {};
     }
     virtual QUrl releasesApiUrl() const = 0;

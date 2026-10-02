@@ -1,8 +1,16 @@
 #include <QtTest>
 
+#include <QHash>
+#include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSet>
 #include <QSignalSpy>
-#include <QThread>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QThread>
+#include <QTimer>
 
 #include <atomic>
 #include <functional>
@@ -22,6 +30,7 @@ class ProxySessionTests : public QObject
 
 private slots:
     void startFailsWhenNoActiveServer();
+    void startReachesProxyingWhenCoreListensAndLocationResolves();
     void startCancelsBackgroundTasksOnce();
     void tunCleanupResumeDoesNotCancelBackgroundTasksAgain();
     void checklistOverlayCanBeRequestedDuringActivation();
@@ -39,6 +48,7 @@ private slots:
     void stopCancelsPendingRestartResume();
     void stopDuringTunCleanupCancelsStartupResume();
     void stopClearsAdoptedManagedSystemProxy();
+    void stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails();
 };
 
 namespace {
@@ -94,6 +104,15 @@ public:
     bool lastImmediate = false;
     bool emitExitOnStop = false;
 
+    // The real host reports readiness from its own thread; the fake only records the
+    // callback so a test can decide when the core "comes up".
+    void triggerStarted(const QString& message = QStringLiteral("started"))
+    {
+        if (startedCallback_) {
+            startedCallback_(message);
+        }
+    }
+
     void triggerExited(bool stopRequested = true)
     {
         if (exitedCallback_) {
@@ -112,6 +131,84 @@ private:
     StartFailedCallback startFailedCallback_;
     ExitedCallback exitedCallback_;
 };
+
+// The location probe hardcodes QNetworkProxy::HttpProxy, so the only way to exercise
+// the real probe path (rather than stubbing the service) is to answer it with a real
+// proxy. Plain http:// requests reach a proxy in absolute form and get the payload
+// back; the https:// ones only need to be refused quickly so they do not hold the
+// probe open until its timeout.
+class FakeHttpProxyServer
+{
+public:
+    explicit FakeHttpProxyServer(QByteArray payload)
+        : payload_(std::move(payload))
+    {
+        QObject::connect(&server_, &QTcpServer::newConnection, &server_, [this]() {
+            while (QTcpSocket* socket = server_.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket]() {
+                    respond(socket);
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket, [this, socket]() {
+                    requests_.remove(socket);
+                    answered_.remove(socket);
+                    socket->deleteLater();
+                });
+            }
+        });
+    }
+
+    bool listen()
+    {
+        return server_.listen(QHostAddress::LocalHost, 0);
+    }
+
+    int port() const
+    {
+        return server_.serverPort();
+    }
+
+private:
+    void respond(QTcpSocket* socket)
+    {
+        if (answered_.contains(socket)) {
+            return;
+        }
+
+        requests_[socket].append(socket->readAll());
+        const QByteArray& request = requests_[socket];
+        if (!request.contains("\r\n\r\n")) {
+            return; // header not complete yet
+        }
+        answered_.insert(socket);
+
+        if (request.startsWith("CONNECT ")) {
+            socket->write("HTTP/1.1 200 Connection Established\r\n\r\n");
+            socket->flush();
+            socket->disconnectFromHost();
+            return;
+        }
+
+        QByteArray response = "HTTP/1.1 200 OK\r\n";
+        response += "Content-Type: application/json\r\n";
+        response += "Content-Length: " + QByteArray::number(payload_.size()) + "\r\n";
+        response += "Connection: close\r\n\r\n";
+        response += payload_;
+        socket->write(response);
+        socket->flush();
+        socket->disconnectFromHost();
+    }
+
+    QTcpServer server_;
+    QByteArray payload_;
+    QHash<QTcpSocket*, QByteArray> requests_;
+    QSet<QTcpSocket*> answered_;
+};
+
+QByteArray locationProbePayload()
+{
+    return QByteArrayLiteral(
+        R"({"status":"success","country":"Japan","countryCode":"JP","city":"Tokyo","query":"203.0.113.9"})");
+}
 
 struct ProxySessionHarness final
     : public IRuntimeProfileResolver
@@ -231,7 +328,40 @@ struct ProxySessionHarness final
         return proxyUpdateSucceeds;
     }
 
+    // A server and request that let start() run the real startup branch instead of
+    // bailing out early: an installed core executable, a local listener the port probe
+    // can reach, a location probe that answers, and a system-proxy mode that keeps the
+    // session active once the core is up.
+    VmessItem launchableServer() const
+    {
+        VmessItem server;
+        server.indexId = QStringLiteral("server-1");
+        server.configType = ConfigType::VMess;
+        server.coreType = CoreType::SingBox;
+        server.address = QStringLiteral("example.com");
+        server.port = 443;
+        server.id = QStringLiteral("11111111-1111-1111-1111-111111111111");
+        server.security = QStringLiteral("auto");
+        return server;
+    }
+
+    ProxySession::StartRequest launchableRequest() const
+    {
+        ProxySession::StartRequest request;
+        request.config = Config{};
+        // The listening probe and the location probe must reach the same fake proxy, so
+        // the dedicated probe port is pinned to it rather than left to localPort + 103.
+        request.config.localPort = proxyServer.port();
+        request.config.localLocationProbePort = proxyServer.port();
+        request.config.sysProxyType = static_cast<int>(SystemProxyMode::ForcedChange);
+        // "Global" carries no geosite/geoip rule, so the generated sing-box config has no
+        // remote rule_set and startup does not divert into the rule-set download.
+        request.config.collection().routingModeId = QStringLiteral("builtin:global");
+        return request;
+    }
+
     QTemporaryDir tempDir;
+    FakeHttpProxyServer proxyServer{locationProbePayload()};
     FakeCoreProcessHost mainCore;
     FakeCoreProcessHost auxiliaryCore;
     ClientConfigWriter configWriter;
@@ -270,6 +400,46 @@ void ProxySessionTests::startFailsWhenNoActiveServer()
     QCOMPARE(harness.mainCore.startCount, 0);
     QVERIFY(!harness.session->isActive());
     QVERIFY(!harness.session->isActivationInProgress());
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+void ProxySessionTests::startReachesProxyingWhenCoreListensAndLocationResolves()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    QVERIFY(harness.proxyServer.listen());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+
+    QSignalSpy activatedSpy(harness.session.get(), SIGNAL(activated(QString)));
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+
+    harness.session->start(harness.launchableRequest());
+
+    // start() runs the whole synchronous cascade, so the core is already launched by the
+    // time it returns and only its readiness callback is still outstanding.
+    QCOMPARE(harness.mainCore.startCount, 1);
+    QCOMPARE(failedSpy.count(), 0);
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::StartCoreProcess));
+    QVERIFY(harness.session->isActivationInProgress());
+
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+
+    QTRY_COMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Proxying));
+    QCOMPARE(failedSpy.count(), 0);
+    QCOMPARE(activatedSpy.count(), 1);
+    QVERIFY(harness.session->isActive());
+    QVERIFY(!harness.session->isActivationInProgress());
+    QVERIFY(harness.session->isManagedProxyActive());
+    QVERIFY(harness.session->serverLocation().contains(QStringLiteral("Japan")));
+    QCOMPARE(static_cast<int>(harness.lastProxyMode), static_cast<int>(SystemProxyMode::ForcedChange));
+    QVERIFY(harness.systemProxyEnabled);
+
+    harness.session->stop(true);
+    QCOMPARE(harness.mainCore.stopCount, 1);
     QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
 }
 
@@ -558,6 +728,32 @@ void ProxySessionTests::stopClearsAdoptedManagedSystemProxy()
     QCOMPARE(static_cast<int>(harness.lastProxyMode), static_cast<int>(SystemProxyMode::ForcedClear));
     QVERIFY(!harness.session->isManagedProxyActive());
     QVERIFY(!harness.systemProxyEnabled);
+}
+
+void ProxySessionTests::stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails()
+{
+    ProxySessionHarness harness;
+    harness.mainCore.running = true;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.proxyUpdateSucceeds = false;
+
+    QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
+
+    // This goes through stopInternal(..., clearPostStopAction = false), the only shape where the
+    // clear result decides the flag: a plain stop() also runs clearProxyStateAfterStopped(), which
+    // drops it unconditionally. The core is about to restart, so the system proxy stays pointed at
+    // the local listener -- which is exactly why the session must not forget that it owns it.
+    // The branch became reachable only once the concrete service stopped reporting every
+    // ForcedClear as a success.
+    harness.session->stopForCoreUpdate();
+
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QCOMPARE(static_cast<int>(harness.lastProxyMode), static_cast<int>(SystemProxyMode::ForcedClear));
+    QVERIFY(harness.session->isManagedProxyActive());
+    QVERIFY(harness.systemProxyEnabled);
+    QVERIFY(logSpy.count() > 0);
+    QVERIFY(logSpy.last().at(0).toString().contains(QStringLiteral("Failed to disable")));
 }
 
 QTEST_MAIN(ProxySessionTests)

@@ -4,7 +4,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaObject>
@@ -26,13 +25,13 @@
 #include "auto/AutoCountryInference.h"
 #include "auto/AutoNodeEvaluationService.h"
 #include "auto/AutoRuntimeDefaults.h"
-#include "backends/singbox/SingBoxConfigFragments.h"
 #include "common/AppPlatform.h"
 #include "common/BackgroundThreadLaunch.h"
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingProfiles.h"
 #include "platform/windows/WindowsSystemProxyService.h"
+#include "runtime/AuxiliaryTunConfig.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "services/CoreUpdateService.h"
@@ -137,12 +136,12 @@ bool SongBirdAutoCoordinator::initialize()
             config_,
             OutboundLocationProbeService::LocationProbePortOffset);
         if (!cleaned.isEmpty()) {
-            log(QCoreApplication::translate("SongBirdAuto", "Cleaned core processes: %1").arg(cleaned.join(QStringLiteral(", "))));
+            log(QStringLiteral("Cleaned core processes: %1").arg(cleaned.join(QStringLiteral(", "))));
         }
     };
     runtimeEnvironment_->removeStaleTunAdapterFn = [this]() {
         return tunRuntimeService_ == nullptr
-            ? OperationResult::ok(QCoreApplication::translate("SongBirdAuto", "TUN cleanup unavailable."))
+            ? OperationResult::ok(QStringLiteral("TUN cleanup unavailable."))
             : tunRuntimeService_->removeStaleAdapterIfPresent();
     };
     runtimeEnvironment_->skipCoreChecksFn = []() { return false; };
@@ -172,7 +171,7 @@ bool SongBirdAutoCoordinator::initialize()
         *activationCoordinator_});
 
     QObject::connect(proxySession_.get(), &ProxySession::activated, this, [this](const QString& location) {
-        log(QCoreApplication::translate("SongBirdAuto", "Proxy active. Location: %1").arg(location));
+        log(QStringLiteral("Proxy active. Location: %1").arg(location));
         const VmessItem* server = findServerById(activeServerId_);
         QString country;
         qint64 latency = -1;
@@ -194,7 +193,7 @@ bool SongBirdAutoCoordinator::initialize()
         }
     });
     QObject::connect(proxySession_.get(), &ProxySession::failed, this, [this](const QString& reason) {
-        log(QCoreApplication::translate("SongBirdAuto", "Proxy start failed: %1").arg(reason));
+        log(QStringLiteral("Proxy start failed: %1").arg(reason));
         setBusy(false);
         if (running_ && !stopRequested_) {
             handleUnavailableActiveServer(reason);
@@ -220,7 +219,7 @@ bool SongBirdAutoCoordinator::initialize()
     });
     QObject::connect(proxySession_.get(), &ProxySession::logMessage, this, &SongBirdAutoCoordinator::logMessage);
 
-    log(QCoreApplication::translate("SongBirdAuto", "SongBirdAuto config: %1").arg(QDir::toNativeSeparators(configPath_)));
+    log(QStringLiteral("SongBirdAuto config: %1").arg(QDir::toNativeSeparators(configPath_)));
     countrySummaries_ = buildCountrySummaries(evaluations_);
     emit countrySummariesChanged(countrySummaries_);
     normalizeSelectedCountryAfterRetest();
@@ -297,8 +296,8 @@ void SongBirdAutoCoordinator::setSelectedCountryCode(const QString& countryCode)
     selectedCountryCode_ = normalized;
     emit selectedCountryChanged(selectedCountryCode_);
     setStatus(selectedCountryCode_.isEmpty()
-        ? QCoreApplication::translate("SongBirdAuto", "Select a country")
-        : QCoreApplication::translate("SongBirdAuto", "Selected %1").arg(selectedCountryDisplayName()));
+        ? QStringLiteral("Select a country")
+        : QStringLiteral("Selected %1").arg(selectedCountryDisplayName()));
 }
 
 void SongBirdAutoCoordinator::switchToCountry(const QString& countryCode)
@@ -314,7 +313,7 @@ void SongBirdAutoCoordinator::switchToCountry(const QString& countryCode)
     forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
     noUsableRecoveryUpdateAttempted_ = false;
     if (busy_) {
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Switching to %1 after current task").arg(selectedCountryDisplayName()));
+        setStatus(QStringLiteral("Switching to %1 after current task").arg(selectedCountryDisplayName()));
         return;
     }
 
@@ -337,7 +336,7 @@ void SongBirdAutoCoordinator::setTunEnabled(bool enabled)
     }
 
     if (busy_) {
-        log(QCoreApplication::translate("SongBirdAuto", "TUN setting is blocked while background work is running."));
+        log(QStringLiteral("TUN setting is blocked while background work is running."));
         emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
         return;
     }
@@ -347,12 +346,12 @@ void SongBirdAutoCoordinator::setTunEnabled(bool enabled)
     if (!saveResult.success) {
         config_.tun().tunModeItem.enableTun = !enabled;
         emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
-        log(QCoreApplication::translate("SongBirdAuto", "Failed to save TUN setting: %1").arg(saveResult.message));
+        log(QStringLiteral("Failed to save TUN setting: %1").arg(saveResult.message));
         return;
     }
 
     emit tunEnabledChanged(enabled);
-    log(enabled ? QCoreApplication::translate("SongBirdAuto", "TUN enabled.") : QCoreApplication::translate("SongBirdAuto", "TUN disabled."));
+    log(enabled ? QStringLiteral("TUN enabled.") : QStringLiteral("TUN disabled."));
     if (!syncTunRuntimeForCurrentState()) {
         emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
     }
@@ -367,7 +366,7 @@ void SongBirdAutoCoordinator::setAutoSelectionStrategy(const QString& strategy)
     }
 
     if (busy_) {
-        log(QCoreApplication::translate("SongBirdAuto", "Auto selection strategy is blocked while background work is running."));
+        log(QStringLiteral("Auto selection strategy is blocked while background work is running."));
         emit autoSelectionStrategyChanged(autoSelectionStrategy());
         return;
     }
@@ -377,15 +376,15 @@ void SongBirdAutoCoordinator::setAutoSelectionStrategy(const QString& strategy)
     const OperationResult saveResult = saveConfig();
     if (!saveResult.success) {
         config_.ui().autoSelectionStrategy = previous;
-        log(QCoreApplication::translate("SongBirdAuto", "Failed to save auto selection strategy: %1").arg(saveResult.message));
+        log(QStringLiteral("Failed to save auto selection strategy: %1").arg(saveResult.message));
         emit autoSelectionStrategyChanged(autoSelectionStrategy());
         return;
     }
 
     emit autoSelectionStrategyChanged(normalized);
     log(normalized == kAutoStrategyFirstAvailable
-        ? QCoreApplication::translate("SongBirdAuto", "Auto strategy: first available.")
-        : QCoreApplication::translate("SongBirdAuto", "Auto strategy: lowest latency."));
+        ? QStringLiteral("Auto strategy: first available.")
+        : QStringLiteral("Auto strategy: lowest latency."));
 }
 
 bool SongBirdAutoCoordinator::saveRoutingSettings(
@@ -394,8 +393,8 @@ bool SongBirdAutoCoordinator::saveRoutingSettings(
     const QString& settingsRoutingRuleTabKey)
 {
     if (busy_) {
-        log(QCoreApplication::translate("SongBirdAuto", "Routing settings are blocked while background work is running."));
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Routing settings blocked"));
+        log(QStringLiteral("Routing settings are blocked while background work is running."));
+        setStatus(QStringLiteral("Routing settings blocked"));
         return false;
     }
 
@@ -414,15 +413,15 @@ bool SongBirdAutoCoordinator::saveRoutingSettings(
 
     const OperationResult saveResult = saveConfig();
     if (!saveResult.success) {
-        log(QCoreApplication::translate("SongBirdAuto", "Failed to save routing settings: %1").arg(saveResult.message));
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Failed to save routing settings"));
+        log(QStringLiteral("Failed to save routing settings: %1").arg(saveResult.message));
+        setStatus(QStringLiteral("Failed to save routing settings"));
         return false;
     }
 
     log(running_
-        ? QCoreApplication::translate("SongBirdAuto", "Routing settings saved. Changes apply on the next proxy start.")
-        : QCoreApplication::translate("SongBirdAuto", "Routing settings saved."));
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Routing settings saved"));
+        ? QStringLiteral("Routing settings saved. Changes apply on the next proxy start.")
+        : QStringLiteral("Routing settings saved."));
+    setStatus(QStringLiteral("Routing settings saved"));
     return true;
 }
 
@@ -450,7 +449,7 @@ void SongBirdAutoCoordinator::saveSubscriptionUrlsText(const QString& text)
         lastSubscriptionUpdateAt_ = QDateTime();
         lastCountryTestAt_.clear();
         emit subscriptionUrlsTextChanged(subscriptionUrlsText());
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Subscription URLs saved"));
+        setStatus(QStringLiteral("Subscription URLs saved"));
     }
 }
 
@@ -472,7 +471,7 @@ void SongBirdAutoCoordinator::start()
     forceCountryTestAfterSubscriptionUpdate_ = false;
     forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
     noUsableRecoveryUpdateAttempted_ = false;
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Preparing start"));
+    setStatus(QStringLiteral("Preparing start"));
     prepareStartFromCurrentConfig();
 }
 
@@ -532,7 +531,7 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
     }
 
     if (!forceUpdate && subscriptionUpdateRecentlyCompleted()) {
-        log(QCoreApplication::translate("SongBirdAuto", "Skipping subscription update; last update was less than 10 minutes ago."));
+        log(QStringLiteral("Skipping subscription update; last update was less than 10 minutes ago."));
         if (pendingStartAfterEvaluation_) {
             continueStartWithCurrentData(false, false, true);
         }
@@ -545,7 +544,7 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
     if (evaluationCancel_ != nullptr) {
         evaluationCancel_->store(true);
     }
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Updating subscriptions"));
+    setStatus(QStringLiteral("Updating subscriptions"));
     const quint64 operationId = nextOperationId();
     const QString activeServerIdBeforeUpdate = activeServerId_;
     int subscriptionTotal = 0;
@@ -613,8 +612,7 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
                 return;
             }
             if (reconciledSaveFailed) {
-                const QString failureMessage = QCoreApplication::translate("SongBirdAuto",
-                    "Subscriptions were updated but saving the reconciled active server failed.");
+                const QString failureMessage = QStringLiteral("Subscriptions were updated but saving the reconciled active server failed.");
                 self->log(reconciledSaveError.isEmpty()
                     ? failureMessage
                     : QStringLiteral("%1 %2").arg(failureMessage, reconciledSaveError));
@@ -653,14 +651,14 @@ void SongBirdAutoCoordinator::reloadConfig()
 OperationResult SongBirdAutoCoordinator::saveConfig()
 {
     if (repository_ == nullptr) {
-        return OperationResult::fail(QCoreApplication::translate("SongBirdAuto", "Configuration repository is unavailable."));
+        return OperationResult::fail(QStringLiteral("Configuration repository is unavailable."));
     }
 
     if (repository_->save(config_)) {
         return OperationResult::ok();
     }
 
-    return repository_->saveFailureResult(QCoreApplication::translate("SongBirdAuto", "Failed to save the configuration file."));
+    return repository_->saveFailureResult(QStringLiteral("Failed to save the configuration file."));
 }
 
 QString SongBirdAutoCoordinator::resolveCustomConfigDirectory() const
@@ -671,7 +669,7 @@ QString SongBirdAutoCoordinator::resolveCustomConfigDirectory() const
 OperationResult SongBirdAutoCoordinator::replaceSubscriptionsFromUrls(const QStringList& urls)
 {
     if (subscriptionService_ == nullptr) {
-        return OperationResult::fail(QCoreApplication::translate("SongBirdAuto", "Subscription service is unavailable."));
+        return OperationResult::fail(QStringLiteral("Subscription service is unavailable."));
     }
 
     QMap<QString, SubItem> existingByUrl;
@@ -868,7 +866,7 @@ void SongBirdAutoCoordinator::downloadMissingCoresThenContinue(
         downloads.append(qMakePair(coreType, resolveCoreInstallDirectory(coreType)));
     }
 
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Downloading %1").arg(displayNames.join(QStringLiteral(", "))));
+    setStatus(QStringLiteral("Downloading %1").arg(displayNames.join(QStringLiteral(", "))));
     taskSummary(QStringLiteral("Downloading core 0/%1").arg(coreTypes.size()));
 
     const bool checkPreReleaseUpdate = config_.checkPreReleaseUpdate;
@@ -1006,7 +1004,7 @@ void SongBirdAutoCoordinator::continueAfterSubscriptionUpdate(
 
     const QList<SpeedTestRequestItem> items = buildEvaluationItems();
     if (!updateResult.success && !items.isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "Subscription update failed; using existing nodes for startup."));
+        log(QStringLiteral("Subscription update failed; using existing nodes for startup."));
     }
     if (items.isEmpty()) {
         if (pendingStartAfterEvaluation_
@@ -1015,10 +1013,10 @@ void SongBirdAutoCoordinator::continueAfterSubscriptionUpdate(
             noUsableRecoveryUpdateAttempted_ = true;
             forceCountryTestAfterSubscriptionUpdate_ = true;
             forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
-            log(QCoreApplication::translate("SongBirdAuto", "No inferred nodes for %1. Updating subscriptions.")
+            log(QStringLiteral("No inferred nodes for %1. Updating subscriptions.")
                     .arg(selectedCountryDisplayName()));
             setBusy(false);
-            setStatus(QCoreApplication::translate("SongBirdAuto", "Updating subscriptions after no usable nodes"));
+            setStatus(QStringLiteral("Updating subscriptions after no usable nodes"));
             updateSubscriptionsAndRetest(true);
             return;
         }
@@ -1028,7 +1026,7 @@ void SongBirdAutoCoordinator::continueAfterSubscriptionUpdate(
 
     refreshInferredCountrySummaries(items, preserveExistingEvaluations);
     setBusy(false);
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Ready: %1 node(s) classified").arg(items.size()));
+    setStatus(QStringLiteral("Ready: %1 node(s) classified").arg(items.size()));
     if (running_ && pendingStartAfterEvaluation_) {
         const bool forceCountryTest = forceCountryTestAfterSubscriptionUpdate_;
         forceCountryTestAfterSubscriptionUpdate_ = false;
@@ -1158,7 +1156,7 @@ void SongBirdAutoCoordinator::prepareStartFromCurrentConfig()
     }
     const quint64 operationId = nextOperationId();
     continueAfterSubscriptionUpdate(
-        OperationResult::ok(QCoreApplication::translate("SongBirdAuto", "Using existing subscriptions.")),
+        OperationResult::ok(QStringLiteral("Using existing subscriptions.")),
         operationId,
         true,
         true,
@@ -1178,7 +1176,7 @@ void SongBirdAutoCoordinator::continueStartWithCurrentData(
     if (!hasUsableSelectedCountryNode()) {
         forceSubscriptionUpdateIfNoUsableAfterTest_ = allowNoUsableRecoveryUpdate;
         if (allowNoUsableRecoveryUpdate) {
-            log(QCoreApplication::translate("SongBirdAuto", "No usable node for %1. Retesting before updating subscriptions.")
+            log(QStringLiteral("No usable node for %1. Retesting before updating subscriptions.")
                     .arg(selectedCountryDisplayName()));
         }
         startBackgroundTestForSelectedCountry(true);
@@ -1188,11 +1186,11 @@ void SongBirdAutoCoordinator::continueStartWithCurrentData(
     forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
     if (allowSubscriptionUpdateBeforeTesting) {
         if (!subscriptionUpdateRecentlyCompleted()) {
-            setStatus(QCoreApplication::translate("SongBirdAuto", "Updating subscriptions before start"));
+            setStatus(QStringLiteral("Updating subscriptions before start"));
             updateSubscriptionsAndRetest(false);
             return;
         }
-        log(QCoreApplication::translate("SongBirdAuto", "Skipping subscription update; last update was less than 10 minutes ago."));
+        log(QStringLiteral("Skipping subscription update; last update was less than 10 minutes ago."));
     }
 
     startBackgroundTestForSelectedCountry(forceCountryTest);
@@ -1205,10 +1203,10 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
     }
 
     if (!forceTest && selectedCountryTestRecentlyCompleted() && !currentCountryBestServerId().isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "Skipping %1 test; last test was less than 5 minutes ago.")
+        log(QStringLiteral("Skipping %1 test; last test was less than 5 minutes ago.")
                 .arg(selectedCountryDisplayName()));
         taskSummary(QString());
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Using recent test results for %1").arg(selectedCountryDisplayName()));
+        setStatus(QStringLiteral("Using recent test results for %1").arg(selectedCountryDisplayName()));
         if (pendingStartAfterEvaluation_) {
             pendingStartAfterEvaluation_ = false;
             switchToBestAfterEvaluation_ = false;
@@ -1233,14 +1231,14 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
             noUsableRecoveryUpdateAttempted_ = true;
             forceCountryTestAfterSubscriptionUpdate_ = true;
             forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
-            log(QCoreApplication::translate("SongBirdAuto", "No inferred nodes for %1. Updating subscriptions.")
+            log(QStringLiteral("No inferred nodes for %1. Updating subscriptions.")
                     .arg(selectedCountryDisplayName()));
-            setStatus(QCoreApplication::translate("SongBirdAuto", "Updating subscriptions after no usable nodes"));
+            setStatus(QStringLiteral("Updating subscriptions after no usable nodes"));
             taskSummary(QString());
             updateSubscriptionsAndRetest(true);
             return;
         }
-        setStatus(QCoreApplication::translate("SongBirdAuto", "No inferred nodes for %1").arg(selectedCountryDisplayName()));
+        setStatus(QStringLiteral("No inferred nodes for %1").arg(selectedCountryDisplayName()));
         pendingStartAfterEvaluation_ = false;
         switchToBestAfterEvaluation_ = false;
         taskSummary(QString());
@@ -1250,7 +1248,7 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
         return;
     }
 
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Testing %1 %2 node(s) in background")
+    setStatus(QStringLiteral("Testing %1 %2 node(s) in background")
                   .arg(items.size())
                   .arg(selectedCountryDisplayName()));
     taskSummary(QStringLiteral("Checking outbound location 0/%1").arg(items.size()));
@@ -1422,8 +1420,8 @@ void SongBirdAutoCoordinator::maybeStartFirstAvailableNode(const AutoNodeEvaluat
     pendingStartAfterEvaluation_ = false;
     switchToBestAfterEvaluation_ = !usesFirstAvailableStrategy();
     forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
-    log(QCoreApplication::translate("SongBirdAuto", "Starting first available node while tests continue: %1").arg(mergedEvaluation.displayName));
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Starting first available node"));
+    log(QStringLiteral("Starting first available node while tests continue: %1").arg(mergedEvaluation.displayName));
+    setStatus(QStringLiteral("Starting first available node"));
     if (!selectServer(mergedEvaluation.indexId)) {
         pendingStartAfterEvaluation_ = true;
         switchToBestAfterEvaluation_ = false;
@@ -1444,11 +1442,11 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
         return;
     }
     if (bestServerId == activeServerId_) {
-        log(QCoreApplication::translate("SongBirdAuto", "Current node remains the fastest tested node."));
+        log(QStringLiteral("Current node remains the fastest tested node."));
         return;
     }
 
-    log(QCoreApplication::translate("SongBirdAuto", "Switching to fastest tested node after background tests completed."));
+    log(QStringLiteral("Switching to fastest tested node after background tests completed."));
     startBestServerForSelectedCountry();
 }
 
@@ -1524,18 +1522,18 @@ bool SongBirdAutoCoordinator::selectedCountryTestRecentlyCompleted() const
 void SongBirdAutoCoordinator::startBestServerForSelectedCountry()
 {
     if (selectedCountryCode_.isEmpty()) {
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Select a country"));
+        setStatus(QStringLiteral("Select a country"));
         return;
     }
     const QString bestServerId = currentCountryBestServerId();
     if (bestServerId.isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "No usable tested node for %1.").arg(selectedCountryCode_));
+        log(QStringLiteral("No usable tested node for %1.").arg(selectedCountryCode_));
         pendingStartAfterEvaluation_ = false;
         switchToBestAfterEvaluation_ = false;
         if (running_ && !isProxySessionRunningOrTransitioning()) {
             setRunning(false);
         }
-        setStatus(QCoreApplication::translate("SongBirdAuto", "No usable node for %1").arg(selectedCountryDisplayName()));
+        setStatus(QStringLiteral("No usable node for %1").arg(selectedCountryDisplayName()));
         return;
     }
     if (!selectServer(bestServerId)) {
@@ -1544,7 +1542,7 @@ void SongBirdAutoCoordinator::startBestServerForSelectedCountry()
     if (isProxySessionRunningOrTransitioning()) {
         pendingStartAfterStop_ = true;
         setBusy(true);
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Switching proxy"));
+        setStatus(QStringLiteral("Switching proxy"));
         stopProxySession(false);
         return;
     }
@@ -1559,18 +1557,18 @@ void SongBirdAutoCoordinator::startSelectedServerForSelectedCountry()
     }
 
     if (selectedCountryCode_.isEmpty()) {
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Select a country"));
+        setStatus(QStringLiteral("Select a country"));
         return;
     }
     const QString serverId = currentCountryFirstAvailableServerId();
     if (serverId.isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "No usable tested node for %1.").arg(selectedCountryCode_));
+        log(QStringLiteral("No usable tested node for %1.").arg(selectedCountryCode_));
         pendingStartAfterEvaluation_ = false;
         switchToBestAfterEvaluation_ = false;
         if (running_ && !isProxySessionRunningOrTransitioning()) {
             setRunning(false);
         }
-        setStatus(QCoreApplication::translate("SongBirdAuto", "No usable node for %1").arg(selectedCountryDisplayName()));
+        setStatus(QStringLiteral("No usable node for %1").arg(selectedCountryDisplayName()));
         return;
     }
     if (!selectServer(serverId)) {
@@ -1579,7 +1577,7 @@ void SongBirdAutoCoordinator::startSelectedServerForSelectedCountry()
     if (isProxySessionRunningOrTransitioning()) {
         pendingStartAfterStop_ = true;
         setBusy(true);
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Switching proxy"));
+        setStatus(QStringLiteral("Switching proxy"));
         stopProxySession(false);
         return;
     }
@@ -1622,8 +1620,8 @@ void SongBirdAutoCoordinator::startProxySession()
     }
     emit activeServerChanged(activeServerId_, server == nullptr ? QString() : serverDisplayName(*server), country, QString(), latency);
     setBusy(true);
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Starting proxy"));
-    log(QCoreApplication::translate("SongBirdAuto", "Starting best node: %1").arg(server == nullptr ? activeServerId_ : serverDisplayName(*server)));
+    setStatus(QStringLiteral("Starting proxy"));
+    log(QStringLiteral("Starting best node: %1").arg(server == nullptr ? activeServerId_ : serverDisplayName(*server)));
 
     ProxySession::StartRequest request;
     request.config = config_;
@@ -1671,39 +1669,16 @@ QString SongBirdAutoCoordinator::writeTunRuntimeConfig(bool relayToProxy) const
         return {};
     }
 
-    QJsonObject root;
-    QJsonObject logObject;
-    logObject.insert(QStringLiteral("disabled"), false);
-    logObject.insert(QStringLiteral("level"), QStringLiteral("warn"));
-    root.insert(QStringLiteral("log"), logObject);
-    root.insert(QStringLiteral("dns"), SingBoxConfigFragments::buildTunCompatDns());
-
-    QJsonArray inbounds;
-    inbounds.append(SingBoxConfigFragments::buildTunInbound(config_));
-    root.insert(QStringLiteral("inbounds"), inbounds);
-
-    QJsonArray outbounds;
-    if (relayToProxy) {
-        outbounds.append(SingBoxConfigFragments::buildTunCompatOutbounds(config_));
-    } else {
-        outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
-        outbounds.append(SingBoxConfigFragments::buildBlockOutbound());
+    // The TUN device is created by a sing-box process of its own, so its configuration is a core
+    // artifact: it is assembled by the core backend, not here. Writing it ourselves is what used to
+    // nest the outbound list one level deep and hand sing-box a config it refused to load.
+    const QJsonObject root = AuxiliaryTunConfig::buildRoot(
+        CoreType::SingBox,
+        config_,
+        relayToProxy ? AuxiliaryTunRouting::RelayToLocalProxy : AuxiliaryTunRouting::DirectOnly);
+    if (root.isEmpty()) {
+        return {};
     }
-    root.insert(QStringLiteral("outbounds"), outbounds);
-
-    QJsonObject route;
-    route.insert(QStringLiteral("auto_detect_interface"), true);
-    route.insert(QStringLiteral("final"), relayToProxy ? QStringLiteral("proxy") : QStringLiteral("direct"));
-    QJsonArray rules = SingBoxConfigFragments::buildTunCompatRejectRules();
-    SingBoxConfigFragments::appendTunCompatProcessRules(rules);
-    rules.append(SingBoxConfigFragments::buildTunCompatPrivateAddressDirectRule());
-    SingBoxConfigFragments::appendTunIcmpRouteRule(rules, config_.tun().tunModeItem);
-    if (relayToProxy) {
-        SingBoxConfigFragments::appendSniffRules(rules, config_);
-        SingBoxConfigFragments::appendTunUdpRouteRule(rules, config_.tun().tunModeItem);
-    }
-    route.insert(QStringLiteral("rules"), rules);
-    root.insert(QStringLiteral("route"), route);
 
     const QString configPath = QDir(runtimeDirectory).filePath(QStringLiteral("auto-tun.generated.json"));
     QFile file(configPath);
@@ -1728,8 +1703,8 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
         return true;
     }
     if (isWindowsPlatform() && !isProcessElevated()) {
-        log(QCoreApplication::translate("SongBirdAuto", "TUN requires administrator privileges."));
-        setStatus(QCoreApplication::translate("SongBirdAuto", "TUN requires administrator privileges"));
+        log(QStringLiteral("TUN requires administrator privileges."));
+        setStatus(QStringLiteral("TUN requires administrator privileges"));
         return false;
     }
 
@@ -1744,12 +1719,12 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
 
     const CoreInfo coreInfo = resolveSingBoxCoreInfo();
     if (coreInfo.program.trimmed().isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "TUN requires sing-box, but no sing-box executable was found."));
+        log(QStringLiteral("TUN requires sing-box, but no sing-box executable was found."));
         return false;
     }
     const QString configPath = writeTunRuntimeConfig(relayToProxy);
     if (configPath.trimmed().isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "Failed to write TUN runtime config."));
+        log(QStringLiteral("Failed to write TUN runtime config."));
         return false;
     }
 
@@ -1758,22 +1733,22 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
         coreInfo,
         configPath,
         [this](const QString& line) { log(QStringLiteral("tun | %1").arg(line)); },
-        [this](const QString& message) { log(QCoreApplication::translate("SongBirdAuto", "TUN runtime started. %1").arg(message)); },
+        [this](const QString& message) { log(QStringLiteral("TUN runtime started. %1").arg(message)); },
         [this](const QString& message) {
-            log(QCoreApplication::translate("SongBirdAuto", "TUN runtime failed to start: %1").arg(message));
-            setStatus(QCoreApplication::translate("SongBirdAuto", "TUN failed to start"));
+            log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
+            setStatus(QStringLiteral("TUN failed to start"));
         },
         [this](int exitCode, QProcess::ExitStatus, bool stopRequested) {
             if (!stopRequested && config_.tun().tunModeItem.enableTun) {
-                log(QCoreApplication::translate("SongBirdAuto", "TUN runtime exited unexpectedly: %1").arg(exitCode));
-                setStatus(QCoreApplication::translate("SongBirdAuto", "TUN stopped unexpectedly"));
+                log(QStringLiteral("TUN runtime exited unexpectedly: %1").arg(exitCode));
+                setStatus(QStringLiteral("TUN stopped unexpectedly"));
             }
         });
     if (!startResult.success) {
         log(startResult.message);
         return false;
     }
-    setStatus(relayToProxy ? QCoreApplication::translate("SongBirdAuto", "TUN routing through proxy") : QCoreApplication::translate("SongBirdAuto", "TUN device ready"));
+    setStatus(relayToProxy ? QStringLiteral("TUN routing through proxy") : QStringLiteral("TUN device ready"));
     return true;
 }
 
@@ -1793,7 +1768,7 @@ bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
 {
     if (!config_.tun().tunModeItem.enableTun) {
         stopTunRuntime(true);
-        setStatus(running_ ? QCoreApplication::translate("SongBirdAuto", "TUN disabled") : QStringLiteral("Stopped"));
+        setStatus(running_ ? QStringLiteral("TUN disabled") : QStringLiteral("Stopped"));
         return true;
     }
     return startTunRuntime(running_ && isProxySessionRunningOrTransitioning());
@@ -1893,7 +1868,7 @@ void SongBirdAutoCoordinator::finishHealthCheck(const OperationResult& result)
 
 void SongBirdAutoCoordinator::handleUnavailableActiveServer(const QString& reason)
 {
-    log(QCoreApplication::translate("SongBirdAuto", "Active node unavailable: %1").arg(reason));
+    log(QStringLiteral("Active node unavailable: %1").arg(reason));
     if (!switchToNextBestSameCountry(activeServerId_)) {
         scheduleHealthCheck(kHealthCheckIntervalMs);
     }
@@ -1917,18 +1892,18 @@ void SongBirdAutoCoordinator::handleNoCompatibleServers()
     clearEvaluationState();
     pendingStartAfterEvaluation_ = false;
     switchToBestAfterEvaluation_ = false;
-    log(QCoreApplication::translate("SongBirdAuto", "No compatible servers are available for automatic testing."));
+    log(QStringLiteral("No compatible servers are available for automatic testing."));
     if (running_) {
         if (isProxySessionRunningOrTransitioning()) {
-            log(QCoreApplication::translate("SongBirdAuto", "Keeping the active proxy while waiting for compatible automatic nodes."));
+            log(QStringLiteral("Keeping the active proxy while waiting for compatible automatic nodes."));
         } else {
             updateSystemProxyMode(SystemProxyMode::ForcedClear);
         }
         setBusy(false);
-        setStatus(QCoreApplication::translate("SongBirdAuto", "Waiting for compatible servers"));
+        setStatus(QStringLiteral("Waiting for compatible servers"));
     } else {
         setBusy(false);
-        setStatus(QCoreApplication::translate("SongBirdAuto", "No compatible servers"));
+        setStatus(QStringLiteral("No compatible servers"));
     }
     schedulePeriodicRefresh();
 }
@@ -1955,7 +1930,7 @@ void SongBirdAutoCoordinator::normalizeSelectedCountryAfterRetest()
 
     selectedCountryCode_ = firstCountryWithNodesOrFirst(countrySummaries_);
     emit selectedCountryChanged(selectedCountryCode_);
-    setStatus(QCoreApplication::translate("SongBirdAuto", "Selected %1").arg(selectedCountryDisplayName()));
+    setStatus(QStringLiteral("Selected %1").arg(selectedCountryDisplayName()));
 }
 
 void SongBirdAutoCoordinator::maybeRefreshWhenCountryLow()
@@ -1973,7 +1948,7 @@ void SongBirdAutoCoordinator::maybeRefreshWhenCountryLow()
         return;
     }
     lastLowCountryRefreshAt_ = now;
-    log(QCoreApplication::translate("SongBirdAuto", "%1 has %2 usable node(s). Refreshing subscriptions.")
+    log(QStringLiteral("%1 has %2 usable node(s). Refreshing subscriptions.")
             .arg(selectedCountryCode_)
             .arg(count));
     if (busy_) {
@@ -2014,7 +1989,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     refreshAfterFailover_ = running_ && availableCount <= kLowCountryNodeThreshold;
 
     if (nextId.isEmpty()) {
-        log(QCoreApplication::translate("SongBirdAuto", "No alternate node for %1. Retesting after subscription update.").arg(selectedCountryCode_));
+        log(QStringLiteral("No alternate node for %1. Retesting after subscription update.").arg(selectedCountryCode_));
         refreshAfterFailover_ = false;
         updateSubscriptionsAndRetest(true);
         return false;
@@ -2024,7 +1999,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
         if (isProxySessionRunningOrTransitioning()) {
             pendingStartAfterStop_ = true;
             setBusy(true);
-            setStatus(QCoreApplication::translate("SongBirdAuto", "Switching proxy"));
+            setStatus(QStringLiteral("Switching proxy"));
             stopProxySession(false);
             return true;
         }

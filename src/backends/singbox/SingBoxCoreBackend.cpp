@@ -179,9 +179,9 @@ QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const Vmes
     return root;
 }
 
-QJsonObject SingBoxCoreBackend::buildAuxiliaryTunClientRoot(const Config& config) const
+QJsonObject SingBoxCoreBackend::buildAuxiliaryTunClientRoot(const Config& config, AuxiliaryTunRouting routing) const
 {
-    return buildTunCompatClientRoot(config);
+    return buildTunCompatClientRoot(config, routing);
 }
 
 QUrl SingBoxCoreBackend::releasesApiUrl() const
@@ -229,8 +229,10 @@ int SingBoxCoreBackend::scoreReleaseAssetName(const QString& assetName, bool pre
     return normalized.contains(QStringLiteral("windows-386.zip")) ? 350 : -1;
 }
 
-QJsonObject SingBoxCoreBackend::buildTunCompatClientRoot(const Config& config)
+QJsonObject SingBoxCoreBackend::buildTunCompatClientRoot(const Config& config, AuxiliaryTunRouting routing)
 {
+    const bool relayToProxy = routing == AuxiliaryTunRouting::RelayToLocalProxy;
+
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildLog(config));
 
@@ -238,8 +240,12 @@ QJsonObject SingBoxCoreBackend::buildTunCompatClientRoot(const Config& config)
     inbounds.append(SingBoxConfigFragments::buildTunInbound(config));
     root.insert(QStringLiteral("inbounds"), inbounds);
 
-    root.insert(QStringLiteral("outbounds"), SingBoxConfigFragments::buildTunCompatOutbounds(config));
-    root.insert(QStringLiteral("route"), SingBoxConfigFragments::buildTunCompatRoute(config));
+    root.insert(QStringLiteral("outbounds"), relayToProxy
+                                                ? SingBoxConfigFragments::buildTunCompatOutbounds(config)
+                                                : SingBoxConfigFragments::buildTunCompatDirectOutbounds());
+    root.insert(QStringLiteral("route"), relayToProxy
+                                             ? SingBoxConfigFragments::buildTunCompatRoute(config)
+                                             : SingBoxConfigFragments::buildTunCompatDirectRoute(config));
 
     const QJsonObject dns = SingBoxConfigFragments::buildTunCompatDns();
     if (!dns.isEmpty()) {

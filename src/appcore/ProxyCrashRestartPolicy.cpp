@@ -4,7 +4,7 @@
 
 #include <QCoreApplication>
 
-#include "app/TunRuntimeState.h"
+#include "appcore/TunRuntimeState.h"
 #include "runtime/core/CoreCatalog.h"
 
 namespace {

@@ -69,6 +69,18 @@ void appendTunNetworkPolicyRouteRule(QJsonArray& rules, const QString& network, 
     rules.append(rule);
 }
 
+// The rules both TUN routing modes share, in their established order: reject the noisy ports
+// and multicast ranges, hijack DNS, send our own processes direct, keep private ranges local.
+// Relaying mode appends its own sniff/UDP rules on top of these.
+QJsonArray buildCommonRouteRules(const Config& config)
+{
+    QJsonArray rules = SingBoxTunCompatConfigFragments::buildRejectRules();
+    SingBoxTunCompatConfigFragments::appendProcessRules(rules);
+    rules.append(SingBoxTunCompatConfigFragments::buildPrivateAddressDirectRule());
+    SingBoxTunCompatConfigFragments::appendIcmpRouteRule(rules, config.tun().tunModeItem);
+    return rules;
+}
+
 } // namespace
 
 namespace SingBoxTunCompatConfigFragments {
@@ -94,14 +106,20 @@ QJsonObject buildRoute(const Config& config)
     route.insert(QStringLiteral("final"), QStringLiteral("proxy"));
     route.insert(QStringLiteral("auto_detect_interface"), true);
 
-    QJsonArray rules = buildRejectRules();
-    appendProcessRules(rules);
-    rules.append(buildPrivateAddressDirectRule());
-    appendIcmpRouteRule(rules, config.tun().tunModeItem);
+    QJsonArray rules = buildCommonRouteRules(config);
     appendSniffRules(rules, config);
     appendUdpRouteRule(rules, config.tun().tunModeItem);
 
     route.insert(QStringLiteral("rules"), rules);
+    return route;
+}
+
+QJsonObject buildDirectRoute(const Config& config)
+{
+    QJsonObject route;
+    route.insert(QStringLiteral("final"), QStringLiteral("direct"));
+    route.insert(QStringLiteral("auto_detect_interface"), true);
+    route.insert(QStringLiteral("rules"), buildCommonRouteRules(config));
     return route;
 }
 
@@ -112,6 +130,14 @@ QJsonArray buildOutbounds(const Config& config)
         QStringLiteral("proxy"),
         QStringLiteral("127.0.0.1"),
         config.localPort));
+    outbounds.append(buildDirectOutbound());
+    outbounds.append(buildBlockOutbound());
+    return outbounds;
+}
+
+QJsonArray buildDirectOutbounds()
+{
+    QJsonArray outbounds;
     outbounds.append(buildDirectOutbound());
     outbounds.append(buildBlockOutbound());
     return outbounds;

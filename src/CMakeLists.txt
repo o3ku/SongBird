@@ -16,6 +16,7 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/BackgroundThreadTracker.h
     appcore/BackgroundThreadTracker.cpp
     appcore/ProxyRuntimeInterfaces.h
+    appcore/IUserFeedback.h
     appcore/PostStopAction.h
     appcore/ProxyCrashRestartPolicy.h
     appcore/ProxyCrashRestartPolicy.cpp
@@ -25,6 +26,8 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/AppRuntimeResolver.cpp
     appcore/ProxySession.h
     appcore/ProxySession.cpp
+    appcore/TunSettingsApplyDecision.h
+    appcore/TunRuntimeState.h
     appcore/TunRuntimeService.h
     appcore/TunRuntimeService.cpp
     common/BackgroundThreadLaunch.h
@@ -42,6 +45,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/StartupSequencer.h
     common/SystemProxyMode.h
     common/TextElision.h
+    common/ThreadShutdown.h
+    common/ThreadShutdown.cpp
     common/UserAgent.h
     domain/models/Config.h
     domain/models/RoutingProfiles.h
@@ -56,6 +61,7 @@ set(SONGBIRD_SHARED_SOURCES
     runtime/CoreInfo.h
     runtime/CoreLaunchCompatDecision.h
     runtime/ProtocolCoreCompat.h
+    runtime/AuxiliaryTunConfig.h
     runtime/CoreConfigPreflight.h
     runtime/CoreConfigPreflight.cpp
     runtime/TunAdapterNames.h
@@ -275,7 +281,6 @@ set(SONGBIRD_SOURCES
     app/AppUpdateInstallService.cpp
     app/ApplicationRestartCoordinator.h
     app/ApplicationRestartCoordinator.cpp
-    app/IUserFeedback.h
     app/ConfigPathResolver.h
     app/ConfigBackupCoordinator.h
     app/ConfigBackupCoordinator.cpp
@@ -731,7 +736,12 @@ endif()
 
 if(TARGET songbird_translations)
     add_dependencies(songbird songbird_translations)
-    add_dependencies(songbird_auto songbird_translations)
+    # Deliberately NOT songbird_auto. The generated translations.qrc above is appended to
+    # SONGBIRD_SOURCES, so SongBirdAuto.exe embeds no .qm at all and is English-only by product
+    # decision -- src/auto/main.cpp installs no QTranslator for the same reason, and
+    # ctest localization-coverage enforces it (Check E: no translate()/tr() under src/auto).
+    # Re-adding this dependency without also giving that target a .qrc would only make it wait
+    # for a translation it never loads.
 endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)

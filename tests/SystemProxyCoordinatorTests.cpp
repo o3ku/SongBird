@@ -21,8 +21,9 @@ public:
 };
 
 // Stands in for the registry-backed implementation. The real service writes
-// HKCU\...\Internet Settings and cannot be made to refuse that write from a test, which is why
-// the coordinator's failure branch had no coverage: `accepts_` is the refusal.
+// HKCU\...\Internet Settings, and the coordinator is driven through this stand-in so its failure
+// branch stays independent of that class: `accepts_` is the refusal. The concrete service's own
+// refusal path is covered by the system-proxy-service suite, which points it at a scratch key.
 class FakeSystemProxyService : public ISystemProxyService {
 public:
     bool update(

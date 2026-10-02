@@ -7,6 +7,8 @@
 #include "common/RoutingValuePattern.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/AuxiliaryTunConfig.h"
+#include "runtime/ProtocolConfigMapper.h"
 #include "runtime/SingBoxDnsConfigSupport.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
@@ -65,6 +67,18 @@ QString describe(CoreType coreType, ConfigType configType)
         .arg(configTypeDisplayName(configType));
 }
 
+// Outbounds are a flat list of objects. A nested array is not an outbound, and sing-box rejects the
+// whole file over it, so the entries are flattened here and the emptiness of each one is asserted
+// by the caller rather than silently counted as present.
+QList<QJsonObject> tunOutboundObjects(const QJsonObject& root)
+{
+    QList<QJsonObject> outbounds;
+    for (const QJsonValue& value : root.value(QStringLiteral("outbounds")).toArray()) {
+        outbounds.append(value.toObject());
+    }
+    return outbounds;
+}
+
 } // namespace
 
 class BackendContractTests : public QObject {
@@ -78,6 +92,8 @@ private slots:
     void unsupportedRoutingValuesAreReported();
     void dnsRuleFieldsFollowTheSharedPrefixVocabulary();
     void dnsDomainStrategyMapsUiVocabularyToSingBoxValues();
+    void auxiliaryTunRootIsUsableInBothRoutingModes();
+    void auxiliaryTunRootComesFromTheRuntimeLayer();
 };
 
 void BackendContractTests::everyRegisteredCoreHasBackend()
@@ -312,6 +328,80 @@ void BackendContractTests::dnsDomainStrategyMapsUiVocabularyToSingBoxValues()
     QVERIFY(mapped(QStringLiteral("IPIfNonMatch")).isEmpty());
     QVERIFY(mapped(QStringLiteral("IPOnDemand")).isEmpty());
     QVERIFY(mapped(QString()).isEmpty());
+}
+
+void BackendContractTests::auxiliaryTunRootIsUsableInBothRoutingModes()
+{
+    // The TUN device is created by a core process of its own, so its root is a core artifact and is
+    // built by the core backend. It used to be assembled by hand in the auto front end, where the
+    // outbound list was appended as a whole array instead of element by element -- producing
+    // "outbounds": [[...]] and a file sing-box refuses to load ("cannot unmarshal array into Go
+    // struct field _Options.outbounds of type option._Outbound").
+    const ICoreBackend* backend = coreBackend(CoreType::SingBox);
+    QVERIFY(backend != nullptr);
+
+    Config config;
+    config.tun().tunModeItem.enableTun = true;
+
+    const QJsonObject relayRoot =
+        backend->buildAuxiliaryTunClientRoot(config, AuxiliaryTunRouting::RelayToLocalProxy);
+    QVERIFY(!relayRoot.isEmpty());
+
+    const QList<QJsonObject> relayOutbounds = tunOutboundObjects(relayRoot);
+    QCOMPARE(relayOutbounds.size(), 3);
+    for (const QJsonObject& outbound : relayOutbounds) {
+        QVERIFY2(!outbound.isEmpty(), "outbounds must be a flat list of outbound objects");
+    }
+    QCOMPARE(relayOutbounds.at(0).value(QStringLiteral("tag")).toString(), QStringLiteral("proxy"));
+    QCOMPARE(relayRoot.value(QStringLiteral("route")).toObject().value(QStringLiteral("final")).toString(),
+             QStringLiteral("proxy"));
+
+    // Direct mode carries no proxy traffic at all: it exists to keep the adapter alive while the
+    // proxy session is down, so it has neither a proxy outbound nor a proxy final hop.
+    const QJsonObject directRoot =
+        backend->buildAuxiliaryTunClientRoot(config, AuxiliaryTunRouting::DirectOnly);
+    QVERIFY(!directRoot.isEmpty());
+
+    const QList<QJsonObject> directOutbounds = tunOutboundObjects(directRoot);
+    QCOMPARE(directOutbounds.size(), 2);
+    for (const QJsonObject& outbound : directOutbounds) {
+        QVERIFY2(!outbound.isEmpty(), "outbounds must be a flat list of outbound objects");
+    }
+    QCOMPARE(directOutbounds.at(0).value(QStringLiteral("tag")).toString(), QStringLiteral("direct"));
+    QCOMPARE(directOutbounds.at(1).value(QStringLiteral("tag")).toString(), QStringLiteral("block"));
+    QCOMPARE(directRoot.value(QStringLiteral("route")).toObject().value(QStringLiteral("final")).toString(),
+             QStringLiteral("direct"));
+
+    // Both modes create the same TUN inbound and follow the configured log level rather than a
+    // hardcoded one.
+    for (const QJsonObject& root : {relayRoot, directRoot}) {
+        const QJsonArray inbounds = root.value(QStringLiteral("inbounds")).toArray();
+        QCOMPARE(inbounds.size(), 1);
+        QCOMPARE(inbounds.at(0).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("tun"));
+        QCOMPARE(root.value(QStringLiteral("log")).toObject().value(QStringLiteral("level")).toString(),
+                 ProtocolConfigMapper::normalizeSingBoxLogLevel(config.logLevel));
+    }
+}
+
+void BackendContractTests::auxiliaryTunRootComesFromTheRuntimeLayer()
+{
+    // Front ends are not allowed to include a concrete backend, so they ask the runtime layer for
+    // the root. The helper has to hand back exactly what the backend builds, and has to stay empty
+    // for a core that cannot back a TUN device.
+    Config config;
+    config.tun().tunModeItem.enableTun = true;
+
+    const ICoreBackend* backend = coreBackend(CoreType::SingBox);
+    QVERIFY(backend != nullptr);
+
+    const QJsonObject viaRuntime =
+        AuxiliaryTunConfig::buildRoot(CoreType::SingBox, config, AuxiliaryTunRouting::RelayToLocalProxy);
+    const QJsonObject viaBackend =
+        backend->buildAuxiliaryTunClientRoot(config, AuxiliaryTunRouting::RelayToLocalProxy);
+    QVERIFY(!viaRuntime.isEmpty());
+    QVERIFY(viaRuntime == viaBackend);
+
+    QVERIFY(AuxiliaryTunConfig::buildRoot(CoreType::Unknown, config, AuxiliaryTunRouting::RelayToLocalProxy).isEmpty());
 }
 
 QTEST_MAIN(BackendContractTests)

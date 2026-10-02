@@ -140,9 +140,19 @@ QJsonObject SingBoxConfigFragments::buildTunCompatRoute(const Config& config)
     return TunCompatConfig::buildRoute(config);
 }
 
+QJsonObject SingBoxConfigFragments::buildTunCompatDirectRoute(const Config& config)
+{
+    return TunCompatConfig::buildDirectRoute(config);
+}
+
 QJsonArray SingBoxConfigFragments::buildTunCompatOutbounds(const Config& config)
 {
     return TunCompatConfig::buildOutbounds(config);
+}
+
+QJsonArray SingBoxConfigFragments::buildTunCompatDirectOutbounds()
+{
+    return TunCompatConfig::buildDirectOutbounds();
 }
 
 QJsonObject SingBoxConfigFragments::buildTunCompatPrivateAddressDirectRule()

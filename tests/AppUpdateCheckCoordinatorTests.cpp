@@ -2,7 +2,7 @@
 
 #include "app/AppUpdateCheckCoordinator.h"
 #include "appcore/BackgroundTaskCoordinator.h"
-#include "app/IUserFeedback.h"
+#include "appcore/IUserFeedback.h"
 
 class RecordingFeedback final : public IUserFeedback {
 public:

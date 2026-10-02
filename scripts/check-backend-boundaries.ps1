@@ -128,9 +128,13 @@ foreach ($dir in $legacyBackendDirs) {
     }
 }
 
+# Every layer that consumes a core but must not know which one. `auto` is here for the same reason
+# `app` is: it is a front end that links a core through the runtime layer. It used to be missing,
+# which meant the rule below silently did not apply to it -- see the coverage guard underneath.
 $consumerDirs = @(
     (Join-Path $root "app"),
     (Join-Path $root "appcore"),
+    (Join-Path $root "auto"),
     (Join-Path $root "ui"),
     (Join-Path $root "services"),
     (Join-Path $root "runtime")
@@ -139,9 +143,48 @@ $existingConsumerDirs = @($consumerDirs | Where-Object { Test-Path $_ })
 if ($existingConsumerDirs.Count -eq 0) {
     Stop-CheckWithError "None of the consumer directories ($($consumerDirs -join ', ')) exist under '$SourceRoot'; the include rule would scan nothing. Refusing to report a pass."
 }
+
+# A directory with a main.cpp is a front-end executable, and every front end has to obey the rule.
+# Without this guard a new front end escapes it by simply not being listed above -- which is exactly
+# how `auto` came to include a concrete backend unnoticed.
+$frontEndDirs = @(
+    Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName "main.cpp") }
+)
+if ($frontEndDirs.Count -eq 0) {
+    Stop-CheckWithError "No directory under '$SourceRoot' contains a main.cpp; the front-end coverage guard would pass vacuously. Refusing to report a pass."
+}
+foreach ($frontEndDir in $frontEndDirs) {
+    if ($existingConsumerDirs -notcontains $frontEndDir.FullName) {
+        $violations.Add(
+            "Front-end directory '$($frontEndDir.FullName)' is not covered by the concrete-backend " +
+            "include rule; add it to the consumer list in this script.")
+    }
+}
 $matches = Find-MatchingLines -Pattern '#include\s+"backends/' -Roots $existingConsumerDirs
 foreach ($match in $matches) {
     $violations.Add("Concrete backend include from common/application layer: $match")
+}
+
+# A front end is a top of the dependency order: nothing below it may include it. Without this rule
+# `appcore/` reached up into `app/` for three headers, so the shared layer depended on one
+# executable's code and every `appcore/` consumer inherited that dependency transitively -- the
+# reason `auto/`'s "no dependency on app/" claim only held for direct includes.
+$frontEndPaths = @($frontEndDirs | ForEach-Object { $_.FullName })
+$nonFrontEndDirs = @(
+    Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $frontEndPaths -notcontains $_.FullName }
+)
+if ($nonFrontEndDirs.Count -eq 0) {
+    Stop-CheckWithError "No non-front-end directory exists under '$SourceRoot'; the upward-include rule would scan nothing. Refusing to report a pass."
+}
+foreach ($frontEndPath in $frontEndPaths) {
+    $frontEndName = [regex]::Escape((Split-Path -Leaf $frontEndPath))
+    $matches = Find-MatchingLines -Pattern "#include\s+`"$frontEndName/" -Roots @($nonFrontEndDirs.FullName)
+    foreach ($match in $matches) {
+        $violations.Add(
+            "Front-end layer included from below; it is a top of the dependency order: $match")
+    }
 }
 
 $backendDir = Join-Path $root "backends"
@@ -163,4 +206,6 @@ if ($violations.Count -gt 0) {
 
 Write-Host ("Backend boundary check passed: $scannedRootCount scan(s) over " +
             "$scannedFileCount scan target(s); legacy backend directories absent; " +
-            "0 concrete-backend include(s) from the app layer; 0 reverse-direction include(s).")
+            "0 concrete-backend include(s) from the app layer; 0 reverse-direction include(s); " +
+            "0 upward include(s) into a front end; " +
+            "$($frontEndDirs.Count) front-end directory/directories covered by the include rule.")

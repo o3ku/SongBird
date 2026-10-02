@@ -17,7 +17,7 @@
 #include "app/CoreUpdateCoordinator.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "app/GeoResourceUpdateCoordinator.h"
-#include "app/IUserFeedback.h"
+#include "appcore/IUserFeedback.h"
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "appcore/ProxySession.h"
@@ -29,6 +29,7 @@
 #include "common/DialogUtils.h"
 #include "common/GitHubUrls.h"
 #include "common/StartupSequencer.h"
+#include "common/ThreadShutdown.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -59,7 +60,7 @@
 #include "app/SpeedTestCoordinator.h"
 #include "app/SystemProxyCoordinator.h"
 #include "app/TunModeCoordinator.h"
-#include "app/TunRuntimeState.h"
+#include "appcore/TunRuntimeState.h"
 #include "appcore/TunRuntimeService.h"
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
@@ -175,8 +176,14 @@ AppBootstrap::~AppBootstrap()
 {
     shuttingDown_.store(true);
     lifetimeGuard_.reset();
-    if (objects_->backgroundThreadTracker != nullptr) {
-        objects_->backgroundThreadTracker->waitForAll();
+    if (objects_->backgroundThreadTracker != nullptr
+        && !objects_->backgroundThreadTracker->waitForAll()) {
+        // The worker ignored every interruption request for the whole budget. It can still reach
+        // the object graph below, so nothing here may be destroyed: unwinding would free exactly
+        // what it is about to touch. The tracker has already written the record, which is the only
+        // clue that outlives the process.
+        abandonProcessAfterStuckThread(
+            QStringLiteral("AppBootstrap was destroyed with a background thread still running"));
     }
 
     if (objects_->proxySession != nullptr && (objects_->proxySession->isCoreRunning() || objects_->proxySession->isTransitioning())) {

@@ -9,7 +9,7 @@
 #include <QWidget>
 
 #include "appcore/FunctionRuntimeAdapters.h"
-#include "app/IUserFeedback.h"
+#include "appcore/IUserFeedback.h"
 #include "app/SpeedTestCoordinator.h"
 #include "common/DialogUtils.h"
 #include "domain/models/Config.h"

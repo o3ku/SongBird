@@ -55,7 +55,7 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
   注意：这两个脚本都以 `exit 1` 结束，**在当前 PowerShell 会话里直接 `& script.ps1` 会把会话一起退出**（输出还没落盘）。要在会话内验证，用 [.workbuddy-ai/tools/run-check-in-runspace.ps1](.workbuddy-ai/tools/run-check-in-runspace.ps1) 把它跑在子 runspace 里。
 - **`end-to-end-smoke`** 带 `LABELS "smoke"` 且 `TIMEOUT 7200`，会真实下载核心/订阅并启动进程，**不要包含在常规跑测里**。
 
-**`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。
+**`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。它还断言辅助 TUN 根的两种路由形态：`outbounds` 必须是**扁平的对象列表**（嵌套数组正是 sing-box 报 `cannot unmarshal array into Go struct field _Options.outbounds` 而拒载的形态）、中继态含 `proxy` 出站且 `route.final=proxy`、直连态只有 `direct`/`block` 且 `route.final=direct`。
 
 ## 发布
 
@@ -81,7 +81,8 @@ GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 20
 
 | 层 | 目录 | 角色 |
 |----|------|------|
-| App | [app/](src/app/) | 组合根（`AppBootstrap`）、入口、启动逻辑、代理会话状态机 |
+| App | [app/](src/app/) | 组合根（`AppBootstrap`）、入口、启动逻辑、songbird 专用协调器 |
+| AppCore | [appcore/](src/appcore/) | 两个前端共享的应用服务：`ProxySession`、核心发现/清理、TUN 运行时、后台任务协调、运行时解析 |
 | Auto | [auto/](src/auto/) | `SongBirdAuto.exe` 的独立实现：自动选路协调器、国家推断/选择 |
 | UI | [ui/](src/ui/) | Qt 控件；`mainwindow/` 按控制器拆分，`dialogs/` 中 `SettingsDialog` 按页面拆分 |
 | Services | [services/](src/services/) | 业务逻辑：服务器、订阅、测速、路由、策略组、配置备份、应用/核心/Geo 资源更新 |
@@ -97,15 +98,27 @@ GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 20
 
 违反会导致测试失败，不是风格建议：
 
-1. `app/`、`ui/`、`services/`、`runtime/` **不得** `#include "backends/..."` —— 只能通过 `runtime/core/ICoreBackend.h` 抽象访问内核
-2. `backends/` **不得** `#include "(app|ui|services|platform)/..."`
+1. `app/`、`appcore/`、`auto/`、`ui/`、`services/`、`runtime/` **不得** `#include "backends/..."` —— 只能通过 `runtime/core/ICoreBackend.h` 抽象访问内核
+2. `backends/` **不得** `#include "(app|appcore|ui|services|platform)/..."`
 3. `runtime/core/xray`、`runtime/core/singbox` 目录不得存在（旧结构，内核实现已移至 `backends/`）
+4. **每个含 `main.cpp` 的目录都必须在消费者名单里**。这条守卫是补的：`auto/` 曾因「目录没被列进脚本」而**静默逃过第 1 条**，自己手工拼 sing-box 的 TUN 配置（还因此拼出了 sing-box 拒绝加载的 `"outbounds": [[...]]` 嵌套数组）。新增前端 = 加进脚本的消费者名单，否则测试失败。
+5. **前端是依赖顺序的顶**：含 `main.cpp` 的目录（现为 `app/`、`auto/`）**不得被下层 include**。这条规则是补的：`appcore/` 曾向上 include `app/` 的三个头文件，于是**共享层依赖了某个可执行文件的代码**，且任何 `appcore/` 消费者都**传递性**继承该依赖（「`auto/` 对 `app/` 依赖 = 0」当时只在**直接 include** 层面成立）。判据是「目录里有没有 `main.cpp`」，所以新增前端自动纳入。
+
+前端要拿「内核专属配置」时走运行时层的窄入口，而不是 include 后端。TUN 设备是**独立内核进程**创建的，其配置就是内核产物：入口是 `runtime/AuxiliaryTunConfig.h` 的 `AuxiliaryTunConfig::buildRoot(coreType, config, routing)`，由 `ICoreBackend::buildAuxiliaryTunClientRoot(config, routing)` 实现（`AuxiliaryTunRouting::RelayToLocalProxy` 中继进本地代理 / `DirectOnly` 只走直连，用于代理会话停止后保住网卡不重建）。
+
+### 本地化与 English surface（由 `localization-coverage` 测试强制）
+
+**只有 SongBird.exe 是可本地化的产物**：生成的 `translations.qrc` 只被追加进 `SONGBIRD_SOURCES`，所以 `.qm` 只嵌进 SongBird.exe。`translations/SongBird_zh_CN.ts` 手工维护（无 `location`、无 lupdate 构建目标），编译产物提交在 `translations/compiled/`；改过 `.ts` 必须跑 `scripts/check-translations-fresh.ps1 -Update` 重新生成 `.qm` 与 sha256 清单。
+
+**`src/auto/` 是 English surface**：SongBirdAuto 按产品决定保持英文 —— `src/auto/main.cpp` 不装 `QTranslator`，该目标也不嵌任何 `.qm`。因此该目录下的字符串必须是裸 `QStringLiteral`，**不得**出现 `tr()` / `QCoreApplication::translate()` / `QT_TR_*`；检查脚本的 Check E 会因此失败（`-EnglishSurfaceRoots`，默认 `src/auto`）。
+
+判据是「链接它的**每个**可执行文件都是英文」，不是「文件提到 SongBirdAuto」：`src/services/`、`src/appcore/` 等共享代码保留 `translate()` —— SongBird 链接它们并渲染中文，而 SongBirdAuto 下因为没装 translator 自然保持英文。
 
 ### 内核后端
 
 `CoreType` 只有三个真实内核：**Xray、SingBox、Mihomo**（外加 `Unknown`）。每个内核在 `backends/<name>/<Name>CoreDescriptor.cpp` 中通过静态 `CoreDescriptorRegistration` 自注册，`CoreDescriptor` 声明其 `supportedConfigTypes`、可执行文件名、`protocolPriority`（数值越小越优先：SingBox=10、Mihomo=15、Xray=20）等。
 
-`ICoreBackend`（[runtime/core/ICoreBackend.h](src/runtime/core/ICoreBackend.h)）是内核的统一契约：配置生成（`buildClientRoot`）、启动参数、版本探测、服务器校验、发布仓库等。新增内核 = 加一个 descriptor + 一个 backend 实现，其余各层无需改动。
+`ICoreBackend`（[runtime/core/ICoreBackend.h](src/runtime/core/ICoreBackend.h)）是内核的统一契约：配置生成（`buildClientRoot`）、辅助 TUN 根（`buildAuxiliaryTunClientRoot`，带 `AuxiliaryTunRouting`）、启动参数、版本探测、服务器校验、发布仓库等。新增内核 = 加一个 descriptor + 一个 backend 实现，其余各层无需改动；不支持 TUN 的内核不必覆写 `buildAuxiliaryTunClientRoot`，基类默认返回空对象。
 
 **descriptor 的 `supportedConfigTypes` 必须与后端实际实现一致。** 曾出现 Xray 声明支持 AnyTLS/Naive 却无实现，导致启动 xray.exe 却喂 sing-box 格式配置。[ProtocolCoreCompat.h](src/runtime/ProtocolCoreCompat.h) 的全部解析逻辑都建立在这份声明可信的前提上。
 
@@ -143,13 +156,17 @@ GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 20
 
 启用 TUN 且使用 Xray 时，用 sing-box 边车进程处理 TUN 网卡（`songbird_tun` Wintun 设备；`singbox_tun` 是遗留名，仍保留在清理列表中）。`AppBootstrap` 为此辅助核心管理第二组 `QtCoreProcessHost`/`CoreLifecycleService`。决策逻辑见 [TunCompatCoreRequirement.h](src/runtime/TunCompatCoreRequirement.h)。Mihomo 原生支持 TUN，不需要边车（其 `auxiliaryTunCoreTypes` 为空）。
 
+### 关机与后台线程
+
+后台线程经 [BackgroundThreadTracker](src/appcore/BackgroundThreadTracker.h) 跟踪，停止一律走 [ThreadShutdown.h](src/common/ThreadShutdown.h)：请求中断 → 短等待 → **写持久记录** + 长等待 → 到硬上限就放弃，**绝不无限等**。`waitForAll()` 返回是否有 worker 没停下来；返回 false 时调用方**不得释放 worker 还能触及的对象**（worker 会 `QMetaObject::invokeMethod()` 它的 owner，那会解引用 owner），因此退出路径（`~ProxySession`、`~AppBootstrap`）改为 `abandonProcessAfterStuckThread()` 直接结束进程而不展开栈。记录同时落盘（`shutdown-hang.log`）—— GUI 进程的 stderr 没人看得见，而它是关机卡死留下的唯一线索，所以必须在进程可能消失**之前**写。预算（`ThreadShutdownBudget`）是构造函数参数，测试据此驱动放弃分支，不必等满生产上限的 30 s。
+
 ### 关键模式
 
 - 可失败操作返回 `OperationResult`（success + message + requiresRestart）
 - 枚举为普通 `enum class`，同 header 内提供 `inline` 自由辅助函数
 - Domain 模型是纯结构体，无方法、无继承、无虚函数
 - 仅在必要处使用接口抽象：`ICoreBackend`、`ICoreProcessHost`、`IConfigRepository`、`IUserFeedback`
-- **纯决策函数采用 header-only**，便于在不链接整个 app 的情况下单测：[TunSettingsApplyDecision.h](src/app/TunSettingsApplyDecision.h)、[TunCompatCoreRequirement.h](src/runtime/TunCompatCoreRequirement.h)、[CoreLaunchCompatDecision.h](src/runtime/CoreLaunchCompatDecision.h)、[StartupAdminElevation.h](src/app/StartupAdminElevation.h)
+- **纯决策函数采用 header-only**，便于在不链接整个 app 的情况下单测：[TunSettingsApplyDecision.h](src/appcore/TunSettingsApplyDecision.h)、[TunCompatCoreRequirement.h](src/runtime/TunCompatCoreRequirement.h)、[CoreLaunchCompatDecision.h](src/runtime/CoreLaunchCompatDecision.h)、[StartupAdminElevation.h](src/appcore/StartupAdminElevation.h)
 - 每个测试只编译它需要的源文件（在 [tests/CMakeLists.txt](tests/CMakeLists.txt) 中显式列出），不编译整个 app
 - 头文件使用 `#pragma once`
 

@@ -16,13 +16,13 @@ public:
     QString extractVersionFromOutput(const QString& output) const override;
     OperationResult validateServer(const VmessItem& server) const override;
     QJsonObject buildClientRoot(const Config& config, const VmessItem& server) const override;
-    QJsonObject buildAuxiliaryTunClientRoot(const Config& config) const override;
+    QJsonObject buildAuxiliaryTunClientRoot(const Config& config, AuxiliaryTunRouting routing) const override;
     QUrl releasesApiUrl() const override;
     CoreUpdateAssetPolicy updateAssetPolicy() const override;
     int scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const override;
 
 private:
-    static QJsonObject buildTunCompatClientRoot(const Config& config);
+    static QJsonObject buildTunCompatClientRoot(const Config& config, AuxiliaryTunRouting routing);
     static QJsonObject buildLog(const Config& config);
     static QJsonObject buildExperimental(const Config& config);
     static QJsonArray buildInbounds(const Config& config);

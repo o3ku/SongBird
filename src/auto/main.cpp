@@ -59,6 +59,21 @@ int main(int argc, char* argv[])
     app.setOrganizationName(QStringLiteral("SongBird"));
     app.setApplicationVersion(QStringLiteral(SONGBIRD_APP_VERSION));
 
+    // SongBirdAuto is an English-only surface. Deliberately no QTranslator is installed here,
+    // and there is nothing to install one from: the generated translations.qrc -- the only
+    // place the compiled .qm files are embedded -- is appended to SONGBIRD_SOURCES, which
+    // builds SongBird.exe alone, so this executable carries no compiled translation at all.
+    // That is a product decision, not a forgotten step, and src/auto/ matches it: the strings
+    // in this directory are plain QStringLiteral(), not wrappers, because a wrapper would
+    // promise a translation that no binary can ever load.
+    // The two halves have to move together. Installing a translator here without re-wrapping
+    // src/auto/ would translate Qt's own dialogs while leaving every application string in
+    // English -- the worst of both worlds. ctest localization-coverage enforces the rule
+    // (Check E: no translation wrapper anywhere under an English-surface root).
+    //
+    // This comment names no translation function on purpose, so that grepping src/auto for one
+    // comes back empty: the rule should be visible to a human auditor, not only to the checker.
+
     const QIcon appIcon(QStringLiteral(":/app/logo-auto.ico"));
     if (!appIcon.isNull()) {
         app.setWindowIcon(appIcon);

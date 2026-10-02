@@ -209,7 +209,6 @@ set(SONGBIRD_SETTINGS_APPLY_COORDINATOR_TEST_SOURCES
     ../src/app/SettingsApplyCoordinator.cpp
     ../src/app/SettingsDialogApplyPlan.h
     ../src/app/TunAdminMessages.h
-    ../src/app/TunSettingsApplyDecision.h
     ../src/platform/IAutoRunService.h
 )
 
@@ -318,9 +317,8 @@ songbird_add_qt_test(songbird_tab_bar_scroll_button_tests tab-bar-scroll-buttons
 )
 
 # Drives SystemProxyCoordinator through a stand-in ISystemProxyService, which is the only way to
-# reach its failure branch: the real service writes HKCU and cannot be made to refuse a write.
-# It needs ProxySession.cpp because the coordinator also calls into the session on the exit paths,
-# even though the tests under test here (updateMode) do not.
+# reach its failure branch. It needs ProxySession.cpp because the coordinator also calls into the
+# session on the exit paths, even though the tests under test here (updateMode) do not.
 set(SONGBIRD_SYSTEM_PROXY_COORDINATOR_TEST_SOURCES
     SystemProxyCoordinatorTests.cpp
     ../src/app/SystemProxyCoordinator.h
@@ -335,6 +333,35 @@ songbird_add_qt_test(songbird_system_proxy_coordinator_tests system-proxy-coordi
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Network
+)
+
+# The concrete WindowsSystemProxyService, driven against a scratch registry key. It needs its own
+# target because it cannot share the coordinator's stand-in: the point here is the real registry
+# write, including the result it reports when that write fails. The service takes the key as a
+# constructor argument for exactly this reason -- the real Internet Settings key may not be
+# mutated by a test run, and pointing the service at a non-registry path is the only way to reach
+# its failure branch.
+set(SONGBIRD_SYSTEM_PROXY_SERVICE_TEST_SOURCES
+    SystemProxyServiceTests.cpp
+    ../src/platform/windows/WindowsSystemProxyService.h
+)
+
+songbird_add_qt_test(songbird_system_proxy_service_tests system-proxy-service
+    SOURCES
+        ${SONGBIRD_SYSTEM_PROXY_SERVICE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# The bounded shutdown wait, plus the tracker that uses it. Both live in songbird_shared_objs, so
+# this target needs only its own file. The budgets are injected rather than waited out -- the
+# production hard cap is 30 s, which no test can afford -- and one case re-runs this executable as
+# a subprocess, because the give-up path ends the process and cannot be observed from inside it.
+songbird_add_qt_test(songbird_thread_shutdown_tests thread-shutdown
+    SOURCES
+        ThreadShutdownTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
 )
 
 set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
@@ -637,7 +664,6 @@ songbird_add_qt_test(songbird_startup_sequencer_tests startup-sequencer
 # gets a small target of its own rather than dragging in the ProxySession chain.
 set(SONGBIRD_PROXY_CRASH_RESTART_POLICY_TEST_SOURCES
     ProxyCrashRestartPolicyTests.cpp
-    ../src/app/TunRuntimeState.h
 )
 
 songbird_add_qt_test(songbird_proxy_crash_restart_policy_tests proxy-crash-restart-policy
@@ -763,7 +789,6 @@ set(SONGBIRD_APP_UPDATE_CHECK_COORDINATOR_TEST_SOURCES
     ../src/app/AppUpdateCheckCoordinator.cpp
     ../src/app/AppUpdateCheckPresentation.h
     ../src/app/AppUpdateCheckPresentation.cpp
-    ../src/app/IUserFeedback.h
     ../src/services/AppUpdateService.h
     ../src/services/AppUpdateService.cpp
     ../src/services/AppUpdateReleaseMetadata.h

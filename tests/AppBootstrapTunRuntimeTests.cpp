@@ -5,7 +5,7 @@
 #include <QFile>
 
 #include "appcore/CoreStartupCheckpoint.h"
-#include "app/TunRuntimeState.h"
+#include "appcore/TunRuntimeState.h"
 #include "runtime/CoreConfigPreflight.h"
 #include "runtime/TunAdapterNames.h"
 #include "TestSupport.h"

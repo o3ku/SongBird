@@ -2,11 +2,18 @@
 
 #include <QSettings>
 
+#include <utility>
+
 #include <windows.h>
 #include <wininet.h>
 
 namespace {
 constexpr const char* RegistryPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+}
+
+WindowsSystemProxyService::WindowsSystemProxyService(QString settingsPath)
+    : settingsPath_(settingsPath.isEmpty() ? QString::fromUtf8(RegistryPath) : std::move(settingsPath))
+{
 }
 
 bool WindowsSystemProxyService::update(
@@ -16,18 +23,27 @@ bool WindowsSystemProxyService::update(
     const QString& proxyExceptions,
     const QString& advancedProtocol) const
 {
-    if (mode == SystemProxyMode::ForcedClear) {
-        setProxy(QString(), QString(), false);
-        QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
-        settings.remove(QStringLiteral("AutoConfigURL"));
-        settings.sync();
-        InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
-        InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
-        return true;
+    const bool enableProxy = mode == SystemProxyMode::ForcedChange;
+    // Validate before writing anything, so a rejected call cannot leave the registry half
+    // changed (the PAC removal below is a write too).
+    if (enableProxy && httpPort <= 0) {
+        return false;
     }
 
-    if (httpPort <= 0) {
+    // A PAC script overrides ProxyEnable/ProxyServer, so it is cleared in both directions --
+    // and before setProxy(), because setProxy() is what issues the InternetSetOption refresh.
+    // Clearing it afterwards, as the disable path used to, left that refresh reading the stale
+    // value and needed a second refresh to take effect.
+    if (!clearAutoConfigUrl()) {
         return false;
+    }
+
+    if (!enableProxy) {
+        // Propagate the registry result rather than returning true unconditionally. The
+        // discarded result made a failed write look like a successful cleanup, so callers
+        // dropped their managed-proxy flag while the system was still pointed at the core
+        // that had just stopped -- i.e. no connectivity and no warning.
+        return setProxy(QString(), QString(), false);
     }
 
     QString proxyServer;
@@ -40,16 +56,12 @@ bool WindowsSystemProxyService::update(
         proxyServer.replace(QStringLiteral("{socks_port}"), QString::number(socksPort));
     }
 
-    QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
-    settings.remove(QStringLiteral("AutoConfigURL"));
-    settings.sync();
-
     return setProxy(proxyServer, proxyExceptions, true);
 }
 
 bool WindowsSystemProxyService::isEnabled() const
 {
-    QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
+    QSettings settings(settingsPath_, QSettings::NativeFormat);
     return settings.value(QStringLiteral("ProxyEnable")).toInt() == 1;
 }
 
@@ -58,9 +70,17 @@ void WindowsSystemProxyService::resetOnShutdown() const
     setProxy(QString(), QString(), false);
 }
 
+bool WindowsSystemProxyService::clearAutoConfigUrl() const
+{
+    QSettings settings(settingsPath_, QSettings::NativeFormat);
+    settings.remove(QStringLiteral("AutoConfigURL"));
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
 bool WindowsSystemProxyService::setProxy(const QString& proxyServer, const QString& proxyExceptions, bool enabled) const
 {
-    QSettings settings(QString::fromUtf8(RegistryPath), QSettings::NativeFormat);
+    QSettings settings(settingsPath_, QSettings::NativeFormat);
     settings.setValue(QStringLiteral("ProxyEnable"), enabled ? 1 : 0);
     if (enabled) {
         settings.setValue(QStringLiteral("ProxyServer"), proxyServer);

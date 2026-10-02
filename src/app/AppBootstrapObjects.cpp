@@ -12,7 +12,7 @@
 #include "app/CoreUpdateCoordinator.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "app/GeoResourceUpdateCoordinator.h"
-#include "app/IUserFeedback.h"
+#include "appcore/IUserFeedback.h"
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "appcore/ProxySession.h"

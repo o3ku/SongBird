@@ -166,7 +166,7 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
         }
         GeneratedConfig compat;
         compat.fileName = QStringLiteral("tun-singbox-compat.json");
-        compat.root = backend->buildAuxiliaryTunClientRoot(config);
+        compat.root = backend->buildAuxiliaryTunClientRoot(config, AuxiliaryTunRouting::RelayToLocalProxy);
         if (compat.root.isEmpty()) {
             continue;
         }

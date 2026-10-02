@@ -8,7 +8,7 @@
 #include <QUrl>
 
 #include "appcore/BackgroundTaskCoordinator.h"
-#include "app/IUserFeedback.h"
+#include "appcore/IUserFeedback.h"
 #include "common/OperationResult.h"
 #include "services/AppUpdateService.h"
 

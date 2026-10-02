@@ -1,6 +1,5 @@
 #include "auto/AutoNodeEvaluationService.h"
 
-#include <QCoreApplication>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QProcess>
@@ -69,7 +68,7 @@ AutoNodeEvaluation unavailableResult(const SpeedTestRequestItem& item, const QSt
         ? serverDisplayName(item.runtimeServer)
         : item.displayName;
     result.error = error.trimmed().isEmpty()
-        ? QCoreApplication::translate("SongBirdAuto", "Failed")
+        ? QStringLiteral("Failed")
         : error.trimmed();
     result.tested = true;
     result.checkedAt = QDateTime::currentDateTimeUtc();
@@ -87,18 +86,18 @@ AutoNodeEvaluation evaluateOne(
         : item.displayName;
 
     if (cancelled.load()) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
+        return unavailableResult(item, QStringLiteral("Cancelled"));
     }
     if (item.configType == ConfigType::Custom) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Unsupported custom config"));
+        return unavailableResult(item, QStringLiteral("Unsupported custom config"));
     }
     if (item.coreInfo.program.trimmed().isEmpty() || !QFileInfo::exists(item.coreInfo.program)) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Core missing"));
+        return unavailableResult(item, QStringLiteral("Core missing"));
     }
 
     const PortPool::Ports ports = PortPool::takeAvailable();
     if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Port busy"));
+        return unavailableResult(item, QStringLiteral("Port busy"));
     }
     struct ScopedPortRelease
     {
@@ -108,7 +107,7 @@ AutoNodeEvaluation evaluateOne(
 
     QTemporaryDir temporaryDirectory;
     if (!temporaryDirectory.isValid()) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Temp dir failed"));
+        return unavailableResult(item, QStringLiteral("Temp dir failed"));
     }
 
     Config runtimeConfig = makeProbeConfig(request.config, ports);
@@ -142,12 +141,12 @@ AutoNodeEvaluation evaluateOne(
         const QString output = RuntimeProcess::readProcessOutput(coreProcess);
         RuntimeProcess::stopProcess(coreProcess);
         if (cancelled.load()) {
-            return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
+            return unavailableResult(item, QStringLiteral("Cancelled"));
         }
         return unavailableResult(
             item,
             output.trimmed().isEmpty()
-                ? QCoreApplication::translate("SongBirdAuto", "Proxy startup timeout")
+                ? QStringLiteral("Proxy startup timeout")
                 : normalizedError(output));
     }
 
@@ -172,13 +171,13 @@ AutoNodeEvaluation evaluateOne(
     RuntimeProcess::stopProcess(coreProcess);
 
     if (cancelled.load()) {
-        return unavailableResult(item, QCoreApplication::translate("SongBirdAuto", "Cancelled"));
+        return unavailableResult(item, QStringLiteral("Cancelled"));
     }
     if (location.countryCode.trimmed().isEmpty() && location.countryName.trimmed().isEmpty()) {
         return unavailableResult(
             item,
             location.error.trimmed().isEmpty()
-                ? QCoreApplication::translate("SongBirdAuto", "Outbound country unavailable")
+                ? QStringLiteral("Outbound country unavailable")
                 : location.error.trimmed());
     }
 

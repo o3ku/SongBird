@@ -1,6 +1,15 @@
 #include "appcore/BackgroundThreadTracker.h"
 
+#include <utility>
+
 #include <QThread>
+
+#include "common/ThreadShutdown.h"
+
+BackgroundThreadTracker::BackgroundThreadTracker(ThreadShutdownBudget budget)
+    : budget_(std::move(budget))
+{
+}
 
 void BackgroundThreadTracker::track(QThread* thread)
 {
@@ -25,27 +34,33 @@ void BackgroundThreadTracker::requestInterruptionAll()
     }
 }
 
-void BackgroundThreadTracker::waitForAll()
+bool BackgroundThreadTracker::waitForAll()
 {
     // Workers cooperatively check QThread::isInterruptionRequested() at their
     // iteration boundaries or through service-level cancel flags. Keep waiting
-    // during destruction because tracked workers may still capture owner state.
-    constexpr unsigned long kShutdownWaitMs = 15000;
+    // during destruction because tracked workers may still capture owner state --
+    // but only up to ThreadShutdownBudget's hard cap, because an unbounded wait
+    // is a shutdown that can never complete.
+    bool allStopped = true;
     const QList<QPointer<QThread>> threads = threads_;
     for (const QPointer<QThread>& threadGuard : threads) {
         QThread* thread = threadGuard.data();
         if (thread == nullptr) {
+            threads_.removeOne(threadGuard);
             continue;
         }
 
-        thread->requestInterruption();
-        while (!thread->wait(kShutdownWaitMs)) {
-            qWarning("BackgroundThreadTracker: background thread did not honor interruption within %lums; still waiting",
-                kShutdownWaitMs);
-            thread->requestInterruption();
+        if (stopThreadForShutdown(thread, budget_) == ThreadShutdownOutcome::Abandoned) {
+            // Still running, and it may finish later: keep it tracked so a later
+            // call can try again.
+            allStopped = false;
+            continue;
         }
+
+        threads_.removeOne(threadGuard);
     }
-    threads_.clear();
+
+    return allStopped;
 }
 
 void BackgroundThreadTracker::pruneFinished()

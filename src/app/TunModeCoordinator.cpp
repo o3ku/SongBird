@@ -5,7 +5,7 @@
 #include <QCoreApplication>
 
 #include "app/TunAdminMessages.h"
-#include "app/TunSettingsApplyDecision.h"
+#include "appcore/TunSettingsApplyDecision.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/VmessItem.h"
 #include "services/ServerService.h"

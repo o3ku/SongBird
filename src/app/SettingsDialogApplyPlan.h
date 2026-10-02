@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "app/TunSettingsApplyDecision.h"
+#include "appcore/TunSettingsApplyDecision.h"
 #include "domain/models/Config.h"
 #include "domain/models/SubItem.h"
 
