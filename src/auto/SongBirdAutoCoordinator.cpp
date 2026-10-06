@@ -1830,7 +1830,6 @@ void SongBirdAutoCoordinator::runHealthCheck()
 
     ProxyAvailabilityCheckConfig checkConfig;
     checkConfig.localPort = config_.localPort;
-    checkConfig.tunEnabled = false;
     checkConfig.speedPingTestUrl = config_.defaults().speedPingTestUrl;
 
     healthCheckInProgress_ = true;

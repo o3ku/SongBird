@@ -20,6 +20,8 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/PostStopAction.h
     appcore/ProxyCrashRestartPolicy.h
     appcore/ProxyCrashRestartPolicy.cpp
+    appcore/ProxyHealthWatchPolicy.h
+    appcore/ProxyHealthWatchPolicy.cpp
     domain/models/RuntimeState.h
     domain/models/RuntimeState.cpp
     appcore/AppRuntimeResolver.h

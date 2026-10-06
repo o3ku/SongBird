@@ -17,6 +17,7 @@
 #include "appcore/CoreStartupChecklist.h"
 #include "appcore/PostStopAction.h"
 #include "appcore/ProxyCrashRestartPolicy.h"
+#include "appcore/ProxyHealthWatchPolicy.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
@@ -79,6 +80,23 @@ public:
     ~ProxySession() override;
 
     void setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation);
+
+    // Runs the node-availability probe. Injected rather than constructed in here for two reasons:
+    // a host can leave it unset, which is how the auto front end opts out (it already runs its own
+    // health check and must not get a second one), and a test can supply a scripted answer without
+    // standing up a proxy.
+    //
+    // Called on a background thread, so the implementation must not touch this object.
+    using AvailabilityCheck =
+        std::function<OperationResult(int localPort, const QString& speedPingTestUrl)>;
+
+    // The probe period. `intervalMs` is a parameter rather than a constant because the first probe
+    // only fires after a full interval, so a test that cannot shorten it can never reach the watch
+    // at all -- the same reason ThreadShutdownBudget is injectable. Production callers leave it.
+    static constexpr int kDefaultHealthWatchIntervalMs = 30000;
+    void setAvailabilityCheck(
+        AvailabilityCheck check,
+        int intervalMs = kDefaultHealthWatchIntervalMs);
 
     void start(const StartRequest& request);
     void stop(bool immediate = false);
@@ -237,6 +255,11 @@ private:
     void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
 
+    void scheduleHealthWatch();
+    void runHealthWatch();
+    void finishHealthWatch(const OperationResult& result);
+    void cancelHealthWatch();
+
     void setServerLocation(QString location);
     void clearServerLocation();
 
@@ -262,7 +285,12 @@ private:
 
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
+    QTimer* healthWatchTimer_ = nullptr;
     ProxyCrashRestartPolicy crashRestartPolicy_;
+    ProxyHealthWatchPolicy healthWatchPolicy_;
+    AvailabilityCheck availabilityCheck_;
+    int healthWatchIntervalMs_ = kDefaultHealthWatchIntervalMs;
+    bool healthWatchInProgress_ = false;
 
     CoreStartupChecklist checklist_;
 

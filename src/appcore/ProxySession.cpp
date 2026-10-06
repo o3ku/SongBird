@@ -169,6 +169,12 @@ void ProxySession::setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation
     coreSwitchConfirmation_ = std::move(confirmation);
 }
 
+void ProxySession::setAvailabilityCheck(AvailabilityCheck check, int intervalMs)
+{
+    availabilityCheck_ = std::move(check);
+    healthWatchIntervalMs_ = intervalMs > 0 ? intervalMs : kDefaultHealthWatchIntervalMs;
+}
+
 void ProxySession::start(const StartRequest& request)
 {
     currentRequest_ = request;
@@ -289,6 +295,22 @@ void ProxySession::setPhase(Phase phase)
         return;
     }
     phase_ = phase;
+
+    // The health watch only means something while the proxy is actually up. Before Proxying the
+    // core has not been confirmed listening yet (validateCoreListeningAndHandleStarted), so a
+    // failed probe would say nothing about the node; once the session leaves Proxying the node is
+    // no longer what the user is talking to, and the core-exit path owns the reporting from there.
+    if (phase == Phase::Proxying) {
+        // A fresh start supersedes whatever the previous attempt concluded: any warning that is up
+        // describes a core that is no longer the one running. The policy is reset with it, so the
+        // new watch has to earn its warning again from zero rather than inheriting a count.
+        healthWatchPolicy_.reset();
+        setServerWarning(QString());
+        scheduleHealthWatch();
+    } else {
+        cancelHealthWatch();
+    }
+
     emit phaseChanged(phase);
     emit statusSyncRequested();
 }
@@ -1518,6 +1540,104 @@ void ProxySession::cancelPendingCoreRestarts()
     if (auxiliaryRestartTimer_ != nullptr) {
         auxiliaryRestartTimer_->stop();
     }
+}
+
+// --- Node health watch ---
+//
+// Why this exists: the crash-restart policy above only reacts to the core *process* dying. A core
+// that is running perfectly while its active node has gone dark produced nothing at all -- in the
+// log that motivated this, an AnyTLS node was dead for 2 h 39 m and the only trace was 183 core
+// ERROR lines. This watch is the missing signal: it probes the local HTTP inbound (which is what
+// the node is actually reached through) and, after two consecutive failures, raises the same
+// server warning the rest of the app already renders in the status bar.
+//
+// It deliberately does NOT switch nodes. Switching stops and restarts the core, which would drop
+// every connection the user has open; deciding that on the user's behalf, silently, is worse than
+// telling them. SongBirdAuto makes the opposite trade because it is unattended by design.
+
+void ProxySession::scheduleHealthWatch()
+{
+    if (shuttingDown_.load() || phase_ != Phase::Proxying || !availabilityCheck_) {
+        return;
+    }
+    if (healthWatchTimer_ == nullptr) {
+        healthWatchTimer_ = new QTimer(this);
+        healthWatchTimer_->setSingleShot(true);
+        QObject::connect(healthWatchTimer_, &QTimer::timeout, this, [this]() { runHealthWatch(); });
+    }
+    healthWatchTimer_->start(healthWatchIntervalMs_);
+}
+
+void ProxySession::runHealthWatch()
+{
+    if (shuttingDown_.load() || phase_ != Phase::Proxying || healthWatchInProgress_) {
+        return;
+    }
+
+    // Copy the seam before leaving the main thread: the worker must not read a member of an object
+    // it does not own, and the host may clear it at any time.
+    const AvailabilityCheck check = availabilityCheck_;
+    if (!check) {
+        return;
+    }
+
+    const int localPort = currentRequest_.config.localPort;
+    const QString speedPingTestUrl = currentRequest_.config.defaults().speedPingTestUrl;
+
+    healthWatchInProgress_ = true;
+    const std::weak_ptr<char> guard = lifetimeGuard_;
+    QThread* thread = launchBackgroundThread(
+        [this, guard, check, localPort, speedPingTestUrl]() {
+            const OperationResult result = check(localPort, speedPingTestUrl);
+            QMetaObject::invokeMethod(this, [this, result, guard]() {
+                if (guard.expired()) {
+                    return;
+                }
+                finishHealthWatch(result);
+            }, Qt::QueuedConnection);
+        },
+        [this](QThread* worker) { trackBackgroundThread(worker); });
+    thread->start();
+}
+
+void ProxySession::finishHealthWatch(const OperationResult& result)
+{
+    healthWatchInProgress_ = false;
+    if (shuttingDown_.load() || phase_ != Phase::Proxying) {
+        return;
+    }
+
+    // The probe's own message is the reason appended to the warning. It is already localized by the
+    // service that produced it, so the warning stays one language.
+    const ProxyHealthWatchPolicy::Decision decision =
+        healthWatchPolicy_.recordResult(result.success, result.message);
+
+    switch (decision.action) {
+    case ProxyHealthWatchPolicy::Action::Warn:
+        setServerWarning(decision.message);
+        emit logMessage(decision.message);
+        break;
+    case ProxyHealthWatchPolicy::Action::Clear:
+        // Clearing means the node answered again, so the warning the user is looking at is no
+        // longer true. The sentence still goes to the log, because a warning that disappears
+        // without a trace reads as a glitch.
+        setServerWarning(QString());
+        emit logMessage(decision.message);
+        break;
+    case ProxyHealthWatchPolicy::Action::None:
+        break;
+    }
+
+    scheduleHealthWatch();
+}
+
+void ProxySession::cancelHealthWatch()
+{
+    if (healthWatchTimer_ != nullptr) {
+        healthWatchTimer_->stop();
+    }
+    healthWatchInProgress_ = false;
+    healthWatchPolicy_.reset();
 }
 
 // --- Server location ---

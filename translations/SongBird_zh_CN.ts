@@ -2056,10 +2056,6 @@ The running core will be stopped before installation if needed.</source>
         <source>Availability check: %1 ms</source>
         <translation>可用性检查：%1 ms</translation>
     </message>
-    <message>
-        <source>Availability check is not supported while TUN mode is enabled.</source>
-        <translation>启用 TUN 模式时不支持可用性检查。</translation>
-    </message>
 </context>
 <context>
     <name>ProxySession</name>
@@ -2370,6 +2366,14 @@ Switch this protocol to %3?</source>
     <message>
         <source>TUN adapter conflict persisted after cleanup retry. Auto-restart disabled.</source>
         <translation>清理重试后 TUN 适配器冲突仍然存在。已自动禁用重启。</translation>
+    </message>
+    <message>
+        <source>Node unavailable: %1 consecutive health checks failed.</source>
+        <translation>节点不可用：连续 %1 次健康检查失败。</translation>
+    </message>
+    <message>
+        <source>Node reachable again; clearing the availability warning.</source>
+        <translation>节点已恢复，清除可用性警告。</translation>
     </message>
 </context>
 <context>

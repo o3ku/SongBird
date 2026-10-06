@@ -1066,7 +1066,6 @@ void EndToEndSmokeTests::subscriptionToGoogleSmoke()
     ProxyAvailabilityCheckService availabilityCheckService;
     ProxyAvailabilityCheckConfig availabilityConfig;
     availabilityConfig.localPort = config.localPort;
-    availabilityConfig.tunEnabled = false;
     availabilityConfig.speedPingTestUrl = config.defaults().speedPingTestUrl;
     const OperationResult availabilityResult = availabilityCheckService.check(availabilityConfig);
     QVERIFY2(availabilityResult.success, qPrintable(availabilityResult.message));

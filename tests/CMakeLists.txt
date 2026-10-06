@@ -687,6 +687,22 @@ songbird_add_qt_test(songbird_proxy_crash_restart_policy_tests proxy-crash-resta
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# ProxyHealthWatchPolicy is the decision table behind the main app's node health watch, the same
+# shape as ProxyCrashRestartPolicy above and split out for the same reason: ProxySession owns the
+# timer and the probe, the policy owns only the decision. It is pure, so it gets a small target of
+# its own rather than dragging in the ProxySession chain.
+set(SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES
+    ProxyHealthWatchPolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_proxy_health_watch_policy_tests proxy-health-watch-policy
+    SOURCES
+        ${SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_AUTO_COUNTRY_SELECTION_TEST_SOURCES
     AutoCountrySelectionTests.cpp
     ../src/auto/AutoCountrySelection.h

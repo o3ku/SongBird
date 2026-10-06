@@ -49,6 +49,12 @@ private slots:
     void stopDuringTunCleanupCancelsStartupResume();
     void stopClearsAdoptedManagedSystemProxy();
     void stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails();
+
+    void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
+    void healthWatchToleratesASingleFailedProbe();
+    void healthWatchClearsTheWarningWhenTheNodeAnswersAgain();
+    void healthWatchDoesNotRunWithoutAnInjectedCheck();
+    void healthWatchStopsWhenTheSessionStops();
 };
 
 namespace {
@@ -381,6 +387,50 @@ struct ProxySessionHarness final
     OperationResult tunCleanupResult = OperationResult::ok(QStringLiteral("tun cleanup skipped"));
     SystemProxyMode lastProxyMode = SystemProxyMode::ForcedClear;
 };
+
+// Large enough that the scripted probe never recovers on its own, so a test that wants a lasting
+// outage does not have to pick a number that depends on how many probes happen to run.
+constexpr int kScriptAlwaysFails = 1000000;
+
+// A scripted stand-in for the injected availability probe. Probes fail while
+// `failuresRemaining` is positive and succeed afterwards, which is how the watch's whole
+// tolerate-then-warn-then-clear sequence is driven without a real node. Both counters are atomic
+// because the probe runs on a worker thread while the test reads them from the main one.
+struct ScriptedAvailability {
+    std::atomic_int calls{0};
+    std::atomic_int failuresRemaining{0};
+};
+
+ProxySession::AvailabilityCheck makeScriptedCheck(const std::shared_ptr<ScriptedAvailability>& script)
+{
+    return [script](int, const QString&) {
+        script->calls.fetch_add(1);
+        return script->failuresRemaining.fetch_sub(1) > 0
+            ? OperationResult::fail(QStringLiteral("Availability check: -1 ms"))
+            : OperationResult::ok(QStringLiteral("Availability check: 12 ms"));
+    };
+}
+
+// Drives the session through the real startup cascade to Proxying, the only phase the health watch
+// runs in. Returns false instead of asserting so the caller can QVERIFY2 it with a message: the
+// QTest macros need to `return` from the test function and cannot be used from here.
+bool driveToProxying(ProxySessionHarness& harness)
+{
+    if (!harness.tempDir.isValid() || !harness.proxyServer.listen()) {
+        return false;
+    }
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+
+    harness.session->start(harness.launchableRequest());
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+
+    return QTest::qWaitFor(
+        [&harness]() { return harness.session->phase() == ProxySession::Phase::Proxying; },
+        5000);
+}
 
 } // namespace
 
@@ -754,6 +804,108 @@ void ProxySessionTests::stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails(
     QVERIFY(harness.systemProxyEnabled);
     QVERIFY(logSpy.count() > 0);
     QVERIFY(logSpy.last().at(0).toString().contains(QStringLiteral("Failed to disable")));
+}
+
+// --- Node health watch ---
+//
+// These cover the decision the watch makes, not the probe itself: the probe is injected, so what
+// is under test here is when ProxySession starts and stops watching and what it does with each
+// verdict. The policy's own arithmetic is pinned separately by proxy-health-watch-policy.
+
+void ProxySessionTests::healthWatchWarnsAfterTwoConsecutiveFailedProbes()
+{
+    ProxySessionHarness harness;
+    auto script = std::make_shared<ScriptedAvailability>();
+    script->failuresRemaining = kScriptAlwaysFails;
+    harness.session->setAvailabilityCheck(makeScriptedCheck(script), 10);
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.session->serverWarning().isEmpty(), 5000);
+
+    // The warning has to name the node and carry the probe's own reason, so a user can tell a dead
+    // node from a dead local inbound without opening a log.
+    QVERIFY(harness.session->serverWarning().contains(
+        QStringLiteral("consecutive health checks failed")));
+    QVERIFY(harness.session->serverWarning().contains(QStringLiteral("Availability check")));
+
+    // Two failures are needed, so a single probe must not have been enough.
+    QVERIFY2(
+        script->calls.load() >= 2,
+        qPrintable(QStringLiteral("only %1 probe(s) ran").arg(script->calls.load())));
+}
+
+void ProxySessionTests::healthWatchToleratesASingleFailedProbe()
+{
+    ProxySessionHarness harness;
+    auto script = std::make_shared<ScriptedAvailability>();
+    script->failuresRemaining = 1; // one blip, then healthy
+    harness.session->setAvailabilityCheck(makeScriptedCheck(script), 50);
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+
+    // Long enough for several probes: the first fails, the rest succeed, and the warning must never
+    // appear. The core re-dials the node per connection, so a single missed probe is ordinary
+    // jitter that heals itself; warning on it would only train the user to ignore the status bar.
+    QTest::qWait(700);
+
+    QVERIFY2(
+        script->calls.load() >= 3,
+        qPrintable(QStringLiteral("only %1 probe(s) ran").arg(script->calls.load())));
+    QVERIFY(harness.session->serverWarning().isEmpty());
+}
+
+void ProxySessionTests::healthWatchClearsTheWarningWhenTheNodeAnswersAgain()
+{
+    ProxySessionHarness harness;
+    auto script = std::make_shared<ScriptedAvailability>();
+    script->failuresRemaining = kScriptAlwaysFails;
+    harness.session->setAvailabilityCheck(makeScriptedCheck(script), 10);
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.session->serverWarning().isEmpty(), 5000);
+
+    script->failuresRemaining = 0; // the node answers again
+
+    QTRY_VERIFY_WITH_TIMEOUT(harness.session->serverWarning().isEmpty(), 5000);
+}
+
+void ProxySessionTests::healthWatchDoesNotRunWithoutAnInjectedCheck()
+{
+    // This is the auto front end's opt-out, and it is load-bearing: SongBirdAuto already runs its
+    // own health check every 60 s, so a second watch inside ProxySession would probe the same node
+    // twice and could raise a warning that window does not render.
+    ProxySessionHarness harness;
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+
+    QTest::qWait(300);
+
+    QVERIFY(harness.session->serverWarning().isEmpty());
+}
+
+void ProxySessionTests::healthWatchStopsWhenTheSessionStops()
+{
+    ProxySessionHarness harness;
+    auto script = std::make_shared<ScriptedAvailability>();
+    script->failuresRemaining = kScriptAlwaysFails;
+    harness.session->setAvailabilityCheck(makeScriptedCheck(script), 10);
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+    QTRY_VERIFY_WITH_TIMEOUT(!harness.session->serverWarning().isEmpty(), 5000);
+
+    harness.session->stop(true);
+
+    // Let a probe that was already in flight land before taking the baseline, otherwise its
+    // increment would be mistaken for the watch continuing to run.
+    QTest::qWait(200);
+    const int settled = script->calls.load();
+    QTest::qWait(400);
+
+    QCOMPARE(script->calls.load(), settled);
+    // Stopping clears the warning along with the rest of the server state, so a stopped session
+    // never shows a stale "node unavailable".
+    QVERIFY(harness.session->serverWarning().isEmpty());
 }
 
 QTEST_MAIN(ProxySessionTests)

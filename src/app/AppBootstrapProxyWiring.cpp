@@ -19,6 +19,7 @@
 #include "domain/models/RuntimeState.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
+#include "services/ProxyAvailabilityCheckService.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/MainWindow.h"
 
@@ -34,6 +35,19 @@ void AppBootstrap::wireProxyStack()
         *objects_->runtimeEnvironment,
         *objects_->proxyActivationCoordinator
     });
+
+    // ProxySession owns *when* to probe but not *how*: appcore/ must not pick a probe for itself,
+    // so the composition root supplies the real availability check. The auto front end deliberately
+    // leaves this unset -- it already runs its own health check every 60 s and would otherwise
+    // probe the same node twice.
+    objects_->proxySession->setAvailabilityCheck(
+        [](int localPort, const QString& speedPingTestUrl) {
+            ProxyAvailabilityCheckConfig config;
+            config.localPort = localPort;
+            config.speedPingTestUrl = speedPingTestUrl;
+            return ProxyAvailabilityCheckService().check(config);
+        });
+
     objects_->runtimeState = std::make_unique<RuntimeState>();
     SystemProxyCoordinator::Callbacks systemProxyCallbacks;
     systemProxyCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };

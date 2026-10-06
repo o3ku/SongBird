@@ -102,13 +102,6 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
 
 OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityCheckConfig& config) const
 {
-    if (config.tunEnabled) {
-        return OperationResult::fail(
-            QCoreApplication::translate(
-                "ProxyAvailabilityCheckService",
-                "Availability check is not supported while TUN mode is enabled."));
-    }
-
     const int httpPort = config.localPort + 1;
     if (config.localPort <= 0 || httpPort <= 0 || httpPort > 65535) {
         return OperationResult::fail(formatAvailabilityMessage(-1));
