@@ -147,6 +147,12 @@ void applySocksOrHttpOptions(const QJsonObject& proxy, VmessItem* item, ConfigTy
     item->streamSecurity = firstNonEmpty(proxy, {"tls"}) == QStringLiteral("true")
         ? QStringLiteral("tls")
         : QString();
+    // A socks or http proxy may itself be wrapped in TLS, and then it carries the same two fields
+    // as every other TLS protocol. Reading them here rather than at the call site matters because
+    // the TLS fragment is chosen from streamSecurity alone, not from the protocol: without these
+    // the config still comes out as tls, just with the certificate check silently re-enabled.
+    item->sni = firstNonEmpty(proxy, {"sni", "servername"});
+    item->allowInsecure = firstNonEmpty(proxy, {"skip-cert-verify"});
 }
 
 void applyHysteria2Options(const QJsonObject& proxy, VmessItem* item)
@@ -219,7 +225,6 @@ bool applyProtocolOptions(const QJsonObject& proxy, const QString& type, VmessIt
         applySocksOrHttpOptions(proxy, item, ConfigType::Socks);
     } else if (type == QStringLiteral("http")) {
         applySocksOrHttpOptions(proxy, item, ConfigType::HTTP);
-        item->sni = firstNonEmpty(proxy, {"sni", "servername"});
     } else if (type == QStringLiteral("hysteria2")) {
         applyHysteria2Options(proxy, item);
     } else if (type == QStringLiteral("tuic")) {

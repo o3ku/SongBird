@@ -30,6 +30,8 @@ private slots:
     void subscriptionClashRejectsOutOfRangePort();
     void subscriptionClashYamlFlowStyleVlessReality();
     void subscriptionClashYamlAnytls();
+    void subscriptionClashYamlSocksOverTlsKeepsSkipCertVerify();
+    void subscriptionClashYamlHttpProxyKeepsServernameFallback();
     void subscriptionClashYamlWireguard();
     void subscriptionClashYamlDecodesLongUnicodeEscapeInName();
     void subscriptionClashYamlDecodesSurrogatePairEscapeInName();
@@ -445,6 +447,57 @@ void SubscriptionParserTests::subscriptionClashYamlAnytls()
     QCOMPARE(items[0].idleSessionCheckInterval, QStringLiteral("30"));
     QCOMPARE(items[0].idleSessionTimeout, QStringLiteral("60"));
     QCOMPARE(items[0].minIdleSession, QStringLiteral("2"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlSocksOverTlsKeepsSkipCertVerify()
+{
+    // A socks proxy can itself be wrapped in TLS, and then it carries the same two fields as every
+    // other TLS protocol. They are easy to lose without noticing, because the TLS fragment is
+    // chosen from streamSecurity alone: a proxy that keeps tls: true but drops skip-cert-verify
+    // still produces a tls block, just one that re-enables the certificate check against a node
+    // that needs it off.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: clash-socks-tls\n"
+        "    type: socks5\n"
+        "    server: socks.example.com\n"
+        "    port: 1080\n"
+        "    username: user\n"
+        "    password: pass\n"
+        "    tls: true\n"
+        "    sni: socks.example.com\n"
+        "    skip-cert-verify: true\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].configType, ConfigType::Socks);
+    QCOMPARE(items[0].streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(items[0].sni, QStringLiteral("socks.example.com"));
+    QCOMPARE(items[0].allowInsecure, QStringLiteral("true"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlHttpProxyKeepsServernameFallback()
+{
+    // The http branch used to set sni at the call site with the same key list, so moving it into
+    // the shared applier has to keep reading "servername" and not just "sni".
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: clash-http-tls\n"
+        "    type: http\n"
+        "    server: http.example.com\n"
+        "    port: 8080\n"
+        "    tls: true\n"
+        "    servername: front.example.com\n"
+        "    skip-cert-verify: true\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].configType, ConfigType::HTTP);
+    QCOMPARE(items[0].streamSecurity, QStringLiteral("tls"));
+    QCOMPARE(items[0].sni, QStringLiteral("front.example.com"));
+    QCOMPARE(items[0].allowInsecure, QStringLiteral("true"));
 }
 
 void SubscriptionParserTests::subscriptionClashYamlWireguard()
