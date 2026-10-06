@@ -4,6 +4,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QHostAddress>
+#include <QList>
 #include <QSet>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -13,11 +14,14 @@
 #include "appcore/OutboundLocationProbeService.h"
 
 // Stands in for the core's local http inbound. A plain http:// request gets a body the parser
-// cannot turn into a location, so that host reports a reason of its own within milliseconds; a
-// CONNECT tunnel is accepted and then deliberately left unanswered, so on a build with a working
-// TLS backend the probe is still waiting on those hosts when its deadline arrives. Either way the
-// state under test is the same and is the one that matters: hosts have already said why they
-// failed, and the deadline is about to fire.
+// cannot turn into a location, so that host reports a reason of its own within milliseconds. A
+// CONNECT tunnel is completed and then closed, which fails the https hosts immediately as well --
+// deliberately, because whether they even send a CONNECT depends on the build: a Qt without a TLS
+// backend aborts them at initialization before the request leaves, while one with a TLS backend
+// opens a tunnel here. Answering and hanging up makes both builds fail those hosts straight away,
+// so the case below sees every host answer instead of seeing three of them sit on an open tunnel
+// until the deadline. That difference is what turned this suite red on CI, where the tunnel stayed
+// open and the probe reported a timeout it was never supposed to reach.
 class ProbeProxyServer
 {
 public:
@@ -33,11 +37,28 @@ public:
                 QObject::connect(socket, &QTcpSocket::disconnected, socket, [this, socket]() {
                     requests_.remove(socket);
                     answered_.remove(socket);
-                    socket->deleteLater();
                 });
             }
         });
     }
+
+    ~ProbeProxyServer()
+    {
+        // Tear the sockets down here rather than letting ~QTcpServer do it after this destructor
+        // body has run: deleting them now happens while the hash and set above are still alive, and
+        // unhooking their signals first means none of the handlers above can run at all. The suite
+        // has crashed before when a test ended with a request still unanswered, and a socket whose
+        // destruction walks a half-torn-down container is exactly how.
+        server_.close();
+        const QList<QTcpSocket*> sockets = server_.findChildren<QTcpSocket*>();
+        for (QTcpSocket* socket : sockets) {
+            socket->disconnect();
+            delete socket;
+        }
+    }
+
+    ProbeProxyServer(const ProbeProxyServer&) = delete;
+    ProbeProxyServer& operator=(const ProbeProxyServer&) = delete;
 
     bool listen()
     {
@@ -63,8 +84,18 @@ private:
         }
         answered_.insert(socket);
 
-        if (request.startsWith("CONNECT ") || !answersPlainRequests_) {
+        if (!answersPlainRequests_) {
             return; // accepted and deliberately left unanswered
+        }
+
+        if (request.startsWith("CONNECT ")) {
+            // Complete the tunnel, then hang up. The client's TLS handshake then fails against a
+            // closed connection within milliseconds, instead of waiting on a tunnel nobody will
+            // ever answer.
+            socket->write("HTTP/1.1 200 Connection established\r\n\r\n");
+            socket->flush();
+            socket->disconnectFromHost();
+            return;
         }
 
         QByteArray response = "HTTP/1.1 200 OK\r\n";
@@ -96,6 +127,7 @@ private slots:
     void failureKeepsEveryHostReasonInsteadOfOnlyTheDeadline();
     void hostThatNeverAnswersDoesNotExtendTheProbePastItsBudget();
     void locationIsParsedFromASuccessfulProbe();
+    void connectTunnelIsCompletedAndClosedSoHttpsHostsFailFast();
 
 private:
     static LocationProbeTimings shortTimings();
@@ -139,9 +171,8 @@ void OutboundLocationProbeServiceTests::failureKeepsEveryHostReasonInsteadOfOnly
 }
 
 // A host that accepts the connection and then says nothing is the case the deadline exists for.
-// It cannot be isolated to the deadline message alone on every build -- the https hosts abort at
-// TLS initialization on a Qt without a TLS backend -- so what is pinned here is that the wait
-// ends at the budget instead of running on.
+// This proxy answers nothing at all, so every host hangs and the deadline is the only thing that
+// can end the wait -- and it has to say so, otherwise a hung host reads as silence.
 void OutboundLocationProbeServiceTests::hostThatNeverAnswersDoesNotExtendTheProbePastItsBudget()
 {
     ProbeProxyServer proxy(QByteArrayLiteral(R"({"status":"success"})"), false);
@@ -154,8 +185,6 @@ void OutboundLocationProbeServiceTests::hostThatNeverAnswersDoesNotExtendTheProb
     const qint64 spent = elapsed.elapsed();
 
     QVERIFY(details.location.isEmpty());
-    // The plain http hosts accepted the connection and never answered, so the deadline is the only
-    // thing that can end the wait -- and it has to say so, otherwise a hung host reads as silence.
     QVERIFY2(
         details.error.contains(QCoreApplication::translate(
             "OutboundLocationProbeService", "Outbound location request timed out.")),
@@ -176,6 +205,33 @@ void OutboundLocationProbeServiceTests::locationIsParsedFromASuccessfulProbe()
     QCOMPARE(details.countryCode, QStringLiteral("JP"));
     QVERIFY2(details.location.contains(QStringLiteral("Tokyo")), qPrintable(details.location));
     QVERIFY(details.error.isEmpty());
+}
+
+// The https hosts are the ones whose behaviour depends on the build: with a TLS backend they send a
+// CONNECT, without one they abort before sending anything. So the tunnel handling above cannot be
+// reached through the probe on a Qt without a TLS backend, and this is the only place it can be
+// checked there -- by driving the proxy directly.
+void OutboundLocationProbeServiceTests::connectTunnelIsCompletedAndClosedSoHttpsHostsFailFast()
+{
+    ProbeProxyServer proxy(QByteArrayLiteral(R"({"status":"fail"})"));
+    QVERIFY(proxy.listen());
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(proxy.port()));
+    QVERIFY(client.waitForConnected(2000));
+
+    client.write("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");
+
+    // The proxy lives on this thread, so its readyRead is delivered by the event loop -- a blocking
+    // wait on the client socket alone would never let the proxy answer, and the client would sit
+    // there until the timeout. These spin the event loop instead.
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() > 0, 2000);
+    const QByteArray reply = client.readAll();
+    QVERIFY2(reply.startsWith("HTTP/1.1 200"), reply.constData());
+
+    // Closed rather than left open: an open tunnel is exactly what made the https hosts sit there
+    // until the deadline on CI.
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::UnconnectedState, 2000);
 }
 
 QTEST_MAIN(OutboundLocationProbeServiceTests)
