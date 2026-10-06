@@ -21,6 +21,10 @@ struct OutboundLocationDetails
     QString error;
 };
 
+// Declared ahead of the service so probeStructured() can take a reference to one, and defined
+// after it so the defaults can name the constants they stand in for.
+struct LocationProbeTimings;
+
 class OutboundLocationProbeService
 {
 public:
@@ -34,8 +38,19 @@ public:
 
     OutboundLocationProbeResult probe(int httpPort) const;
     OutboundLocationDetails probeStructured(int httpPort) const;
+    // The same probe with a shortened budget. The production constants add up to twelve seconds
+    // of waiting before the timeout branch is reached, so it cannot be asserted without a seam.
+    OutboundLocationDetails probeStructured(int httpPort, const LocationProbeTimings& timings) const;
 
 private:
     static QStringList probeUrls();
     static OutboundLocationDetails probeOnce(const QStringList& probeUrls, int httpPort, int timeoutMs);
+};
+
+struct LocationProbeTimings
+{
+    int perRequestTimeoutMs = OutboundLocationProbeService::LocationProbeTimeoutMs;
+    int retryDelayMs = OutboundLocationProbeService::LocationProbeRetryDelayMs;
+    int totalTimeoutMs = OutboundLocationProbeService::LocationProbeTotalTimeoutMs;
+    int maxRounds = OutboundLocationProbeService::LocationProbeMaxRounds;
 };

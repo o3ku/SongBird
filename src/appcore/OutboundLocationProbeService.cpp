@@ -147,6 +147,13 @@ OutboundLocationProbeResult OutboundLocationProbeService::probe(int httpPort) co
 
 OutboundLocationDetails OutboundLocationProbeService::probeStructured(int httpPort) const
 {
+    return probeStructured(httpPort, LocationProbeTimings{});
+}
+
+OutboundLocationDetails OutboundLocationProbeService::probeStructured(
+    int httpPort,
+    const LocationProbeTimings& timings) const
+{
     OutboundLocationDetails details;
     QElapsedTimer probeTimer;
     probeTimer.start();
@@ -154,13 +161,14 @@ OutboundLocationDetails OutboundLocationProbeService::probeStructured(int httpPo
     int attempt = 0;
 
     while (details.location.isEmpty()
-        && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
-        && attempt < LocationProbeMaxRounds) {
+        && probeTimer.elapsed() < timings.totalTimeoutMs
+        && attempt < timings.maxRounds) {
         ++attempt;
         const OutboundLocationDetails probeResult = probeOnce(
             urls,
             httpPort,
-            qMin(LocationProbeTimeoutMs, static_cast<int>(LocationProbeTotalTimeoutMs - probeTimer.elapsed())));
+            qMin(timings.perRequestTimeoutMs,
+                 static_cast<int>(timings.totalTimeoutMs - probeTimer.elapsed())));
         if (!probeResult.location.isEmpty()) {
             details = probeResult;
         } else if (!probeResult.error.trimmed().isEmpty()) {
@@ -168,9 +176,9 @@ OutboundLocationDetails OutboundLocationProbeService::probeStructured(int httpPo
         }
 
         if (details.location.isEmpty()
-            && probeTimer.elapsed() < LocationProbeTotalTimeoutMs
-            && attempt < LocationProbeMaxRounds) {
-            QThread::msleep(LocationProbeRetryDelayMs);
+            && probeTimer.elapsed() < timings.totalTimeoutMs
+            && attempt < timings.maxRounds) {
+            QThread::msleep(static_cast<unsigned long>(qMax(0, timings.retryDelayMs)));
         }
     }
 
@@ -207,13 +215,18 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
     QList<QNetworkReply*> replies;
     replies.reserve(probeUrls.size());
     bool completed = false;
+    // One reason per host. They used to share a single field, so the last writer won -- and
+    // because no host succeeding was exactly what kept the loop alive until the deadline, the
+    // deadline was always the last writer and replaced every real cause with "timed out".
+    QStringList failureReasons;
+    int outstanding = probeUrls.size();
 
     QTimer timeoutTimer;
     timeoutTimer.setSingleShot(true);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         if (!completed) {
-            result.error = QCoreApplication::translate(
-                "OutboundLocationProbeService", "Outbound location request timed out.");
+            failureReasons.append(QCoreApplication::translate(
+                "OutboundLocationProbeService", "Outbound location request timed out."));
         }
         loop.quit();
     });
@@ -226,27 +239,31 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
 
         QNetworkReply* reply = manager.get(request);
         replies.append(reply);
-        QObject::connect(reply, &QNetworkReply::finished, &loop, [&result, &loop, &completed, reply, probeUrl]() {
-            if (completed) {
-                return;
-            }
-
-            if (reply->error() == QNetworkReply::NoError) {
-                const OutboundLocationDetails details = buildLocationDetailsFromPayload(reply->readAll());
-                if (!details.location.isEmpty()) {
-                    result = details;
-                    completed = true;
-                    loop.quit();
-                    return;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, [&result, &loop, &completed, &failureReasons, &outstanding, reply, probeUrl]() {
+            if (!completed) {
+                if (reply->error() == QNetworkReply::NoError) {
+                    const OutboundLocationDetails details = buildLocationDetailsFromPayload(reply->readAll());
+                    if (!details.location.isEmpty()) {
+                        result = details;
+                        completed = true;
+                        loop.quit();
+                    } else {
+                        failureReasons.append(locationProbeErrorMessage(
+                            probeUrl,
+                            QCoreApplication::translate(
+                                "OutboundLocationProbeService", "Outbound location response was empty.")));
+                    }
+                } else {
+                    failureReasons.append(locationProbeErrorMessage(probeUrl, reply->errorString()));
                 }
-                result.error = locationProbeErrorMessage(
-                    probeUrl,
-                    QCoreApplication::translate(
-                        "OutboundLocationProbeService", "Outbound location response was empty."));
-                return;
             }
 
-            result.error = locationProbeErrorMessage(probeUrl, reply->errorString());
+            // Every host has had its say, so the answer is already final. Waiting out the
+            // deadline would only delay it -- and the deadline line would then claim a timeout
+            // that never happened, because nothing was still in flight.
+            if (!completed && --outstanding == 0) {
+                loop.quit();
+            }
         });
     }
 
@@ -263,6 +280,10 @@ OutboundLocationDetails OutboundLocationProbeService::probeOnce(
             reply->abort();
         }
         delete reply;
+    }
+
+    if (!completed) {
+        result.error = failureReasons.join(QStringLiteral("; "));
     }
 
     return result;

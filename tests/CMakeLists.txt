@@ -364,6 +364,19 @@ songbird_add_qt_test(songbird_thread_shutdown_tests thread-shutdown
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# The outbound location probe. Its timing constants are injectable for the same reason the
+# shutdown budgets are: the production values add up to twelve seconds before the deadline branch
+# is reached. The case that matters is the failing one -- a proxy that answers the plain http
+# probes with a body the parser rejects while holding the CONNECT tunnels open used to report only
+# "timed out", throwing away every reason the hosts had already given.
+songbird_add_qt_test(songbird_outbound_location_probe_tests outbound-location-probe
+    SOURCES
+        OutboundLocationProbeServiceTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
 set(SONGBIRD_CORE_UPDATE_COORDINATOR_TEST_SOURCES
     CoreUpdateCoordinatorTests.cpp
     ../src/app/CoreUpdateCoordinator.h
