@@ -23,7 +23,7 @@ public:
 
 private:
     static QJsonObject buildTunCompatClientRoot(const Config& config, AuxiliaryTunRouting routing);
-    static QJsonObject buildLog(const Config& config);
+    static QJsonObject buildLog(const Config& config, bool writeLogFile);
     static QJsonObject buildExperimental(const Config& config);
     static QJsonArray buildInbounds(const Config& config);
     static QJsonArray buildOutbounds(const Config& config, const VmessItem& server);

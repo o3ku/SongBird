@@ -26,6 +26,8 @@ private slots:
     void generateClientConfigsBuildsMihomoVmessProxy();
     void generateClientConfigsUsesWarnSingBoxLogLevelByDefault();
     void generateClientConfigsMapsConfiguredSingBoxWarningLogLevel();
+    void generateClientConfigsWritesTheSingBoxLogFileOnlyWhenLoggingIsEnabled();
+    void generateClientConfigsWritesTheMihomoLogFileOnlyWhenLoggingIsEnabled();
     void validateServerRejectsInvalidXhttpExtraJson();
     void validateServerRejectsInvalidFinalmaskJson();
     void validateServerRejectsMihomoTcpHttpHeaderType();
@@ -487,6 +489,51 @@ void ClientConfigWriterTests::generateClientConfigsMapsConfiguredSingBoxWarningL
 
     const QJsonObject log = generated.primary.root.value(QStringLiteral("log")).toObject();
     QCOMPARE(log.value(QStringLiteral("level")).toString(), QStringLiteral("warn"));
+}
+
+void ClientConfigWriterTests::generateClientConfigsWritesTheSingBoxLogFileOnlyWhenLoggingIsEnabled()
+{
+    // logEnabled used to reach only the Xray config, so turning it on for a sing-box core changed
+    // nothing at all. It adds a file now -- and must still leave "disabled" false, because the
+    // front end reads the core's output from the process pipe.
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+
+    Config quiet = baseConfig();
+    quiet.tun().tunModeItem.enableTun = false;
+    const QJsonObject quietLog =
+        writer.generateClientConfigs(quiet, server).primary.root.value(QStringLiteral("log")).toObject();
+    QVERIFY2(!quietLog.contains(QStringLiteral("output")), "logging off must not name a log file");
+    QCOMPARE(quietLog.value(QStringLiteral("disabled")).toBool(), false);
+
+    Config logging = baseConfig();
+    logging.tun().tunModeItem.enableTun = false;
+    logging.logEnabled = true;
+    const QJsonObject loggingLog =
+        writer.generateClientConfigs(logging, server).primary.root.value(QStringLiteral("log")).toObject();
+    QCOMPARE(loggingLog.value(QStringLiteral("output")).toString(), QStringLiteral("singbox.log"));
+    QCOMPARE(loggingLog.value(QStringLiteral("disabled")).toBool(), false);
+}
+
+void ClientConfigWriterTests::generateClientConfigsWritesTheMihomoLogFileOnlyWhenLoggingIsEnabled()
+{
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    setProtocolCore(config, ConfigType::VMess, CoreType::Mihomo);
+
+    VmessItem server = baseServer();
+    server.coreType = CoreType::Mihomo;
+
+    ClientConfigWriter writer;
+
+    QVERIFY2(!writer.generateClientConfigs(config, server).primary.root.contains(QStringLiteral("log-file")),
+             "logging off must not name a log file");
+
+    config.logEnabled = true;
+    QCOMPARE(writer.generateClientConfigs(config, server).primary.root.value(QStringLiteral("log-file")).toString(),
+             QStringLiteral("mihomo.log"));
 }
 
 void ClientConfigWriterTests::validateServerRejectsInvalidXhttpExtraJson()

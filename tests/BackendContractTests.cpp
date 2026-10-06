@@ -381,6 +381,21 @@ void BackendContractTests::auxiliaryTunRootIsUsableInBothRoutingModes()
         QCOMPARE(root.value(QStringLiteral("log")).toObject().value(QStringLiteral("level")).toString(),
                  ProtocolConfigMapper::normalizeSingBoxLogLevel(config.logLevel));
     }
+
+    // The sidecar keeps the level but must never name a log file. It only exists when the real core
+    // is Xray, so a singbox.log written by a process the user did not choose -- while their actual
+    // core writes Vaccess.log/Verror.log -- would be misleading rather than useful.
+    Config loggingConfig = config;
+    loggingConfig.logEnabled = true;
+    for (const AuxiliaryTunRouting routing : {AuxiliaryTunRouting::RelayToLocalProxy,
+                                              AuxiliaryTunRouting::DirectOnly}) {
+        const QJsonObject log =
+            backend->buildAuxiliaryTunClientRoot(loggingConfig, routing)
+                .value(QStringLiteral("log"))
+                .toObject();
+        QVERIFY2(!log.contains(QStringLiteral("output")), "the TUN sidecar must not name a log file");
+        QCOMPARE(log.value(QStringLiteral("disabled")).toBool(), false);
+    }
 }
 
 void BackendContractTests::auxiliaryTunRootComesFromTheRuntimeLayer()

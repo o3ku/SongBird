@@ -17,6 +17,9 @@ namespace {
 const QString kProxyGroupName = QStringLiteral("proxy");
 const QString kPrimaryProxyName = QStringLiteral("server");
 const QString kMihomoProcessName = QStringLiteral("mihomo.exe");
+// Written when the user turns logging on, next to the core like Xray's own Vaccess.log/Verror.log.
+// mihomo has no TUN sidecar, so unlike sing-box there is only one process that can open it.
+const QString kDefaultLogFileName = QStringLiteral("mihomo.log");
 
 QString normalizedLogLevel(const QString& level)
 {
@@ -368,6 +371,11 @@ QJsonObject buildClientRoot(const Config& config, const VmessItem& server)
 {
     QJsonObject root;
     root.insert(QStringLiteral("log-level"), normalizedLogLevel(config.logLevel));
+    // logEnabled means the same thing here as it does for Xray: also write the log to a file.
+    // mihomo keeps logging to stdout when log-file is absent, so this only adds the file.
+    if (config.logEnabled) {
+        root.insert(QStringLiteral("log-file"), kDefaultLogFileName);
+    }
     root.insert(QStringLiteral("mode"), QStringLiteral("rule"));
     root.insert(QStringLiteral("allow-lan"), config.allowLanConnection);
     root.insert(QStringLiteral("bind-address"), config.allowLanConnection ? QStringLiteral("*") : QStringLiteral("127.0.0.1"));

@@ -19,6 +19,10 @@
 
 namespace {
 
+// Written when the user turns logging on, next to the core like Xray's own Vaccess.log/Verror.log.
+// A per-core name, so switching core does not mix two cores' output into one file.
+const QString kDefaultLogFileName = QStringLiteral("singbox.log");
+
 bool isSupportedSingBoxNetwork(const QString& network)
 {
     static const QSet<QString> supportedNetworks{
@@ -158,7 +162,7 @@ OperationResult SingBoxCoreBackend::validateServer(const VmessItem& server) cons
 QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const VmessItem& server) const
 {
     QJsonObject root;
-    root.insert(QStringLiteral("log"), buildLog(config));
+    root.insert(QStringLiteral("log"), buildLog(config, true));
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
     root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
     const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
@@ -234,7 +238,7 @@ QJsonObject SingBoxCoreBackend::buildTunCompatClientRoot(const Config& config, A
     const bool relayToProxy = routing == AuxiliaryTunRouting::RelayToLocalProxy;
 
     QJsonObject root;
-    root.insert(QStringLiteral("log"), buildLog(config));
+    root.insert(QStringLiteral("log"), buildLog(config, false));
 
     QJsonArray inbounds;
     inbounds.append(SingBoxConfigFragments::buildTunInbound(config));
@@ -255,11 +259,21 @@ QJsonObject SingBoxCoreBackend::buildTunCompatClientRoot(const Config& config, A
     return root;
 }
 
-QJsonObject SingBoxCoreBackend::buildLog(const Config& config)
+QJsonObject SingBoxCoreBackend::buildLog(const Config& config, bool writeLogFile)
 {
     QJsonObject log;
     log.insert(QStringLiteral("disabled"), false);
     log.insert(QStringLiteral("level"), ProtocolConfigMapper::normalizeSingBoxLogLevel(config.logLevel));
+    // logEnabled means the same thing here as it does for Xray: also write the log to a file.
+    // Logging to stdout continues either way, because the front end reads the core's output from
+    // the process pipe, so "disabled" stays false.
+    //
+    // writeLogFile is false for the TUN sidecar. That root exists only when Xray is the real core
+    // (sing-box's own descriptor lists no auxiliary TUN core), so naming a file there would leave a
+    // singbox.log containing an internal helper's output while the user's actual core is Xray.
+    if (writeLogFile && config.logEnabled) {
+        log.insert(QStringLiteral("output"), kDefaultLogFileName);
+    }
     return log;
 }
 
