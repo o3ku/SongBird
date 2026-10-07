@@ -90,10 +90,46 @@ jobs:
           # Which cache entry the restore above picked is the first thing worth
           # knowing when a build unexpectedly recompiles Qt5, so record it.
           Write-Host "vcpkg cache restored from: ${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
-          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/vcpkg_cache" | Out-Null
+          $store = "${{ github.workspace }}/vcpkg_cache"
+          New-Item -ItemType Directory -Force -Path $store | Out-Null
+
+          # A restore that moved the store is not the same as a store vcpkg can
+          # use, and when it cannot, this step is where it shows - as an hour of
+          # Qt5 compilation rather than as a failure. vcpkg's reuse line is the
+          # only place that decision is visible, so keep it and check it.
+          $storedBefore = @(Get-ChildItem -Path $store -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' }).Count
+
+          $log = "${{ runner.temp }}/vcpkg-install.log"
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
             "qt5-base:$env:VCPKG_TRIPLET" `
-            "qt5-svg:$env:VCPKG_TRIPLET"
+            "qt5-svg:$env:VCPKG_TRIPLET" 2>&1 | Tee-Object -FilePath $log
+          $installExit = $LASTEXITCODE
+
+          # VCPKG_BINARY_SOURCES names exactly one provider, so there is one such
+          # line; if a second provider is ever added, this needs to say which one
+          # the store is.
+          $restored = $null
+          $match = [regex]::Match((Get-Content -Raw -Path $log -ErrorAction SilentlyContinue),
+            'Restored (\d+) package\(s\)')
+          if ($match.Success) { $restored = [int]$match.Groups[1].Value }
+
+          if ($null -eq $restored) {
+            Write-Warning "vcpkg printed no reuse line; the log is at $log"
+          } elseif ($restored -eq 0 -and $storedBefore -gt 0) {
+            # Not an error: a runner image update legitimately changes every ABI
+            # hash at once, and the run after this one gets a store it can use.
+            # It is worth shouting about because the only other symptom is the
+            # wall clock.
+            Write-Warning ("vcpkg reused none of the $storedBefore archive(s) in the store, so this run " +
+              "rebuilds Qt5 from source. That normally means the runner image moved the compiler or the " +
+              "port recipes; diff the 'package ABI:' lines against an earlier run to see which, and expect " +
+              "the next run to be fast again.")
+          } else {
+            Write-Host "vcpkg reused $restored package(s) from a store of $storedBefore archive(s)"
+          }
+
+          exit $installExit
 
       - name: Prune vcpkg cache to this run's packages
         # Keep the store bounded. vcpkg names every archive after the package's
