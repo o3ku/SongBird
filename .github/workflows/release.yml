@@ -148,9 +148,12 @@ jobs:
         # ABI hash, and that hash covers the compiler version, the vcpkg tool
         # version and the port recipes - all of which change whenever GitHub
         # updates the runner image. A store that only ever grows therefore gains
-        # a second complete copy of Qt5 (~1 GB) on each such update, and once a
-        # single cache entry no longer fits the repository's 10 GB cache budget
-        # the save fails and caching stops working altogether. The archives worth
+        # a second complete copy of Qt5 (~1 GB) on each such update, and every
+        # extra gigabyte is one the repository's 10 GB cache budget cannot spend
+        # on a store vcpkg can actually use. Exceeding that budget does not fail
+        # the save - GitHub evicts the least recently used entries, and evicts
+        # anything not accessed for seven days - so this is about keeping the
+        # budget useful rather than about avoiding an error. The archives worth
         # keeping are exactly the ones vcpkg recorded in its installed status
         # file, so drop everything else.
         if: always()
@@ -240,11 +243,10 @@ jobs:
         # decision; what matters is whether the store changed, and the prune step
         # answers that by comparing archive names. The verdict is "unchanged"
         # exactly when this run left the store's contents alone. Re-uploading a
-        # byte-identical store buys nothing and spends the repository's 10 GB
-        # cache budget, and a save that no longer fits that budget fails the run,
-        # so skip it. `always()` still applies: a run that changed the store saves
-        # even if a later step fails, and a missing or failed prune leaves the
-        # output empty, which also saves rather than skips.
+        # byte-identical store buys nothing and spends ~1 GB of the repository's
+        # 10 GB cache budget, so skip it. `always()` still applies: a run that
+        # changed the store saves even if a later step fails, and a missing or
+        # failed prune leaves the output empty, which also saves rather than skips.
         #
         # The attempt number is part of the key because re-running a job keeps the
         # run id: without it a re-run would try to save under a key that already
