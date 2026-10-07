@@ -85,6 +85,7 @@ jobs:
         run: choco install ripgrep -y --no-progress
 
       - name: Install Qt5 (static)
+        id: qt5
         shell: pwsh
         run: |
           # Which cache entry the restore above picked is the first thing worth
@@ -97,8 +98,18 @@ jobs:
           # use, and when it cannot, this step is where it shows - as an hour of
           # Qt5 compilation rather than as a failure. vcpkg's reuse line is the
           # only place that decision is visible, so keep it and check it.
-          $storedBefore = @(Get-ChildItem -Path $store -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' }).Count
+          #
+          # The names are recorded as a set, not just counted, because the prune
+          # step decides whether re-uploading the store is worth ~1 GB by asking
+          # whether the set changed. A drift keeps the count at 35 and replaces
+          # every name, so a count would answer the wrong question. This has to be
+          # read here, before vcpkg writes anything into the store.
+          $beforeArchives = @(Get-ChildItem -Path $store -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
+            ForEach-Object { $_.BaseName } | Sort-Object)
+          $storedBefore = $beforeArchives.Count
+          "store-before=" + ($beforeArchives -join ',') |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           $log = "${{ runner.temp }}/vcpkg-install.log"
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
@@ -132,6 +143,7 @@ jobs:
           exit $installExit
 
       - name: Prune vcpkg cache to this run's packages
+        id: prune
         # Keep the store bounded. vcpkg names every archive after the package's
         # ABI hash, and that hash covers the compiler version, the vcpkg tool
         # version and the port recipes - all of which change whenever GitHub
@@ -162,6 +174,10 @@ jobs:
             # that grows is a nuisance; a store that was thrown away costs 1h23m
             # of Qt5 compilation.
             Write-Warning "vcpkg cache: no installed packages found in $status - skipping the prune"
+            # Nothing was pruned, so the store may well have grown and cannot be
+            # judged unchanged. Fail open on purpose: a needless upload costs a
+            # minute, a store that was never saved costs an hour.
+            "skip=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             exit 0
           }
           $kept = 0
@@ -185,6 +201,27 @@ jobs:
             Remove-Item -Force
           Write-Host "vcpkg cache: kept $kept archive(s), removed $removed superseded archive(s)"
 
+          # Tell the save step whether re-uploading the store is worth ~1 GB.
+          # Whether the store needed pruning and whether it changed are different
+          # questions: a run that reused every archive and pruned nothing leaves
+          # the store byte-identical to the one the restore handed over, and
+          # re-uploading that only spends the repository's 10 GB cache budget.
+          #
+          # The archive *names* are compared rather than the counts, because a
+          # runner-image drift keeps the count at 35 while replacing every name -
+          # a count would report "unchanged" for the exact case the save exists
+          # for. Joining the sorted names is enough of a set comparison here: the
+          # names are hex, so nothing in them can collide with the separator.
+          $before = @("${{ steps.qt5.outputs.store-before }}" -split ',' | Where-Object { $_ })
+          $after = @(Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
+            ForEach-Object { $_.BaseName })
+          $changed = (($before | Sort-Object) -join "`n") -ne (($after | Sort-Object) -join "`n")
+          "skip=$((-not $changed).ToString().ToLower())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host ("vcpkg cache: $($before.Count) archive(s) before this run, $($after.Count) after; " +
+            "store changed: $changed")
+
       - name: Save vcpkg cache
         # Save right after the expensive Qt5 build, and even when a later step
         # fails, so a failed run does not discard hours of compilation.
@@ -196,8 +233,18 @@ jobs:
         # or a port - changing every ABI hash at once - each run rebuilt Qt5 from
         # source for 1h23m and then discarded the result, forever. Saving under a
         # fresh key each time makes that impossible; the restore-key prefix above
-        # still finds the newest save. The price is a redundant upload of the
-        # store on runs that changed nothing, which is cheap next to a rebuild.
+        # still finds the newest save.
+        #
+        # Skipping the save is fine, but only for the right reason. That earlier
+        # version skipped on "the restore hit", which is a guess about vcpkg's ABI
+        # decision; what matters is whether the store changed, and the prune step
+        # answers that by comparing archive names. The verdict is "unchanged"
+        # exactly when this run left the store's contents alone. Re-uploading a
+        # byte-identical store buys nothing and spends the repository's 10 GB
+        # cache budget, and a save that no longer fits that budget fails the run,
+        # so skip it. `always()` still applies: a run that changed the store saves
+        # even if a later step fails, and a missing or failed prune leaves the
+        # output empty, which also saves rather than skips.
         #
         # The attempt number is part of the key because re-running a job keeps the
         # run id: without it a re-run would try to save under a key that already
@@ -207,7 +254,7 @@ jobs:
         # plus the run id alone. The restore relies on that bare run id never
         # existing, so it falls through to the prefix search; saving under it
         # would restore the exact-match trap the restore step warns about.
-        if: always()
+        if: always() && steps.prune.outputs.skip != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
