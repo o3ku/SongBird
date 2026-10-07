@@ -59,13 +59,22 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          # A hit on this exact key is not what we are after - cache keys are
-          # immutable, so every run saves under its own key (see "Save vcpkg
-          # cache") and this key is normally absent. The restore-key prefix below
-          # is what does the work: it matches every save ever made for this
-          # triplet, and GitHub returns the most recently created one, which is
-          # the store most likely to still satisfy vcpkg's ABI hashes.
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-v1
+          # A hit on this exact key is not what we are after - the restore-key
+          # prefix below is what does the work: it matches every save ever made
+          # for this triplet, and GitHub returns the most recently created one,
+          # which is the store most likely to still satisfy vcpkg's ABI hashes.
+          # `key` therefore has to be a value that has never been saved, and the
+          # run id is what makes that structural rather than conventional: the
+          # save step keys on "<run id>-<attempt>", so "<run id>" alone is never
+          # written. It used to read "...-v1" - the single fixed key of the
+          # workflow that predates per-run saving - and that entry is still
+          # there, so `actions/cache/restore` kept taking the exact match and
+          # every run restored the same 2026-09-23 snapshot. The store was 990 MB
+          # and matched nothing: "Restored 0 package(s)" in the Qt5 step, on
+          # 2026-10-01 and again on 2026-10-06, each time followed by a full
+          # Qt5 compile and a fresh store saved under a key the next run would
+          # never look at.
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
 
@@ -157,6 +166,11 @@ jobs:
         # The attempt number is part of the key because re-running a job keeps the
         # run id: without it a re-run would try to save under a key that already
         # exists and fail the step.
+        #
+        # Keep this key longer than the restore's `key`, which is the same prefix
+        # plus the run id alone. The restore relies on that bare run id never
+        # existing, so it falls through to the prefix search; saving under it
+        # would restore the exact-match trap the restore step warns about.
         if: always()
         uses: actions/cache/save@v6
         with:

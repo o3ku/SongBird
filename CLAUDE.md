@@ -61,7 +61,9 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 由 GitHub Actions 完成，见 [.github/workflows/release.yml](.github/workflows/release.yml)。推送 `v*` 标签即触发：vcpkg 装 Qt5 → 构建 Release → `ctest -LE smoke` → `gh release create` 上传 `songbird.exe`。也可用 `workflow_dispatch` 手动触发（不发布）。
 
-首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。`cache/restore` 用固定 key 加前缀 `restore-keys` 取最近一次保存；`cache/save` 每次运行都用唯一 key（`run_id`-`run_attempt`）并带 `if: always()`。
+首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。`cache/restore` 靠前缀 `restore-keys` 取最近一次保存；`cache/save` 每次运行都用唯一 key（`run_id`-`run_attempt`）并带 `if: always()`。
+
+⚠️ **`cache/restore` 的 `key` 必须是一个从未被保存过的值**：它做**精确匹配优先**，一旦命中就**不再走 `restore-keys` 前缀**，整个「取最近一次保存」的机制就失效了。这里踩过一次——`key` 曾是老工作流的固定 key `...-v1`，而那条 2026-09-23 的条目一直都在，于是 2026-10-01 与 10-06 两次运行都精确命中它、vcpkg 报 `Restored 0 package(s)`、白编 1h13m，新仓库还存到一个下一轮永远不会看的 key 上。现在 `key` 里嵌了 `run_id`，让 miss 成为结构性的（保存 key 是同一前缀加 `run_id`-`run_attempt`，裸 `run_id` 永不写入；re-run 时 `run_id` 不变、`attempt` 变，仍保证 miss）。诊断特征：`gh cache list` 里所有 per-run 条目的 `lastAccessedAt == createdAt`（从未被读过），只有那条固定 key 的 `lastAccessedAt` 在动。
 
 **保存端绝不能按 `cache-hit` 跳过**：Actions 的缓存 key 不可覆盖，一旦跳过，ABI 整批变化那天编译出来的产物会被**永远**丢弃，之后每次运行都重新编译 Qt5（2026-09 实测每次 1h23m，而缓存条目停留在漂移前的 09-23）。保存前还有一步「按本次实际安装的包裁剪仓库」（`installed/vcpkg/status` 里的 `Abi:` 行即保留集），把仓库稳定在单一 ABI 世代（约 1 GB）；否则它每随镜像漂移一次就多一份完整 Qt5，最终超出仓库 10 GB 缓存额度、保存失败、缓存彻底失效。
 
