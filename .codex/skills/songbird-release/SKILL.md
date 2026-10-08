@@ -53,14 +53,26 @@ What CI guarantees that a local build does not:
    - Proper nouns, product names, acronyms, protocol names, config enum values, sample URLs/IPs, JSON examples, object names, file names, and internal state keys do not need Chinese translation.
    - Treat Routing Settings Custom Rules action labels `BLOCK`, `DIRECT`, and `PROXY` as uppercase domain terms. Keep them uppercase English and do not wrap them for translation.
    - Wrap untranslated visible text in `tr(...)` or `QCoreApplication::translate(...)` using the nearest stable context.
-   - Run:
+   - Run the repository's own gates, which are the ones CI runs:
      ```powershell
-     & 'D:\vcpkg\installed\x64-windows-static-md\tools\qt5\bin\lupdate.exe' src -no-obsolete -ts translations\SongBird_zh_CN.ts
-     Select-String -Path translations\SongBird_zh_CN.ts -Pattern 'type="unfinished"','type="obsolete"'
-     & 'D:\vcpkg\installed\x64-windows-static-md\tools\qt5\bin\lrelease.exe' translations\SongBird_zh_CN.ts -qm build\msvc-release\SongBird_zh_CN.check.qm
-     Remove-Item build\msvc-release\SongBird_zh_CN.check.qm
+     & .workbuddy-ai/tools/run-check-in-runspace.ps1 -Script scripts/check-localization-coverage.ps1 -TranslationFile translations/SongBird_zh_CN.ts
+     & .workbuddy-ai/tools/run-check-in-runspace.ps1 -Script scripts/check-translations-fresh.ps1
      ```
-   - Fill all unfinished Chinese translations before continuing.
+     The helper contains each script's `exit 1` in a child runspace; read its `=== STATE ===` line
+     (`hadErrors=False`) for the verdict, and its scan counts to confirm the check actually scanned
+     something.
+   - **Do not hardcode a Qt tool path here.** An earlier revision of this step called
+     `D:\vcpkg\installed\x64-windows-static-md\tools\qt5\bin\lupdate.exe`, which does not exist on
+     this machine — the static vcpkg Qt that CI builds against ships neither lupdate nor lrelease.
+     Both scripts resolve the tool from PATH, the Qt prefix variables, or the `Qt5_DIR` recorded in
+     `build/*/CMakeCache.txt`, which is how this machine finds `D:/local/Qt5/5.15.2/msvc2019_64`.
+   - There is no separate lupdate step: `check-localization-coverage.ps1` runs lupdate itself and
+     compares every extracted string, so an incomplete `.ts` fails check B.
+   - The `.qm` is **committed** (`translations/compiled/SongBird_zh_CN.qm`, with the `.ts` hash it was
+     built from in `SongBird_zh_CN.qm.ts.sha256`). `check-translations-fresh.ps1` proves the pair is
+     in step by recompiling and comparing byte for byte. After editing the `.ts`, run that script
+     with `-Update` and commit the `.qm` and the hash together — filling in translations without
+     regenerating the `.qm` silently ships the previous revision of every changed string.
 
 5. Run the test suite locally before tagging.
    - CI runs `ctest -LE smoke` and refuses to publish when it fails, but a local run
