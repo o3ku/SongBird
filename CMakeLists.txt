@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(SongBird VERSION 2.4.4 LANGUAGES CXX)
+project(SongBird VERSION 2.4.5 LANGUAGES CXX)
 
 # Compile every translation unit as UTF-8, independent of the host's ANSI code page.
 # The sources contain non-ASCII string literals (the Chinese UI strings and the

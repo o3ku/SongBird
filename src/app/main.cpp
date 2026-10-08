@@ -24,7 +24,7 @@
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "2.4.4"
+#define SONGBIRD_APP_VERSION "2.4.5"
 #endif
 
 namespace {
