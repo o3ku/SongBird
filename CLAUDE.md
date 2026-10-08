@@ -61,15 +61,17 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 由 GitHub Actions 完成，见 [.github/workflows/release.yml](.github/workflows/release.yml)。推送 `v*` 标签即触发：vcpkg 装 Qt5 → 构建 Release → `ctest -LE smoke` → `gh release create` 上传 `songbird.exe`。也可用 `workflow_dispatch` 手动触发（不发布）。
 
-首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。`cache/restore` 靠前缀 `restore-keys` 取最近一次保存；`cache/save` 每次运行都用唯一 key（`run_id`-`run_attempt`），带 `if: always()`，并在**仓库未变时跳过上传**（见下）。
+首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。镜像之所以能**精确预测**这个指纹，是因为 vcpkg 用的是镜像自带的 `VCPKG_INSTALLATION_ROOT`（`C:\vcpkg`），端口配方随镜像版本走。`cache/restore` 靠前缀 `restore-keys` 取最近一次保存，前缀里带 **runner 镜像版本**作命名空间；`cache/save` 每次运行都用唯一 key（镜像版本-`run_id`-`run_attempt`），带 `if: always()`，并在**仓库未变时跳过上传**（见下）。
 
 ⚠️ **`cache/restore` 的 `key` 必须是一个从未被保存过的值**：它做**精确匹配优先**，一旦命中就**不再走 `restore-keys` 前缀**，整个「取最近一次保存」的机制就失效了。这里踩过一次——`key` 曾是老工作流的固定 key `...-v1`，而那条 2026-09-23 的条目一直都在，于是 2026-10-01 与 10-06 两次运行都精确命中它、vcpkg 报 `Restored 0 package(s)`、白编 1h13m，新仓库还存到一个下一轮永远不会看的 key 上。现在 `key` 里嵌了 `run_id`，让 miss 成为结构性的（保存 key 是同一前缀加 `run_id`-`run_attempt`，裸 `run_id` 永不写入；re-run 时 `run_id` 不变、`attempt` 变，仍保证 miss）。诊断特征：`gh cache list` 里所有 per-run 条目的 `lastAccessedAt == createdAt`（从未被读过），只有那条固定 key 的 `lastAccessedAt` 在动。
+
+⚠️ **前缀里必须带 runner 镜像版本**，否则**镜像滚动期会陷入互相顶掉的重编循环**。滚动时新旧两代镜像同时在池子里，每次运行随机落到一代；每一代存下的仓库都会成为**未加命名空间的前缀**下「最近创建」的那一条，于是下一轮（落在另一代上）恢复的是**别人那代**的仓库，只有 ABI 没被端口版本变更波及的包能复用（2026-10-07 实测 **19/35**），其余 16 个重编约 1.5 小时，再存下自己这代——然后反过来，如此往复。实测证据：两次 `20260927.320.1` 的运行 35 条 `package ABI:` 逐字节相同，而 `20261004.326.1` 的那次有 16 条不同（变的是端口版本，如 `3.6.4#1→3.6.5`、`14.5.0→14.5.1`、`10.47#1→10.49`，级联到 16 个包）。加了镜像命名空间后每代各有自己的仓库，每代只需一轮预热，之后每轮都是 35/35 全命中。**`restore-keys` 要两条按序**：先是带镜像版本的，再是**不带镜像版本的通用回退**——回退那条不能省，否则全新镜像的第一轮会退化成冷启动（0/35、白编 1.4 小时），而它存在时至少还能拿到另一代的 19/35。镜像版本取自 `$env:ImageVersion`（runner 在**机器级**设置，见 actions/runner-images 的 `images/windows/scripts/build/Configure-SystemEnvironment.ps1`；缺省回落 `unknown` 只用于保证 key 形状合法）。
 
 **保存端绝不能按 `cache-hit` 跳过**：Actions 的缓存 key 不可覆盖，一旦跳过，ABI 整批变化那天编译出来的产物会被**永远**丢弃，之后每次运行都重新编译 Qt5（2026-09 实测每次 1h23m，而缓存条目停留在漂移前的 09-23）。
 
 ⚠️ 但这不等于「无条件每次都保存」，区别在于**按实测跳过**还是**按猜测跳过**。`cache-hit` 只是对 vcpkg 那个 ABI 判断的猜测，而「仓库里的 archive 名字集合没变」是实测：`Install Qt5` 步在 vcpkg 跑之前记下名字集合写进 `$GITHUB_OUTPUT`，裁剪步在裁剪后再记一次并比较（**比名字不比数量**——漂移会让数量仍是 35 而**换掉每一个名字**），相同就输出 `skip=true`，`cache/save` 的 `if` 才跳过；`store-before` 缺失或裁剪步失败时输出为空，条件 `!= 'true'` 成立 ⇒ 照常保存（fail-open，判定只会往「保存」这个安全方向出错）。`always()` 保留，所以仓库真变了时即使后续步失败也照存。实测 2026-10-07 一次全命中运行：`store changed: False`、`cache/save` 显示为跳过、仓库仍停在 8 条 / 7.78 GiB，而修复前每轮都会再加 ~1 GB（其中 5 条是写了从没被读过的死重），而默认的仓库级额度是 **10 GB 大小上限 + 7 天保留（保留期从最后一次访问算，所以 restore 本身就会续期）**。超限时 GitHub **按 LRU 自动驱逐**最久未访问的条目，7 天没被访问的条目也会被驱逐，所以「列表无限增长」并不会让缓存失效——真正的代价是每轮白传 ~1 GB，并把预算花在没人能用的条目上。
 
-保存前还有一步「按本次实际安装的包裁剪仓库」（`installed/vcpkg/status` 里的 `Abi:` 行即保留集），把仓库稳定在单一 ABI 世代（约 1 GB）；否则它每随镜像漂移一次就多一份完整 Qt5，最终超出仓库 10 GB 缓存额度、保存失败、缓存彻底失效。
+保存前还有一步「按本次实际安装的包裁剪仓库」（`installed/vcpkg/status` 里的 `Abi:` 行即保留集），把仓库稳定在单一 ABI 世代（约 1 GB）；否则它每随镜像漂移一次就多一份完整 Qt5，白白吃掉仓库级缓存额度、并让列表里堆满永远不会被读到的条目。⚠️ **别把这一步的目的写成「不裁剪就会保存失败、缓存彻底失效」**——那是错的：超出额度时 GitHub **按 LRU 自动驱逐**最久未访问的条目，`cache/save` 不会失败。（这条错误论断曾写进 workflow 注释与本文档，2026-10-07 查 `actions/cache` README 与官方 changelog 后更正。）
 
 GitHub 会删除**超过 7 天未被访问**的缓存条目（驱逐检查自 2025-09 起改为每小时一次），所以 workflow 里有一条每周两次（周一/周四 UTC 03:00）的 `schedule` 保活：它跑在默认分支上，`Restore vcpkg cache` 本身即刷新最后访问时间，`Publish GitHub release` 因 ref 不是 tag 而保持跳过，同时兼作 main 的每周构建+测试健康检查。这个保活不是多余的——2026-08-17 之后的 5 周闲置导致缓存被驱逐，下一次构建耗时 **1h49m51s**，而暖缓存只需 **19m44s**。
 

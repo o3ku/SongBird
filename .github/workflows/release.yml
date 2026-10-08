@@ -54,15 +54,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Read runner image version
+        # The image decides which vcpkg sits in VCPKG_INSTALLATION_ROOT, vcpkg
+        # decides the port recipes, and the port recipes decide the ABI hash of
+        # every package - so the image version is an exact and free predictor of
+        # which archives a store can satisfy. The runner sets this variable at
+        # machine scope (actions/runner-images
+        # images/windows/scripts/build/Configure-SystemEnvironment.ps1), so every
+        # step inherits it; `unknown` only keeps the cache key well-formed if
+        # that ever stops being true. The restore step below explains why the
+        # image version has to be part of the key.
+        id: image
+        shell: pwsh
+        run: |
+          $image = if ($env:ImageVersion) { $env:ImageVersion } else { 'unknown' }
+          "image=$image" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "runner image version: $image"
+
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           # A hit on this exact key is not what we are after - the restore-key
-          # prefix below is what does the work: it matches every save ever made
-          # for this triplet, and GitHub returns the most recently created one,
-          # which is the store most likely to still satisfy vcpkg's ABI hashes.
+          # prefixes below are what do the work: each matches every save ever
+          # made for this triplet and image, and GitHub returns the most
+          # recently created match, which is the store most likely to still
+          # satisfy vcpkg's ABI hashes.
           # `key` therefore has to be a value that has never been saved, and the
           # run id is what makes that structural rather than conventional: the
           # save step keys on "<run id>-<attempt>", so "<run id>" alone is never
@@ -74,8 +92,25 @@ jobs:
           # 2026-10-01 and again on 2026-10-06, each time followed by a full
           # Qt5 compile and a fresh store saved under a key the next run would
           # never look at.
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ github.run_id }}
+          #
+          # The image version namespaces that prefix, which is what keeps a
+          # fleet rollover from settling into a rebuild loop. While GitHub rolls
+          # a new image out, runs land on either generation, and each
+          # generation's save becomes "the most recently created" entry for the
+          # *unscoped* prefix - so every run restored the other generation's
+          # store, reused only the packages whose ABI survived the port bump,
+          # rebuilt the rest for well over an hour, and saved, after which the
+          # next run on the other image did the same in reverse. Measured on
+          # 2026-10-07: two runs on image 20260927.320.1 shared one ABI set
+          # byte for byte, and a run on 20261004.326.1 differed in 16 of the 35
+          # packages. Scoping the key by image gives each generation its own
+          # store, so after one warm-up run per generation every run hits all
+          # 35. The second restore-key is the unscoped fallback, and it exists
+          # so that the first run on a brand new image still inherits the other
+          # generation's partial match instead of starting cold.
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-${{ github.run_id }}
           restore-keys: |
+            vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-
             vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
 
       - name: Install ripgrep
@@ -236,7 +271,8 @@ jobs:
         # or a port - changing every ABI hash at once - each run rebuilt Qt5 from
         # source for 1h23m and then discarded the result, forever. Saving under a
         # fresh key each time makes that impossible; the restore-key prefix above
-        # still finds the newest save.
+        # still finds the newest save for the current runner image, and falls
+        # back to the newest save for any image if that one does not exist yet.
         #
         # Skipping the save is fine, but only for the right reason. That earlier
         # version skipped on "the restore hit", which is a guess about vcpkg's ABI
@@ -260,7 +296,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
