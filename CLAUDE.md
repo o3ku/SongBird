@@ -192,6 +192,8 @@ GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `R
 
 新增测试时：在 [tests/](tests/) 下创建独立 `.cpp`，在 [tests/CMakeLists.txt](tests/CMakeLists.txt) 中**仅列出它依赖的源文件**，用 `songbird_add_qt_test(<target> <ctest-name> SOURCES ... LIBRARIES ...)` 注册（该函数已统一处理 Qt5/Qt6 差异、include 路径、`QT_QPA_PLATFORM=windows` 环境）。测试名要描述被测行为。
 
+不是 QtTest 的检查一律写成 [scripts/](scripts/) 下的 PowerShell 脚本并挂进同一个 `if(SONGBIRD_POWERSHELL_EXECUTABLE)` 块。两条硬要求：**扫不到东西必须非零退出并打印扫描量**（否则脚本会因为正则不再匹配而静默变绿），**失败必须非零退出**（ctest 只读退出码）。[scripts/verify-vcpkg-*.ps1](scripts/) 是另一类：它们把 `.github/workflows/release.yml` 里某个 step 的**真实 `run:` 块抽出来**在 pwsh 7 下真跑（不是重打一遍），用来在推 CI 之前就发现 workflow 改动把步骤跑坏了；它们从 `$PSScriptRoot` 向上找仓库根，因此不依赖机器特定路径。
+
 ### 代码风格
 
 4 空格缩进、左大括号独占一行、`PascalCase` 类名、`camelCase` 函数与局部变量、测试文件命名 `*Tests.cpp`。适当使用 `constexpr`/`QStringLiteral`。仓库没有格式化工具配置 —— **完全匹配周围代码风格**。代码文件中只用英文，仅在必要处加注释。

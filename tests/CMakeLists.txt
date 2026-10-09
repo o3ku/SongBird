@@ -57,6 +57,20 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -BuildDirectory ${CMAKE_BINARY_DIR}/src
             -Executable $<TARGET_FILE:songbird>
     )
+    # These four do not read the source tree; they exercise the vcpkg cache steps in
+    # .github/workflows/release.yml. Each one extracts the step's real run: block from the workflow,
+    # substitutes the ${{ }} expressions, and runs it under pwsh 7 against fixtures -- so a step that
+    # stops parsing or starts computing the wrong verdict fails here instead of burning a CI run.
+    # They are the only checks that spawn child processes, and they take noticeably longer than the
+    # text-only ones; a failure names the individual case that broke.
+    foreach(harness vcpkg-guard vcpkg-skip vcpkg-image-namespace vcpkg-evict)
+        add_test(
+            NAME ${harness}
+            COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+                -NoProfile
+                -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/verify-${harness}.ps1
+        )
+    endforeach()
 endif()
 
 function(songbird_add_qt_test target_name test_name)

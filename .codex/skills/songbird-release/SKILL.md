@@ -96,9 +96,17 @@ What CI guarantees that a local build does not:
    - The `smoke`-labelled tests download cores and subscriptions, start real processes, and
      write real system-proxy / registry entries, so CI excludes them with `-LE smoke`. The
      command above does **not** pass `-LE smoke`, so it runs them too — that is fine and adds
-     coverage, but it means the two counts differ by design: a full local run reports **53**
-     tests while CI reports **52**. Before reporting a lost test, reconcile with
+     coverage, but it means the two counts differ by design: a full local run reports **58**
+     tests while CI reports **57**. Before reporting a lost test, reconcile with
      `ctest --test-dir build/msvc-tests -N -L smoke` (exactly 1: `end-to-end-smoke`).
+   - Four of those tests (`vcpkg-guard`, `vcpkg-skip`, `vcpkg-image-namespace`, `vcpkg-evict`)
+     are not source checks: they extract the vcpkg cache steps' real `run:` blocks out of
+     `.github/workflows/release.yml` and execute them under pwsh 7 against fixtures. They spawn
+     child processes and take ~50 s together, which is why a full run is now ~2 min. A failure
+     names the individual case (e.g. `C2 full drift, 35 -> 35 new names -> save`).
+   - Everything in the `if(SONGBIRD_POWERSHELL_EXECUTABLE)` block disappears from the count if
+     `find_program` cannot locate `pwsh` or `powershell`; that silently drops five source checks
+     and these four harnesses.
    - Stop and report failures instead of tagging.
 
 6. Commit and push `main` before tagging.
