@@ -18,9 +18,17 @@ struct RuleValues {
     QStringList processes;
 };
 
+// A rule the editor cannot express, kept verbatim along with the position it held in the list it
+// was read from. The position is what lets collectRules put it back where it was: route rules are
+// evaluated in order, so re-emitting it somewhere else changes which rule wins.
+struct PreservedRule {
+    int originalIndex = 0;
+    RoutingRule rule;
+};
+
 struct PartitionedRules {
     QMap<QString, RuleValues> valuesByAction;
-    QList<RoutingRule> preservedRules;
+    QList<PreservedRule> preservedRules;
 };
 
 QList<QPair<QString, QString>> customRuleTabs();
@@ -32,7 +40,7 @@ PartitionedRules partitionEditableRules(
     const QList<RoutingRule>& rules,
     const QStringList& supportedActions);
 QList<RoutingRule> collectRules(
-    const QList<RoutingRule>& preservedRules,
+    const QList<PreservedRule>& preservedRules,
     const QMap<QString, RuleValues>& valuesByAction);
 
 } // namespace RoutingCustomRuleSupport

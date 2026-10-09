@@ -7,6 +7,7 @@
 #include "domain/models/Config.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/RoutingRule.h"
+#include "ui/dialogs/RoutingCustomRuleSupport.h"
 
 class QLabel;
 class QButtonGroup;
@@ -57,5 +58,5 @@ private:
     QTabWidget* customRuleTabs_ = nullptr;
     QLabel* customRuleWarningsLabel_ = nullptr;
     QMap<QString, CustomRuleEditors> customRuleEditors_;
-    QList<RoutingRule> preservedCustomRules_;
+    QList<RoutingCustomRuleSupport::PreservedRule> preservedCustomRules_;
 };

@@ -56,6 +56,8 @@ private slots:
     void routingCustomRuleProcessRoundTripsThroughProcessEditor();
     void routingCustomRuleWithMultipleFieldKindsIsPreservedVerbatim();
     void routingCustomRuleWithMultipleFieldKindsRoundTripsThroughDialog();
+    void routingCustomRuleOrderSurvivesPartitionAndCollect();
+    void routingCustomRuleOrderSurvivesTheDialog();
     void routingCustomRuleTabsRoundTripConfig();
     void routingPageReportsValuesNoCoreCanHonour();
     void routingCustomRuleTabsDefaultToDirectAndPersistSelection();
@@ -711,6 +713,95 @@ void SettingsDialogTests::routingCustomRuleWithMultipleFieldKindsRoundTripsThrou
     const RoutingRule result = updated.collection().routingCustomRules.constFirst();
     QCOMPARE(result.domain, combined.domain);
     QCOMPARE(result.process, combined.process);
+}
+
+namespace {
+
+// A rule reduced to the fields the round trip is expected to preserve, so the assertions can
+// compare whole sequences rather than one field at a time -- order is the thing under test here,
+// and a per-field comparison would pass just as happily against a reordered list.
+QStringList ruleSignatures(const QList<RoutingRule>& rules)
+{
+    QStringList signatures;
+    for (const RoutingRule& rule : rules) {
+        signatures.append(QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8")
+                              .arg(rule.type,
+                                   rule.enabled ? QStringLiteral("enabled") : QStringLiteral("disabled"),
+                                   rule.outboundTag,
+                                   rule.protocol.join(QChar(',')),
+                                   rule.port,
+                                   rule.ip.join(QChar(',')),
+                                   rule.domain.join(QChar(',')),
+                                   rule.process.join(QChar(','))));
+    }
+    return signatures;
+}
+
+// One editable domain rule, one rule that combines two field kinds (so the grid cannot express it
+// and has to preserve it), and one editable process rule -- all on the same action, so the only
+// thing that can move is the preserved one.
+QList<RoutingRule> mixedEditableAndPreservedRules()
+{
+    RoutingRule editableDomain;
+    editableDomain.type = QStringLiteral("field");
+    editableDomain.enabled = true;
+    editableDomain.outboundTag = QStringLiteral("direct");
+    editableDomain.domain = QStringList{QStringLiteral("domain:first.example.com")};
+
+    RoutingRule preservedBoth;
+    preservedBoth.type = QStringLiteral("field");
+    preservedBoth.enabled = true;
+    preservedBoth.outboundTag = QStringLiteral("direct");
+    preservedBoth.domain = QStringList{QStringLiteral("domain:middle.example.com")};
+    preservedBoth.process = QStringList{QStringLiteral("middle.exe")};
+
+    RoutingRule editableProcess;
+    editableProcess.type = QStringLiteral("field");
+    editableProcess.enabled = true;
+    editableProcess.outboundTag = QStringLiteral("direct");
+    editableProcess.process = QStringList{QStringLiteral("last.exe")};
+
+    return {editableDomain, preservedBoth, editableProcess};
+}
+
+} // namespace
+
+void SettingsDialogTests::routingCustomRuleOrderSurvivesPartitionAndCollect()
+{
+    // The grid cannot express a rule that combines field kinds, so those are preserved verbatim
+    // -- but they used to be re-emitted ahead of every editable rule. Route rules are matched in
+    // order, so a preserved rule that sat between two editable ones started being evaluated
+    // before the rule it used to follow.
+    const QStringList supportedActions{
+        QStringLiteral("block"), QStringLiteral("direct"), QStringLiteral("proxy")};
+
+    const QList<RoutingRule> input = mixedEditableAndPreservedRules();
+    const RoutingCustomRuleSupport::PartitionedRules partitioned =
+        RoutingCustomRuleSupport::partitionEditableRules(input, supportedActions);
+
+    QCOMPARE(partitioned.preservedRules.size(), 1);
+    QCOMPARE(partitioned.preservedRules.constFirst().originalIndex, 1);
+    QCOMPARE(partitioned.valuesByAction.value(QStringLiteral("direct")).domains,
+             QStringList{QStringLiteral("domain:first.example.com")});
+
+    const QList<RoutingRule> collected =
+        RoutingCustomRuleSupport::collectRules(partitioned.preservedRules, partitioned.valuesByAction);
+    QCOMPARE(ruleSignatures(collected), ruleSignatures(input));
+}
+
+void SettingsDialogTests::routingCustomRuleOrderSurvivesTheDialog()
+{
+    // Same guarantee as above, through the path a user actually takes (open Settings, press OK),
+    // so the ordering fix is proven to reach the widget's own partition/collect pair.
+    const QList<RoutingRule> input = mixedEditableAndPreservedRules();
+    Config config;
+    config.collection().routingCustomRules = input;
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+
+    const Config updated = dialog.config();
+    QCOMPARE(ruleSignatures(updated.collection().routingCustomRules), ruleSignatures(input));
 }
 
 void SettingsDialogTests::routingCustomRuleTabsRoundTripConfig()

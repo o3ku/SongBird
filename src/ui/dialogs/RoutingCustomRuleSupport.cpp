@@ -143,10 +143,11 @@ RoutingCustomRuleSupport::PartitionedRules RoutingCustomRuleSupport::partitionEd
     const QStringList& supportedActions)
 {
     PartitionedRules result;
-    for (const RoutingRule& rule : rules) {
+    for (int index = 0; index < rules.size(); ++index) {
+        const RoutingRule& rule = rules.at(index);
         const QString action = rule.outboundTag.trimmed().toLower();
         if (!isEditableCustomRoutingRule(rule, supportedActions.contains(action))) {
-            result.preservedRules.append(rule);
+            result.preservedRules.append(PreservedRule{index, rule});
             continue;
         }
 
@@ -167,10 +168,10 @@ RoutingCustomRuleSupport::PartitionedRules RoutingCustomRuleSupport::partitionEd
 }
 
 QList<RoutingRule> RoutingCustomRuleSupport::collectRules(
-    const QList<RoutingRule>& preservedRules,
+    const QList<PreservedRule>& preservedRules,
     const QMap<QString, RuleValues>& valuesByAction)
 {
-    QList<RoutingRule> rules = preservedRules;
+    QList<RoutingRule> rules;
     for (const QString& action : actionOrder()) {
         const RuleValues values = valuesByAction.value(action);
         const QString portText = joinValues(values.ports);
@@ -198,6 +199,16 @@ QList<RoutingRule> RoutingCustomRuleSupport::collectRules(
             rule.process = values.processes;
             rules.append(rule);
         }
+    }
+
+    // Put the rules the editor cannot express back where they were. They used to be emitted ahead
+    // of everything else, which reordered the list: route rules are matched in order, so a
+    // preserved rule that sat between two editable ones started winning over the one it used to
+    // follow. Clamping the index is what the grid forces -- the editable rules it can represent
+    // are merged per (action, field kind), so the list it produces is shorter than the one it was
+    // read from.
+    for (const PreservedRule& preserved : preservedRules) {
+        rules.insert(qBound(0, preserved.originalIndex, rules.size()), preserved.rule);
     }
     return rules;
 }
