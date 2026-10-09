@@ -6,23 +6,17 @@
 #include <QHash>
 
 #include "common/OperationResult.h"
+#include "platform/IUwpLoopbackService.h"
 
-struct WindowsUwpPackageInfo {
-    QString name;
-    QString packageFamilyName;
-    QString packageFullName;
-    QString publisher;
-    QString installLocation;
-    bool loopbackEnabled = false;
-};
-
-class WindowsUwpLoopbackService {
+class WindowsUwpLoopbackService : public IUwpLoopbackService {
 public:
-    bool isAvailable() const;
-    QList<WindowsUwpPackageInfo> listPackages(OperationResult* result = nullptr) const;
+    bool isAvailable() const override;
+    QList<WindowsUwpPackageInfo> listPackages(OperationResult* result = nullptr) const override;
+    // Not part of IUwpLoopbackService: only listPackages() below calls it.
     QSet<QString> listExemptPackageFamilyNames(OperationResult* result = nullptr) const;
-    OperationResult setLoopbackEnabled(const QString& packageFamilyName, bool enabled) const;
-    OperationResult setLoopbackEnabledElevated(const QHash<QString, bool>& enabledByPackageFamilyName) const;
+    OperationResult setLoopbackEnabled(const QString& packageFamilyName, bool enabled) const override;
+    OperationResult setLoopbackEnabledElevated(
+        const QHash<QString, bool>& enabledByPackageFamilyName) const override;
 
 private:
     OperationResult runProcess(const QString& program, const QStringList& arguments, QString* output) const;

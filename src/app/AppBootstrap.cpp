@@ -68,6 +68,7 @@
 #include "domain/models/RoutingProfiles.h"
 #include "platform/IAutoRunService.h"
 #include "platform/ISystemProxyService.h"
+#include "platform/windows/WindowsUwpLoopbackService.h"
 #include "persistence/JsonConfigRepository.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
@@ -857,7 +858,13 @@ void AppBootstrap::openUwpLoopbackDialog()
     }
 
     if (uwpLoopbackDialog_.isNull()) {
-        uwpLoopbackDialog_ = new UwpLoopbackDialog(objects_->mainWindow.get());
+        // The composition root picks the concrete platform service, the same way
+        // AppBootstrapServiceWiring builds WindowsAutoRunService and WindowsSystemProxyService;
+        // the dialog only ever sees IUwpLoopbackService.
+        UwpLoopbackDialog::Dependencies dependencies;
+        dependencies.loopbackService = std::make_shared<WindowsUwpLoopbackService>();
+        dependencies.isProcessElevated = []() { return isProcessElevated(); };
+        uwpLoopbackDialog_ = new UwpLoopbackDialog(objects_->mainWindow.get(), std::move(dependencies));
         uwpLoopbackDialog_->setAttribute(Qt::WA_DeleteOnClose, false);
     }
 

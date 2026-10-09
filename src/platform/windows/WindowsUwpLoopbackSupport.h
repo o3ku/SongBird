@@ -6,7 +6,7 @@
 #include <QString>
 
 #include "common/OperationResult.h"
-#include "platform/windows/WindowsUwpLoopbackService.h"
+#include "platform/UwpPackageInfo.h"
 
 namespace WindowsUwpLoopbackSupport {
 

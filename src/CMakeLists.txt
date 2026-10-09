@@ -322,6 +322,8 @@ set(SONGBIRD_SOURCES
     common/GitHubUrls.h
     common/UrlProbeLatency.h
     platform/IAutoRunService.h
+    platform/IUwpLoopbackService.h
+    platform/UwpPackageInfo.h
     platform/windows/SingleInstanceGuard.h
     platform/windows/SingleInstanceGuard.cpp
     platform/windows/WindowsAutoRunService.h

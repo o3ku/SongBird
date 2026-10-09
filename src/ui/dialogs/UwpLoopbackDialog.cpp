@@ -25,10 +25,23 @@
 
 namespace UwpUi = UwpLoopbackDialogSupport;
 
-UwpLoopbackDialog::UwpLoopbackDialog(QWidget* parent)
+UwpLoopbackDialog::UwpLoopbackDialog(QWidget* parent, Dependencies dependencies)
     : QDialog(parent)
+    , dependencies_(std::move(dependencies))
 {
+    // An unset elevation callback means the real process check; see the header for why the
+    // fallback is the real thing rather than a constant.
+    if (!dependencies_.isProcessElevated) {
+        dependencies_.isProcessElevated = []() { return ::isProcessElevated(); };
+    }
+    Q_ASSERT(dependencies_.loopbackService != nullptr);
+
     setupUi();
+}
+
+bool UwpLoopbackDialog::isProcessElevated() const
+{
+    return dependencies_.isProcessElevated && dependencies_.isProcessElevated();
 }
 
 void UwpLoopbackDialog::reject()
@@ -143,7 +156,7 @@ void UwpLoopbackDialog::startLoadingPackages()
         return;
     }
 
-    if (!loopbackService_.isAvailable()) {
+    if (!dependencies_.loopbackService || !dependencies_.loopbackService->isAvailable()) {
         packages_.clear();
         originalEnabledByPackage_.clear();
         dirtyPackages_.clear();
@@ -157,10 +170,12 @@ void UwpLoopbackDialog::startLoadingPackages()
     setStatus(tr("Loading UWP app list..."));
 
     QPointer<UwpLoopbackDialog> dialogGuard(this);
-    QThread* thread = launchBackgroundThread([dialogGuard]() {
-        WindowsUwpLoopbackService service;
+    // The worker keeps its own reference: the dialog may be closed while the list is being
+    // read, and the service must outlive the call either way.
+    const std::shared_ptr<IUwpLoopbackService> service = dependencies_.loopbackService;
+    QThread* thread = launchBackgroundThread([dialogGuard, service]() {
         OperationResult result;
-        QList<WindowsUwpPackageInfo> loadedPackages = service.listPackages(&result);
+        QList<WindowsUwpPackageInfo> loadedPackages = service->listPackages(&result);
 
         if (dialogGuard.isNull()) {
             return;
@@ -236,7 +251,7 @@ void UwpLoopbackDialog::applyFilter()
 
 void UwpLoopbackDialog::applyChanges()
 {
-    if (dirtyPackages_.isEmpty()) {
+    if (dirtyPackages_.isEmpty() || !dependencies_.loopbackService) {
         return;
     }
 
@@ -249,7 +264,7 @@ void UwpLoopbackDialog::applyChanges()
     if (isProcessElevated()) {
         for (const QString& packageFamilyName : pendingPackages) {
             const bool enabled = currentLoopbackState(packageFamilyName);
-            const OperationResult result = loopbackService_.setLoopbackEnabled(packageFamilyName, enabled);
+            const OperationResult result = dependencies_.loopbackService->setLoopbackEnabled(packageFamilyName, enabled);
             if (result.success) {
                 originalEnabledByPackage_.insert(packageFamilyName, enabled);
                 dirtyPackages_.remove(packageFamilyName);
@@ -263,7 +278,7 @@ void UwpLoopbackDialog::applyChanges()
             changes.insert(packageFamilyName, currentLoopbackState(packageFamilyName));
         }
 
-        const OperationResult result = loopbackService_.setLoopbackEnabledElevated(changes);
+        const OperationResult result = dependencies_.loopbackService->setLoopbackEnabledElevated(changes);
         if (result.success) {
             dirtyPackages_.clear();
         } else {

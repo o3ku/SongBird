@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <Qt>
 
-#include "platform/windows/WindowsUwpLoopbackService.h"
+#include "platform/UwpPackageInfo.h"
 
 class QTableWidget;
 

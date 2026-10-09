@@ -151,6 +151,32 @@ songbird_add_qt_test(songbird_add_server_dialog_tests add-server-dialog-roundtri
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The UWP loopback dialog is the one place in the app that drives CheckNetIsolation.exe, and it
+# had no coverage at all until it gained a seam: the dialog constructed the service itself, so a
+# test could only ever have run against the machine's real package list. The target drives it
+# through a stand-in IUwpLoopbackService, which is the only way to reach its failure branches and
+# the only way to assert which of the two apply paths (one elevated batch, or one call per
+# package) a given elevation state selects.
+set(SONGBIRD_UWP_LOOPBACK_DIALOG_TEST_SOURCES
+    UwpLoopbackDialogTests.cpp
+    ../src/common/DialogUtils.h
+    ../src/common/UiLanguage.h
+    ../src/platform/IUwpLoopbackService.h
+    ../src/platform/UwpPackageInfo.h
+    ../src/ui/dialogs/UwpLoopbackDialog.h
+    ../src/ui/dialogs/UwpLoopbackDialog.cpp
+    ../src/ui/dialogs/UwpLoopbackDialogSupport.h
+    ../src/ui/dialogs/UwpLoopbackDialogSupport.cpp
+)
+
+songbird_add_qt_test(songbird_uwp_loopback_dialog_tests uwp-loopback-dialog-apply
+    SOURCES
+        ${SONGBIRD_UWP_LOOPBACK_DIALOG_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_SETTINGS_DIALOG_TEST_SOURCES
     SettingsDialogTests.cpp
     ../src/ui/dialogs/CoreSettingsPageWidget.h
