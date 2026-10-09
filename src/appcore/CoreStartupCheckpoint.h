@@ -98,59 +98,103 @@ inline OperationResult coreStartupCheckpoint(
         : OperationResult::ok(message);
 }
 
-inline bool coreUsesLegacyGeoFiles(const CoreInfo& coreInfo)
+// The core a CoreInfo really refers to. A CoreInfo built by hand (a TUN sidecar, a test) may leave
+// the type unset, so the executable name is the fallback.
+inline CoreType coreInfoCoreType(const CoreInfo& coreInfo)
 {
-    CoreType coreType = coreInfo.type;
-    if (coreType == CoreType::Unknown) {
-        coreType = catalogCoreTypeForExecutableName(coreInfo.program);
-    }
-    return catalogCoreRequiresLegacyGeoFiles(coreType);
+    return coreInfo.type == CoreType::Unknown
+        ? catalogCoreTypeForExecutableName(coreInfo.program)
+        : coreInfo.type;
 }
 
-inline OperationResult validateCoreGeoFilesBeforeStart(const CoreInfo& coreInfo)
+inline QList<CoreGeoFileRequirement> coreGeoFileRequirementsFor(const CoreInfo& coreInfo)
 {
-    if (!coreUsesLegacyGeoFiles(coreInfo)) {
-        return OperationResult::ok(
-            QCoreApplication::translate("ProxySession", "The selected core does not require local geoip.dat/geosite.dat files."));
+    return catalogCoreGeoFileRequirements(coreInfoCoreType(coreInfo));
+}
+
+inline bool coreNeedsGeoFiles(const CoreInfo& coreInfo)
+{
+    return !coreGeoFileRequirementsFor(coreInfo).isEmpty();
+}
+
+// Directory holding the core's geodata. A core that declares a data directory keeps them there
+// (mihomo reads its home); the rest keep them next to the executable they run from.
+//
+// The application directory is a parameter rather than read straight from QCoreApplication because
+// a core with a data directory puts its geodata under it, and a test that cannot point that
+// somewhere writable could never exercise the check at all.
+inline QString coreGeoDirectory(
+    const CoreInfo& coreInfo,
+    const QString& applicationDirectory = QCoreApplication::applicationDirPath())
+{
+    const QString dataDirectory = catalogCoreDataDirectory(coreInfoCoreType(coreInfo), applicationDirectory);
+    if (!dataDirectory.isEmpty()) {
+        return dataDirectory;
     }
 
-    const QString directory = coreInfo.workingDirectory.trimmed().isEmpty()
+    return coreInfo.workingDirectory.trimmed().isEmpty()
         ? QFileInfo(coreInfo.program).absolutePath()
         : coreInfo.workingDirectory;
-    if (directory.trimmed().isEmpty()) {
-        return OperationResult::fail(QCoreApplication::translate("ProxySession", "Core working directory is empty."));
+}
+
+// A zero-byte file is a truncated download rather than a database, so it does not count as present.
+inline bool coreGeoFileIsPresent(const QString& directory, const QString& fileName)
+{
+    const QFileInfo fileInfo(QDir(directory).filePath(fileName));
+    return fileInfo.exists() && fileInfo.isFile() && fileInfo.size() > 0;
+}
+
+inline OperationResult validateCoreGeoFilesBeforeStart(
+    const CoreInfo& coreInfo,
+    const QString& applicationDirectory = QCoreApplication::applicationDirPath())
+{
+    const QList<CoreGeoFileRequirement> requirements = coreGeoFileRequirementsFor(coreInfo);
+    if (requirements.isEmpty()) {
+        return OperationResult::ok(
+            QCoreApplication::translate("ProxySession", "The selected core does not require local geo database files."));
     }
 
-    const QStringList requiredFiles{
-        QStringLiteral("geoip.dat"),
-        QStringLiteral("geosite.dat")
-    };
+    const QString directory = coreGeoDirectory(coreInfo, applicationDirectory);
+    if (directory.trimmed().isEmpty()) {
+        return OperationResult::fail(
+            QCoreApplication::translate("ProxySession", "Core data directory is empty."));
+    }
+
     QStringList missingFiles;
     QStringList emptyFiles;
-    for (const QString& fileName : requiredFiles) {
-        const QFileInfo fileInfo(QDir(directory).filePath(fileName));
+    for (const CoreGeoFileRequirement& requirement : requirements) {
+        const QFileInfo fileInfo(QDir(directory).filePath(requirement.fileName));
         if (!fileInfo.exists()) {
-            missingFiles.append(fileName);
+            missingFiles.append(requirement.fileName);
             continue;
         }
-        if (fileInfo.size() <= 0) {
-            emptyFiles.append(fileName);
+        if (!fileInfo.isFile() || fileInfo.size() <= 0) {
+            emptyFiles.append(requirement.fileName);
         }
     }
 
     if (!missingFiles.isEmpty() || !emptyFiles.isEmpty()) {
         QStringList parts;
         if (!missingFiles.isEmpty()) {
-            parts.append(QStringLiteral("missing %1").arg(missingFiles.join(QStringLiteral(", "))));
+            parts.append(QCoreApplication::translate("ProxySession", "missing %1")
+                             .arg(missingFiles.join(QStringLiteral(", "))));
         }
         if (!emptyFiles.isEmpty()) {
-            parts.append(QStringLiteral("empty %1").arg(emptyFiles.join(QStringLiteral(", "))));
+            parts.append(QCoreApplication::translate("ProxySession", "empty %1")
+                             .arg(emptyFiles.join(QStringLiteral(", "))));
         }
-        parts.append(QStringLiteral("directory %1").arg(QDir::toNativeSeparators(directory)));
+        parts.append(QCoreApplication::translate("ProxySession", "directory %1")
+                         .arg(QDir::toNativeSeparators(directory)));
         return OperationResult::fail(parts.join(QStringLiteral("; ")));
     }
 
+    QStringList presentFiles;
+    presentFiles.reserve(requirements.size());
+    for (const CoreGeoFileRequirement& requirement : requirements) {
+        presentFiles.append(requirement.fileName);
+    }
+
     return OperationResult::ok(
-        QCoreApplication::translate("ProxySession", "Found geoip.dat and geosite.dat in %1.")
-            .arg(QDir::toNativeSeparators(directory)));
+        QCoreApplication::translate("ProxySession", "Found %1 in %2.")
+            .arg(presentFiles.join(QStringLiteral(", ")), QDir::toNativeSeparators(directory)));
 }

@@ -1,5 +1,6 @@
 #include "backends/xray/XrayCoreDescriptor.h"
 
+#include "common/GitHubUrls.h"
 #include "runtime/core/CoreDescriptorRegistry.h"
 
 namespace {
@@ -19,6 +20,19 @@ QList<ConfigType> supportedConfigTypes()
     };
 }
 
+QList<CoreGeoFileRequirement> geoFileRequirements()
+{
+    return {
+        CoreGeoFileRequirement{
+            QStringLiteral("geoip.dat"),
+            QStringLiteral("geoip.dat"),
+            v2rayRulesDatRepositoryPath()},
+        CoreGeoFileRequirement{
+            QStringLiteral("geosite.dat"),
+            QStringLiteral("geosite.dat"),
+            v2rayRulesDatRepositoryPath()}};
+}
+
 } // namespace
 
 CoreDescriptor xrayCoreDescriptor()
@@ -30,7 +44,8 @@ CoreDescriptor xrayCoreDescriptor()
         QStringList{QStringLiteral("xray.exe")},
         20,
         QList<CoreType>{CoreType::SingBox},
-        true};
+        geoFileRequirements(),
+        {}};
 }
 
 namespace {

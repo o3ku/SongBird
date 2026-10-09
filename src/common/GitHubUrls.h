@@ -64,6 +64,14 @@ inline QString v2rayRulesDatRepositoryPath()
     return QStringLiteral("Loyalsoldier/v2ray-rules-dat");
 }
 
+// The geodata mihomo fetches for itself when it finds none on disk. Its binaries point at this
+// repository's `latest` release, so seeding from anywhere else would silently change the rules the
+// core resolves.
+inline QString metaRulesDatRepositoryPath()
+{
+    return QStringLiteral("MetaCubeX/meta-rules-dat");
+}
+
 inline QString singGeositeRepositoryPath()
 {
     return QStringLiteral("SagerNet/sing-geosite");

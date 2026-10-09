@@ -35,7 +35,8 @@ CoreDescriptor singBoxCoreDescriptor()
             QStringLiteral("sing-box.exe")},
         10,
         QList<CoreType>{},
-        false};
+        {},
+        {}};
 }
 
 namespace {

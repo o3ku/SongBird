@@ -4,10 +4,15 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <QCoreApplication>
+#include <QDir>
+
+#include "appcore/CoreStartupCheckpoint.h"
 #include "common/RoutingValuePattern.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
 #include "runtime/AuxiliaryTunConfig.h"
+#include "runtime/CoreInfo.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/SingBoxDnsConfigSupport.h"
 #include "runtime/core/CoreBackendRegistry.h"
@@ -94,6 +99,8 @@ private slots:
     void dnsDomainStrategyMapsUiVocabularyToSingBoxValues();
     void auxiliaryTunRootIsUsableInBothRoutingModes();
     void auxiliaryTunRootComesFromTheRuntimeLayer();
+    void coreDataDirectoryIsSharedByTheSeederAndTheCore();
+    void everyDeclaredGeoDatabaseHasADownloadSource();
 };
 
 void BackendContractTests::everyRegisteredCoreHasBackend()
@@ -417,6 +424,73 @@ void BackendContractTests::auxiliaryTunRootComesFromTheRuntimeLayer()
     QVERIFY(viaRuntime == viaBackend);
 
     QVERIFY(AuxiliaryTunConfig::buildRoot(CoreType::Unknown, config, AuxiliaryTunRouting::RelayToLocalProxy).isEmpty());
+}
+
+void BackendContractTests::coreDataDirectoryIsSharedByTheSeederAndTheCore()
+{
+    // Two places have to agree on one path. The startup path seeds geodata into coreGeoDirectory(),
+    // and the core reads it from the directory its own launch arguments name. If they ever diverge
+    // the app downloads tens of megabytes into a directory the core never opens, and the core
+    // quietly fetches a second copy -- into the very directory the app cannot see.
+    int coresWithADataDirectory = 0;
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        if (descriptor.dataDirectoryName.trimmed().isEmpty()) {
+            continue;
+        }
+        ++coresWithADataDirectory;
+
+        const ICoreBackend* backend = coreBackend(descriptor.type);
+        QVERIFY(backend != nullptr);
+
+        CoreInfo info;
+        info.type = descriptor.type;
+        info.program = QStringLiteral("C:/cores/%1").arg(descriptor.executableNames.value(0));
+        // Deliberately somewhere else: a core that declares a data directory must not fall back to
+        // the directory it runs from.
+        info.workingDirectory = QStringLiteral("C:/cores");
+
+        const QString dataDirectory = coreGeoDirectory(info, QCoreApplication::applicationDirPath());
+        QCOMPARE(
+            dataDirectory,
+            QDir(QCoreApplication::applicationDirPath()).filePath(descriptor.dataDirectoryName));
+
+        const QList<QStringList> argumentSets{
+            backend->launchArguments(QStringLiteral("{config}")),
+            backend->configPreflightArguments(QStringLiteral("config.json"))};
+        for (const QStringList& arguments : argumentSets) {
+            QVERIFY2(
+                arguments.contains(QDir::toNativeSeparators(dataDirectory)),
+                qPrintable(QStringLiteral("%1 is seeded in '%2' but is not told about it: %3")
+                               .arg(coreTypeDisplayName(descriptor.type), dataDirectory,
+                                   arguments.join(QChar(' ')))));
+        }
+    }
+
+    QVERIFY2(
+        coresWithADataDirectory > 0,
+        "no registered core declares a data directory; this contract would pass vacuously");
+}
+
+void BackendContractTests::everyDeclaredGeoDatabaseHasADownloadSource()
+{
+    // The startup path fetches whatever a descriptor lists and saves it under the declared name.
+    // A half-filled entry would send the downloader to "https://github.com//releases/..." and fail
+    // with a network error that says nothing about the actual mistake.
+    int declaredDatabases = 0;
+    for (const CoreDescriptor& descriptor : coreDescriptors()) {
+        for (const CoreGeoFileRequirement& requirement : descriptor.geoFileRequirements) {
+            ++declaredDatabases;
+            const QString context = QStringLiteral("%1 declares geo file '%2'")
+                .arg(coreTypeDisplayName(descriptor.type), requirement.fileName);
+            QVERIFY2(!requirement.fileName.trimmed().isEmpty(), qPrintable(context));
+            QVERIFY2(!requirement.sourceFileName.trimmed().isEmpty(), qPrintable(context));
+            QVERIFY2(requirement.repositoryPath.count(QChar('/')) == 1, qPrintable(context));
+        }
+    }
+
+    QVERIFY2(
+        declaredDatabases > 0,
+        "no registered core declares a geo database; this contract would pass vacuously");
 }
 
 QTEST_MAIN(BackendContractTests)

@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #include "common/OperationResult.h"
+#include "runtime/core/CoreDescriptor.h"
 
 class GeoResourceUpdateService {
 public:
@@ -20,6 +21,9 @@ public:
 
     OperationResult update(const QString& geoName) const;
     OperationResult updateSingBoxRuleSet(const QString& tag) const;
+    // Fetches one geodata database a core expects on disk. The file is saved under the name the
+    // core reads, which is not always the name the release publishes it under.
+    OperationResult updateCoreGeoFile(const CoreGeoFileRequirement& requirement) const;
 
 private:
     void reportProgress(const QString& message) const;

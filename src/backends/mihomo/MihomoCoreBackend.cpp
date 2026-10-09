@@ -9,6 +9,7 @@
 #include "backends/mihomo/MihomoCoreDescriptor.h"
 #include "common/GitHubUrls.h"
 #include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/core/CoreCatalog.h"
 
 namespace {
 
@@ -25,6 +26,21 @@ bool isSupportedNetwork(const QString& network)
 QString mihomoRepositoryPath()
 {
     return QStringLiteral("MetaCubeX/mihomo");
+}
+
+// `-d` names the core's home directory. Without it mihomo falls back to
+// %USERPROFILE%\.config\mihomo, where the app can neither pre-seed the geodata the generated
+// config always needs nor tell whether it is there -- and the core would fetch it during the
+// startup preflight instead, which is how a first launch ends in a preflight timeout. Both the
+// run and the preflight have to carry it, or the preflight would validate a different directory
+// from the one the core actually uses.
+QStringList dataDirectoryArguments(CoreType coreType)
+{
+    const QString dataDirectory =
+        catalogCoreDataDirectory(coreType, QCoreApplication::applicationDirPath());
+    return dataDirectory.isEmpty()
+        ? QStringList{}
+        : QStringList{QStringLiteral("-d"), QDir::toNativeSeparators(dataDirectory)};
 }
 
 } // namespace
@@ -56,10 +72,9 @@ QStringList MihomoCoreBackend::executableNames() const
 
 QStringList MihomoCoreBackend::launchArguments(const QString& configPlaceholder) const
 {
-    return {
-        QStringLiteral("-f"),
-        configPlaceholder
-    };
+    QStringList arguments = dataDirectoryArguments(type());
+    arguments << QStringLiteral("-f") << configPlaceholder;
+    return arguments;
 }
 
 bool MihomoCoreBackend::appendConfigArgument() const
@@ -69,11 +84,10 @@ bool MihomoCoreBackend::appendConfigArgument() const
 
 QStringList MihomoCoreBackend::configPreflightArguments(const QString& configFilePath) const
 {
-    return {
-        QStringLiteral("-t"),
-        QStringLiteral("-f"),
-        QDir::toNativeSeparators(configFilePath)
-    };
+    QStringList arguments = dataDirectoryArguments(type());
+    arguments << QStringLiteral("-t") << QStringLiteral("-f")
+              << QDir::toNativeSeparators(configFilePath);
+    return arguments;
 }
 
 QStringList MihomoCoreBackend::versionCommandArguments() const

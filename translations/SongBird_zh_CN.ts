@@ -1775,6 +1775,14 @@ The running core will be stopped before installation if needed.</source>
         <source>Downloaded %1 is empty.</source>
         <translation>下载的 %1 为空。</translation>
     </message>
+    <message>
+        <source>Geo file name is unavailable.</source>
+        <translation>Geo 文件名不可用。</translation>
+    </message>
+    <message>
+        <source>No download source for geo file %1.</source>
+        <translation>Geo 文件 %1 没有下载源。</translation>
+    </message>
 </context>
 <context>
     <name>JsonConfigRepository</name>
@@ -2096,8 +2104,8 @@ The running core will be stopped before installation if needed.</source>
         <translation>请自行验证</translation>
     </message>
     <message>
-        <source>Missing legacy geo files detected. Downloading to %1.</source>
-        <translation>检测到缺少旧版 Geo 文件，正在下载到 %1。</translation>
+        <source>Missing geo database files detected. Downloading to %1.</source>
+        <translation>检测到缺少 Geo 数据库文件，正在下载到 %1。</translation>
     </message>
     <message>
         <source>Proxy startup was canceled while Geo files were updating.</source>
@@ -2240,8 +2248,8 @@ The running core will be stopped before installation if needed.</source>
         <translation>核心启动失败后，关闭系统代理失败。</translation>
     </message>
     <message>
-        <source>Core working directory is empty.</source>
-        <translation>核心工作目录为空。</translation>
+        <source>Core data directory is empty.</source>
+        <translation>核心数据目录为空。</translation>
     </message>
     <message>
         <source>Local proxy listen port is unavailable.</source>
@@ -2308,12 +2316,24 @@ The running core will be stopped before installation if needed.</source>
         <translation>核心未在 %2 秒内打开本地代理端口 %1。</translation>
     </message>
     <message>
-        <source>Found geoip.dat and geosite.dat in %1.</source>
-        <translation>在 %1 中找到 geoip.dat 和 geosite.dat。</translation>
+        <source>Found %1 in %2.</source>
+        <translation>在 %2 中找到 %1。</translation>
     </message>
     <message>
-        <source>The selected core does not require local geoip.dat/geosite.dat files.</source>
-        <translation>所选核心不需要本地 geoip.dat/geosite.dat 文件。</translation>
+        <source>The selected core does not require local geo database files.</source>
+        <translation>所选核心不需要本地 Geo 数据库文件。</translation>
+    </message>
+    <message>
+        <source>missing %1</source>
+        <translation>缺少 %1</translation>
+    </message>
+    <message>
+        <source>empty %1</source>
+        <translation>%1 为空</translation>
+    </message>
+    <message>
+        <source>directory %1</source>
+        <translation>目录 %1</translation>
     </message>
     <message>
         <source>%1 cannot run %2 servers.

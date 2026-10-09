@@ -375,7 +375,7 @@ void ProxySession::startInternal(
 
     const OperationResult runtimeResourcesResult = validateCoreGeoFilesBeforeStart(coreInfo);
     if (!runtimeResourcesResult.success) {
-        if (!coreUsesLegacyGeoFiles(coreInfo)) {
+        if (!coreNeedsGeoFiles(coreInfo)) {
             setCheckpointStatus(CoreStartupCheckpointStatus::Failed, checkRuntimeResourcesStep,
                 runtimeResourcesResult.message);
             failStartup(runtimeResourcesResult);
@@ -788,15 +788,20 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const QString targetDirectory = coreInfo.workingDirectory.trimmed().isEmpty()
-        ? QFileInfo(coreInfo.program).absolutePath()
-        : coreInfo.workingDirectory;
+    const QString targetDirectory = coreGeoDirectory(coreInfo);
     if (targetDirectory.trimmed().isEmpty()) {
-        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Core working directory is empty.")));
+        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Core data directory is empty.")));
         return;
     }
 
-    const QString startMessage = tr("Missing legacy geo files detected. Downloading to %1.")
+    const QList<CoreGeoFileRequirement> requirements = coreGeoFileRequirementsFor(coreInfo);
+    if (requirements.isEmpty()) {
+        // Nothing to fetch after all; go straight on rather than stalling on an empty download.
+        startInternal(skipTunCleanup, true, showStartupOverlay);
+        return;
+    }
+
+    const QString startMessage = tr("Missing geo database files detected. Downloading to %1.")
         .arg(QDir::toNativeSeparators(targetDirectory));
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
     emit logMessage(geoValidationMessage);
@@ -804,16 +809,22 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     setPhase(Phase::ValidateRuntimeResources);
 
     const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread([this, targetDirectory, checkGeoStep, skipTunCleanup,
-                                       showStartupOverlay, guard]() {
+    QThread* thread = launchBackgroundThread([this, targetDirectory, requirements, checkGeoStep,
+                                       skipTunCleanup, showStartupOverlay, guard]() {
         const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
             postStartupDownloadProgress(checkGeoStep, message, guard);
         };
 
         GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
-        const QList<OperationResult> results{
-            geoUpdateService.update(QStringLiteral("geosite")),
-            geoUpdateService.update(QStringLiteral("geoip"))};
+        QList<OperationResult> results;
+        for (const CoreGeoFileRequirement& requirement : requirements) {
+            // A file already on disk is not fetched again, so a retry after a canceled or failed
+            // download resumes instead of re-pulling everything the core needs.
+            if (coreGeoFileIsPresent(targetDirectory, requirement.fileName)) {
+                continue;
+            }
+            results.append(geoUpdateService.updateCoreGeoFile(requirement));
+        }
         const OperationResult result = combineOperationResults(results);
 
         QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,

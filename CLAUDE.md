@@ -55,7 +55,7 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
   注意：这两个脚本都以 `exit 1` 结束，**在当前 PowerShell 会话里直接 `& script.ps1` 会把会话一起退出**（输出还没落盘）。要在会话内验证，用 [.workbuddy-ai/tools/run-check-in-runspace.ps1](.workbuddy-ai/tools/run-check-in-runspace.ps1) 把它跑在子 runspace 里。
 - **`end-to-end-smoke`** 带 `LABELS "smoke"` 且 `TIMEOUT 7200`，会真实下载核心/订阅并启动进程，**不要包含在常规跑测里**。
 
-**`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。它还断言辅助 TUN 根的两种路由形态：`outbounds` 必须是**扁平的对象列表**（嵌套数组正是 sing-box 报 `cannot unmarshal array into Go struct field _Options.outbounds` 而拒载的形态）、中继态含 `proxy` 出站且 `route.final=proxy`、直连态只有 `direct`/`block` 且 `route.final=direct`。
+**`backend-contract`** 守护 descriptor 声明与后端实现的一致性：遍历每个注册内核 × 其声明的每个协议，断言能生成配置，且两个不同协议不会映射到同一 wire protocol（后者用于捕获「落入 default 分支」的漂移）。新增协议支持时必须同时改 descriptor 与后端实现，否则此测试会失败。它还断言辅助 TUN 根的两种路由形态：`outbounds` 必须是**扁平的对象列表**（嵌套数组正是 sing-box 报 `cannot unmarshal array into Go struct field _Options.outbounds` 而拒载的形态）、中继态含 `proxy` 出站且 `route.final=proxy`、直连态只有 `direct`/`block` 且 `route.final=direct`。另外两条断言都带**空扫描守卫**（扫不到东西直接 FAIL，而不是静默通过）：① `coreDataDirectoryIsSharedByTheSeederAndTheCore` 要求「应用往里预置 geodata 的目录」与「核心启动参数里被告知的目录」是同一个（`-d` 漏传就会分叉）；② `everyDeclaredGeoDatabaseHasADownloadSource` 要求每条 geodata 需求都填全 `fileName`/`sourceFileName`/`repositoryPath`。
 
 ## 发布
 
@@ -129,6 +129,8 @@ GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `R
 ### 内核后端
 
 `CoreType` 只有三个真实内核：**Xray、SingBox、Mihomo**（外加 `Unknown`）。每个内核在 `backends/<name>/<Name>CoreDescriptor.cpp` 中通过静态 `CoreDescriptorRegistration` 自注册，`CoreDescriptor` 声明其 `supportedConfigTypes`、可执行文件名、`protocolPriority`（数值越小越优先：SingBox=10、Mihomo=15、Xray=20）等。
+
+`CoreDescriptor` 还声明内核**启动时需要的 geodata**：`geoFileRequirements`（每条 = 内核在磁盘上读的 `fileName` + 上游 `latest` release 里的 `sourceFileName` + `repositoryPath`；两者不同是因为内核会改名，如 mihomo 读 `GeoSite.dat` 而上游发布 `geosite.dat`）与 `dataDirectoryName`（内核自己的数据目录，应用目录下的子目录；非空时后端必须把它作为 `-d` 传给核心，**且预检也要传**，否则预检校验的目录与核心实际用的不是同一个）。启动链路 `validateCoreGeoFilesBeforeStart` → 缺则 `downloadMissingGeoFilesAndResume` 是表驱动的：Xray 在**运行目录**要 `geoip.dat`+`geosite.dat`（Loyalsoldier），mihomo 在 `<应用目录>/mihomo` 要 `GeoSite.dat`+`geoip.metadb`（MetaCubeX）。⚠️ 给 mihomo 传 `-d` 是承重的：不给它就回落到 `%USERPROFILE%\.config\mihomo`，应用既种不进去也看不见，而它会**在预检窗口内**（默认只有 15 s）自己下载 geodata（实测 40–62 s）⇒ 首次启动直接预检超时。⚠️ 也**不能**把 `-d` 指向 `songbird.json` 所在目录：sing-box 的 `cache.db` 就写在 `applicationDirPath()`，两个核心会抢同一个文件。
 
 `ICoreBackend`（[runtime/core/ICoreBackend.h](src/runtime/core/ICoreBackend.h)）是内核的统一契约：配置生成（`buildClientRoot`）、辅助 TUN 根（`buildAuxiliaryTunClientRoot`，带 `AuxiliaryTunRouting`）、启动参数、版本探测、服务器校验、发布仓库等。新增内核 = 加一个 descriptor + 一个 backend 实现，其余各层无需改动；不支持 TUN 的内核不必覆写 `buildAuxiliaryTunClientRoot`，基类默认返回空对象。
 

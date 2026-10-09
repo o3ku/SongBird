@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDir>
 #include <QList>
 #include <QFileInfo>
 #include <QString>
@@ -96,8 +97,30 @@ inline QList<CoreType> catalogAuxiliaryTunCoreTypes(CoreType coreType)
     return descriptor != nullptr ? descriptor->auxiliaryTunCoreTypes : QList<CoreType>{};
 }
 
-inline bool catalogCoreRequiresLegacyGeoFiles(CoreType coreType)
+inline QList<CoreGeoFileRequirement> catalogCoreGeoFileRequirements(CoreType coreType)
 {
     const CoreDescriptor* descriptor = coreDescriptor(coreType);
-    return descriptor != nullptr && descriptor->requiresLegacyGeoFiles;
+    return descriptor != nullptr ? descriptor->geoFileRequirements : QList<CoreGeoFileRequirement>{};
+}
+
+inline bool catalogCoreNeedsGeoFiles(CoreType coreType)
+{
+    return !catalogCoreGeoFileRequirements(coreType).isEmpty();
+}
+
+inline QString catalogCoreDataDirectoryName(CoreType coreType)
+{
+    const CoreDescriptor* descriptor = coreDescriptor(coreType);
+    return descriptor != nullptr ? descriptor->dataDirectoryName : QString();
+}
+
+// Absolute path of the core's own data directory, or empty when it declares none -- in which case
+// the core reads its data from the directory it runs in. The application directory is a parameter
+// rather than read from QCoreApplication so the resolution stays testable against a temp dir.
+inline QString catalogCoreDataDirectory(CoreType coreType, const QString& applicationDirectory)
+{
+    const QString dataDirectoryName = catalogCoreDataDirectoryName(coreType).trimmed();
+    return dataDirectoryName.isEmpty()
+        ? QString()
+        : QDir(applicationDirectory).filePath(dataDirectoryName);
 }

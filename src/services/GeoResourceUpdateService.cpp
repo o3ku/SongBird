@@ -87,6 +87,28 @@ OperationResult GeoResourceUpdateService::updateSingBoxRuleSet(const QString& ta
         QDir(targetDirectory_).filePath(QStringLiteral("%1/%2").arg(kSingBoxRuleSetDirectoryName, fileName)));
 }
 
+OperationResult GeoResourceUpdateService::updateCoreGeoFile(
+    const CoreGeoFileRequirement& requirement) const
+{
+    const QString fileName = requirement.fileName.trimmed();
+    if (fileName.isEmpty()) {
+        return OperationResult::fail(
+            QCoreApplication::translate("GeoResourceUpdateService", "Geo file name is unavailable."));
+    }
+
+    if (requirement.sourceFileName.trimmed().isEmpty()
+        || requirement.repositoryPath.trimmed().isEmpty()) {
+        return OperationResult::fail(
+            QCoreApplication::translate("GeoResourceUpdateService", "No download source for geo file %1.")
+                .arg(fileName));
+    }
+
+    return downloadAndSave(
+        githubLatestReleaseDownloadUrl(requirement.repositoryPath, requirement.sourceFileName),
+        fileName,
+        QDir(targetDirectory_).filePath(fileName));
+}
+
 OperationResult GeoResourceUpdateService::downloadAndSave(
     const QUrl& url,
     const QString& fileName,
