@@ -1156,8 +1156,20 @@ Restart SongBird and use the downloaded package to update to the new version.</s
 <context>
     <name>CoreConfigPreflight</name>
     <message>
+        <source>Core config preflight failed because the check process crashed.</source>
+        <translation>核心配置预检失败：检查进程崩溃。</translation>
+    </message>
+    <message>
         <source>Core config preflight failed to start: %1</source>
         <translation>核心配置预检启动失败：%1</translation>
+    </message>
+    <message>
+        <source>Core config preflight failed with exit code %1.</source>
+        <translation>核心配置预检失败：退出码 %1。</translation>
+    </message>
+    <message>
+        <source>Core config preflight timed out after %1 ms.</source>
+        <translation>核心配置预检在 %1 毫秒后超时。</translation>
     </message>
     <message>
         <source>Core config preflight failed: config file was not found: %1</source>

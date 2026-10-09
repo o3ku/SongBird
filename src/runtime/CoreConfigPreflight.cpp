@@ -108,7 +108,8 @@ OperationResult validateCoreConfigBeforeStart(
     const QString output = normalizeProcessOutput(outcome.output);
 
     if (outcome.status == ProcessRunner::Status::TimedOut) {
-        QString message = QStringLiteral("Core config preflight timed out after %1 ms.").arg(timeoutMs);
+        QString message = QCoreApplication::translate(
+            "CoreConfigPreflight", "Core config preflight timed out after %1 ms.").arg(timeoutMs);
         if (!output.isEmpty()) {
             message += QStringLiteral("\n%1").arg(output);
         }
@@ -116,13 +117,17 @@ OperationResult validateCoreConfigBeforeStart(
     }
 
     if (!outcome.completedNormally() || outcome.exitCode != 0) {
-        QString message = QStringLiteral("Core config preflight failed");
+        // Whole sentences rather than a shared prefix plus a suffix: a translator cannot reorder
+        // "failed" and "with exit code N" across languages when they arrive as separate strings.
+        QString message;
         if (outcome.exitStatus == QProcess::CrashExit) {
-            message += QStringLiteral(" because the check process crashed");
+            message = QCoreApplication::translate(
+                "CoreConfigPreflight", "Core config preflight failed because the check process crashed.");
         } else {
-            message += QStringLiteral(" with exit code %1").arg(outcome.exitCode);
+            message = QCoreApplication::translate(
+                "CoreConfigPreflight", "Core config preflight failed with exit code %1.")
+                          .arg(outcome.exitCode);
         }
-        message += QStringLiteral(".");
         if (!output.isEmpty()) {
             message += QStringLiteral("\n%1").arg(output);
         }
