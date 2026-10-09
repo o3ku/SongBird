@@ -10,13 +10,15 @@ on:
       - main
     tags:
       - 'v*'
-  # Keep-alive for the vcpkg cache. GitHub deletes cache entries that have not
-  # been accessed in over 7 days, and its eviction checks now run hourly, so a
-  # quiet month makes the next tag build pay the full ~1.5h Qt5 compile: the
-  # 2026-08-17 run was followed by 5 idle weeks, and the next build took
-  # 1h49m51s instead of the usual ~20 minutes. A weekly run sits exactly on the
-  # 7-day boundary and scheduled runs are often delayed, so this fires twice a
-  # week. Restoring the cache is what counts as an access.
+  # Keep-alive for the vcpkg cache. The documented retention deletes an entry
+  # seven days after its last access, and restoring the cache is what counts as
+  # an access, so a quiet month makes the next tag build pay the full ~1.5h Qt5
+  # compile: the 2026-08-17 run was followed by 5 idle weeks, and the next build
+  # took 1h49m51s instead of the usual ~20 minutes. That eviction is lazy rather
+  # than punctual - entries have been seen to outlive their due date by a day or
+  # more - but it does happen, so the keep-alive cannot lean on the delay. A
+  # weekly run sits exactly on the boundary and scheduled runs are often delayed,
+  # so this fires twice a week.
   #
   # The run lands on the default branch, so the cache keeps the default-branch
   # scope tag builds read from, and "Publish GitHub release" stays skipped
@@ -29,6 +31,11 @@ on:
 
 permissions:
   contents: write
+  # Only the cache-eviction step uses this. `actions/cache` itself does not need
+  # it - it authenticates with ACTIONS_RUNTIME_TOKEN - but listing and deleting
+  # repository cache entries goes through the REST API, which wants "Actions"
+  # repository permission (write).
+  actions: write
 
 # One build per ref. Never cancel in progress: a killed run loses the vcpkg
 # cache save, which costs ~1.5h of Qt5 compilation on the next run.
@@ -186,11 +193,13 @@ jobs:
         # a second complete copy of Qt5 (~1 GB) on each such update, and every
         # extra gigabyte is one the repository's 10 GB cache budget cannot spend
         # on a store vcpkg can actually use. Exceeding that budget does not fail
-        # the save - GitHub evicts the least recently used entries, and evicts
-        # anything not accessed for seven days - so this is about keeping the
-        # budget useful rather than about avoiding an error. The archives worth
-        # keeping are exactly the ones vcpkg recorded in its installed status
-        # file, so drop everything else.
+        # the save - the documented policy is a 10 GB limit plus seven-day
+        # retention from the last access, and GitHub evicts the least recently
+        # used entries - but that eviction has not been observed to fire, which is
+        # why the step after the save evicts entries explicitly. This step is
+        # about the store on disk rather than about the entries in the
+        # repository: the archives worth keeping are exactly the ones vcpkg
+        # recorded in its installed status file, so drop everything else.
         if: always()
         shell: pwsh
         run: |
@@ -298,9 +307,149 @@ jobs:
           path: ${{ github.workspace }}/vcpkg_cache
           key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Evict superseded vcpkg caches
+        id: evict
+        # The cache is repository-wide, so it is also repository-bounded, and the
+        # entries in it are not all worth their size. An entry is only ever
+        # selected by the restore above, which probes "<prefix><image>-<run id>"
+        # and then the prefix alone and takes the most recently created match for
+        # whichever it tries. So an entry nobody can select again is one that is
+        # neither the newest of its own namespace nor the newest overall, and it
+        # sits in the budget forever.
+        #
+        # The documented policy is a 10 GB size limit plus seven-day retention
+        # from the last access, and GitHub evicts the least recently used entries
+        # when either is exceeded - so nothing was ever going to fail. What it
+        # has not been observed to do is actually evict: on 2026-10-08 the
+        # repository held 11 entries and 10.7 GiB, over budget, with every entry
+        # intact, and the two entries written on 2026-10-01 and never read were
+        # still there 7.5 days later. Ten of those eleven were pre-namespace
+        # saves that the restore can no longer reach, so this step evicts them
+        # itself rather than waiting.
+        #
+        # The namespace is the key with the save step's own suffix, "<run
+        # id>[-<attempt>]", stripped off, and the grouping is per ref as well as
+        # per namespace because a tag ref can only read its own entries. That
+        # suffix is written by this workflow and is always numeric; the part in
+        # front of it is the runner image version and belongs to GitHub, so it is
+        # deliberately not pattern-matched. A change to the image version's
+        # format therefore cannot reclassify a live store as a stranger - it just
+        # becomes part of a namespace name, and keys sharing a namespace still
+        # collapse to the newest one. A key that matches neither shape keeps a
+        # namespace to itself and survives, which is the fail-open direction: an
+        # entry that cannot be classified is more expensive to lose than to keep.
+        #
+        # A namespace whose newest entry no run has restored in two weeks is
+        # dropped as well. The fleet rolls a new image out within days, so a
+        # store unread for two weeks belongs to an image that is no longer handed
+        # out; GitHub's own retention makes the same call at seven days and this
+        # only differs by the margin. Losing that bet costs one partial reuse on a
+        # run that lands on the old image again - the unscoped fallback still
+        # finds the newest store of any image - rather than a cold start.
+        #
+        # Maintenance only: this step must never be able to fail a release, so
+        # every failure path warns and exits 0, and nothing is deleted unless the
+        # listing succeeded.
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $prefix = "vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-"
+          # Concatenated rather than interpolated: inside a double-quoted string
+          # "$prefix2026..." is read as one variable name, and the digits are
+          # legal in one, so interpolation would silently yield a string that
+          # matches no key and this guard would never fire.
+          $saved = $prefix + "${{ steps.image.outputs.image }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          $repo = "${{ github.repository }}"
+          $staleDays = 14
+
+          try {
+            # --slurp folds --paginate's concatenated pages into one JSON array,
+            # which keeps the parsing in PowerShell instead of jq.
+            $pages = gh api "repos/$repo/actions/caches?per_page=100" --paginate --slurp | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw "gh api exited $LASTEXITCODE" }
+
+            $live = @()
+            foreach ($e in @($pages | ForEach-Object { $_.actions_caches })) {
+              if (-not $e -or -not $e.key.StartsWith($prefix)) { continue }
+              $ns = $e.key
+              for ($i = 0; $i -lt 2; $i++) {
+                $stripped = $ns -replace '-\d+$', ''
+                if ($stripped -eq $ns) { break }
+                $ns = $stripped
+              }
+              $live += [pscustomobject]@{ Entry = $e; Namespace = $ns }
+            }
+
+            $now = [datetime]::UtcNow
+            $drop = @{}
+            $kept = @()
+            $groups = @($live | Group-Object -Property { $_.Entry.ref + "`t" + $_.Namespace })
+            foreach ($g in $groups) {
+              $ordered = @($g.Group | Sort-Object { [datetime]$_.Entry.created_at } -Descending)
+              $kept += $ordered[0]
+              foreach ($older in @($ordered | Select-Object -Skip 1)) { $drop[$older.Entry.id] = $older }
+            }
+
+            $stale = @()
+            foreach ($k in $kept) {
+              if (-not $k.Entry.last_accessed_at) { continue }
+              $accessed = [datetime]::MinValue
+              # The trailing Z is dropped before parsing so the value is read as
+              # the UTC wall clock it is, whatever timezone the runner is in.
+              if (-not [datetime]::TryParse(($k.Entry.last_accessed_at -replace 'Z$', ''), [ref]$accessed)) { continue }
+              if (($now - $accessed).TotalDays -ge $staleDays) {
+                $drop[$k.Entry.id] = $k
+                $stale += $k
+              }
+            }
+
+            # The save step ran a moment ago. Never delete what this run wrote,
+            # even when another run has since written a newer entry that shares
+            # its namespace.
+            foreach ($id in @($drop.Keys)) {
+              if ($drop[$id].Entry.key -eq $saved) { $drop.Remove($id) }
+            }
+
+            $freed = 0
+            $failed = 0
+            foreach ($id in @($drop.Keys)) {
+              gh api -X DELETE "repos/$repo/actions/caches/$id" | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                $failed++
+                Write-Warning "vcpkg cache eviction: could not delete $id ($($drop[$id].Entry.key))"
+              } else {
+                $freed += $drop[$id].Entry.size_in_bytes
+              }
+            }
+
+            Write-Host ("vcpkg cache eviction: $($live.Count) entry/entries under the prefix in " +
+              "$($groups.Count) namespace(s); kept $($live.Count - $drop.Count + $failed), " +
+              "deleted $($drop.Count - $failed), freed $([math]::Round($freed / 1MB)) MB")
+            foreach ($s in $stale) {
+              Write-Host "  dropped $($s.Entry.key) as stale [$($s.Entry.ref)]"
+            }
+            foreach ($k in $kept) {
+              if ($stale.Entry.id -contains $k.Entry.id) { continue }
+              Write-Host "  kept $($k.Entry.key) [$($k.Entry.ref)]"
+            }
+          } catch {
+            Write-Warning "vcpkg cache eviction: $($_.Exception.Message) - nothing else deleted"
+          }
+          exit 0
+
       - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        # Not ilammy/msvc-dev-cmd, which is what this used to be: it has not
+        # been touched since 2024-04 and still declares `runs.using: node20`, so
+        # the runner now warns on every run that it is forcing the action onto
+        # Node 24, and five of its open pull requests ask for exactly that
+        # update. This is a maintained drop-in with the same inputs, and it
+        # declares `runs.using: node24`.
+        uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
+          # Unlike the action this replaces, `arch` has no default here, so the
+          # target has to be spelled out.
           arch: x64
 
       - name: Configure
