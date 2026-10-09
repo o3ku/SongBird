@@ -93,8 +93,12 @@ What CI guarantees that a local build does not:
      pre-existing `mt.exe : command line error c10100a7` manifest failure that has nothing to do
      with the source. It does not touch the test targets: build those individually and treat
      `unexpected failures: none` as a clean run.
-   - The `smoke`-labelled tests download cores and subscriptions and start real processes,
-     so they are excluded here and in CI.
+   - The `smoke`-labelled tests download cores and subscriptions, start real processes, and
+     write real system-proxy / registry entries, so CI excludes them with `-LE smoke`. The
+     command above does **not** pass `-LE smoke`, so it runs them too — that is fine and adds
+     coverage, but it means the two counts differ by design: a full local run reports **53**
+     tests while CI reports **52**. Before reporting a lost test, reconcile with
+     `ctest --test-dir build/msvc-tests -N -L smoke` (exactly 1: `end-to-end-smoke`).
    - Stop and report failures instead of tagging.
 
 6. Commit and push `main` before tagging.
