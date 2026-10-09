@@ -1,10 +1,13 @@
 #include <QtTest>
 
+#include <QApplication>
 #include <QHash>
 #include <QLabel>
 #include <QPushButton>
+#include <QSemaphore>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QThread>
 
 #include <memory>
 
@@ -52,6 +55,9 @@ public:
     OperationResult setLoopbackEnabled(const QString& packageFamilyName, bool enabled) const override
     {
         perPackageRequests.append(qMakePair(packageFamilyName, enabled));
+        if (!waitForRelease()) {
+            return OperationResult::fail(QStringLiteral("the caller never released the hold"));
+        }
         return failingPackages.contains(packageFamilyName)
             ? OperationResult::fail(QStringLiteral("access denied"))
             : OperationResult::ok();
@@ -60,7 +66,16 @@ public:
     OperationResult setLoopbackEnabledElevated(const QHash<QString, bool>& requested) const override
     {
         elevatedRequests.append(requested);
+        if (!waitForRelease()) {
+            return OperationResult::fail(QStringLiteral("the caller never released the hold"));
+        }
         return elevatedResult;
+    }
+
+    // Lets the test tell "the call is in flight right now" from "the call is over".
+    void releaseApply() const
+    {
+        applyGate.release(1);
     }
 
     bool available = true;
@@ -70,9 +85,36 @@ public:
     QStringList failingPackages;
     OperationResult elevatedResult = OperationResult::ok();
 
+    // When set, a mutating call parks until releaseApply() runs, which is what makes the dialog's
+    // state *while the platform work is in flight* observable. The hold is bounded on purpose: a
+    // call made on the GUI thread can never be released, because the thread that would release it
+    // is the one sitting inside the call, and an unbounded wait would hang the suite instead of
+    // failing it.
+    bool holdApply = false;
+    int holdTimeoutMs = 3000;
+    mutable QSemaphore applyStarted;
+    mutable QSemaphore applyGate;
+    mutable bool applyHoldTimedOut = false;
+    mutable QList<QThread*> mutatingThreads;
+
     mutable int listPackagesCalls = 0;
     mutable QList<QPair<QString, bool>> perPackageRequests;
     mutable QList<QHash<QString, bool>> elevatedRequests;
+
+private:
+    bool waitForRelease() const
+    {
+        mutatingThreads.append(QThread::currentThread());
+        applyStarted.release();
+        if (!holdApply) {
+            return true;
+        }
+        if (applyGate.tryAcquire(1, holdTimeoutMs)) {
+            return true;
+        }
+        applyHoldTimedOut = true;
+        return false;
+    }
 };
 
 QTableWidget* tableOf(const UwpLoopbackDialog& dialog)
@@ -83,6 +125,11 @@ QTableWidget* tableOf(const UwpLoopbackDialog& dialog)
 QPushButton* applyButtonOf(const UwpLoopbackDialog& dialog)
 {
     return dialog.findChild<QPushButton*>(QStringLiteral("uwpLoopbackApplyButton"));
+}
+
+QPushButton* refreshButtonOf(const UwpLoopbackDialog& dialog)
+{
+    return dialog.findChild<QPushButton*>(QStringLiteral("uwpLoopbackRefreshButton"));
 }
 
 QLabel* statusLabelOf(const UwpLoopbackDialog& dialog)
@@ -137,6 +184,7 @@ private slots:
     void failedPerPackageApplyNamesThePackage();
     void partialPerPackageFailureOnlyKeepsTheFailedRowPending();
     void successfulPerPackageApplyClearsThePendingRow();
+    void applyDoesNotBlockTheGuiThread();
 };
 
 void UwpLoopbackDialogTests::packageListComesFromTheInjectedService()
@@ -325,6 +373,53 @@ void UwpLoopbackDialogTests::successfulPerPackageApplyClearsThePendingRow()
     QCOMPARE(service->perPackageRequests.constFirst().first, QStringLiteral("Alpha_pf"));
     QCOMPARE(service->perPackageRequests.constFirst().second, true);
     QTRY_VERIFY_WITH_TIMEOUT(!applyButtonOf(*dialog)->isEnabled(), 10000);
+}
+
+// The apply used to run on the GUI thread: an un-elevated apply waits up to three minutes for the
+// elevated helper script, and an elevated one makes a process call per package, each of which can
+// take thirty seconds. During that time the window did not repaint and the only sign of life was
+// a wait cursor. This test is what pins the fix: the fake parks inside the platform call, so the
+// assertions below run while the apply is genuinely still in flight.
+void UwpLoopbackDialogTests::applyDoesNotBlockTheGuiThread()
+{
+    auto service = std::make_shared<FakeUwpLoopbackService>();
+    service->packages = {makePackage(QStringLiteral("Alpha_pf"), false)};
+    service->holdApply = true;
+    const std::unique_ptr<UwpLoopbackDialog> dialog = makeDialog(service, false);
+    dialog->show();
+    QTRY_COMPARE_WITH_TIMEOUT(tableOf(*dialog)->rowCount(), 1, 10000);
+
+    setRowChecked(*dialog, 0, true);
+    applyButtonOf(*dialog)->click();
+
+    QTRY_VERIFY_WITH_TIMEOUT(service->applyStarted.available() > 0, 10000);
+    // A timeout here means the call was made on the GUI thread: only a thread that owns the event
+    // loop can be released while the call is still running, and the GUI thread is the one that
+    // would have had to call releaseApply().
+    QVERIFY(!service->applyHoldTimedOut);
+
+    // The platform call must not arrive on the GUI thread.
+    QVERIFY(!service->mutatingThreads.isEmpty());
+    for (QThread* callThread : service->mutatingThreads) {
+        QVERIFY(callThread != qApp->thread());
+    }
+
+    // While it runs, the dialog has to say so, and every control that could start a second apply
+    // or edit the pending set has to be frozen: the worker applies a snapshot, so an edit made
+    // now would be silently dropped by the completion handler.
+    QCOMPARE(statusLabelOf(*dialog)->text(),
+             QCoreApplication::translate("UwpLoopbackDialog", "Applying UWP loopback changes..."));
+    QVERIFY(!applyButtonOf(*dialog)->isEnabled());
+    QVERIFY(!refreshButtonOf(*dialog)->isEnabled());
+    QVERIFY(!tableOf(*dialog)->isEnabled());
+
+    // A second click must not start a second apply.
+    applyButtonOf(*dialog)->click();
+    QCOMPARE(service->elevatedRequests.size(), 1);
+
+    service->releaseApply();
+    QTRY_COMPARE_WITH_TIMEOUT(service->listPackagesCalls, 2, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(tableOf(*dialog)->isEnabled(), 10000);
 }
 
 QTEST_MAIN(UwpLoopbackDialogTests)

@@ -3400,6 +3400,10 @@ Switch this protocol to %3?</source>
         <translation>正在加载 UWP 应用列表...</translation>
     </message>
     <message>
+        <source>Applying UWP loopback changes...</source>
+        <translation>正在应用 UWP 环回更改...</translation>
+    </message>
+    <message>
         <source>CheckNetIsolation.exe was not found.</source>
         <translation>未找到 CheckNetIsolation.exe。</translation>
     </message>

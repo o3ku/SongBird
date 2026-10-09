@@ -48,6 +48,23 @@ protected:
     void showEvent(QShowEvent* event) override;
 
 private:
+    // What a background apply needs, captured on the GUI thread before the worker starts.
+    //
+    // The worker must not read packages_ or dirtyPackages_ for itself: the apply runs while the
+    // user can still reach the table, so anything it read later would be a different set from the
+    // one the click was made against, and the completion handler would commit that instead.
+    struct ApplyRequest {
+        QHash<QString, bool> requestedStates;
+        bool elevated = false;
+    };
+
+    // What the worker reports back: the packages whose new state was committed, and one message
+    // per failure. Packages that are absent from appliedStates are still pending.
+    struct ApplyOutcome {
+        QHash<QString, bool> appliedStates;
+        QStringList failures;
+    };
+
     void setupUi();
     void startLoadingPackages();
     void finishLoadingPackages(QList<WindowsUwpPackageInfo> loadedPackages, const OperationResult& result);
@@ -55,6 +72,7 @@ private:
     void reloadTable();
     void applyFilter();
     void applyChanges();
+    void finishApplyingChanges(const ApplyOutcome& outcome);
     void updateActionState();
     void setStatus(const QString& statusText);
     void updateStatusSummary();

@@ -2,7 +2,6 @@
 
 #include <utility>
 
-#include <QApplication>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMetaObject>
@@ -10,6 +9,7 @@
 #include <QPushButton>
 #include <QShowEvent>
 #include <QStackedLayout>
+#include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QThread>
@@ -251,50 +251,78 @@ void UwpLoopbackDialog::applyFilter()
 
 void UwpLoopbackDialog::applyChanges()
 {
-    if (dirtyPackages_.isEmpty() || !dependencies_.loopbackService) {
+    if (applying_ || dirtyPackages_.isEmpty() || !dependencies_.loopbackService) {
         return;
+    }
+
+    // Snapshot before handing the work off. The table stays live while the worker runs, so the
+    // worker is given the packages and states this click was made against rather than reading
+    // the dialog's own members from another thread.
+    ApplyRequest request;
+    request.elevated = isProcessElevated();
+    for (const QString& packageFamilyName : dirtyPackages_) {
+        request.requestedStates.insert(packageFamilyName, currentLoopbackState(packageFamilyName));
     }
 
     applying_ = true;
     updateActionState();
-    QApplication::setOverrideCursor(Qt::WaitCursor);
 
-    QStringList failures;
-    const QSet<QString> pendingPackages = dirtyPackages_;
-    if (isProcessElevated()) {
-        for (const QString& packageFamilyName : pendingPackages) {
-            const bool enabled = currentLoopbackState(packageFamilyName);
-            const OperationResult result = dependencies_.loopbackService->setLoopbackEnabled(packageFamilyName, enabled);
+    QPointer<UwpLoopbackDialog> dialogGuard(this);
+    const std::shared_ptr<IUwpLoopbackService> service = dependencies_.loopbackService;
+    QThread* thread = launchBackgroundThread([dialogGuard, service, request]() {
+        ApplyOutcome outcome;
+        if (request.elevated) {
+            for (auto it = request.requestedStates.constBegin();
+                 it != request.requestedStates.constEnd();
+                 ++it) {
+                const OperationResult result = service->setLoopbackEnabled(it.key(), it.value());
+                if (result.success) {
+                    outcome.appliedStates.insert(it.key(), it.value());
+                } else {
+                    outcome.failures.append(QStringLiteral("%1: %2").arg(it.key(), result.message));
+                }
+            }
+        } else {
+            const OperationResult result =
+                service->setLoopbackEnabledElevated(request.requestedStates);
             if (result.success) {
-                originalEnabledByPackage_.insert(packageFamilyName, enabled);
-                dirtyPackages_.remove(packageFamilyName);
+                outcome.appliedStates = request.requestedStates;
             } else {
-                failures.append(QStringLiteral("%1: %2").arg(packageFamilyName, result.message));
+                outcome.failures.append(result.message);
             }
         }
-    } else {
-        QHash<QString, bool> changes;
-        for (const QString& packageFamilyName : pendingPackages) {
-            changes.insert(packageFamilyName, currentLoopbackState(packageFamilyName));
+
+        if (dialogGuard.isNull()) {
+            return;
         }
 
-        const OperationResult result = dependencies_.loopbackService->setLoopbackEnabledElevated(changes);
-        if (result.success) {
-            dirtyPackages_.clear();
-        } else {
-            failures.append(result.message);
-        }
-    }
+        QMetaObject::invokeMethod(
+            dialogGuard.data(),
+            [dialogGuard, outcome]() {
+                if (!dialogGuard.isNull()) {
+                    dialogGuard->finishApplyingChanges(outcome);
+                }
+            },
+            Qt::QueuedConnection);
+    });
+    thread->start();
+}
 
-    QApplication::restoreOverrideCursor();
+void UwpLoopbackDialog::finishApplyingChanges(const ApplyOutcome& outcome)
+{
     applying_ = false;
 
-    if (failures.isEmpty()) {
+    for (auto it = outcome.appliedStates.constBegin(); it != outcome.appliedStates.constEnd(); ++it) {
+        originalEnabledByPackage_.insert(it.key(), it.value());
+        dirtyPackages_.remove(it.key());
+    }
+
+    if (outcome.failures.isEmpty()) {
         setStatus(tr("Applied UWP loopback changes."));
         startLoadingPackages();
     } else {
         reloadTable();
-        setStatus(tr("Some UWP loopback changes failed:\n%1").arg(failures.join(QChar('\n'))));
+        setStatus(tr("Some UWP loopback changes failed:\n%1").arg(outcome.failures.join(QChar('\n'))));
     }
     updateActionState();
 }
@@ -307,6 +335,12 @@ void UwpLoopbackDialog::updateActionState()
     if (refreshButton_ != nullptr) {
         refreshButton_->setEnabled(!loading_ && !applying_);
     }
+    if (table_ != nullptr) {
+        // The apply runs on a worker thread, so the user can still reach the table while it is in
+        // flight. The worker works from a snapshot, so an edit made now would be dropped by the
+        // completion handler -- freeze the table instead of silently discarding the edit.
+        table_->setEnabled(!loading_ && !applying_);
+    }
     updateStatusSummary();
 }
 
@@ -318,18 +352,30 @@ void UwpLoopbackDialog::setStatus(const QString& statusText)
 
 void UwpLoopbackDialog::updateStatusSummary()
 {
-    if (statusLabel_ != nullptr) {
-        const int selectedCount = UwpUi::enabledPackageCount(packages_);
-
-        const QString summary = dirtyPackages_.isEmpty()
-            ? tr("Enabled: %1/%2 apps").arg(selectedCount).arg(packages_.size())
-            : tr("Enabled: %1/%2 apps, %3 pending")
-                  .arg(selectedCount)
-                  .arg(packages_.size())
-                  .arg(dirtyPackages_.size());
-        statusLabel_->setText(summary);
-        statusLabel_->setToolTip(statusMessage_);
+    if (statusLabel_ == nullptr) {
+        return;
     }
+
+    if (applying_) {
+        // The apply can take minutes: an un-elevated one waits for the elevated helper script,
+        // and an elevated one makes a process call per package. Say so in the label the user is
+        // already looking at rather than only in its tooltip.
+        const QString applyingText = tr("Applying UWP loopback changes...");
+        statusLabel_->setText(applyingText);
+        statusLabel_->setToolTip(applyingText);
+        return;
+    }
+
+    const int selectedCount = UwpUi::enabledPackageCount(packages_);
+
+    const QString summary = dirtyPackages_.isEmpty()
+        ? tr("Enabled: %1/%2 apps").arg(selectedCount).arg(packages_.size())
+        : tr("Enabled: %1/%2 apps, %3 pending")
+              .arg(selectedCount)
+              .arg(packages_.size())
+              .arg(dirtyPackages_.size());
+    statusLabel_->setText(summary);
+    statusLabel_->setToolTip(statusMessage_);
 }
 
 bool UwpLoopbackDialog::confirmDiscardChanges()
