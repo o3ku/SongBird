@@ -486,7 +486,14 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $version = $tag -replace '^v', ''
-          gh release create $tag songbird.exe --title "SongBird $version" --generate-notes
+          # A tag carrying a suffix (v2.5.0-beta1) is a prerelease. Without this it would be
+          # created as a normal release and become the repository's "Latest release" while
+          # still a beta, which is what a visitor sees first.
+          $createArgs = @('release', 'create', $tag, 'songbird.exe', '--title', "SongBird $version", '--generate-notes')
+          if ($version -match '-') {
+            $createArgs += '--prerelease'
+          }
+          gh @createArgs
           if ($LASTEXITCODE -ne 0) {
             gh release upload $tag songbird.exe --clobber
           }

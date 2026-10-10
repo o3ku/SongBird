@@ -14,7 +14,7 @@
 #include "common/AppPlatform.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "2.4.5"
+#define SONGBIRD_APP_VERSION "2.5.0-beta1"
 #endif
 
 namespace {

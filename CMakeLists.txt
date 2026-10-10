@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(SongBird VERSION 2.4.5 LANGUAGES CXX)
+project(SongBird VERSION 2.5.0 LANGUAGES CXX)
+
+# The version the application reports. project(VERSION) takes digits only -- a prerelease
+# suffix there is a configure error, not a warning -- so a beta label rides alongside it
+# instead. Bump both lines together, and empty the suffix for a final release.
+set(SONGBIRD_VERSION_SUFFIX "-beta1")
+set(SONGBIRD_DISPLAY_VERSION "${PROJECT_VERSION}${SONGBIRD_VERSION_SUFFIX}")
 
 # Compile every translation unit as UTF-8, independent of the host's ANSI code page.
 # The sources contain non-ASCII string literals (the Chinese UI strings and the

@@ -713,12 +713,12 @@ target_include_directories(songbird_auto
 
 target_compile_definitions(songbird
     PRIVATE
-        SONGBIRD_APP_VERSION="${PROJECT_VERSION}"
+        SONGBIRD_APP_VERSION="${SONGBIRD_DISPLAY_VERSION}"
 )
 
 target_compile_definitions(songbird_auto
     PRIVATE
-        SONGBIRD_APP_VERSION="${PROJECT_VERSION}"
+        SONGBIRD_APP_VERSION="${SONGBIRD_DISPLAY_VERSION}"
 )
 
 target_link_libraries(songbird
@@ -764,9 +764,11 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "SongBird"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.songbird.app"
+        # CFBundleVersion is compared as a sequence of integers and may not carry a suffix,
+        # so it stays numeric; the beta label goes into the two human-readable fields.
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_INFO_STRING "SongBird ${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${SONGBIRD_DISPLAY_VERSION}"
+        MACOSX_BUNDLE_INFO_STRING "SongBird ${SONGBIRD_DISPLAY_VERSION}"
     )
 endif()
 
