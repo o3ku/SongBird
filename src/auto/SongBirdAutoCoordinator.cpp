@@ -25,6 +25,7 @@
 #include "auto/AutoCountryInference.h"
 #include "auto/AutoNodeEvaluationService.h"
 #include "auto/AutoRuntimeDefaults.h"
+#include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 #include "common/BackgroundThreadLaunch.h"
 #include "common/ServerDisplayName.h"
@@ -99,7 +100,7 @@ SongBirdAutoCoordinator::~SongBirdAutoCoordinator()
 bool SongBirdAutoCoordinator::initialize()
 {
     if (configPath_.trimmed().isEmpty()) {
-        configPath_ = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("songbird-auto.json"));
+        configPath_ = QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("songbird-auto.json"));
     }
 
     repository_ = std::make_unique<JsonConfigRepository>(configPath_);
@@ -832,7 +833,7 @@ QString SongBirdAutoCoordinator::resolveCoreInstallDirectory(CoreType coreType) 
 
     const QString configDirectory = QFileInfo(configPath_).dir().absolutePath();
     return configDirectory.trimmed().isEmpty()
-        ? QCoreApplication::applicationDirPath()
+        ? AppPaths::applicationDirectory()
         : configDirectory;
 }
 
@@ -1664,7 +1665,7 @@ CoreInfo SongBirdAutoCoordinator::resolveSingBoxCoreInfo() const
 
 QString SongBirdAutoCoordinator::writeTunRuntimeConfig(bool relayToProxy) const
 {
-    const QString runtimeDirectory = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("runtime"));
+    const QString runtimeDirectory = AppPaths::runtimeDirectory();
     if (!QDir().mkpath(runtimeDirectory)) {
         return {};
     }

@@ -11,6 +11,7 @@
 #include <QStringList>
 
 #include "backends/singbox/SingBoxConfigFragments.h"
+#include "common/AppPaths.h"
 #include "common/GitHubUrls.h"
 #include "domain/models/RoutingRule.h"
 #include "runtime/DnsConfigFragments.h"
@@ -25,7 +26,7 @@ const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 QString resolveLocalSingBoxRuleSetPath(const QString& tag)
 {
     const QString fileName = QStringLiteral("%1.srs").arg(tag);
-    const QString path = QDir(QCoreApplication::applicationDirPath())
+    const QString path = QDir(AppPaths::applicationDirectory())
                              .filePath(QStringLiteral("%1/%2").arg(kSingBoxRuleSetDirectoryName, fileName));
     const QFileInfo fileInfo(path);
     return fileInfo.exists() && fileInfo.isFile()

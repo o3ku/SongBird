@@ -18,6 +18,7 @@
 #include "app/ConfigPathResolver.h"
 #include "appcore/StartupAdminElevation.h"
 #include "app/SingleInstanceBootstrap.h"
+#include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "common/UiLanguage.h"
@@ -125,8 +126,8 @@ void installConfiguredTranslator(QApplication& app, QTranslator& translator, con
     // Try embedded resource first, then filesystem
     const QStringList searchDirs = {
         QStringLiteral(":/translations"),
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("translations")),
-        QCoreApplication::applicationDirPath()
+        QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("translations")),
+        AppPaths::applicationDirectory()
     };
 
     for (const QString& dir : searchDirs) {

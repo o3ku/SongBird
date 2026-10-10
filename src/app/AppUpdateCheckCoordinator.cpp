@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/AppUpdateCheckPresentation.h"
+#include "common/AppPaths.h"
 #include "common/BackgroundThreadLaunch.h"
 
 namespace {
@@ -169,7 +170,7 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
     const QString title = QCoreApplication::translate("AppBootstrap", "Download SongBird Update");
     const QString appDir = deps_.applicationDirectory
         ? deps_.applicationDirectory()
-        : QCoreApplication::applicationDirPath();
+        : AppPaths::applicationDirectory();
     const QString updateDirectory = QDir(appDir).filePath(QStringLiteral("updates"));
     const QString assetName = AppUpdateCheckPresentation::resolveDownloadAssetName(updateResult.assetName);
     const QString startMessage = QCoreApplication::translate("AppBootstrap", "Downloading SongBird %1...")

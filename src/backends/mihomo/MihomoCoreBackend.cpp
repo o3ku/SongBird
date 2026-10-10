@@ -7,6 +7,7 @@
 
 #include "backends/mihomo/MihomoConfigFragments.h"
 #include "backends/mihomo/MihomoCoreDescriptor.h"
+#include "common/AppPaths.h"
 #include "common/GitHubUrls.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
@@ -37,7 +38,7 @@ QString mihomoRepositoryPath()
 QStringList dataDirectoryArguments(CoreType coreType)
 {
     const QString dataDirectory =
-        catalogCoreDataDirectory(coreType, QCoreApplication::applicationDirPath());
+        catalogCoreDataDirectory(coreType, AppPaths::applicationDirectory());
     return dataDirectory.isEmpty()
         ? QStringList{}
         : QStringList{QStringLiteral("-d"), QDir::toNativeSeparators(dataDirectory)};

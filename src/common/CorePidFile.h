@@ -8,9 +8,11 @@
 #include <QString>
 #include <QTextStream>
 
+#include "common/AppPaths.h"
+
 inline QString corePidFilePath()
 {
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("runtime/core.pid"));
+    return QDir(AppPaths::runtimeDirectory()).filePath(QStringLiteral("core.pid"));
 }
 
 inline QSet<qint64> readCorePids()

@@ -21,6 +21,7 @@
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "appcore/ProxySession.h"
+#include "common/AppPaths.h"
 #include "domain/models/RuntimeState.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
@@ -1049,5 +1050,5 @@ QString AppBootstrap::resolveCoreInstallDirectory(CoreType coreType) const
 {
     return objects_->appRuntimeResolver != nullptr
         ? objects_->appRuntimeResolver->resolveCoreInstallDirectory(coreType)
-        : QCoreApplication::applicationDirPath();
+        : AppPaths::applicationDirectory();
 }

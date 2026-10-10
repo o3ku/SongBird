@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "common/AppPaths.h"
 #include "common/OperationResult.h"
 #include "runtime/CoreInfo.h"
 #include "runtime/core/CoreCatalog.h"
@@ -125,7 +126,7 @@ inline bool coreNeedsGeoFiles(const CoreInfo& coreInfo)
 // somewhere writable could never exercise the check at all.
 inline QString coreGeoDirectory(
     const CoreInfo& coreInfo,
-    const QString& applicationDirectory = QCoreApplication::applicationDirPath())
+    const QString& applicationDirectory = AppPaths::applicationDirectory())
 {
     const QString dataDirectory = catalogCoreDataDirectory(coreInfoCoreType(coreInfo), applicationDirectory);
     if (!dataDirectory.isEmpty()) {
@@ -146,7 +147,7 @@ inline bool coreGeoFileIsPresent(const QString& directory, const QString& fileNa
 
 inline OperationResult validateCoreGeoFilesBeforeStart(
     const CoreInfo& coreInfo,
-    const QString& applicationDirectory = QCoreApplication::applicationDirPath())
+    const QString& applicationDirectory = AppPaths::applicationDirectory())
 {
     const QList<CoreGeoFileRequirement> requirements = coreGeoFileRequirementsFor(coreInfo);
     if (requirements.isEmpty()) {

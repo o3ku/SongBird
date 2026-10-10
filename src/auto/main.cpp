@@ -10,6 +10,7 @@
 #include "appcore/StartupAdminElevation.h"
 #include "auto/SongBirdAutoCoordinator.h"
 #include "auto/SongBirdAutoWindow.h"
+#include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 
 #ifndef SONGBIRD_APP_VERSION
@@ -24,7 +25,7 @@ QString defaultAutoConfigPath()
     if (QFileInfo::exists(localPath)) {
         return localPath;
     }
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("songbird-auto.json"));
+    return QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("songbird-auto.json"));
 }
 
 bool loadConfiguredTunEnabled(const QString& configPath)

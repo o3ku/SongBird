@@ -32,6 +32,7 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/TunRuntimeState.h
     appcore/TunRuntimeService.h
     appcore/TunRuntimeService.cpp
+    common/AppPaths.h
     common/BackgroundThreadLaunch.h
     common/OperationResult.h
     common/EndpointParser.h

@@ -15,6 +15,7 @@
 #include "app/GeoResourceUpdateCoordinator.h"
 #include "appcore/ProxySession.h"
 #include "app/UiThreadInvocation.h"
+#include "common/AppPaths.h"
 #include "common/DialogUtils.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
@@ -31,7 +32,7 @@ void AppBootstrap::wireUpdateCoordinators(const std::function<void(QThread*)>& t
             objects_->userFeedback.get(),
             []() { return QCoreApplication::applicationVersion(); },
             [this]() { return config_.checkPreReleaseUpdate; },
-            []() { return QCoreApplication::applicationDirPath(); },
+            []() { return AppPaths::applicationDirectory(); },
             [this]() { return shuttingDown_.load(); },
             trackBackgroundThread,
             {},

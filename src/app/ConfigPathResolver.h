@@ -6,6 +6,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "common/AppPaths.h"
+
 inline QString resolveDefaultConfigPath()
 {
     const QString currentDirectoryPath = QDir::current().filePath(QStringLiteral("songbird.json"));
@@ -13,7 +15,7 @@ inline QString resolveDefaultConfigPath()
         return currentDirectoryPath;
     }
 
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("songbird.json"));
+    return QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("songbird.json"));
 }
 
 inline QString resolveRequestedConfigPath(const QStringList& arguments)

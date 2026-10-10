@@ -22,6 +22,7 @@
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/TunSettingsApplyDecision.h"
 #include "appcore/TunRuntimeState.h"
+#include "common/AppPaths.h"
 #include "common/BackgroundThreadLaunch.h"
 #include "common/ThreadShutdown.h"
 #include "runtime/ClientConfigWriter.h"
@@ -57,7 +58,7 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
                                     .toArray();
     QStringList missingTags;
     QSet<QString> seenTags;
-    const QString ruleSetDirectory = QDir(QCoreApplication::applicationDirPath()).filePath(kSingBoxRuleSetDirectoryName);
+    const QString ruleSetDirectory = QDir(AppPaths::applicationDirectory()).filePath(kSingBoxRuleSetDirectoryName);
     for (const QJsonValue& value : ruleSets) {
         const QJsonObject ruleSet = value.toObject();
         if (ruleSet.value(QStringLiteral("type")).toString() != QStringLiteral("remote")) {
@@ -856,7 +857,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
         return;
     }
 
-    const QString targetDirectory = QCoreApplication::applicationDirPath();
+    const QString targetDirectory = AppPaths::applicationDirectory();
     const QString startMessage = tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
         .arg(tags.size())
         .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(kSingBoxRuleSetDirectoryName)));

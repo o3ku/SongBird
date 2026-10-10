@@ -7,6 +7,7 @@
 #include <QFileInfo>
 
 #include "appcore/CoreDiscoveryService.h"
+#include "common/AppPaths.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
@@ -105,7 +106,7 @@ QString AppRuntimeResolver::resolveCustomConfigPath(const QString& address) cons
 
 QString AppRuntimeResolver::resolveRuntimeConfigPath(const VmessItem& server) const
 {
-    const QString runtimeDirectory = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("runtime"));
+    const QString runtimeDirectory = AppPaths::runtimeDirectory();
 
     if (!QDir().mkpath(runtimeDirectory)) {
         return {};
@@ -211,5 +212,5 @@ QString AppRuntimeResolver::resolveCoreInstallDirectory(CoreType coreType) const
         return configDirectory;
     }
 
-    return QCoreApplication::applicationDirPath();
+    return AppPaths::applicationDirectory();
 }

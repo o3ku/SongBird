@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "common/AppPaths.h"
 #include "common/ProcessRunner.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/CoreCatalog.h"
@@ -26,7 +27,7 @@ QStringList buildCoreCandidateDirectories(const QString& configPath)
     };
 
     appendDirectory(QDir::currentPath());
-    appendDirectory(QCoreApplication::applicationDirPath());
+    appendDirectory(AppPaths::applicationDirectory());
     appendDirectory(QFileInfo(configPath).dir().absolutePath());
     return directories;
 }

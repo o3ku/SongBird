@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QSet>
 
+#include "common/AppPaths.h"
 #include "common/GitHubUrls.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/ProtocolConfigMapper.h"
@@ -286,7 +287,7 @@ QJsonObject SingBoxCoreBackend::buildExperimental(const Config& config)
         cacheFile.insert(QStringLiteral("enabled"), true);
         cacheFile.insert(
             QStringLiteral("path"),
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("cache.db")));
+            QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("cache.db")));
         cacheFile.insert(QStringLiteral("store_fakeip"), config.dns().fakeIp);
         experimental.insert(QStringLiteral("cache_file"), cacheFile);
     }
