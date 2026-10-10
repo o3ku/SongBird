@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QSize>
 #include <QStyledItemDelegate>
 
 class LogItemDelegate final : public QStyledItemDelegate {

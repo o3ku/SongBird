@@ -3,6 +3,7 @@
 #include <functional>
 
 #include <QList>
+#include <QPoint>
 #include <QStringList>
 
 class QAction;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QPoint>
 #include <QTableView>
 
 #include <functional>

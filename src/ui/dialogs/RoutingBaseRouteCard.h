@@ -2,6 +2,7 @@
 
 #include <QFontMetrics>
 #include <QPushButton>
+#include <QSize>
 
 #include "domain/models/RoutingItem.h"
 
