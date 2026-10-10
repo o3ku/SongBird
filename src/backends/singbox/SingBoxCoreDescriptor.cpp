@@ -24,15 +24,30 @@ QList<ConfigType> supportedConfigTypes()
 
 } // namespace
 
+// Windows resolves a program by name plus the PATHEXT suffix, every other platform by the
+// exact file name -- so the names here cannot be one list for all platforms. The macOS
+// release publishes sing-box-<version>-darwin-<arch>.tar.gz, which unpacks to a bare
+// "sing-box"; the "sing-box-client" alias is kept for a renamed local copy.
+QStringList singBoxExecutableNames()
+{
+#if defined(Q_OS_WIN)
+    return {
+        QStringLiteral("sing-box-client.exe"),
+        QStringLiteral("sing-box.exe")};
+#else
+    return {
+        QStringLiteral("sing-box-client"),
+        QStringLiteral("sing-box")};
+#endif
+}
+
 CoreDescriptor singBoxCoreDescriptor()
 {
     return CoreDescriptor{
         CoreType::SingBox,
         QStringLiteral("sing-box"),
         supportedConfigTypes(),
-        QStringList{
-            QStringLiteral("sing-box-client.exe"),
-            QStringLiteral("sing-box.exe")},
+        singBoxExecutableNames(),
         10,
         QList<CoreType>{},
         {},

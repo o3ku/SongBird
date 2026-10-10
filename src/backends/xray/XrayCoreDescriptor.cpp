@@ -35,13 +35,25 @@ QList<CoreGeoFileRequirement> geoFileRequirements()
 
 } // namespace
 
+// The macOS release is published as Xray-macos-64.zip / Xray-macos-arm64-v8a.zip and
+// unpacks to a bare "xray", so the ".exe" in the Windows name is a platform detail rather
+// than part of the core's identity.
+QStringList xrayExecutableNames()
+{
+#if defined(Q_OS_WIN)
+    return {QStringLiteral("xray.exe")};
+#else
+    return {QStringLiteral("xray")};
+#endif
+}
+
 CoreDescriptor xrayCoreDescriptor()
 {
     return CoreDescriptor{
         CoreType::Xray,
         QStringLiteral("Xray"),
         supportedConfigTypes(),
-        QStringList{QStringLiteral("xray.exe")},
+        xrayExecutableNames(),
         20,
         QList<CoreType>{CoreType::SingBox},
         geoFileRequirements(),

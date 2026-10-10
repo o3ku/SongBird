@@ -751,8 +751,13 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
     helpMenu->addAction(aboutAction_);
     helpMenu->addAction(checkAppUpdateAction_);
     helpMenu->addSeparator();
-    helpMenu->addAction(uwpLoopbackAction_);
-    helpMenu->addSeparator();
+    // The loopback exemption is a Windows-only concept, and there is no IUwpLoopbackService
+    // implementation to open a dialog against on any other platform -- so the entry is not
+    // offered there rather than offered and then reporting itself unavailable.
+    if (isWindowsPlatform()) {
+        helpMenu->addAction(uwpLoopbackAction_);
+        helpMenu->addSeparator();
+    }
     helpMenu->addAction(updateCurrentSubscriptionAction_);
     helpMenu->addAction(updateSubscriptionsAction_);
     helpMenu->addSeparator();

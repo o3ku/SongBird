@@ -112,8 +112,7 @@ OperationResult CoreUpdateService::update(
     }
 
     const GitHubRelease& release = releaseResult.release;
-    const bool prefer64Bit = releaseResult.prefer64Bit;
-    const GitHubReleaseAsset* asset = selectBestReleaseAsset(backend, release.assets, prefer64Bit);
+    const GitHubReleaseAsset* asset = selectBestReleaseAsset(backend, release.assets, releaseResult.platform);
     if (asset == nullptr) {
         return OperationResult::fail(
             QCoreApplication::translate("CoreUpdateService", "No suitable %1 asset was found in release %2.")

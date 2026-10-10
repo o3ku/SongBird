@@ -30,7 +30,7 @@
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingProfiles.h"
-#include "platform/windows/WindowsSystemProxyService.h"
+#include "platform/PlatformServices.h"
 #include "runtime/AuxiliaryTunConfig.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
@@ -115,7 +115,7 @@ bool SongBirdAutoCoordinator::initialize()
     tunCore_ = std::make_unique<QtCoreProcessHost>();
     locationProbe_ = std::make_unique<OutboundLocationProbeService>();
     backgroundTasks_ = std::make_unique<BackgroundTaskCoordinator>();
-    systemProxyService_ = std::make_unique<WindowsSystemProxyService>();
+    systemProxyService_ = std::make_unique<PlatformSystemProxyService>();
 
     reloadConfig();
     ensureDefaultSubscriptions();

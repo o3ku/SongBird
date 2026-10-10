@@ -163,8 +163,18 @@ void ProtocolCoreCompatTests::catalogKeepsSingBoxClientExecutableFirst()
 {
     const QStringList executableNames = catalogCoreExecutableNames(CoreType::SingBox);
     QCOMPARE(executableNames.size(), 2);
-    QCOMPARE(executableNames.constFirst(), QStringLiteral("sing-box-client.exe"));
-    QCOMPARE(executableNames.at(1), QStringLiteral("sing-box.exe"));
+
+    // What this pins is the order -- the client alias first, so a locally renamed copy wins
+    // over the upstream name. The spelling is platform-specific: Windows resolves a program
+    // through PATHEXT, every other platform needs the exact file name, and the descriptor is
+    // where that difference lives.
+#if defined(Q_OS_WIN)
+    const QString suffix = QStringLiteral(".exe");
+#else
+    const QString suffix = QString();
+#endif
+    QCOMPARE(executableNames.constFirst(), QStringLiteral("sing-box-client") + suffix);
+    QCOMPARE(executableNames.at(1), QStringLiteral("sing-box") + suffix);
 }
 
 void ProtocolCoreCompatTests::resolveExistingCoreTypeForProtocolPrefersSingBoxWhenPresent()

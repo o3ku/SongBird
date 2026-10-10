@@ -12,6 +12,11 @@
 #include "app/CoreUpdateCoordinator.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "app/GeoResourceUpdateCoordinator.h"
+// Owned as unique_ptr members, so the destructor defined at the bottom of this file needs
+// the complete types. The interfaces, not the platform implementations: this file must not
+// know which one the build selected.
+#include "platform/IAutoRunService.h"
+#include "platform/ISystemProxyService.h"
 #include "appcore/IUserFeedback.h"
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
@@ -28,8 +33,6 @@
 #include "app/TunModeCoordinator.h"
 #include "appcore/TunRuntimeService.h"
 #include "persistence/JsonConfigRepository.h"
-#include "platform/windows/WindowsAutoRunService.h"
-#include "platform/windows/WindowsSystemProxyService.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
 #include "services/AppUpdateService.h"

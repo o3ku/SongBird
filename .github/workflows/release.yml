@@ -490,3 +490,203 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release upload $tag songbird.exe --clobber
           }
+
+  # A macOS build cannot share the job above: that one is a vcpkg build whose cost is
+  # dominated by a cache the macOS side has nothing to put in, and its Qt5 comes from
+  # vcpkg's static ports. Here Qt5 comes from Homebrew instead, and Homebrew only publishes
+  # per-architecture bottles -- neither Homebrew nor the official Qt 5.15.2 installer ships
+  # a universal Qt5, so the two halves have to be built separately on their own runner and
+  # merged in package-macos below. macos-15-intel is the x86_64 runner; macos-13 used to be
+  # the obvious choice for that half, but it was retired in 2025 and macos-14 (arm64) is
+  # already winding down, so macos-15 is used for arm64.
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      # Both halves are needed for the universal bundle, but a failure in one should still
+      # produce the log for the other rather than cancelling it.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Qt5
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          # qt@5 is deprecated (2026-05-19) but not disabled, which happens a year later, so
+          # it still installs and still prints a warning. It is used anyway because the
+          # alternative is compiling Qt5 from source on every run.
+          brew install qt@5
+          command -v ninja >/dev/null || brew install ninja
+          echo "QT_PREFIX=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          # The top-level CMakeLists asks for Qt6 first and Qt5 second, so an installed
+          # Homebrew "qt" (which is Qt6) would win over the qt@5 keg even with
+          # CMAKE_PREFIX_PATH set. Excluding that prefix is what makes the choice
+          # deterministic; the assertion below is what makes a wrong choice visible.
+          qt6_prefix="$(brew --prefix qt 2>/dev/null || true)"
+          ignore=()
+          if [ -n "$qt6_prefix" ] && [ -d "$qt6_prefix" ]; then
+            ignore=(-DCMAKE_IGNORE_PREFIX_PATH="$qt6_prefix")
+          fi
+
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TEST=OFF \
+            -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
+            -DSONGBIRD_ENABLE_UPX=OFF \
+            "${ignore[@]}"
+
+          if ! grep -q '^Qt5_DIR:' build/CMakeCache.txt; then
+            echo "::error::Qt5 was not found; the build picked a different Qt than the one intended"
+            exit 1
+          fi
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Deploy Qt into the bundle
+        run: |
+          # Copies the frameworks the executable links to into Contents/Frameworks and
+          # rewrites the install names to @executable_path, which is what turns the bundle
+          # into something that runs on a machine without Homebrew.
+          "$QT_PREFIX/bin/macdeployqt" build/src/SongBird.app -always-overwrite
+
+      - name: Check the bundle is self-contained
+        run: |
+          # The check macdeployqt is trusted to have done. A leftover Homebrew path means
+          # the application only starts on a machine with the same Homebrew prefix, which
+          # is the failure that would otherwise only be discovered by a user.
+          if otool -L build/src/SongBird.app/Contents/MacOS/SongBird | grep -E '/opt/homebrew|/usr/local'; then
+            echo "::error::the executable still links against a Homebrew path"
+            exit 1
+          fi
+
+      - name: Package the app bundle
+        run: |
+          # ditto rather than zip: it is the archiver that preserves the symlinks and
+          # permission bits that a .app and its embedded frameworks are made of.
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/src/SongBird.app "SongBird-${{ matrix.arch }}.app.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: songbird-macos-${{ matrix.arch }}
+          path: SongBird-${{ matrix.arch }}.app.zip
+          if-no-files-found: error
+
+  package-macos:
+    name: macOS universal
+    needs: build-macos
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Fetch both architectures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # gh rather than actions/download-artifact: the CLI is already a dependency of
+          # this workflow's release steps, and it avoids pinning a major version of an
+          # action whose availability has not been checked here.
+          for arch in arm64 x86_64; do
+            gh run download "${{ github.run_id }}" -n "songbird-macos-$arch" -D "$arch"
+            ditto -x -k "$arch/SongBird-$arch.app.zip" "$arch"
+          done
+
+      - name: Merge into a universal bundle
+        run: |
+          set -euo pipefail
+          # The arm64 bundle is the skeleton and every Mach-O it contains is replaced by a
+          # two-slice version built from its x86_64 counterpart. The two bundles have
+          # identical layouts because they are the same build of the same sources, so a
+          # path-relative lookup is enough to pair the files up.
+          ditto arm64/SongBird.app universal/SongBird.app
+
+          merged=0
+          while IFS= read -r -d '' file; do
+            relative="${file#universal/SongBird.app/}"
+            counterpart="x86_64/SongBird.app/$relative"
+            [ -f "$counterpart" ] || continue
+            file -b "$file" | grep -q 'Mach-O' || continue
+            lipo -create "$file" "$counterpart" -output "$file.merged"
+            mv "$file.merged" "$file"
+            merged=$((merged + 1))
+          done < <(find universal/SongBird.app -type f -print0)
+
+          echo "merged $merged Mach-O file(s)"
+          # A zero here would mean the loop silently matched nothing and the "universal"
+          # bundle is really just the arm64 one.
+          test "$merged" -gt 0
+          lipo -info universal/SongBird.app/Contents/MacOS/SongBird
+
+      - name: Re-sign the merged bundle
+        run: |
+          set -euo pipefail
+          app=universal/SongBird.app
+          # lipo rewrites each Mach-O's contents, which invalidates whatever signature the
+          # Homebrew build carried -- and macOS refuses to start an arm64 binary whose
+          # signature does not cover it, so skipping this produces an application that
+          # cannot be launched at all. Signing runs deepest first: signing a framework
+          # before the binaries inside it would be undone by the next signature.
+          while IFS= read -r -d '' file; do
+            file -b "$file" | grep -q 'Mach-O' || continue
+            codesign --force --sign - --timestamp=none "$file"
+          done < <(find "$app/Contents" -type f -print0)
+          while IFS= read -r -d '' framework; do
+            codesign --force --sign - --timestamp=none "$framework"
+          done < <(find "$app/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0)
+          codesign --force --sign - --timestamp=none "$app"
+
+          # The ad-hoc signature is not a substitute for Developer ID signing and
+          # notarization: a downloaded copy still carries the quarantine attribute and has
+          # to be opened through the right-click menu once. What it does buy is a bundle
+          # whose signature is internally consistent, which is what arm64 requires.
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Build the DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dmg-root
+          ditto universal/SongBird.app dmg-root/SongBird.app
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "SongBird" -srcfolder dmg-root -ov -format UDZO \
+            SongBird-macos-universal.dmg
+          shasum -a 256 SongBird-macos-universal.dmg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: songbird-macos-universal
+          path: SongBird-macos-universal.dmg
+          if-no-files-found: error
+
+      - name: Attach the DMG to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # The Windows job is what creates the release, and it is deliberately left as the
+          # only creator so that a failure here cannot stop the Windows asset from being
+          # published. The consequence is that the release may not exist yet when this runs.
+          for attempt in $(seq 1 60); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              break
+            fi
+            echo "waiting for the release to be created (attempt $attempt)"
+            sleep 20
+          done
+          gh release upload "$tag" SongBird-macos-universal.dmg --clobber
+

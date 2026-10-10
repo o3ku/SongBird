@@ -69,7 +69,9 @@
 #include "domain/models/RoutingProfiles.h"
 #include "platform/IAutoRunService.h"
 #include "platform/ISystemProxyService.h"
+#if defined(Q_OS_WIN)
 #include "platform/windows/WindowsUwpLoopbackService.h"
+#endif
 #include "persistence/JsonConfigRepository.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
@@ -854,6 +856,15 @@ void AppBootstrap::openAboutDialog()
 
 void AppBootstrap::openUwpLoopbackDialog()
 {
+#if !defined(Q_OS_WIN)
+    // The UWP loopback exemption exists because Windows sandboxes packaged applications
+    // away from the loopback interface; no other platform has that rule, so there is no
+    // implementation to construct here. MainWindow also hides the menu entry off Windows,
+    // which already makes this body unreachable -- it is guarded rather than deleted
+    // because WindowsUwpLoopbackService is the only IUwpLoopbackService implementation
+    // there is, while UwpLoopbackDialog itself is still compiled on every platform.
+    return;
+#else
     if (objects_->mainWindow == nullptr) {
         return;
     }
@@ -876,6 +887,7 @@ void AppBootstrap::openUwpLoopbackDialog()
     }
 
     uwpLoopbackDialog_->exec();
+#endif
 }
 
 void AppBootstrap::openExternalUrl(const QString& url)

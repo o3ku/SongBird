@@ -10,14 +10,14 @@
 
 namespace CoreUpdateReleaseMetadata {
 
-GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, bool prefer64Bit)
+GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, CoreAssetPlatform platform)
 {
-    const CoreUpdateAssetPolicy policy = backend.updateAssetPolicy();
+    const CoreUpdateAssetPolicy policy = backend.updateAssetPolicy(platform);
     if (policy.builtInFallbackTagName.isEmpty() || policy.builtInFallbackRepositoryPath.isEmpty()) {
         return {};
     }
 
-    const QString assetName = prefer64Bit
+    const QString assetName = platform.sixtyFourBit
         ? policy.builtInFallbackAssetName64
         : policy.builtInFallbackAssetName32;
     if (assetName.isEmpty()) {
@@ -99,13 +99,13 @@ bool parseGitHubReleasePayload(
 const GitHubReleaseAsset* selectBestReleaseAsset(
     const ICoreBackend& backend,
     const QList<GitHubReleaseAsset>& assets,
-    bool prefer64Bit)
+    CoreAssetPlatform platform)
 {
     const GitHubReleaseAsset* bestAsset = nullptr;
     int bestScore = -1;
 
     for (const GitHubReleaseAsset& asset : assets) {
-        const int score = backend.scoreReleaseAssetName(asset.name, prefer64Bit);
+        const int score = backend.scoreReleaseAssetName(asset.name, platform);
         if (score > bestScore) {
             bestScore = score;
             bestAsset = &asset;

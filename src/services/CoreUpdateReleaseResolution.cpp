@@ -4,12 +4,9 @@
 
 #include "common/GitHubMirrorHelper.h"
 #include "common/UserAgent.h"
+#include "runtime/core/CoreAssetPlatform.h"
 #include "services/CoreUpdateInstallFiles.h"
 #include "services/CoreUpdateOperations.h"
-
-#if defined(Q_OS_WIN)
-#include <windows.h>
-#endif
 
 namespace {
 
@@ -17,37 +14,22 @@ namespace UpdateOps = CoreUpdateOperations;
 namespace ReleaseMetadata = CoreUpdateReleaseMetadata;
 namespace InstallFiles = CoreUpdateInstallFiles;
 
-bool is64BitOperatingSystem()
-{
-#if defined(Q_OS_WIN)
-    SYSTEM_INFO systemInfo{};
-    GetNativeSystemInfo(&systemInfo);
-    switch (systemInfo.wProcessorArchitecture) {
-    case PROCESSOR_ARCHITECTURE_AMD64:
-    case PROCESSOR_ARCHITECTURE_ARM64:
-        return true;
-    default:
-        return false;
-    }
-#else
-    return sizeof(void*) >= 8;
-#endif
-}
-
 CoreUpdateReleaseResolution::ReleaseResolutionResult resolvedRelease(
     const ReleaseMetadata::GitHubRelease& release,
-    bool prefer64Bit)
+    CoreAssetPlatform platform)
 {
     CoreUpdateReleaseResolution::ReleaseResolutionResult result;
     result.release = release;
-    result.prefer64Bit = prefer64Bit;
+    result.platform = platform;
     return result;
 }
 
-CoreUpdateReleaseResolution::ReleaseResolutionResult failedResolution(const OperationResult& error, bool prefer64Bit)
+CoreUpdateReleaseResolution::ReleaseResolutionResult failedResolution(
+    const OperationResult& error,
+    CoreAssetPlatform platform)
 {
     CoreUpdateReleaseResolution::ReleaseResolutionResult result;
-    result.prefer64Bit = prefer64Bit;
+    result.platform = platform;
     result.error = error;
     result.hasError = true;
     return result;
@@ -60,16 +42,16 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
 {
     const ICoreBackend& backend = request.backend;
     const QString displayName = backend.displayName();
-    const bool prefer64Bit = is64BitOperatingSystem();
+    const CoreAssetPlatform platform = currentAssetPlatform();
     const bool noInstalledCore = !InstallFiles::hasAnyInstalledCore(request.targetDirectory);
     const ReleaseMetadata::GitHubRelease builtInFallbackRelease = noInstalledCore
-        ? ReleaseMetadata::buildBuiltInFallbackRelease(backend, prefer64Bit)
+        ? ReleaseMetadata::buildBuiltInFallbackRelease(backend, platform)
         : ReleaseMetadata::GitHubRelease{};
-    const CoreUpdateAssetPolicy assetPolicy = backend.updateAssetPolicy();
-    const QString directLatestAssetName = prefer64Bit
+    const CoreUpdateAssetPolicy assetPolicy = backend.updateAssetPolicy(platform);
+    const QString directLatestAssetName = platform.sixtyFourBit
         ? assetPolicy.directLatestAssetName64
         : assetPolicy.directLatestAssetName32;
-    const QUrl directLatestDownloadUrl = prefer64Bit
+    const QUrl directLatestDownloadUrl = platform.sixtyFourBit
         ? assetPolicy.directLatestDownloadUrl64
         : assetPolicy.directLatestDownloadUrl32;
 
@@ -82,7 +64,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                 .arg(displayName)
                 .arg(builtInFallbackRelease.assets.constFirst().name)
                 .arg(builtInFallbackRelease.tagName));
-        return resolvedRelease(builtInFallbackRelease, prefer64Bit);
+        return resolvedRelease(builtInFallbackRelease, platform);
     }
 
     if (directLatestDownloadUrl.isValid() && !directLatestAssetName.isEmpty()) {
@@ -96,7 +78,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
             QCoreApplication::translate("CoreUpdateService", "Using direct latest %1 package: %2")
                 .arg(displayName)
                 .arg(directLatestAssetName));
-        return resolvedRelease(release, prefer64Bit);
+        return resolvedRelease(release, platform);
     }
 
     ReleaseMetadata::GitHubRelease release;
@@ -109,7 +91,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
     const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(backend.releasesApiUrl());
     for (const QUrl& candidateUrl : releaseUrls) {
         if (UpdateOps::isCancellationRequested(request.cancelCheck)) {
-            return failedResolution(UpdateOps::cancelledResult(), prefer64Bit);
+            return failedResolution(UpdateOps::cancelledResult(), platform);
         }
 
         UpdateOps::reportProgress(
@@ -127,7 +109,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                 request.metadataTimeoutMs,
                 request.cancelCheck);
         if (UpdateOps::isCancelledResult(downloadResult)) {
-            return failedResolution(downloadResult, prefer64Bit);
+            return failedResolution(downloadResult, platform);
         }
         if (!downloadResult.success) {
             lastError = downloadResult.message;
@@ -177,8 +159,8 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                     .arg(lastError.isEmpty()
                         ? QCoreApplication::translate("CoreUpdateService", "Unknown error")
                         : lastError)),
-            prefer64Bit);
+            platform);
     }
 
-    return resolvedRelease(release, prefer64Bit);
+    return resolvedRelease(release, platform);
 }

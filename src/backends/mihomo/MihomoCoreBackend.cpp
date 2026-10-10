@@ -29,6 +29,28 @@ QString mihomoRepositoryPath()
     return QStringLiteral("MetaCubeX/mihomo");
 }
 
+// The one place the bootstrap version appears, for the same reason sing-box keeps its own in one:
+// the version is embedded in every asset name as well as in the tag, and a bump that misses one of
+// the names leaves a bootstrap that 404s.
+constexpr char kFallbackVersion[] = "1.19.25";
+
+QString fallbackTagName()
+{
+    return QStringLiteral("v%1").arg(QLatin1String(kFallbackVersion));
+}
+
+// `platformPart` is the vendor's own platform-and-architecture token ("windows-amd64", "darwin-arm64")
+// and `variantPart` the optional microarchitecture marker that sits in front of the version and
+// carries its own trailing dash ("v1-").
+QString fallbackAssetName(const QString& platformPart, const QString& variantPart, const QString& extension)
+{
+    return QStringLiteral("mihomo-%1-%2%3.%4")
+        .arg(platformPart)
+        .arg(variantPart)
+        .arg(fallbackTagName())
+        .arg(extension);
+}
+
 // `-d` names the core's home directory. Without it mihomo falls back to
 // %USERPROFILE%\.config\mihomo, where the app can neither pre-seed the geodata the generated
 // config always needs nor tell whether it is there -- and the core would fetch it during the
@@ -140,12 +162,34 @@ QUrl MihomoCoreBackend::releasesApiUrl() const
     return githubReleasesApiUrl(mihomoRepositoryPath(), 20);
 }
 
-CoreUpdateAssetPolicy MihomoCoreBackend::updateAssetPolicy() const
+CoreUpdateAssetPolicy MihomoCoreBackend::updateAssetPolicy(CoreAssetPlatform platform) const
 {
+    // mihomo publishes a bare gzip for macOS and a zip for Windows, one file per architecture, and
+    // no 32-bit macOS build at all -- so only the primary slot is filled on macOS.
+    if (platform.isMacOS()) {
+        const QString macosAssetName = fallbackAssetName(
+            platform.appleSilicon ? QStringLiteral("darwin-arm64") : QStringLiteral("darwin-amd64"),
+            {},
+            QStringLiteral("gz"));
+        return CoreUpdateAssetPolicy{
+            fallbackTagName(),
+            macosAssetName,
+            {},
+            mihomoRepositoryPath(),
+            {},
+            {},
+            {},
+            {}
+        };
+    }
+
+    // The "-v1-" marker is the baseline x86-64 microarchitecture level. It is the asset mihomo
+    // documents for amd64, and the plain "-v1.19.25" one beside it is the same build; picking the
+    // marked one keeps the Windows name in step with what the scoring below prefers.
     return CoreUpdateAssetPolicy{
-        QStringLiteral("v1.19.25"),
-        QStringLiteral("mihomo-windows-amd64-v1-v1.19.25.gz"),
-        QStringLiteral("mihomo-windows-386-v1.19.25.gz"),
+        fallbackTagName(),
+        fallbackAssetName(QStringLiteral("windows-amd64"), QStringLiteral("v1-"), QStringLiteral("zip")),
+        fallbackAssetName(QStringLiteral("windows-386"), {}, QStringLiteral("zip")),
         mihomoRepositoryPath(),
         {},
         {},
@@ -154,7 +198,7 @@ CoreUpdateAssetPolicy MihomoCoreBackend::updateAssetPolicy() const
     };
 }
 
-int MihomoCoreBackend::scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const
+int MihomoCoreBackend::scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const
 {
     const QString normalized = assetName.trimmed().toLower();
     if (!normalized.endsWith(QStringLiteral(".zip"))
@@ -162,6 +206,27 @@ int MihomoCoreBackend::scoreReleaseAssetName(const QString& assetName, bool pref
         && !normalized.endsWith(QStringLiteral(".gz"))) {
         return -1;
     }
+
+    if (platform.isMacOS()) {
+        // Only the bare "mihomo-darwin-<arch>-<version>.gz" is a first choice: the other darwin
+        // assets beside it carry a Go version, a microarchitecture level or a "compatible" marker in
+        // the name, and none of those is a better answer than the generic build.
+        if (!normalized.startsWith(QStringLiteral("mihomo-darwin-"))) {
+            return -1;
+        }
+        const bool assetIsArm64 = normalized.contains(QStringLiteral("arm64"));
+        if (assetIsArm64 != platform.appleSilicon) {
+            return -1;
+        }
+
+        const bool isVariantBuild = normalized.contains(QStringLiteral("-go1"))
+            || normalized.contains(QStringLiteral("-v1-"))
+            || normalized.contains(QStringLiteral("-v2-"))
+            || normalized.contains(QStringLiteral("-v3-"))
+            || normalized.contains(QStringLiteral("-compatible-"));
+        return isVariantBuild ? 300 : 380;
+    }
+
     if (!normalized.startsWith(QStringLiteral("mihomo-windows-"))) {
         return -1;
     }
@@ -169,7 +234,7 @@ int MihomoCoreBackend::scoreReleaseAssetName(const QString& assetName, bool pref
         return -1;
     }
 
-    if (prefer64Bit) {
+    if (platform.sixtyFourBit) {
         if (normalized.contains(QStringLiteral("amd64-v1-"))) {
             return 380;
         }

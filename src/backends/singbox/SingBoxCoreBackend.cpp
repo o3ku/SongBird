@@ -24,6 +24,27 @@ namespace {
 // A per-core name, so switching core does not mix two cores' output into one file.
 const QString kDefaultLogFileName = QStringLiteral("singbox.log");
 
+// The one place the bootstrap version appears.
+//
+// It is a freshness choice rather than a compatibility requirement: the generated config is
+// accepted by 1.13.x and 1.14.x alike, so this tag is only about shipping a current core when no
+// core is installed and GitHub's release lookup is unavailable. Every asset name embeds the version
+// twice over -- once in the file name, once in the tag -- so keeping it in one place is what stops
+// a bump from leaving three of the four names behind.
+constexpr char kFallbackVersion[] = "1.14.2";
+
+QString fallbackTagName()
+{
+    return QStringLiteral("v%1").arg(QLatin1String(kFallbackVersion));
+}
+
+// `platformPart` is the vendor's own platform-and-architecture token, e.g. "windows-amd64".
+QString fallbackAssetName(const QString& platformPart, const QString& extension)
+{
+    return QStringLiteral("sing-box-%1-%2.%3")
+        .arg(QLatin1String(kFallbackVersion), platformPart, extension);
+}
+
 bool isSupportedSingBoxNetwork(const QString& network)
 {
     static const QSet<QString> supportedNetworks{
@@ -194,16 +215,30 @@ QUrl SingBoxCoreBackend::releasesApiUrl() const
     return githubReleasesApiUrl(singBoxRepositoryPath(), 20);
 }
 
-CoreUpdateAssetPolicy SingBoxCoreBackend::updateAssetPolicy() const
+CoreUpdateAssetPolicy SingBoxCoreBackend::updateAssetPolicy(CoreAssetPlatform platform) const
 {
-    // The fallback is only downloaded when no core is installed *and* the GitHub release lookup
-    // fails, so it has to be a current stable core rather than the oldest one the generated config
-    // still loads. The config itself is version neutral -- it is accepted by 1.13.x and 1.14.x alike
-    // -- so this tag is a freshness choice, not a compatibility requirement.
+    // macOS publishes the core as a .tar.gz rather than a .zip, one per architecture and with no
+    // 32-bit build at all, so only the primary slot is filled there.
+    if (platform.isMacOS()) {
+        const QString macosAssetName = fallbackAssetName(
+            platform.appleSilicon ? QStringLiteral("darwin-arm64") : QStringLiteral("darwin-amd64"),
+            QStringLiteral("tar.gz"));
+        return CoreUpdateAssetPolicy{
+            fallbackTagName(),
+            macosAssetName,
+            {},
+            QStringLiteral("SagerNet/sing-box"),
+            {},
+            {},
+            {},
+            {}
+        };
+    }
+
     return CoreUpdateAssetPolicy{
-        QStringLiteral("v1.14.2"),
-        QStringLiteral("sing-box-1.14.2-windows-amd64.zip"),
-        QStringLiteral("sing-box-1.14.2-windows-386.zip"),
+        fallbackTagName(),
+        fallbackAssetName(QStringLiteral("windows-amd64"), QStringLiteral("zip")),
+        fallbackAssetName(QStringLiteral("windows-386"), QStringLiteral("zip")),
         QStringLiteral("SagerNet/sing-box"),
         {},
         {},
@@ -212,22 +247,38 @@ CoreUpdateAssetPolicy SingBoxCoreBackend::updateAssetPolicy() const
     };
 }
 
-int SingBoxCoreBackend::scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const
+int SingBoxCoreBackend::scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const
 {
     const QString normalized = assetName.trimmed().toLower();
+    if (!normalized.startsWith(QStringLiteral("sing-box-"))) {
+        return -1;
+    }
+
+    if (platform.isMacOS()) {
+        // The darwin assets are .tar.gz, not .zip, and "legacy-macos-10.13" is the Intel build for
+        // macOS releases before 11 -- the plain "darwin-amd64" one is the answer for every machine
+        // that can run the rest of this app.
+        if (!normalized.endsWith(QStringLiteral(".tar.gz"))
+            || !normalized.contains(QStringLiteral("darwin-"))
+            || normalized.contains(QStringLiteral("legacy-macos-"))) {
+            return -1;
+        }
+        const bool assetIsArm64 = normalized.contains(QStringLiteral("arm64"));
+        return assetIsArm64 == platform.appleSilicon ? 350 : -1;
+    }
+
     if (!normalized.endsWith(QStringLiteral(".zip")) && !normalized.endsWith(QStringLiteral(".exe"))) {
         return -1;
     }
     if (normalized.contains(QStringLiteral("arm64")) || normalized.contains(QStringLiteral("armv"))) {
         return -1;
     }
-    if (!normalized.startsWith(QStringLiteral("sing-box-"))
-        || !normalized.contains(QStringLiteral("windows-"))
+    if (!normalized.contains(QStringLiteral("windows-"))
         || normalized.contains(QStringLiteral("legacy-windows-7"))) {
         return -1;
     }
 
-    if (prefer64Bit) {
+    if (platform.sixtyFourBit) {
         return normalized.contains(QStringLiteral("windows-amd64.zip")) ? 350 : -1;
     }
 

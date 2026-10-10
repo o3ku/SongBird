@@ -27,8 +27,7 @@
 #include "domain/models/Config.h"
 #include "domain/models/RuntimeState.h"
 #include "persistence/JsonConfigRepository.h"
-#include "platform/windows/WindowsAutoRunService.h"
-#include "platform/windows/WindowsSystemProxyService.h"
+#include "platform/PlatformServices.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
 #include "services/ConfigBackupService.h"
@@ -111,8 +110,8 @@ void AppBootstrap::wireCoreServices()
         std::move(restartCallbacks));
     objects_->tunRuntimeService = std::make_unique<TunRuntimeService>();
     objects_->auxiliaryCoreProcessHost = std::make_unique<QtCoreProcessHost>();
-    objects_->autoRunService = std::make_unique<WindowsAutoRunService>();
-    objects_->systemProxyService = std::make_unique<WindowsSystemProxyService>();
+    objects_->autoRunService = std::make_unique<PlatformAutoRunService>();
+    objects_->systemProxyService = std::make_unique<PlatformSystemProxyService>();
     auto runtimeEnvironment = std::make_unique<FunctionRuntimeEnvironment>();
     runtimeEnvironment->cleanupPortProcessesFn = [this]() { cleanupCoreProcessesUsingConfiguredPorts(); };
     runtimeEnvironment->removeStaleTunAdapterFn = [this]() { return removeStaleTunAdapterIfPresent(); };

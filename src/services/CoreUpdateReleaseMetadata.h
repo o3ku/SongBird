@@ -5,6 +5,8 @@
 #include <QString>
 #include <QUrl>
 
+#include "runtime/core/CoreAssetPlatform.h"
+
 class ICoreBackend;
 
 namespace CoreUpdateReleaseMetadata {
@@ -20,7 +22,7 @@ struct GitHubRelease {
     QList<GitHubReleaseAsset> assets;
 };
 
-GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, bool prefer64Bit);
+GitHubRelease buildBuiltInFallbackRelease(const ICoreBackend& backend, CoreAssetPlatform platform);
 bool parseGitHubReleasePayload(
     const QByteArray& payload,
     bool allowPrerelease,
@@ -30,6 +32,6 @@ bool parseGitHubReleasePayload(
 const GitHubReleaseAsset* selectBestReleaseAsset(
     const ICoreBackend& backend,
     const QList<GitHubReleaseAsset>& assets,
-    bool prefer64Bit);
+    CoreAssetPlatform platform);
 
 } // namespace CoreUpdateReleaseMetadata

@@ -34,6 +34,7 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/TunRuntimeService.cpp
     common/AppPaths.h
     common/BackgroundThreadLaunch.h
+    common/SingBoxPaths.h
     common/OperationResult.h
     common/EndpointParser.h
     common/GitHubReleaseParsing.h
@@ -59,8 +60,7 @@ set(SONGBIRD_SHARED_SOURCES
     domain/models/SubItem.h
     domain/models/VmessItem.h
     platform/ISystemProxyService.h
-    platform/windows/WindowsSystemProxyService.h
-    platform/windows/WindowsSystemProxyService.cpp
+    platform/PlatformServices.h
     runtime/CoreInfo.h
     runtime/CoreLaunchCompatDecision.h
     runtime/ProtocolCoreCompat.h
@@ -97,6 +97,8 @@ set(SONGBIRD_SHARED_SOURCES
     runtime/SingBoxRoutingRuleMapper.h
     runtime/SingBoxRoutingRuleMapper.cpp
     runtime/core/ICoreBackend.h
+    runtime/core/CoreAssetPlatform.h
+    runtime/core/CoreAssetPlatform.cpp
     runtime/core/CoreDescriptor.h
     runtime/core/CoreDescriptorRegistry.h
     runtime/core/CoreCatalog.h
@@ -260,6 +262,21 @@ set(SONGBIRD_SHARED_SOURCES
     resources/themes.qrc
 )
 
+# The platform services both front-ends construct. Only the implementation is
+# platform-specific -- ISystemProxyService itself is not -- so the shared object library
+# receives exactly one of them and the composition root can name the interface alone.
+if(WIN32)
+    list(APPEND SONGBIRD_SHARED_SOURCES
+        platform/windows/WindowsSystemProxyService.h
+        platform/windows/WindowsSystemProxyService.cpp
+    )
+elseif(APPLE)
+    list(APPEND SONGBIRD_SHARED_SOURCES
+        platform/macos/MacSystemProxyService.h
+        platform/macos/MacSystemProxyService.cpp
+    )
+endif()
+
 set(SONGBIRD_SOURCES
     app/main.cpp
     app/AppBootstrap.h
@@ -325,14 +342,8 @@ set(SONGBIRD_SOURCES
     platform/IAutoRunService.h
     platform/IUwpLoopbackService.h
     platform/UwpPackageInfo.h
-    platform/windows/SingleInstanceGuard.h
-    platform/windows/SingleInstanceGuard.cpp
-    platform/windows/WindowsAutoRunService.h
-    platform/windows/WindowsAutoRunService.cpp
-    platform/windows/WindowsUwpLoopbackService.h
-    platform/windows/WindowsUwpLoopbackService.cpp
-    platform/windows/WindowsUwpLoopbackSupport.h
-    platform/windows/WindowsUwpLoopbackSupport.cpp
+    platform/SingleInstanceGuard.h
+    platform/SingleInstanceGuard.cpp
     backends/mihomo/MihomoCoreDescriptor.h
     backends/singbox/SingBoxCoreDescriptor.h
     backends/xray/XrayCoreDescriptor.h
@@ -457,6 +468,27 @@ set(SONGBIRD_SOURCES
     ui/tray/TrayMenuSupport.h
     ui/tray/TrayMenuSupport.cpp
 )
+
+# The remaining platform services. They sit in the per-front-end list rather than the shared
+# one only because SongBirdAuto does not construct them. The UWP loopback exemption has no
+# macOS counterpart -- it exists because Windows sandboxes packaged apps away from the
+# loopback interface, which no other platform does -- so the composition root gates it on
+# Q_OS_WIN instead of an implementation existing here.
+if(WIN32)
+    list(APPEND SONGBIRD_SOURCES
+        platform/windows/WindowsAutoRunService.h
+        platform/windows/WindowsAutoRunService.cpp
+        platform/windows/WindowsUwpLoopbackService.h
+        platform/windows/WindowsUwpLoopbackService.cpp
+        platform/windows/WindowsUwpLoopbackSupport.h
+        platform/windows/WindowsUwpLoopbackSupport.cpp
+    )
+elseif(APPLE)
+    list(APPEND SONGBIRD_SOURCES
+        platform/macos/MacAutoRunService.h
+        platform/macos/MacAutoRunService.cpp
+    )
+endif()
 
 if(WIN32 AND MSVC)
     list(APPEND SONGBIRD_SOURCES
@@ -719,9 +751,31 @@ set_target_properties(songbird_auto PROPERTIES
     OUTPUT_NAME "SongBirdAuto"
 )
 
+if(APPLE)
+    # A macOS build has to be a bundle: the .app carries the Info.plist that the window
+    # server and the Gatekeeper assessment read, and it is what makes the process a GUI
+    # application instead of a background one. The MACOSX_BUNDLE keyword is deliberately
+    # not added to add_executable above -- it is a Windows-only keyword there -- so the
+    # property is set here, where it applies to whichever branch created the target.
+    #
+    # SongBirdAuto is left as a plain executable on purpose: it is not part of the macOS
+    # release, and a bundle would only move its artifact behind a path nothing reads.
+    set_target_properties(songbird PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "SongBird"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.songbird.app"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_INFO_STRING "SongBird ${PROJECT_VERSION}"
+    )
+endif()
+
 option(SONGBIRD_ENABLE_UPX "Compress release SongBird executable with UPX when upx is available" ON)
 set(SONGBIRD_UPX_BUILD_TYPES "Release;MinSizeRel" CACHE STRING "Build types that run UPX on SongBird executable")
-if(SONGBIRD_ENABLE_UPX)
+# Never on macOS. UPX rewrites the Mach-O header of the bundle's main executable, and macOS
+# refuses to run an arm64 binary whose signature no longer covers its contents -- so a UPX
+# pass there does not produce a smaller application, it produces one that does not start.
+if(SONGBIRD_ENABLE_UPX AND NOT APPLE)
     find_program(SONGBIRD_UPX_EXECUTABLE NAMES upx upx.exe)
     if(SONGBIRD_UPX_EXECUTABLE)
         message(STATUS "UPX found: ${SONGBIRD_UPX_EXECUTABLE}")
@@ -839,6 +893,7 @@ endif()
 
 install(TARGETS songbird songbird_auto
     RUNTIME DESTINATION .
+    BUNDLE DESTINATION .
 )
 
 if(SONGBIRD_TRANSLATION_QM_FILES)

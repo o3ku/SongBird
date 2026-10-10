@@ -37,16 +37,31 @@ QList<CoreGeoFileRequirement> geoFileRequirements()
 
 } // namespace
 
+// The wildcard follows the platform's own release naming: mihomo publishes
+// mihomo-windows-amd64-v<version>.gz and mihomo-darwin-<arch>-v<version>.gz, and both unpack
+// to a bare "mihomo". "clash-meta" is the name a locally renamed copy is likely to carry.
+QStringList mihomoExecutableNames()
+{
+#if defined(Q_OS_WIN)
+    return {
+        QStringLiteral("mihomo.exe"),
+        QStringLiteral("mihomo-windows-*.exe"),
+        QStringLiteral("clash-meta.exe")};
+#else
+    return {
+        QStringLiteral("mihomo"),
+        QStringLiteral("mihomo-darwin-*"),
+        QStringLiteral("clash-meta")};
+#endif
+}
+
 CoreDescriptor mihomoCoreDescriptor()
 {
     return CoreDescriptor{
         CoreType::Mihomo,
         QStringLiteral("Mihomo"),
         supportedConfigTypes(),
-        QStringList{
-            QStringLiteral("mihomo.exe"),
-            QStringLiteral("mihomo-windows-*.exe"),
-            QStringLiteral("clash-meta.exe")},
+        mihomoExecutableNames(),
         15,
         QList<CoreType>{},
         geoFileRequirements(),

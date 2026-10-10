@@ -1,4 +1,4 @@
-#include "platform/windows/SingleInstanceGuard.h"
+#include "platform/SingleInstanceGuard.h"
 
 #include <QSharedMemory>
 

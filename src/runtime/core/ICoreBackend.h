@@ -9,6 +9,7 @@
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/core/CoreAssetPlatform.h"
 #include "runtime/core/CoreDescriptor.h"
 
 // What an auxiliary TUN device should do with the traffic it captures.
@@ -59,6 +60,9 @@ public:
         return {};
     }
     virtual QUrl releasesApiUrl() const = 0;
-    virtual CoreUpdateAssetPolicy updateAssetPolicy() const = 0;
-    virtual int scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const = 0;
+    // Which release asset to fetch, and what to fall back to when GitHub's release lookup is
+    // unavailable. Both are functions of the target platform because every vendor names its
+    // per-OS, per-architecture downloads differently.
+    virtual CoreUpdateAssetPolicy updateAssetPolicy(CoreAssetPlatform platform) const = 0;
+    virtual int scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const = 0;
 };

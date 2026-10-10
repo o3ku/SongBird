@@ -1,6 +1,6 @@
 #include "app/SingleInstanceBootstrap.h"
 
-#include "platform/windows/SingleInstanceGuard.h"
+#include "platform/SingleInstanceGuard.h"
 
 SingleInstanceBootstrap* SingleInstanceBootstrap::currentInstance_ = nullptr;
 

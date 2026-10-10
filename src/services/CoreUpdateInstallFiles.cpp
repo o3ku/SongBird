@@ -24,6 +24,20 @@ bool isGeoDataFile(const QString& fileName)
     return normalized.startsWith(QStringLiteral("geo")) && normalized.endsWith(QStringLiteral(".dat"));
 }
 
+// Whether the archive marked this entry executable.
+//
+// The permission bits rather than QFileInfo::isExecutable(), which on Windows answers from the file
+// extension and would call an extensionless core executable while calling a ".exe" one the same.
+// Windows carries no executable bit at all, so this is false there by construction and the caller's
+// markExecutable() is a no-op -- which is the correct behaviour rather than an accident.
+bool hasExecutableBit(const QFileInfo& fileInfo)
+{
+    const QFile::Permissions permissions = fileInfo.permissions();
+    return permissions.testFlag(QFileDevice::ExeOwner)
+        || permissions.testFlag(QFileDevice::ExeGroup)
+        || permissions.testFlag(QFileDevice::ExeOther);
+}
+
 QString resolveExtractionRoot(const QString& extractionDirectory)
 {
     QDir dir(extractionDirectory);
@@ -118,6 +132,16 @@ OperationResult CoreUpdateInstallFiles::writeBytesToFile(const QString& filePath
     return OperationResult::ok();
 }
 
+void CoreUpdateInstallFiles::markExecutable(const QString& filePath)
+{
+    QFile::setPermissions(
+        filePath,
+        QFile::permissions(filePath)
+            | QFileDevice::ExeOwner
+            | QFileDevice::ExeGroup
+            | QFileDevice::ExeOther);
+}
+
 OperationResult CoreUpdateInstallFiles::copyExtractedFiles(
     const QString& extractionDirectory,
     const QString& targetDirectory,
@@ -144,6 +168,13 @@ OperationResult CoreUpdateInstallFiles::copyExtractedFiles(
         const OperationResult writeResult = writeBytesToFile(targetPath, sourceFile.readAll());
         if (!writeResult.success) {
             return writeResult;
+        }
+
+        // The executable bit travels with the archive, not with the bytes: an Xray or mihomo .zip
+        // and a sing-box .tar.gz both mark the core executable, and writeBytesToFile would drop
+        // that on the floor and leave a core macOS refuses to start.
+        if (hasExecutableBit(sourceInfo)) {
+            markExecutable(targetPath);
         }
     }
 

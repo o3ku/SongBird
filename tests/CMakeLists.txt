@@ -386,9 +386,51 @@ set(SONGBIRD_SYSTEM_PROXY_SERVICE_TEST_SOURCES
     ../src/platform/windows/WindowsSystemProxyService.h
 )
 
-songbird_add_qt_test(songbird_system_proxy_service_tests system-proxy-service
+# Windows-only, like the class under test: it drives the real registry write and asserts on
+# the value it reports when that write fails. The macOS implementation is covered through
+# MacSystemProxyService instead, which is a different target because it has no registry to
+# point at a scratch key.
+if(WIN32)
+    songbird_add_qt_test(songbird_system_proxy_service_tests system-proxy-service
+        SOURCES
+            ${SONGBIRD_SYSTEM_PROXY_SERVICE_TEST_SOURCES}
+        LIBRARIES
+            Qt${QT_VERSION_MAJOR}::Test
+    )
+endif()
+
+# The two macOS platform implementations, compiled and driven on every platform.
+#
+# They are added to the application build only under APPLE (see src/CMakeLists.txt) and no test
+# ever runs on macOS, so without this target their first compilation would be the release build
+# that ships them. The test drives only the free functions they expose -- the services themselves
+# write the real HOME directory and shell out to networksetup/osascript/launchctl.
+#
+# Which file this target owns is the exact complement of where the application build takes it
+# from, because on macOS adding it here as well would define its symbols twice:
+#   MacSystemProxyService -> songbird_shared_objs (linked by every test target) under APPLE
+#   MacAutoRunService     -> the songbird executable's own sources under APPLE
+set(SONGBIRD_MACOS_PLATFORM_SERVICES_TEST_SOURCES
+    MacOSPlatformServicesTests.cpp
+)
+
+if(APPLE)
+    list(APPEND SONGBIRD_MACOS_PLATFORM_SERVICES_TEST_SOURCES
+        ../src/platform/macos/MacAutoRunService.h
+        ../src/platform/macos/MacAutoRunService.cpp
+    )
+else()
+    list(APPEND SONGBIRD_MACOS_PLATFORM_SERVICES_TEST_SOURCES
+        ../src/platform/macos/MacSystemProxyService.h
+        ../src/platform/macos/MacSystemProxyService.cpp
+        ../src/platform/macos/MacAutoRunService.h
+        ../src/platform/macos/MacAutoRunService.cpp
+    )
+endif()
+
+songbird_add_qt_test(songbird_macos_platform_services_tests macos-platform-services
     SOURCES
-        ${SONGBIRD_SYSTEM_PROXY_SERVICE_TEST_SOURCES}
+        ${SONGBIRD_MACOS_PLATFORM_SERVICES_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
 )

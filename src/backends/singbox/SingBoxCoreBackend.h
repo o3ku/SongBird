@@ -18,8 +18,8 @@ public:
     QJsonObject buildClientRoot(const Config& config, const VmessItem& server) const override;
     QJsonObject buildAuxiliaryTunClientRoot(const Config& config, AuxiliaryTunRouting routing) const override;
     QUrl releasesApiUrl() const override;
-    CoreUpdateAssetPolicy updateAssetPolicy() const override;
-    int scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const override;
+    CoreUpdateAssetPolicy updateAssetPolicy(CoreAssetPlatform platform) const override;
+    int scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const override;
 
 private:
     static QJsonObject buildTunCompatClientRoot(const Config& config, AuxiliaryTunRouting routing);

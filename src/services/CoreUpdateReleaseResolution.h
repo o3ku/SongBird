@@ -21,7 +21,7 @@ struct ReleaseResolutionRequest {
 
 struct ReleaseResolutionResult {
     CoreUpdateReleaseMetadata::GitHubRelease release;
-    bool prefer64Bit = false;
+    CoreAssetPlatform platform;
     OperationResult error;
     bool hasError = false;
 };

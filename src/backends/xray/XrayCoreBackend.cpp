@@ -157,8 +157,27 @@ QUrl XrayCoreBackend::releasesApiUrl() const
     return githubReleasesApiUrl(xrayRepositoryPath(), 20);
 }
 
-CoreUpdateAssetPolicy XrayCoreBackend::updateAssetPolicy() const
+CoreUpdateAssetPolicy XrayCoreBackend::updateAssetPolicy(CoreAssetPlatform platform) const
 {
+    // macOS has no 32-bit build, so only the primary slot is ever filled there. The two macOS assets
+    // are per-architecture rather than per-bitness: Xray-macos-64.zip is the Intel one and
+    // Xray-macos-arm64-v8a.zip the Apple Silicon one.
+    if (platform.isMacOS()) {
+        const QString macosAssetName = platform.appleSilicon
+            ? QStringLiteral("Xray-macos-arm64-v8a.zip")
+            : QStringLiteral("Xray-macos-64.zip");
+        return CoreUpdateAssetPolicy{
+            QStringLiteral("v26.3.27"),
+            macosAssetName,
+            {},
+            QStringLiteral("XTLS/Xray-core"),
+            macosAssetName,
+            {},
+            githubLatestReleaseDownloadUrl(xrayRepositoryPath(), macosAssetName),
+            {}
+        };
+    }
+
     return CoreUpdateAssetPolicy{
         QStringLiteral("v26.3.27"),
         QStringLiteral("Xray-windows-64.zip"),
@@ -171,19 +190,32 @@ CoreUpdateAssetPolicy XrayCoreBackend::updateAssetPolicy() const
     };
 }
 
-int XrayCoreBackend::scoreReleaseAssetName(const QString& assetName, bool prefer64Bit) const
+int XrayCoreBackend::scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const
 {
     const QString normalized = assetName.trimmed().toLower();
     if (!normalized.endsWith(QStringLiteral(".zip")) && !normalized.endsWith(QStringLiteral(".exe"))) {
         return -1;
     }
+
+    if (platform.isMacOS()) {
+        // Exactly one of the two macOS assets belongs on this machine, and there is no 32-bit build
+        // to fall back to when it is missing. The ".dgst" sidecars beside each asset carry the
+        // checksum and end in ".dgst", so they are already excluded by the suffix test above.
+        if (!normalized.startsWith(QStringLiteral("xray-macos-"))) {
+            return -1;
+        }
+        const bool assetIsArm64 = normalized.contains(QStringLiteral("arm64"))
+            || normalized.contains(QStringLiteral("armv"));
+        return assetIsArm64 == platform.appleSilicon ? 400 : -1;
+    }
+
     if (normalized.contains(QStringLiteral("arm64")) || normalized.contains(QStringLiteral("armv"))) {
         return -1;
     }
-    if (prefer64Bit && normalized == QStringLiteral("xray-windows-64.zip")) {
+    if (platform.sixtyFourBit && normalized == QStringLiteral("xray-windows-64.zip")) {
         return 400;
     }
-    if (!prefer64Bit && normalized == QStringLiteral("xray-windows-32.zip")) {
+    if (!platform.sixtyFourBit && normalized == QStringLiteral("xray-windows-32.zip")) {
         return 400;
     }
     return -1;
