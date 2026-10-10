@@ -594,6 +594,14 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      # Not for the sources -- this job only moves artifacts around and never builds
+      # anything. It is here because gh infers the repository from the git remote, and a
+      # job with no checkout has none: "gh run download" below and the release steps at
+      # the bottom both fail with
+      # "failed to run git: fatal: not a git repository (or any of the parent
+      # directories): .git". The other two jobs check out for the same reason.
+      - uses: actions/checkout@v7
+
       - name: Fetch both architectures
         env:
           GH_TOKEN: ${{ github.token }}
