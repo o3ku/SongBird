@@ -104,7 +104,7 @@ GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `R
 | Domain | [domain/models/](src/domain/models/) | 纯结构体：`Config`、`VmessItem`、`SubItem`、`RoutingItem` |
 | Persistence | [persistence/](src/persistence/) | `JsonConfigRepository` 加载/保存 `songbird.json` |
 | Platform | [platform/windows/](src/platform/windows/) | Windows 专属：系统代理、PAC 服务器、全局热键、自启、单例 |
-| Common | [common/](src/common/) | 小型值类型：`OperationResult`、`SystemProxyMode`、`DialogUtils`、`GitHubUrls` |
+| Common | [common/](src/common/) | 小型值类型：`OperationResult`、`SystemProxyMode`、`DialogUtils`、`GitHubUrls`；安装目录路径名入口：`AppPaths`、`SingBoxPaths` |
 
 ### 架构边界（由 `backend-boundaries` 测试强制）
 
@@ -117,6 +117,8 @@ GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `R
 5. **前端是依赖顺序的顶**：含 `main.cpp` 的目录（现为 `app/`、`auto/`）**不得被下层 include**。这条规则是补的：`appcore/` 曾向上 include `app/` 的三个头文件，于是**共享层依赖了某个可执行文件的代码**，且任何 `appcore/` 消费者都**传递性**继承该依赖（「`auto/` 对 `app/` 依赖 = 0」当时只在**直接 include** 层面成立）。判据是「目录里有没有 `main.cpp`」，所以新增前端自动纳入。
 
 前端要拿「内核专属配置」时走运行时层的窄入口，而不是 include 后端。TUN 设备是**独立内核进程**创建的，其配置就是内核产物：入口是 `runtime/AuxiliaryTunConfig.h` 的 `AuxiliaryTunConfig::buildRoot(coreType, config, routing)`，由 `ICoreBackend::buildAuxiliaryTunClientRoot(config, routing)` 实现（`AuxiliaryTunRouting::RelayToLocalProxy` 中继进本地代理 / `DirectOnly` 只走直连，用于代理会话停止后保住网卡不重建）。
+
+安装目录下的路径名有唯一入口，不要在调用点就地拼：`AppPaths::applicationDirectory()` / `AppPaths::runtimeDirectory()`、`SingBoxPaths::ruleSetDirectoryName()`；各自「为什么不能私有」的理由写在头文件注释里。⚠️ 测试里若出现同一路径的**独立副本**（`ClientConfigWriterTests`、`GeoResourceUpdateServiceTests` 各自拼了 `rule-set`），那是**故意的** —— 正是它让改错常量会变红。⚠️ `GitHubUrls::singRuleSetDownloadUrl` 里的 `rule-set` **不是**同一概念：那是上游 sing-geosite/sing-geoip 仓库的**分支名**，只是恰好同名，合并会把本地布局绑死在别人的分支名上。
 
 ### 本地化与 English surface（由 `localization-coverage` 测试强制）
 
