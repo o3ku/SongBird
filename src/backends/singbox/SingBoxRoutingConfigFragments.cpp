@@ -12,6 +12,7 @@
 #include "backends/singbox/SingBoxConfigFragments.h"
 #include "common/AppPaths.h"
 #include "common/GitHubUrls.h"
+#include "common/SingBoxPaths.h"
 #include "domain/models/RoutingRule.h"
 #include "runtime/DnsConfigFragments.h"
 #include "runtime/RoutingConfigFragments.h"
@@ -20,13 +21,12 @@
 namespace {
 
 const QString kSingBoxDirectDnsTag = QStringLiteral("direct_dns");
-const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 
 QString resolveLocalSingBoxRuleSetPath(const QString& tag)
 {
     const QString fileName = QStringLiteral("%1.srs").arg(tag);
     const QString path = QDir(AppPaths::applicationDirectory())
-                             .filePath(QStringLiteral("%1/%2").arg(kSingBoxRuleSetDirectoryName, fileName));
+                             .filePath(QStringLiteral("%1/%2").arg(SingBoxPaths::ruleSetDirectoryName(), fileName));
     const QFileInfo fileInfo(path);
     return fileInfo.exists() && fileInfo.isFile()
         ? fileInfo.absoluteFilePath()

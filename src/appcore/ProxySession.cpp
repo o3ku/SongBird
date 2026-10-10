@@ -24,6 +24,7 @@
 #include "appcore/TunRuntimeState.h"
 #include "common/AppPaths.h"
 #include "common/BackgroundThreadLaunch.h"
+#include "common/SingBoxPaths.h"
 #include "common/ThreadShutdown.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/CoreConfigPreflight.h"
@@ -36,7 +37,6 @@
 namespace {
 
 constexpr int CoreStartupCompletionOverlayDelayMs = 2000;
-const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 
 QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
 {
@@ -58,7 +58,7 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
                                     .toArray();
     QStringList missingTags;
     QSet<QString> seenTags;
-    const QString ruleSetDirectory = QDir(AppPaths::applicationDirectory()).filePath(kSingBoxRuleSetDirectoryName);
+    const QString ruleSetDirectory = QDir(AppPaths::applicationDirectory()).filePath(SingBoxPaths::ruleSetDirectoryName());
     for (const QJsonValue& value : ruleSets) {
         const QJsonObject ruleSet = value.toObject();
         if (ruleSet.value(QStringLiteral("type")).toString() != QStringLiteral("remote")) {
@@ -860,7 +860,7 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     const QString targetDirectory = AppPaths::applicationDirectory();
     const QString startMessage = tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
         .arg(tags.size())
-        .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(kSingBoxRuleSetDirectoryName)));
+        .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(SingBoxPaths::ruleSetDirectoryName())));
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
 
     setPhase(Phase::ValidateRuntimeResources);

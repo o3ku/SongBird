@@ -11,11 +11,10 @@
 
 #include "common/GitHubUrls.h"
 #include "common/JsonFile.h"
+#include "common/SingBoxPaths.h"
 #include "services/GeoResourceDownload.h"
 
 namespace {
-
-const QString kSingBoxRuleSetDirectoryName = QStringLiteral("rule-set");
 
 QString normalizeGeoName(const QString& geoName)
 {
@@ -84,7 +83,7 @@ OperationResult GeoResourceUpdateService::updateSingBoxRuleSet(const QString& ta
     return downloadAndSave(
         buildSingBoxRuleSetDownloadUrl(normalizedTag),
         fileName,
-        QDir(targetDirectory_).filePath(QStringLiteral("%1/%2").arg(kSingBoxRuleSetDirectoryName, fileName)));
+        QDir(targetDirectory_).filePath(QStringLiteral("%1/%2").arg(SingBoxPaths::ruleSetDirectoryName(), fileName)));
 }
 
 OperationResult GeoResourceUpdateService::updateCoreGeoFile(
