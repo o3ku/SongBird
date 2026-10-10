@@ -766,14 +766,36 @@ endif()
 
 if(WIN32)
     # Feed the app manifests to the linker instead of embedding them in .rc files.
-    # /MANIFEST:EMBED is required alongside /MANIFESTINPUT: so MSVC actually embeds
-    # the supplied manifest into the executable instead of falling back to its default.
+    # /MANIFEST:EMBED is not optional: the linker rejects /MANIFESTINPUT: without it
+    # (LNK1220: 'MANIFESTINPUT' requires '/MANIFEST:EMBED' specification), so the pair
+    # has to travel together.
+    #
+    # /INCREMENTAL:NO is the other half of that pair, and it is why these two targets
+    # are never incrementally linked. MSVC's defaults pass /INCREMENTAL for Debug and
+    # RelWithDebInfo, and that combination cannot produce a manifest: the post-link
+    # manifest step has no input to work from and dies with
+    # "mt.exe : command line error c10100a7: No manifest inputs were specified".
+    # The linker itself succeeds and writes the executable; only the step after it
+    # fails, so the symptom is a target that links and then reports FAILED. The
+    # non-incremental configurations are unaffected, which is why only a Debug tree
+    # shows this at all.
+    #
+    # The price is one full link per relink of the app binary, which is cheap here:
+    # songbird takes 1.65 s instead of 1.05 s (212 objects, measured on msvc-tests),
+    # and the first link is unchanged because a first link has no .ilk to reuse
+    # either way. The binary gets smaller for it -- 14.9 MB instead of 18.1 MB,
+    # because incremental linking pads sections and carries an incremental link
+    # table -- and /Zi is used rather than /ZI, so no edit-and-continue capability
+    # depends on incremental linking here. Release and MinSizeRel already pass
+    # /INCREMENTAL:NO, so this only changes the two debug configurations.
     target_link_options(songbird PRIVATE
         LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBird.exe.manifest
-        LINKER:/MANIFEST:EMBED)
+        LINKER:/MANIFEST:EMBED
+        LINKER:/INCREMENTAL:NO)
     target_link_options(songbird_auto PRIVATE
         LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBirdAuto.exe.manifest
-        LINKER:/MANIFEST:EMBED)
+        LINKER:/MANIFEST:EMBED
+        LINKER:/INCREMENTAL:NO)
 endif()
 
 # QtNetwork's TLS backend on Windows loads OpenSSL DLLs from beside the
