@@ -1,6 +1,5 @@
 #include "backends/singbox/SingBoxRoutingConfigFragments.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>

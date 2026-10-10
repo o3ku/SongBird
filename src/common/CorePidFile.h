@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
