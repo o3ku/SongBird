@@ -58,6 +58,13 @@ Write-Host "workflow  : $workflowPath"
 
 # ---------------------------------------------------------------- extract
 $yaml = Get-Content -Raw $workflowPath
+# Get-Content -Raw hands back whatever line endings the file has on disk, and a Windows runner checks
+# the workflow out with CRLF (core.autocrlf is true and the repository has no .gitattributes). The
+# STRUCTURAL lookups below use the literal "`n", so on a CRLF file IndexOf("`n`n") never finds the
+# blank line that ends the permissions block, Substring is handed a negative length, and the whole
+# harness dies -- on CI only, because a local checkout here happens to be LF. The block that reads the
+# MSVC step would have been next. Normalise once, here, so every lookup sees the same line endings.
+$yaml = $yaml -replace "`r`n", "`n"
 $m = [regex]::Match($yaml, "(?ms)^      - name: Evict superseded vcpkg caches.*?\r?\n        run: \|\r?\n(.*?)(?=\r?\n      - name: )")
 if (-not $m.Success) { Write-Output 'EXTRACT FAILED'; exit 1 }
 $body = (($m.Groups[1].Value -split "\r?\n") | ForEach-Object { $_ -replace '^          ', '' }) -join "`n"
