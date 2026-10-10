@@ -649,10 +649,19 @@ jobs:
           # signature does not cover it, so skipping this produces an application that
           # cannot be launched at all. Signing runs deepest first: signing a framework
           # before the binaries inside it would be undone by the next signature.
+          #
+          # Contents/MacOS is deliberately left out of this pass. codesign resolves a
+          # bundle's main executable to the bundle itself, so signing it here asks for a
+          # whole-bundle signature while every nested component is still unsigned, and it
+          # fails with
+          #   Contents/MacOS/SongBird: code object is not signed at all
+          #   In subcomponent: .../Contents/PlugIns/printsupport/libcocoaprintersupport.dylib
+          # -- which is what it did, because find happened to hand back the main executable
+          # first. The bundle signature at the end is what covers the main executable.
           while IFS= read -r -d '' file; do
             file -b "$file" | grep -q 'Mach-O' || continue
             codesign --force --sign - --timestamp=none "$file"
-          done < <(find "$app/Contents" -type f -print0)
+          done < <(find "$app/Contents" -type f -not -path "$app/Contents/MacOS/*" -print0)
           while IFS= read -r -d '' framework; do
             codesign --force --sign - --timestamp=none "$framework"
           done < <(find "$app/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0)
