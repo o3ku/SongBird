@@ -40,11 +40,18 @@ What CI guarantees that a local build does not:
    - Do not write the version, commit, tag, push, or publish until confirmed.
 
 3. Write the confirmed version.
-   - Update the root `CMakeLists.txt` `project(SongBird VERSION ...)` value.
-   - The version lives in **three** places and all three must match. `src/CMakeLists.txt`
-     (lines defining `SONGBIRD_APP_VERSION="${PROJECT_VERSION}"`) covers the CMake build, but
-     `src/app/main.cpp` and `src/auto/main.cpp` each carry an `#ifndef SONGBIRD_APP_VERSION`
-     fallback that is bumped by hand.
+   - Update the root `CMakeLists.txt` `project(SongBird VERSION ...)` value, and the
+     `SONGBIRD_VERSION_SUFFIX` line directly under it.
+   - `project(VERSION)` accepts digits only. A prerelease label there is a configure error,
+     not a warning, so the suffix is carried separately and appended into
+     `SONGBIRD_DISPLAY_VERSION`. That display value is what `SONGBIRD_APP_VERSION` and the
+     macOS bundle's two human-readable fields use. Bumping a beta is the one suffix line; a
+     final release is that line emptied. `CFBundleVersion` deliberately keeps the numeric
+     `PROJECT_VERSION`, because macOS compares it as a sequence of integers.
+   - `src/app/main.cpp` and `src/auto/main.cpp` each carry an `#ifndef SONGBIRD_APP_VERSION`
+     fallback that is bumped by hand, and it must match the display version exactly. Check
+     the result rather than trusting it: `build/msvc-release/src/SongBird.exe --version`
+     prints the string the application will report.
    - Preserve existing formatting.
 
 4. Verify UI language and Chinese translation coverage.
@@ -89,15 +96,17 @@ What CI guarantees that a local build does not:
      cmake --build build/msvc-tests --parallel
      ctest --test-dir build/msvc-tests --output-on-failure
      ```
-   - On a fresh MSVC tree the full build stops at `SongBird.exe` / `SongBirdAuto.exe` with a
-     pre-existing `mt.exe : command line error c10100a7` manifest failure that has nothing to do
-     with the source. It does not touch the test targets: build those individually and treat
-     `unexpected failures: none` as a clean run.
+   - A full build of a fresh MSVC tree used to stop at `SongBird.exe` / `SongBirdAuto.exe`
+     with `mt.exe : command line error c10100a7`. That is fixed: the two Windows executables
+     are linked with `LINKER:/INCREMENTAL:NO`, because `/MANIFESTINPUT:` together with
+     `/MANIFEST:EMBED` is incompatible with the `/INCREMENTAL` MSVC passes by default for
+     Debug and RelWithDebInfo. A recurrence means that flag was dropped, not that the tree is
+     fine.
    - The `smoke`-labelled tests download cores and subscriptions, start real processes, and
      write real system-proxy / registry entries, so CI excludes them with `-LE smoke`. The
      command above does **not** pass `-LE smoke`, so it runs them too — that is fine and adds
-     coverage, but it means the two counts differ by design: a full local run reports **58**
-     tests while CI reports **57**. Before reporting a lost test, reconcile with
+     coverage, but it means the two counts differ by design: a full local run reports **59**
+     tests while CI reports **58**. Before reporting a lost test, reconcile with
      `ctest --test-dir build/msvc-tests -N -L smoke` (exactly 1: `end-to-end-smoke`).
    - Four of those tests (`vcpkg-guard`, `vcpkg-skip`, `vcpkg-image-namespace`, `vcpkg-evict`)
      are not source checks: they extract the vcpkg cache steps' real `run:` blocks out of
@@ -136,6 +145,10 @@ What CI guarantees that a local build does not:
    - Pushing the tag runs `.github/workflows/release.yml`, which restores the vcpkg cache,
      builds the static Qt5 release, runs `ctest -LE smoke`, stages `build/src/SongBird.exe`
      as `songbird.exe`, and publishes the release.
+   - A tag whose version carries a suffix (`v2.5.0-beta1`) makes CI add `--prerelease`, so a
+     beta does not become the repository's "Latest release" while it is still a beta. The
+     check is on the version, not on the tag shape, and plain `vX.Y.Z` tags publish exactly
+     as they always did.
    - Do not call `gh release create` on this path. CI owns the asset, and a hand-made
      release bypasses the test gate.
 
@@ -146,6 +159,9 @@ What CI guarantees that a local build does not:
      ```
    - Confirm the publisher on the release page is `github-actions`. Any other publisher
      means the release did not go through CI.
+   - For a beta, confirm the release is marked prerelease and that
+     `gh release view --json isPrerelease` agrees. A beta showing up as "Latest release"
+     means the `--prerelease` branch in the workflow did not fire.
    - Report the version, tag, commit hash, release asset, and the tests that passed.
 
 ## Fallback: publish without CI
