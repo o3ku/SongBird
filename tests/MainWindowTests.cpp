@@ -881,12 +881,17 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     QCOMPARE(shareContentLayout->stretch(1), 0);
     QCOMPARE(qrPlaceholder->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
     QCOMPARE(qrPlaceholder->margin(), 10);
-    QVERIFY(qrPlaceholder->height() <= qrPlaceholder->width());
+    // The placeholder takes the panel's spare height and the renderer draws the code square at
+    // min(width, height) minus the margin, so the placeholder's own aspect ratio is whatever the
+    // platform font leaves over -- macOS' default font is not Windows', and comparing the two
+    // sides here pins the platform rather than the product. What the ratio was standing in for is
+    // asserted below instead: the code stays square and stays inside the placeholder.
     QTRY_VERIFY(!qrPlaceholder->pixmap()->isNull());
     const QPixmap qrPixmap = *qrPlaceholder->pixmap();
     const qreal qrPixmapDpr = qrPixmap.devicePixelRatio() <= 0.0 ? qreal(1.0) : qrPixmap.devicePixelRatio();
     const int qrPixmapLogicalWidth = qRound(qrPixmap.width() / qrPixmapDpr);
     const int qrPixmapLogicalHeight = qRound(qrPixmap.height() / qrPixmapDpr);
+    QCOMPARE(qrPixmapLogicalWidth, qrPixmapLogicalHeight);
     QVERIFY(qrPixmapLogicalWidth <= qrPlaceholder->width() - (qrPlaceholder->margin() * 2));
     QVERIFY(qrPixmapLogicalHeight <= qrPlaceholder->height() - (qrPlaceholder->margin() * 2));
     QCOMPARE(shareLinkLabel->sizePolicy().verticalPolicy(), QSizePolicy::Preferred);
@@ -2448,11 +2453,28 @@ void MainWindowTests::requestExitShowsConfirmationEvenWhenHideToTrayIsEnabled()
         auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
         QVERIFY(dialog != nullptr);
         confirmationShown = true;
-        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit SongBird"));
-        QCOMPARE(dialog->text(), QStringLiteral("Quit SongBird now?"));
+
+        // Dismiss the box before asserting on it. A failing assertion returns from this lambda
+        // without clicking anything, and the modal loop it was called from would then never exit:
+        // the binary would sit in exec() until QTest's five-minute timeout and take every later
+        // test in it down as well, instead of reporting a single failure.
         QAbstractButton* noButton = dialog->button(QMessageBox::No);
+        if (noButton != nullptr) {
+            QTest::mouseClick(noButton, Qt::LeftButton);
+        } else {
+            dialog->reject();
+        }
+
+        // QMessageBox::setWindowTitle() is a no-op on macOS -- Qt drops the title there because the
+        // platform guidelines give alerts no title bar -- so there is no title to compare against
+        // on that platform. The text is what the user actually reads, and it is checked everywhere.
+#ifdef Q_OS_MACOS
+        QVERIFY2(dialog->windowTitle().isEmpty(), qPrintable(dialog->windowTitle()));
+#else
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Quit SongBird"));
+#endif
+        QCOMPARE(dialog->text(), QStringLiteral("Quit SongBird now?"));
         QVERIFY(noButton != nullptr);
-        QTest::mouseClick(noButton, Qt::LeftButton);
     });
 
     QVERIFY(!window.requestExit());
@@ -2472,9 +2494,15 @@ void MainWindowTests::requestExitConfirmationUsesMainWindowAsParentWhenHidden()
         auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
         QVERIFY(dialog != nullptr);
         confirmationParentedToWindow = dialog->parentWidget() == &window;
+        // Dismiss the box before asserting: a lambda that returns early would leave the modal loop
+        // below running until QTest's five-minute timeout. See the sibling test above.
         QAbstractButton* noButton = dialog->button(QMessageBox::No);
+        if (noButton != nullptr) {
+            QTest::mouseClick(noButton, Qt::LeftButton);
+        } else {
+            dialog->reject();
+        }
         QVERIFY(noButton != nullptr);
-        QTest::mouseClick(noButton, Qt::LeftButton);
     });
 
     QVERIFY(!window.requestExit());

@@ -150,10 +150,23 @@ void OutboundLocationProbeServiceTests::failureKeepsEveryHostReasonInsteadOfOnly
     ProbeProxyServer proxy(QByteArrayLiteral(R"({"status":"fail"})"));
     QVERIFY(proxy.listen());
 
+    // The wall-clock check at the end tells "returned as soon as every host had answered" apart
+    // from "sat out the per-request timeout", and that only works while the timeout is far longer
+    // than a round actually costs. A round is a few hundred milliseconds -- building the first
+    // QNetworkAccessManager is not free, and the three https hosts add this platform's TLS failure
+    // latency on top -- so the timeout here is an order of magnitude above that and the bound is
+    // derived from it instead of being an absolute number that only holds on the machine it was
+    // written on.
+    LocationProbeTimings timings;
+    timings.perRequestTimeoutMs = 4000;
+    timings.retryDelayMs = 10;
+    timings.totalTimeoutMs = 4000;
+    timings.maxRounds = 1;
+
     OutboundLocationProbeService probe;
     QElapsedTimer elapsed;
     elapsed.start();
-    const OutboundLocationDetails details = probe.probeStructured(proxy.port(), shortTimings());
+    const OutboundLocationDetails details = probe.probeStructured(proxy.port(), timings);
     const qint64 spent = elapsed.elapsed();
 
     QVERIFY(details.location.isEmpty());
@@ -167,7 +180,9 @@ void OutboundLocationProbeServiceTests::failureKeepsEveryHostReasonInsteadOfOnly
         !details.error.contains(QCoreApplication::translate(
             "OutboundLocationProbeService", "Outbound location request timed out.")),
         qPrintable(details.error));
-    QVERIFY2(spent < 300, qPrintable(QString::number(spent)));
+    // Half the per-request timeout: far above the cost of a round, and far below what waiting the
+    // timeout out would cost, so the bound keeps its teeth on every platform.
+    QVERIFY2(spent < timings.perRequestTimeoutMs / 2, qPrintable(QString::number(spent)));
 }
 
 // A host that accepts the connection and then says nothing is the case the deadline exists for.
