@@ -106,6 +106,7 @@ class CoreUpdateServiceTests : public QObject {
 
 private slots:
     void backendMetadataMatchesCatalog();
+    void currentAssetPlatformMatchesTheBuildHost();
     void versionComparisonNormalizesTagsAndComparesNumericParts();
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
@@ -125,6 +126,33 @@ void CoreUpdateServiceTests::backendMetadataMatchesCatalog()
         QCOMPARE(backend->displayName(), catalogCoreDisplayName(coreType));
         QCOMPARE(backend->executableNames(), catalogCoreExecutableNames(coreType));
     }
+}
+
+void CoreUpdateServiceTests::currentAssetPlatformMatchesTheBuildHost()
+{
+    // The one case here that covers detection itself rather than a fixture. Every other test passes a
+    // platform in, which is what makes the naming rules verifiable from any host -- and is also why a
+    // detection that reports the wrong operating system used to break nothing visible. That is the bug
+    // this guards: the function's translation unit pulled in no Qt header, so Q_OS_WIN and Q_OS_MACOS
+    // were both undefined, os stayed Os::Other, and Other falls through to the Windows branch of every
+    // backend. Windows hid the mistake by accident; macOS downloaded and installed the Windows core.
+    //
+    // Comparing against *this* file's compile-time facts is what gives the case teeth: the expectation
+    // does not come from the function under test, and the two live in different translation units.
+    const CoreAssetPlatform platform = currentAssetPlatform();
+
+#if defined(Q_OS_WIN)
+    QVERIFY2(platform.isWindows(), "A Windows build has to resolve Windows release assets");
+    QVERIFY(!platform.isMacOS());
+#elif defined(Q_OS_MACOS)
+    QVERIFY2(platform.isMacOS(), "A macOS build has to resolve macOS release assets");
+    QVERIFY(!platform.isWindows());
+    // The slice the process runs as decides the architecture, so appleSilicon is deliberately not
+    // asserted here -- an Intel build under Rosetta is a legitimate x86_64 process on ARM hardware.
+    QVERIFY(platform.sixtyFourBit);
+#else
+    QSKIP("This host publishes no release assets, so detection has nothing to agree with");
+#endif
 }
 
 void CoreUpdateServiceTests::versionComparisonNormalizesTagsAndComparesNumericParts()

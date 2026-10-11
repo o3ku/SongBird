@@ -24,6 +24,20 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-appbootstrap-member-order.ps1
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
+    # Q_OS_*/Q_PROCESSOR_* come from Qt's headers, not from the compiler, so a file that tests one
+    # without including any Qt header compiles cleanly and takes the #else path in silence. That is
+    # how CoreAssetPlatform.cpp reported Os::Other everywhere, which made a macOS build download the
+    # Windows core -- Windows was unaffected only because Other falls through to its branch. The
+    # behavioural half of this is CoreUpdateServiceTests::currentAssetPlatformMatchesTheBuildHost;
+    # this half covers every other file that reaches for the same macros.
+    add_test(
+        NAME q-os-include-scope
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-q-os-include-scope.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+            -TestRoot ${CMAKE_CURRENT_SOURCE_DIR}
+    )
     # lupdate's "0 unfinished" is not a coverage metric: strings never wrapped in
     # tr()/translate() never reach the .ts, and strings that are wrapped but not added to
     # the hand-maintained .ts render in English. This check covers both gaps.
