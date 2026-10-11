@@ -1,0 +1,215 @@
+name: macOS verify
+
+# The release workflow never runs anything on macOS. It compiles the app, bundles it, and
+# hands the DMG to a user without a single line of the application executing, so a green
+# "macOS universal" job says the sources compile and the bundle is self-contained -- and
+# nothing at all about whether the app starts. This workflow closes that gap: it builds the
+# bundle, signs it the way package-macos does, asserts the metadata a user would see, and
+# then actually starts the application.
+#
+# It is deliberately a separate workflow rather than a step inside release.yml. The first
+# runs are expected to fail while the macOS runtime paths are shaken out (the platform
+# layer has never been executed there), and a failing verification must not be able to
+# block a release. Once the checks below are stable they can be folded into build-macos.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      # Both architectures are checked, and a failure in one must still produce the log for
+      # the other. macOS runners are free on a public repository, so the second half costs
+      # wall-clock only, and it runs in parallel.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Qt5
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          # qt@5 is deprecated but not disabled; the alternative is compiling Qt5 from
+          # source on every run. See release.yml for the full note.
+          brew install qt@5
+          command -v ninja >/dev/null || brew install ninja
+          echo "QT_PREFIX=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          # The top-level CMakeLists asks for Qt6 first, and an installed Homebrew "qt" is
+          # Qt6, so its prefix has to be excluded for the qt@5 keg to win.
+          qt6_prefix="$(brew --prefix qt 2>/dev/null || true)"
+          ignore=()
+          if [ -n "$qt6_prefix" ] && [ -d "$qt6_prefix" ]; then
+            ignore=(-DCMAKE_IGNORE_PREFIX_PATH="$qt6_prefix")
+          fi
+
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TEST=OFF \
+            -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
+            -DSONGBIRD_ENABLE_UPX=OFF \
+            "${ignore[@]}"
+
+          if ! grep -q '^Qt5_DIR:' build/CMakeCache.txt; then
+            echo "::error::Qt5 was not found; the build picked a different Qt than the one intended"
+            exit 1
+          fi
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Deploy Qt into the bundle
+        run: |
+          # Copies the frameworks the executable links to into Contents/Frameworks and
+          # rewrites the install names to @executable_path. It is repeated here rather than
+          # shared with release.yml because what this job verifies is the shippable bundle,
+          # not the build tree, and macdeployqt is what turns one into the other.
+          "$QT_PREFIX/bin/macdeployqt" build/src/SongBird.app -always-overwrite
+
+      - name: Resolve the expected version
+        run: |
+          # Read from the same two lines the build reads, so this check cannot pass by
+          # agreeing with its own copy of the number. `tr -d '\r'` because the Windows
+          # checkouts in this repository are CRLF and a stray carriage return would end up
+          # inside the version string.
+          base="$(tr -d '\r' < CMakeLists.txt | sed -n 's/^project(SongBird VERSION \([0-9.]*\).*/\1/p')"
+          suffix="$(tr -d '\r' < CMakeLists.txt | sed -n 's/^set(SONGBIRD_VERSION_SUFFIX "\(.*\)")/\1/p')"
+          if [ -z "$base" ]; then
+            echo "::error::could not read the version from CMakeLists.txt"
+            exit 1
+          fi
+          echo "SONGBIRD_EXPECTED_VERSION=${base}${suffix}" >> "$GITHUB_ENV"
+          echo "SONGBIRD_EXPECTED_BASE_VERSION=${base}" >> "$GITHUB_ENV"
+          echo "expected version ${base}${suffix} (CFBundleVersion ${base})"
+
+      - name: Sign the bundle
+        run: |
+          set -euo pipefail
+          app=build/src/SongBird.app
+          # The same pass package-macos performs after lipo, repeated here because
+          # macdeployqt rewrites install names and that invalidates the ad-hoc signature
+          # the linker gave each Mach-O -- macOS refuses to start an arm64 binary whose
+          # signature does not cover it. Contents/MacOS is excluded for the reason
+          # documented in release.yml: codesign resolves the main executable to the bundle
+          # itself, so signing it first asks for a whole-bundle signature while the nested
+          # components are still unsigned.
+          while IFS= read -r -d '' file; do
+            file -b "$file" | grep -q 'Mach-O' || continue
+            codesign --force --sign - --timestamp=none "$file"
+          done < <(find "$app/Contents" -type f -not -path "$app/Contents/MacOS/*" -print0)
+          while IFS= read -r -d '' framework; do
+            codesign --force --sign - --timestamp=none "$framework"
+          done < <(find "$app/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0)
+          codesign --force --sign - --timestamp=none "$app"
+
+      - name: Verify the signature
+        run: codesign --verify --deep --strict --verbose=2 build/src/SongBird.app
+
+      - name: Assert the bundle metadata
+        run: |
+          set -euo pipefail
+          plist=build/src/SongBird.app/Contents/Info.plist
+          plutil -lint "$plist"
+
+          short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
+          identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+          echo "CFBundleShortVersionString=$short"
+          echo "CFBundleVersion=$bundle"
+          echo "CFBundleIdentifier=$identifier"
+
+          [ "$short" = "$SONGBIRD_EXPECTED_VERSION" ] || {
+            echo "::error::CFBundleShortVersionString is '$short', expected '$SONGBIRD_EXPECTED_VERSION'"
+            exit 1
+          }
+          # CFBundleVersion is compared as a sequence of integers, so the prerelease suffix
+          # must not reach it. This is the assertion that pins that.
+          [ "$bundle" = "$SONGBIRD_EXPECTED_BASE_VERSION" ] || {
+            echo "::error::CFBundleVersion is '$bundle', expected '$SONGBIRD_EXPECTED_BASE_VERSION'"
+            exit 1
+          }
+          [ "$identifier" = "com.songbird.app" ] || {
+            echo "::error::unexpected CFBundleIdentifier '$identifier'"
+            exit 1
+          }
+
+      - name: Smoke-run the app
+        run: |
+          set -euo pipefail
+          app=build/src/SongBird.app
+          binary="$app/Contents/MacOS/SongBird"
+
+          run_with() {
+            local platform="$1"
+            shift
+            if [ -n "$platform" ]; then
+              QT_QPA_PLATFORM="$platform" "$binary" "$@"
+            else
+              "$binary" "$@"
+            fi
+          }
+
+          # Pick a platform plugin before asserting anything, so an environment problem
+          # (a runner with no GUI session) is reported as such rather than as a product
+          # failure. --version is the probe: it constructs the QApplication, which is what
+          # needs the plugin, and nothing else.
+          platform=""
+          if ! run_with "" --version >/dev/null 2>&1; then
+            echo "::warning::the default (cocoa) platform plugin could not start the app; retrying with offscreen"
+            mkdir -p "$app/Contents/PlugIns/platforms"
+            cp "$QT_PREFIX/plugins/platforms/libqoffscreen.dylib" "$app/Contents/PlugIns/platforms/"
+            codesign --force --sign - --timestamp=none "$app/Contents/PlugIns/platforms/libqoffscreen.dylib"
+            codesign --force --sign - --timestamp=none "$app"
+            platform=offscreen
+          fi
+          echo "using platform plugin: ${platform:-cocoa}"
+
+          # Cheapest proof that dyld resolved every framework from inside the bundle and
+          # that the version compiled into the macOS binary is the intended one.
+          run_with "$platform" --version | tee version.txt
+          grep -qF "$SONGBIRD_EXPECTED_VERSION" version.txt || {
+            echo "::error::--version did not report $SONGBIRD_EXPECTED_VERSION"
+            exit 1
+          }
+
+          # Then actually start the application and let it quit on its own. The three flags
+          # exist for exactly this (see the QCommandLineParser block in src/app/main.cpp):
+          # no core detection, no single-instance guard, no blocking dialogs. main() returns
+          # app.exec(), so a zero exit means the window and the startup sequencer ran to
+          # completion and the shutdown was clean.
+          run_with "$platform" \
+            --skip-core --disable-single-instance --non-interactive --quit-after-ms 3000 \
+            2>&1 | tee smoke.log
+
+      - name: Upload the smoke logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-verify-${{ matrix.arch }}
+          path: |
+            version.txt
+            smoke.log
+          if-no-files-found: ignore
