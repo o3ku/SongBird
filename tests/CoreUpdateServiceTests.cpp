@@ -634,6 +634,21 @@ void CoreUpdateServiceTests::extractionCommandsFollowTheTargetPlatform()
         CoreUpdateOperations::gzipDecompressionCommand(windowsX64Platform(), gzipPath, outputPath);
     QCOMPARE(windowsGzip.program, QStringLiteral("powershell"));
     QVERIFY(windowsGzip.standardOutputFile.isEmpty());
+
+    // The fixtures above pin what each platform would run; this pins what the running platform
+    // actually gets, which is the half a wrong answer from currentAssetPlatform() breaks. When the
+    // detection reported Other everywhere, Windows was handed /usr/bin/ditto for a .zip, so a core
+    // update failed on the very platform the suite runs on -- which is how that bug reached the
+    // Windows beta as well as the macOS one.
+    const CoreUpdateOperations::HelperCommand hostZip =
+        CoreUpdateOperations::archiveExtractionCommand(currentAssetPlatform(), archivePath, directory);
+#if defined(Q_OS_WIN)
+    QCOMPARE(hostZip.program, QStringLiteral("powershell"));
+#elif defined(Q_OS_MACOS)
+    QCOMPARE(hostZip.program, QStringLiteral("/usr/bin/ditto"));
+#else
+    Q_UNUSED(hostZip);
+#endif
 }
 
 void CoreUpdateServiceTests::helperProcessReportsAFailedLaunch()
