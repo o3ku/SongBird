@@ -4,6 +4,9 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPair>
 #include <QTemporaryDir>
 
@@ -99,6 +102,31 @@ QList<CoreUpdateReleaseMetadata::GitHubReleaseAsset> releaseAssetsFor(CoreType c
     return assets;
 }
 
+// A GitHub releases payload carrying every asset a real release publishes, so a case that needs the
+// update to get as far as downloading an asset does not also depend on which platform the suite runs
+// on. The single-asset payload this replaces named the Windows zip, which scored only on macOS while
+// the platform detection was broken; once detection was fixed the case failed there with no asset
+// selected, which is the update stopping before the download it exists to interrupt.
+QByteArray releasePayloadFor(CoreType coreType, const QString& tagName)
+{
+    QJsonArray assets;
+    for (const CoreUpdateReleaseMetadata::GitHubReleaseAsset& asset : releaseAssetsFor(coreType)) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("name"), asset.name);
+        entry.insert(QStringLiteral("browser_download_url"), asset.downloadUrl.toString());
+        assets.append(entry);
+    }
+
+    QJsonObject release;
+    release.insert(QStringLiteral("tag_name"), tagName);
+    release.insert(QStringLiteral("prerelease"), false);
+    release.insert(QStringLiteral("assets"), assets);
+
+    QJsonArray releases;
+    releases.append(release);
+    return QJsonDocument(releases).toJson(QJsonDocument::Compact);
+}
+
 } // namespace
 
 class CoreUpdateServiceTests : public QObject {
@@ -171,8 +199,9 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
 {
     std::atomic_bool cancelled = false;
     int downloadAttempts = 0;
-    const QByteArray releasePayload =
-        R"([{"tag_name":"v1.0.0","prerelease":false,"assets":[{"name":"sing-box-1.0.0-windows-amd64.zip","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.0.0/sing-box-1.0.0-windows-amd64.zip"}]}])";
+    // Every platform's asset, so the case reaches the download on whichever platform it runs on. The
+    // Windows-only payload it used to carry scored no asset at all on macOS once detection was fixed.
+    const QByteArray releasePayload = releasePayloadFor(CoreType::SingBox, QStringLiteral("v1.14.2"));
 
     CoreUpdateService service(
         [&](const QUrl& url, QByteArray* content) {
@@ -187,8 +216,12 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
                 QTest::qSleep(10);
             }
 
-            return OperationResult::fail(
-                QCoreApplication::translate("CoreUpdateService", "Core update was canceled."));
+            // Report it the way the real downloader does. Returning a plain failure instead made this
+            // case depend on the mirror list: only a github.com asset gets four candidate URLs, so
+            // what used to produce the cancelled result was the download loop's own cancellation check
+            // on the *next* iteration. An asset on any other host yields one candidate, the loop
+            // exhausts, and the cancellation comes back as an ordinary download failure.
+            return CoreUpdateOperations::cancelledResult();
         },
         [](const QString&, const QString&) {
             return OperationResult::ok();
@@ -223,7 +256,10 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
     cancellationThread.join();
 
     QVERIFY(!result.success);
-    QVERIFY(result.cancelled);
+    QVERIFY2(result.cancelled,
+             qPrintable(QStringLiteral("message=%1 downloadAttempts=%2")
+                            .arg(result.message)
+                            .arg(downloadAttempts)));
     QVERIFY(timer.elapsed() < 1500);
     QVERIFY(downloadAttempts >= 2);
 }
