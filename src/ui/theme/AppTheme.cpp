@@ -55,7 +55,19 @@ void AppTheme::polishThemedWidgets(QApplication& app)
     const auto tables = app.allWidgets();
     for (QWidget* widget : tables) {
         ServerTableTheme::applyIfStyled(widget);
-        QMetaObject::invokeMethod(widget, "refreshThemeAssets", Qt::DirectConnection);
+        // The hook is opt-in: only the widgets that cache themed assets implement it --
+        // MainWindow, and the tab button nested inside ServerWorkspaceWidget. The loop has
+        // to offer it to every widget because there is no other way to reach an arbitrary
+        // descendant, but the call has to be guarded. QMetaObject::invokeMethod resolves the
+        // name at run time and prints
+        //   QMetaObject::invokeMethod: No such method QScrollBar::refreshThemeAssets()
+        // for every object that does not have it, which is over a hundred lines per theme
+        // application and buries any real warning in captured output. The lookups are also
+        // wasted work. Guarding with indexOfMethod skips the call instead of making it and
+        // ignoring the failure, which is what actually silences the warning.
+        if (widget->metaObject()->indexOfMethod("refreshThemeAssets()") >= 0) {
+            QMetaObject::invokeMethod(widget, "refreshThemeAssets", Qt::DirectConnection);
+        }
     }
 }
 
