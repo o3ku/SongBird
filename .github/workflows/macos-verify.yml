@@ -5,7 +5,8 @@ name: macOS verify
 # "macOS universal" job says the sources compile and the bundle is self-contained -- and
 # nothing at all about whether the app starts. This workflow closes that gap: it builds the
 # bundle, signs it the way package-macos does, asserts the metadata a user would see, and
-# then actually starts the application.
+# then actually starts the application. It also runs the test suite, which that job never did:
+# it configures with BUILD_TEST=OFF, so the tests are not even compiled there.
 #
 # It is deliberately a separate workflow rather than a step inside release.yml. The first
 # runs are expected to fail while the macOS runtime paths are shaken out (the platform
@@ -67,7 +68,7 @@ jobs:
 
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TEST=OFF \
+            -DBUILD_TEST=ON \
             -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
             -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
             -DSONGBIRD_ENABLE_UPX=OFF \
@@ -80,6 +81,15 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Test
+        run: |
+          # -LE smoke matches the Windows job: the end-to-end smoke test drives a real core
+          # over the network, which is not something a verification run should depend on.
+          # The platform plugin the tests are given comes from tests/CMakeLists.txt, which
+          # picks the name per platform -- hardcoding the Windows one here is what a test
+          # cannot survive, since it dies before its first assertion.
+          ctest --test-dir build -LE smoke --output-on-failure
 
       - name: Deploy Qt into the bundle
         run: |

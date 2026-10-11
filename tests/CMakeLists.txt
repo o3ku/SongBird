@@ -73,6 +73,19 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
     endforeach()
 endif()
 
+# Qt's platform plugin is named per platform, and the tests are told which one to use by name:
+# the Windows plugin does not exist on macOS, and a test that cannot create its QApplication
+# dies before it runs a single assertion. cocoa rather than offscreen on macOS because those
+# runners do have a window server -- .github/workflows/macos-verify.yml starts the real
+# application with it -- and offscreen would be an environment nothing else here exercises.
+if(WIN32)
+    set(SONGBIRD_TEST_QPA_PLATFORM "windows")
+elseif(APPLE)
+    set(SONGBIRD_TEST_QPA_PLATFORM "cocoa")
+else()
+    set(SONGBIRD_TEST_QPA_PLATFORM "offscreen")
+endif()
+
 function(songbird_add_qt_test target_name test_name)
     cmake_parse_arguments(
         SONGBIRD_TEST
@@ -104,7 +117,7 @@ function(songbird_add_qt_test target_name test_name)
 
     add_test(NAME ${test_name} COMMAND ${target_name})
     set_tests_properties(${test_name} PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=windows"
+        ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
     )
     if(SONGBIRD_TEST_TEST_LABELS)
@@ -401,10 +414,11 @@ endif()
 
 # The two macOS platform implementations, compiled and driven on every platform.
 #
-# They are added to the application build only under APPLE (see src/CMakeLists.txt) and no test
-# ever runs on macOS, so without this target their first compilation would be the release build
-# that ships them. The test drives only the free functions they expose -- the services themselves
-# write the real HOME directory and shell out to networksetup/osascript/launchctl.
+# They are added to the application build only under APPLE (see src/CMakeLists.txt), and the
+# release workflow's macOS job builds with BUILD_TEST=OFF, so this target is what keeps them
+# compiling everywhere -- on Windows it is the only thing that compiles them at all. The test
+# drives only the free functions they expose -- the services themselves write the real HOME
+# directory and shell out to networksetup/osascript/launchctl.
 #
 # Which file this target owns is the exact complement of where the application build takes it
 # from, because on macOS adding it here as well would define its symbols twice:
@@ -1004,7 +1018,7 @@ songbird_add_qt_test(songbird_end_to_end_smoke_tests end-to-end-smoke
         Qt${QT_VERSION_MAJOR}::Svg
     TEST_LABELS "smoke"
     TEST_TIMEOUT 7200
-    TEST_ENVIRONMENT "QT_QPA_PLATFORM=windows\;QTEST_FUNCTION_TIMEOUT=7200000"
+    TEST_ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}\;QTEST_FUNCTION_TIMEOUT=7200000"
 )
 
 if(WIN32)
