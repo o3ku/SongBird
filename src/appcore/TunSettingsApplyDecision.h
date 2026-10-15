@@ -151,6 +151,7 @@ inline bool areDnsConfigFieldsEqual(const DnsConfigState& lhs, const DnsConfigSt
         && lhs.directDns.trimmed() == rhs.directDns.trimmed()
         && lhs.remoteDns.trimmed() == rhs.remoteDns.trimmed()
         && lhs.bootstrapDns.trimmed() == rhs.bootstrapDns.trimmed()
+        && lhs.proxyServerDns.trimmed() == rhs.proxyServerDns.trimmed()
         && lhs.fakeIp == rhs.fakeIp
         && lhs.globalFakeIp == rhs.globalFakeIp
         && lhs.serveStale == rhs.serveStale

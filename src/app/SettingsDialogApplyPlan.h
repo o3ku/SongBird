@@ -123,6 +123,10 @@ inline bool areSettingsRoutingItemListsEqual(const QList<RoutingItem>& lhs, cons
     return true;
 }
 
+// Every field the General page writes must be listed here. The apply step treats
+// "nothing this dialog owns changed" as a reason to return without saving, so a
+// field missing from this list makes a lone edit vanish: the checkbox is checked,
+// OK is pressed, nothing is persisted, and the dialog reopens with it cleared.
 inline bool areSettingsGeneralFieldsEqual(const Config& previousConfig, const Config& updatedConfig)
 {
     const int previousLocalPort = previousConfig.localPort > 0 ? previousConfig.localPort : 10808;
@@ -135,6 +139,8 @@ inline bool areSettingsGeneralFieldsEqual(const Config& previousConfig, const Co
         && previousLocalPort == updatedLocalPort
         && previousConfig.dns().defaultAllowInsecure == updatedConfig.dns().defaultAllowInsecure
         && previousConfig.dns().defaultFingerprint.trimmed() == updatedConfig.dns().defaultFingerprint.trimmed()
+        && previousConfig.defaults().speedPingTestUrl.trimmed() == updatedConfig.defaults().speedPingTestUrl.trimmed()
+        && previousConfig.skipOutboundCheck == updatedConfig.skipOutboundCheck
         && normalizeSettingsLanguageCode(previousConfig.ui().languageCode)
             == normalizeSettingsLanguageCode(updatedConfig.ui().languageCode)
         && normalizeSettingsThemeName(previousConfig.ui().themeName)

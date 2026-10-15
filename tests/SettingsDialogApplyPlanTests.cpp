@@ -11,6 +11,10 @@ private slots:
     void blocksRuntimeHotApplyWhenConfiguredTunNeedsElevation();
     void normalizesLanguageCodesBeforeRestartPromptComparison();
     void detectsThemeChangeAfterNormalizingNames();
+    void treatsALoneSkipOutboundCheckToggleAsAChange();
+    void treatsALoneSpeedTestUrlEditAsAChange();
+    void ignoresWhitespaceOnlySpeedTestUrlEdits();
+    void treatsALoneProxyServerDnsEditAsAChange();
 };
 
 void SettingsDialogApplyPlanTests::computesTunProxyAndLanguageFlagsFromUpdatedSettings()
@@ -85,6 +89,72 @@ void SettingsDialogApplyPlanTests::detectsThemeChangeAfterNormalizingNames()
     updated.ui().themeName = QStringLiteral("LIGHT");
     plan = evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
     QVERIFY(!plan.themeChanged);
+}
+
+// The settings save step returns without persisting when the plan is not dirty,
+// so every field the General page writes has to reach the comparison. These two
+// fell outside it once: checking the box (or editing the speed test URL) alone
+// pressed OK into a no-op, and the dialog reopened with the edit discarded.
+void SettingsDialogApplyPlanTests::treatsALoneSkipOutboundCheckToggleAsAChange()
+{
+    Config previous;
+
+    Config updated = previous;
+    updated.skipOutboundCheck = true;
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    QVERIFY(plan.dirty);
+    // Neither field is baked into the generated core config -- both are read at
+    // activation time -- so saving must not restart a running core.
+    QVERIFY(!plan.runtimeSettingsChanged);
+}
+
+void SettingsDialogApplyPlanTests::treatsALoneSpeedTestUrlEditAsAChange()
+{
+    Config previous;
+
+    Config updated = previous;
+    updated.defaults().speedPingTestUrl = QStringLiteral("https://mirror.example/generate_204");
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    QVERIFY(plan.dirty);
+    QVERIFY(!plan.runtimeSettingsChanged);
+}
+
+void SettingsDialogApplyPlanTests::ignoresWhitespaceOnlySpeedTestUrlEdits()
+{
+    Config previous;
+    previous.defaults().speedPingTestUrl = QStringLiteral("https://mirror.example/generate_204");
+
+    Config updated = previous;
+    updated.defaults().speedPingTestUrl = QStringLiteral("  https://mirror.example/generate_204  ");
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    // The page trims before writing, so surrounding whitespace is not a change.
+    QVERIFY(!plan.dirty);
+}
+
+void SettingsDialogApplyPlanTests::treatsALoneProxyServerDnsEditAsAChange()
+{
+    Config previous;
+
+    Config updated = previous;
+    updated.dns().proxyServerDns = QStringLiteral("https://1.1.1.1/dns-query");
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    // Same shape as the skip-outbound regression above: the DNS page writes this
+    // field, so a lone edit must persist (dirty) and must restart a running core
+    // (the value is baked into the generated sing-box DNS config).
+    QVERIFY(plan.dirty);
+    QVERIFY(plan.runtimeSettingsChanged);
 }
 
 QTEST_MAIN(SettingsDialogApplyPlanTests)
