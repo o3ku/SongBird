@@ -114,6 +114,38 @@ QString AppTheme::normalizeThemeName(QStringView themeName)
     return QString::fromLatin1(kThemeLight);
 }
 
+bool AppTheme::isSystemThemeName(QStringView themeName)
+{
+    const QString trimmed = themeName.toString().trimmed();
+    if (trimmed.isEmpty()) {
+        return false;
+    }
+
+    return trimmed.compare(QString::fromLatin1(kThemeSystem), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("Follow"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("Auto"), Qt::CaseInsensitive) == 0;
+}
+
+QString AppTheme::resolveThemeName(
+    QStringView themeName,
+    QStringView systemPreferredThemeName,
+    QStringView fallbackThemeName)
+{
+    if (!isSystemThemeName(themeName)) {
+        return normalizeThemeName(themeName);
+    }
+
+    // The platform reported a concrete preference: honour it. An empty string
+    // means "no preference available", and the fallback keeps the previous
+    // default so a System selection on such a platform still starts.
+    const QString preferred = systemPreferredThemeName.toString().trimmed();
+    if (preferred.isEmpty()) {
+        return normalizeThemeName(fallbackThemeName);
+    }
+
+    return normalizeThemeName(preferred);
+}
+
 QString AppTheme::lightThemeName()
 {
     return QString::fromLatin1(kThemeLight);
@@ -122,6 +154,11 @@ QString AppTheme::lightThemeName()
 QString AppTheme::darkThemeName()
 {
     return QString::fromLatin1(kThemeDark);
+}
+
+QString AppTheme::systemThemeName()
+{
+    return QString::fromLatin1(kThemeSystem);
 }
 
 QString AppTheme::hoverBackgroundColor()
@@ -157,6 +194,16 @@ QString AppTheme::mutedTextColor()
 QString AppTheme::successColor()
 {
     return color(currentPalette().success);
+}
+
+QString AppTheme::warningColor()
+{
+    return color(currentPalette().warning);
+}
+
+QString AppTheme::errorColor()
+{
+    return color(currentPalette().error);
 }
 
 QString AppTheme::attentionBorderColor()

@@ -73,7 +73,9 @@
 #include "domain/models/RoutingProfiles.h"
 #include "platform/IAutoRunService.h"
 #include "platform/ISystemProxyService.h"
+#include "platform/IThemePreferenceService.h"
 #if defined(Q_OS_WIN)
+#include "platform/windows/WindowsThemePreferenceService.h"
 #include "platform/windows/WindowsUwpLoopbackService.h"
 #endif
 #include "persistence/JsonConfigRepository.h"
@@ -94,6 +96,7 @@
 #include "subscription/ShareUrlBuilder.h"
 #include "ui/dialogs/AboutDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
+#include "ui/dialogs/ShortcutsCheatSheetDialog.h"
 #include "ui/dialogs/UwpLoopbackDialog.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/theme/AppTheme.h"
@@ -236,6 +239,7 @@ bool AppBootstrap::run()
     sequencer.addStep(QStringLiteral("log-startup-banner"), [this]() { logStartupBanner(); });
     sequencer.addStep(QStringLiteral("initialize-tray"), [this]() { initializeTray(); });
     sequencer.addStep(QStringLiteral("refresh-existing-core-types"), [this]() { refreshExistingCoreTypes(); });
+    sequencer.addStep(QStringLiteral("watch-system-theme"), [this]() { setupSystemThemeWatcher(); });
     sequencer.addGate(QStringLiteral("reload-config"), [this]() { return reloadConfig(); });
     sequencer.addStep(QStringLiteral("backup-config"), [this]() { autoBackupCurrentConfig(); });
     sequencer.addStep(QStringLiteral("adopt-managed-system-proxy"), [this]() { adoptManagedSystemProxyOnStartup(); });
@@ -401,11 +405,62 @@ void AppBootstrap::offerCoreDownloadOnStartup()
 // wireMainWindow() and the signal-wiring methods it drives now live in
 // AppBootstrapMainWindowWiring.cpp so this file stays a pure composition root.
 
+void AppBootstrap::applyConfiguredTheme()
+{
+    if (qApp == nullptr) {
+        return;
+    }
+
+    // Only a "System" preference needs the platform read; for Light/Dark the
+    // resolved name is the stored name and the registry is never touched.
+    QString systemPreferred;
+    if (AppTheme::isSystemThemeName(config_.ui().themeName)
+        && objects_->themePreferenceService != nullptr) {
+        systemPreferred = objects_->themePreferenceService->preferredThemeName();
+    }
+
+    const QString resolved = AppTheme::resolveThemeName(
+        config_.ui().themeName,
+        systemPreferred,
+        AppTheme::lightThemeName());
+    AppTheme::applyApplicationTheme(*qApp, resolved);
+}
+
+void AppBootstrap::setupSystemThemeWatcher()
+{
+#if !defined(Q_OS_WIN)
+    // Only Windows has a broadcast to watch; the other platforms report a
+    // preference (or nothing) once at startup and never change it at runtime.
+    return;
+#else
+    if (objects_->themePreferenceService == nullptr || qApp == nullptr) {
+        return;
+    }
+
+    auto* windowsThemeService = dynamic_cast<WindowsThemePreferenceService*>(
+        objects_->themePreferenceService.get());
+    if (windowsThemeService == nullptr || !windowsThemeService->startWatching()) {
+        return;
+    }
+
+    // The OS broadcast is only interesting while the stored preference asks for
+    // it; re-applying for Light/Dark would just repaint the same palette.
+    QObject::connect(
+        windowsThemeService,
+        &WindowsThemePreferenceService::preferredThemeChanged,
+        qApp,
+        [this]() {
+            if (!AppTheme::isSystemThemeName(config_.ui().themeName)) {
+                return;
+            }
+            applyConfiguredTheme();
+        });
+#endif
+}
+
 void AppBootstrap::syncWindow()
 {
-    if (qApp != nullptr) {
-        AppTheme::applyApplicationTheme(*qApp, config_.ui().themeName);
-    }
+    applyConfiguredTheme();
 
     if (objects_->mainWindow) {
         MainWindowInit init;
@@ -967,6 +1022,16 @@ void AppBootstrap::openAboutDialog()
     dialog.setReleaseDate(QString::fromLatin1(AppReleaseDate));
     dialog.setConfigPath(QDir::toNativeSeparators(resolveConfigPath()));
     dialog.setProxyActive(isCoreReady());
+    dialog.exec();
+}
+
+void AppBootstrap::openShortcutsCheatSheet()
+{
+    if (objects_->mainWindow == nullptr) {
+        return;
+    }
+
+    ShortcutsCheatSheetDialog dialog(objects_->mainWindow.get());
     dialog.exec();
 }
 

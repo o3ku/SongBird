@@ -7,6 +7,10 @@ namespace AppThemeInternal {
 
 inline constexpr auto kThemeLight = "Light";
 inline constexpr auto kThemeDark = "Dark";
+// The stored *preference* "follow the operating system". It never reaches
+// paletteForName(): applyApplicationTheme resolves it to Light or Dark first,
+// so every consumer below this line still sees exactly two palettes.
+inline constexpr auto kThemeSystem = "System";
 
 struct ThemePalette {
     const char* background;

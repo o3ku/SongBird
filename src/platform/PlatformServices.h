@@ -15,16 +15,26 @@
 
 #include "platform/windows/WindowsAutoRunService.h"
 #include "platform/windows/WindowsSystemProxyService.h"
+#include "platform/windows/WindowsThemePreferenceService.h"
 
 using PlatformAutoRunService = WindowsAutoRunService;
 using PlatformSystemProxyService = WindowsSystemProxyService;
+using PlatformThemePreferenceService = WindowsThemePreferenceService;
 
 #elif defined(Q_OS_MACOS)
 
 #include "platform/macos/MacAutoRunService.h"
 #include "platform/macos/MacSystemProxyService.h"
+#include "platform/NullThemePreferenceService.h"
 
 using PlatformAutoRunService = MacAutoRunService;
 using PlatformSystemProxyService = MacSystemProxyService;
+using PlatformThemePreferenceService = NullThemePreferenceService;
+
+#else
+
+#include "platform/NullThemePreferenceService.h"
+
+using PlatformThemePreferenceService = NullThemePreferenceService;
 
 #endif

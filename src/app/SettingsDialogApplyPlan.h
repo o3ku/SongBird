@@ -30,6 +30,18 @@ inline QString normalizeSettingsThemeName(QString value)
     if (value.compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("Dark");
     }
+
+    // "System" is a preference, not a palette: it has to stay distinct here or the
+    // comparison below folds Light and Follow-system together, the plan reports
+    // "nothing changed", and the save step skips persisting the new choice -- the
+    // user picks Follow system, sees the dialog close, and the setting is lost on
+    // restart. The aliases match AppTheme::isSystemThemeName().
+    if (value.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0
+        || value.compare(QStringLiteral("Follow"), Qt::CaseInsensitive) == 0
+        || value.compare(QStringLiteral("Auto"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("System");
+    }
+
     return QStringLiteral("Light");
 }
 

@@ -322,6 +322,10 @@ void AppBootstrap::wireMainWindowCommands()
         openAboutDialog();
     });
 
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::shortcutsRequested, objects_->mainWindow.get(), [this]() {
+        openShortcutsCheatSheet();
+    });
+
     QObject::connect(objects_->mainWindow.get(), &MainWindow::checkAppUpdateRequested, objects_->mainWindow.get(), [this]() {
         checkAppUpdates(true);
     });
