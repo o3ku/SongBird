@@ -1,6 +1,7 @@
 #include "runtime/ClientConfigWriter.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -12,9 +13,11 @@
 #include <utility>
 
 #include "common/JsonFile.h"
+#include "common/ProcessRunner.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/ProtocolCoreCompat.h"
 #include "runtime/TunCompatCoreRequirement.h"
+#include "runtime/XrayTlsCompatibility.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 
@@ -43,8 +46,31 @@ void ClientConfigWriter::setExistingCoreTypes(const QList<CoreType>& existingCor
     existingCoreTypes_ = existingCoreTypes;
 }
 
+void ClientConfigWriter::setRuntimeCoreInfo(const CoreInfo& coreInfo, const QString& version)
+{
+    const ICoreBackend* backend = coreInfo.type == CoreType::Unknown
+        ? coreBackendForExecutableName(QFileInfo(coreInfo.program).fileName()) : coreBackend(coreInfo.type);
+    runtimeCoreType_ = backend != nullptr ? backend->type() : CoreType::Unknown;
+    runtimeCoreVersion_ = version.trimmed();
+    if (runtimeCoreType_ != CoreType::Xray || !runtimeCoreVersion_.isEmpty()) {
+        return;
+    }
+    ProcessRunner::Request request;
+    request.program = coreInfo.program;
+    request.arguments = backend->versionCommandArguments();
+    request.workingDirectory = coreInfo.workingDirectory;
+    const ProcessRunner::Outcome outcome = ProcessRunner::runToCompletion(request);
+    if (outcome.completedNormally()) {
+        runtimeCoreVersion_ = backend->extractVersionFromOutput(outcome.output);
+    }
+}
+
 QList<CoreType> ClientConfigWriter::effectiveExistingCoreTypes() const
 {
+    // 已解析的启动核心优先作为自动选择结果，测速清空协议策略后也不能换成其他核心。
+    if (runtimeCoreType_ != CoreType::Unknown) {
+        return {runtimeCoreType_};
+    }
     // When AppBootstrap has not pushed the installed-core snapshot yet (or in
     // tests that construct the writer directly), fall back to treating both
     // Xray and SingBox as available so behavior matches the pre-fix default.
@@ -88,6 +114,9 @@ OperationResult ClientConfigWriter::writeClientConfigs(
     }
 
     const GeneratedConfigSet generated = generateClientConfigs(config, server);
+    if (!generated.result.success) {
+        return generated.result;
+    }
     if (generated.primary.root.isEmpty()) {
         return OperationResult::fail(
             QCoreApplication::translate("ClientConfigWriter", "%1 cannot generate a runtime config for %2 servers.")
@@ -153,6 +182,15 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
     GeneratedConfigSet generated;
     generated.primary.fileName = QStringLiteral("config.generated.json");
     generated.primary.root = buildRoot(config, server);
+    if (!generated.primary.root.isEmpty() && runtimeCoreType_ == CoreType::Xray
+        && resolveSelectedCoreType(config, server, effectiveExistingCoreTypes()) == CoreType::Xray) {
+        generated.result = XrayTlsCompatibility::adaptConfig(
+            generated.primary.root, runtimeCoreVersion_, QDateTime::currentDateTimeUtc());
+        if (!generated.result.success) {
+            generated.primary.root = {};
+            return generated;
+        }
+    }
 
     const QList<CoreType> auxiliaryCoreTypes =
         resolveAuxiliaryTunCompatCoreTypes(config, server, effectiveExistingCoreTypes());

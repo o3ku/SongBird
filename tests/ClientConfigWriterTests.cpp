@@ -30,6 +30,14 @@ private slots:
     void generateMihomoConfigKeepsImportedTrojanTls();
     void generateSingBoxConfigKeepsSavedTrojanTls();
     void generateMihomoConfigKeepsSavedTrojanTls();
+    void generateXrayConfigKeepsImportedTrojanTls();
+    void generateXrayConfigKeepsSavedTrojanTls();
+    void generateSingBoxConfigRespectsNodeAndDefaultCertificateSettings();
+    void generateMihomoConfigRespectsNodeAndDefaultCertificateSettings();
+    void generateXrayConfigRespectsNodeAndDefaultCertificateSettings();
+    void generateXrayConfigRejectsUnsupportedSkippingBeforeWriting();
+    void generateXrayConfigAcceptsTrustedPinsOnModernVersions();
+    void generateXrayConfigKeepsResolvedCoreWhenProtocolPolicyIsEmpty();
     void generateClientConfigsUsesWarnSingBoxLogLevelByDefault();
     void generateClientConfigsMapsConfiguredSingBoxWarningLogLevel();
     void generateClientConfigsWritesTheSingBoxLogFileOnlyWhenLoggingIsEnabled();
@@ -137,6 +145,7 @@ private slots:
 
 private:
     void verifyImplicitTrojanTlsConfig(CoreType coreType, bool savedServer);
+    void verifyCertificateSettings(CoreType coreType);
 };
 
 namespace {
@@ -491,6 +500,16 @@ void ClientConfigWriterTests::generateMihomoConfigKeepsSavedTrojanTls()
     verifyImplicitTrojanTlsConfig(CoreType::Mihomo, true);
 }
 
+void ClientConfigWriterTests::generateXrayConfigKeepsImportedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::Xray, false);
+}
+
+void ClientConfigWriterTests::generateXrayConfigKeepsSavedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::Xray, true);
+}
+
 void ClientConfigWriterTests::verifyImplicitTrojanTlsConfig(CoreType coreType, bool savedServer)
 {
     QList<VmessItem> servers;
@@ -513,7 +532,11 @@ void ClientConfigWriterTests::verifyImplicitTrojanTlsConfig(CoreType coreType, b
     setProtocolCore(config, ConfigType::Trojan, coreType);
 
     ClientConfigWriter writer;
+    CoreInfo coreInfo;
+    coreInfo.type = coreType;
+    writer.setRuntimeCoreInfo(coreInfo, QStringLiteral("26.1.23"));
     const auto generated = writer.generateClientConfigs(config, servers.constFirst());
+    QVERIFY2(generated.result.success, qPrintable(generated.result.message));
     if (coreType == CoreType::SingBox) {
         const QJsonObject outbound = findObjectByTag(
             generated.primary.root.value(QStringLiteral("outbounds")).toArray(), QStringLiteral("proxy"));
@@ -521,12 +544,144 @@ void ClientConfigWriterTests::verifyImplicitTrojanTlsConfig(CoreType coreType, b
         QVERIFY(tls.value(QStringLiteral("enabled")).toBool());
         QCOMPARE(tls.value(QStringLiteral("server_name")).toString(), QStringLiteral("tls.example.com"));
         QVERIFY(tls.value(QStringLiteral("insecure")).toBool());
+    } else if (coreType == CoreType::Xray) {
+        const QJsonObject outbound = findObjectByTag(
+            generated.primary.root.value(QStringLiteral("outbounds")).toArray(), QStringLiteral("proxy"));
+        const QJsonObject stream = outbound.value(QStringLiteral("streamSettings")).toObject();
+        QCOMPARE(stream.value(QStringLiteral("security")).toString(), QStringLiteral("tls"));
+        const QJsonObject tls = stream.value(QStringLiteral("tlsSettings")).toObject();
+        QCOMPARE(tls.value(QStringLiteral("serverName")).toString(), QStringLiteral("tls.example.com"));
+        QVERIFY(tls.value(QStringLiteral("allowInsecure")).toBool());
     } else {
         const QJsonObject proxy = generated.primary.root.value(QStringLiteral("proxies")).toArray().at(0).toObject();
         QVERIFY(proxy.value(QStringLiteral("tls")).toBool());
         QCOMPARE(proxy.value(QStringLiteral("sni")).toString(), QStringLiteral("tls.example.com"));
         QVERIFY(proxy.value(QStringLiteral("skip-cert-verify")).toBool());
     }
+}
+
+void ClientConfigWriterTests::generateSingBoxConfigRespectsNodeAndDefaultCertificateSettings()
+{
+    verifyCertificateSettings(CoreType::SingBox);
+}
+
+void ClientConfigWriterTests::generateMihomoConfigRespectsNodeAndDefaultCertificateSettings()
+{
+    verifyCertificateSettings(CoreType::Mihomo);
+}
+
+void ClientConfigWriterTests::generateXrayConfigRespectsNodeAndDefaultCertificateSettings()
+{
+    verifyCertificateSettings(CoreType::Xray);
+}
+
+void ClientConfigWriterTests::verifyCertificateSettings(CoreType coreType)
+{
+    for (bool defaultInsecure : {false, true}) {
+        for (const QString& nodeSetting : {QString(), QStringLiteral("false"), QStringLiteral("true")}) {
+            Config config = baseConfig();
+            config.tun().tunModeItem.enableTun = false;
+            config.dns().defaultAllowInsecure = defaultInsecure;
+            setProtocolCore(config, ConfigType::Trojan, coreType);
+            VmessItem server = baseServer();
+            server.configType = ConfigType::Trojan;
+            server.streamSecurity = QStringLiteral("tls");
+            server.allowInsecure = nodeSetting;
+            ClientConfigWriter writer;
+            CoreInfo coreInfo;
+            coreInfo.type = coreType;
+            writer.setRuntimeCoreInfo(coreInfo, QStringLiteral("26.1.23"));
+            const auto generated = writer.generateClientConfigs(config, server);
+            QVERIFY2(generated.result.success, qPrintable(generated.result.message));
+            const bool expected = nodeSetting.isEmpty() ? defaultInsecure : nodeSetting == QStringLiteral("true");
+            if (coreType == CoreType::Mihomo) {
+                const QJsonObject proxy = generated.primary.root.value(QStringLiteral("proxies")).toArray().at(0).toObject();
+                QCOMPARE(proxy.value(QStringLiteral("skip-cert-verify")).toBool(), expected);
+            } else {
+                const QJsonObject outbound = findObjectByTag(
+                    generated.primary.root.value(QStringLiteral("outbounds")).toArray(), QStringLiteral("proxy"));
+                const QJsonObject tls = coreType == CoreType::SingBox
+                    ? outbound.value(QStringLiteral("tls")).toObject()
+                    : outbound.value(QStringLiteral("streamSettings")).toObject().value(QStringLiteral("tlsSettings")).toObject();
+                QCOMPARE(tls.value(coreType == CoreType::SingBox
+                    ? QStringLiteral("insecure") : QStringLiteral("allowInsecure")).toBool(), expected);
+            }
+        }
+    }
+}
+
+void ClientConfigWriterTests::generateXrayConfigRejectsUnsupportedSkippingBeforeWriting()
+{
+    Config config = legacyConfig(ConfigType::Trojan);
+    config.tun().tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Trojan;
+    server.streamSecurity = QStringLiteral("tls");
+    ClientConfigWriter writer;
+    CoreInfo coreInfo;
+    coreInfo.type = CoreType::Xray;
+    writer.setRuntimeCoreInfo(coreInfo, QStringLiteral("26.1.31"));
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+    const QString path = temporaryDirectory.filePath(QStringLiteral("runtime.json"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("existing configuration");
+    file.close();
+    QVERIFY(!writer.writeClientConfig(config, server, path).success);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArrayLiteral("existing configuration"));
+    file.close();
+    server.allowInsecure = QStringLiteral("false");
+    QVERIFY(writer.generateClientConfigs(config, server).result.success);
+    config.dns().defaultAllowInsecure = false;
+    server.allowInsecure = QStringLiteral("true");
+    const auto generated = writer.generateClientConfigs(config, server);
+    QVERIFY(!generated.result.success);
+    QVERIFY(generated.primary.root.isEmpty());
+    QVERIFY(generated.result.message.contains(QStringLiteral("General settings")));
+}
+
+void ClientConfigWriterTests::generateXrayConfigAcceptsTrustedPinsOnModernVersions()
+{
+    Config config = legacyConfig(ConfigType::Trojan);
+    config.tun().tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Trojan;
+    server.streamSecurity = QStringLiteral("tls");
+    server.allowInsecure = QStringLiteral("true");
+    server.certSha = QString(64, QChar('a'));
+    ClientConfigWriter writer;
+    CoreInfo coreInfo;
+    coreInfo.type = CoreType::Xray;
+    writer.setRuntimeCoreInfo(coreInfo, QStringLiteral("26.10.10"));
+    const auto generated = writer.generateClientConfigs(config, server);
+    QVERIFY2(generated.result.success, qPrintable(generated.result.message));
+    const QJsonObject tls = findObjectByTag(generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy")).value(QStringLiteral("streamSettings")).toObject().value(QStringLiteral("tlsSettings")).toObject();
+    QCOMPARE(tls.value(QStringLiteral("pinnedPeerCertSha256")).toString(), server.certSha);
+    QVERIFY(!tls.value(QStringLiteral("allowInsecure")).toBool());
+}
+
+void ClientConfigWriterTests::generateXrayConfigKeepsResolvedCoreWhenProtocolPolicyIsEmpty()
+{
+    Config config = baseConfig();
+    config.policy().coreTypeItems.clear();
+    config.tun().tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Trojan;
+    server.streamSecurity = QStringLiteral("tls");
+    server.allowInsecure = QStringLiteral("false");
+    CoreInfo coreInfo;
+    coreInfo.type = CoreType::Xray;
+    ClientConfigWriter writer;
+    writer.setRuntimeCoreInfo(coreInfo, QStringLiteral("26.3.27"));
+    const auto generated = writer.generateClientConfigs(config, server);
+    QVERIFY2(generated.result.success, qPrintable(generated.result.message));
+    const QJsonObject proxy = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(), QStringLiteral("proxy"));
+    QCOMPARE(proxy.value(QStringLiteral("protocol")).toString(), QStringLiteral("trojan"));
+    QVERIFY(!proxy.contains(QStringLiteral("type")));
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesWarnSingBoxLogLevelByDefault()

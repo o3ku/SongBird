@@ -1689,6 +1689,10 @@ The running core will be stopped before installation if needed.</source>
         <translation>默认允许不安全 TLS</translation>
     </message>
     <message>
+        <source>Used only when the node does not specify certificate verification. Newer Xray versions may require a trusted certificate or SHA-256 pin.</source>
+        <translation>仅在节点未指定证书验证设置时生效。较新的 Xray 版本可能要求配置可信证书或 SHA-256 指纹。</translation>
+    </message>
+    <message>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -3641,6 +3645,25 @@ Switch this protocol to %3?</source>
     <message>
         <source>Another SongBird instance is already running.</source>
         <translation>另一个 SongBird 实例已经在运行。</translation>
+    </message>
+</context>
+<context>
+    <name>XrayTlsCompatibility</name>
+    <message>
+        <source>Cannot determine the Xray version for TLS compatibility. Check the Xray executable or use another core.</source>
+        <translation>无法确定 Xray 版本，不能确认 TLS 设置兼容性。请检查 Xray 程序或使用其他核心。</translation>
+    </message>
+    <message>
+        <source>Each certificate SHA-256 pin must contain 64 hexadecimal digits. Separate multiple pins with commas.</source>
+        <translation>每个证书 SHA-256 指纹必须包含 64 个十六进制字符，多个指纹使用英文逗号分隔。</translation>
+    </message>
+    <message>
+        <source>Xray %1 does not support certificate SHA-256 pins. Use Xray 26.1.13 or later, or configure a trusted certificate.</source>
+        <translation>Xray %1 不支持当前的证书 SHA-256 指纹格式。请使用 Xray 26.1.13 或更高版本，或配置可信证书。</translation>
+    </message>
+    <message>
+        <source>Xray %1 does not support skipping TLS certificate verification. Configure a trusted certificate or SHA-256 pin, or use sing-box or Mihomo. Explicit node settings override the default in General settings.</source>
+        <translation>Xray %1 不支持跳过 TLS 证书验证。请配置可信证书或 SHA-256 指纹，或使用 sing-box、Mihomo。节点自身的明确设置优先于常规设置中的默认选项。</translation>
     </message>
 </context>
 </TS>

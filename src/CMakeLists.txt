@@ -76,6 +76,8 @@ set(SONGBIRD_SHARED_SOURCES
     runtime/TunAdapterNames.h
     runtime/ClientConfigWriter.h
     runtime/ClientConfigWriter.cpp
+    runtime/XrayTlsCompatibility.h
+    runtime/XrayTlsCompatibility.cpp
     runtime/DnsAddressParser.h
     runtime/DnsAddressParser.cpp
     runtime/DnsConfigFragments.h

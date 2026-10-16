@@ -426,6 +426,7 @@ void ProxySession::startInternal(
 
     QStringList auxiliaryConfigPaths;
     deps_.configWriter.setExistingCoreTypes(currentRequest_.existingCoreTypes);
+    deps_.configWriter.setRuntimeCoreInfo(coreInfo);
     const OperationResult writeResult = deps_.configWriter.writeClientConfigs(
         currentRequest_.config, server, coreConfigPath, &auxiliaryConfigPaths);
     if (!writeResult.success) {

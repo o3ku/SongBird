@@ -13,6 +13,7 @@
 #include <chrono>
 #include <future>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "runtime/ClientConfigWriter.h"
@@ -52,9 +53,18 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
     }
 
     ClientConfigWriter clientConfigWriter(customConfigDirectory);
+    clientConfigWriter.setRuntimeCoreInfo(groupItems.constFirst().coreInfo);
     QList<BatchConfig::ProbeEntry> entries;
     entries.reserve(groupItems.size());
     std::optional<BatchConfig::BatchFlavor> flavor;
+    QList<std::pair<QString, QString>> rejectedNodes;
+    const auto emitRejectedNodes = [&]() {
+        if (!cancelled.load()) {
+            for (const auto& node : rejectedNodes) {
+                emitResult(node.first, node.second);
+            }
+        }
+    };
 
     for (int i = 0; i < groupItems.size(); ++i) {
         const SpeedTestRequestItem& item = groupItems[i];
@@ -65,6 +75,11 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
         const ClientConfigWriter::GeneratedConfigSet generated = clientConfigWriter.generateClientConfigs(
             probeConfigTemplate,
             item.runtimeServer);
+
+        if (!generated.result.success) {
+            rejectedNodes.append({item.indexId, generated.result.message});
+            continue;
+        }
 
         // Auxiliary configs (TUN-compat sing-box sidecars) can't be merged
         // into a single batch -- fall back to per-item path.
@@ -102,6 +117,7 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
     }
 
     if (entries.isEmpty() || !flavor.has_value()) {
+        emitRejectedNodes();
         return true;
     }
 
@@ -278,5 +294,6 @@ bool SpeedTestBatchRuntimeRunner::runBatchedGroup(
 
     RuntimeProcess::stopProcess(coreProcess);
     releaseAllPorts();
+    emitRejectedNodes();
     return true;
 }

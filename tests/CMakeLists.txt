@@ -674,6 +674,11 @@ songbird_add_qt_test(songbird_client_config_writer_tests client-config-writer-tu
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+songbird_add_qt_test(songbird_xray_tls_compatibility_tests xray-tls-compatibility
+    SOURCES XrayTlsCompatibilityTests.cpp
+    LIBRARIES Qt${QT_VERSION_MAJOR}::Test Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network
+)
+
 songbird_add_qt_test(songbird_backend_contract_tests backend-contract
     SOURCES
         ${SONGBIRD_BACKEND_CONTRACT_TEST_SOURCES}

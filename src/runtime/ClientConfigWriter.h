@@ -6,6 +6,7 @@
 #include "common/OperationResult.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
+#include "runtime/CoreInfo.h"
 
 class ClientConfigWriter {
 public:
@@ -17,11 +18,14 @@ public:
     struct GeneratedConfigSet {
         GeneratedConfig primary;
         QList<GeneratedConfig> auxiliary;
+        OperationResult result = OperationResult::ok();
     };
 
     explicit ClientConfigWriter(QString customConfigDirectory = {});
 
     void setExistingCoreTypes(const QList<CoreType>& existingCoreTypes);
+    // 已有版本探测结果可直接传入；否则探测此次实际启动的可执行文件。
+    void setRuntimeCoreInfo(const CoreInfo& coreInfo, const QString& version = {});
 
     OperationResult writeClientConfig(
         const Config& config,
@@ -48,4 +52,6 @@ private:
 
     QString customConfigDirectory_;
     QList<CoreType> existingCoreTypes_;
+    CoreType runtimeCoreType_ = CoreType::Unknown;
+    QString runtimeCoreVersion_;
 };

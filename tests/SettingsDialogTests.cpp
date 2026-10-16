@@ -18,6 +18,7 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTextEdit>
+#include <QTranslator>
 
 #include "ui/dialogs/RoutingCustomRuleSupport.h"
 #include "ui/dialogs/SettingsDialog.h"
@@ -39,6 +40,7 @@ private slots:
     void enableFragmentCheckboxRoundTripsConfig();
     void enableCacheFile4SboxCheckboxRoundTripsConfig();
     void defaultAllowInsecureCheckboxRoundTripsConfig();
+    void defaultAllowInsecureTooltipExplainsNodeOverridesAndUsesTranslation();
     void defaultUserAgentComboRoundTripsConfig();
     void defaultFingerprintComboRoundTripsConfig();
     void speedPingTestUrlRoundTripsConfig();
@@ -306,6 +308,27 @@ void SettingsDialogTests::defaultAllowInsecureCheckboxRoundTripsConfig()
 
     const Config updated = dialog.config();
     QVERIFY(!updated.dns().defaultAllowInsecure);
+}
+
+void SettingsDialogTests::defaultAllowInsecureTooltipExplainsNodeOverridesAndUsesTranslation()
+{
+    class TooltipTranslator : public QTranslator {
+    public:
+        bool isEmpty() const override { return false; }
+        QString translate(const char* context, const char* sourceText, const char*, int) const override
+        {
+            return qstrcmp(context, "GeneralSettingsPageWidget") == 0
+                ? QStringLiteral("[zh]%1").arg(QString::fromUtf8(sourceText)) : QString();
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    SettingsDialog dialog;
+    const auto* check = dialog.findChild<QCheckBox*>(QStringLiteral("settingsDefaultAllowInsecureCheck"));
+    QVERIFY(check != nullptr);
+    QVERIFY(check->toolTip().startsWith(QStringLiteral("[zh]")));
+    QVERIFY(check->toolTip().contains(QStringLiteral("node")));
+    QVERIFY(check->toolTip().contains(QStringLiteral("Xray")));
+    QCoreApplication::removeTranslator(&translator);
 }
 
 void SettingsDialogTests::defaultUserAgentComboRoundTripsConfig()

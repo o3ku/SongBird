@@ -96,6 +96,8 @@ void GeneralSettingsPageWidget::setupUi()
 
     defaultAllowInsecureCheck_ = new QCheckBox(tr("Allow insecure TLS by default"), this);
     defaultAllowInsecureCheck_->setObjectName(QStringLiteral("settingsDefaultAllowInsecureCheck"));
+    defaultAllowInsecureCheck_->setToolTip(tr(
+        "Used only when the node does not specify certificate verification. Newer Xray versions may require a trusted certificate or SHA-256 pin."));
 
     defaultFingerprintCombo_ = new QComboBox(this);
     defaultFingerprintCombo_->setObjectName(QStringLiteral("settingsDefaultFingerprintCombo"));

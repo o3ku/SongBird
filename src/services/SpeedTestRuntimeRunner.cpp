@@ -79,6 +79,7 @@ QString runUrlTest(
 
     const QString configPath = temporaryDirectory.filePath(QStringLiteral("runtime.json"));
     ClientConfigWriter clientConfigWriter(customConfigDirectory);
+    clientConfigWriter.setRuntimeCoreInfo(item.coreInfo);
     const OperationResult writeResult = clientConfigWriter.writeClientConfig(runtimeConfig, item.runtimeServer, configPath);
     if (!writeResult.success) {
         return UrlProbe::normalizeErrorText(writeResult.message);
