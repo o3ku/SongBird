@@ -30,15 +30,29 @@ struct DnsConfigState {
     bool enableCacheFile4Sbox = true;
     QString defaultFingerprint;
     QString defaultUserAgent;
-    QString directDns = QStringLiteral("https://dns.alidns.com/dns-query");
-    QString remoteDns = QStringLiteral("https://cloudflare-dns.com/dns-query");
-    QString bootstrapDns = QStringLiteral("223.5.5.5");
-    // Resolves the proxy node's own hostname, which has to happen before the node can be dialled
+    // IP form rather than the dns.alidns.com hostname, for the same reason remoteDns uses
+    // one: DnsHosts::predefined() holds a hard-coded snapshot of what AliDNS answers with today,
+    // and a hostname default would silently depend on that table staying current. AliDNS
+    // publishes IP:223.5.5.5 in the certificate SAN, so the encrypted form still validates.
+    QString directDns = QStringLiteral("https://223.5.5.5/dns-query");
+    // IP form, not the cloudflare-dns.com hostname: a hostname-addressed resolver can only be
+    // reached after its own name is resolved, which the generator covers with a hard-coded hosts
+    // snapshot (DnsHosts::predefined()). Those snapshot addresses are what Cloudflare happens to
+    // answer with today, so a hostname default would silently depend on a stale table -- and it
+    // would fail as a DNS timeout, not as an error naming the cause. The certificate carries
+    // IP:1.1.1.1 as a SAN, so TLS validation still succeeds.
+    QString remoteDns = QStringLiteral("https://1.1.1.1/dns-query");
+    // Plain 223.5.5.5 was sent as cleartext UDP 53, which is observable and spoofable on the
+    // networks this default is meant for. AliDNS publishes IP:223.5.5.5 in the certificate SAN,
+    // so the encrypted form validates against the address itself.
+    QString bootstrapDns = QStringLiteral("https://223.5.5.5/dns-query");    // Resolves the proxy node's own hostname, which has to happen before the node can be dialled
     // and therefore can never go through it. Empty keeps the historical behaviour of letting the
     // direct DNS answer that lookup through route.default_domain_resolver.
     QString proxyServerDns;
     bool fakeIp = false;
-    bool globalFakeIp = true;
+    // Only read while fakeIp is on (see SingBoxDnsConfigBuilder); defaulting it to true made the
+    // stored value disagree with the behaviour, since a default install never enables FakeIP.
+    bool globalFakeIp = false;
     bool serveStale = false;
     bool parallelQuery = false;
     QString directExpectedIps;

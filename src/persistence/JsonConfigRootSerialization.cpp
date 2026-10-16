@@ -74,8 +74,8 @@ void read(const QJsonObject& root, RootConfigState& config)
         config.dns().fakeIp = readBool(root, QStringLiteral("fakeIp"), false);
     }
     config.dns().globalFakeIp = root.contains(QStringLiteral("globalFakeIp"))
-        ? readBool(root, QStringLiteral("globalFakeIp"), true)
-        : true;
+        ? readBool(root, QStringLiteral("globalFakeIp"), false)
+        : false;
     config.dns().serveStale = root.contains(QStringLiteral("serveStale"))
         ? readBool(root, QStringLiteral("serveStale"), false)
         : false;
@@ -145,20 +145,20 @@ void write(QJsonObject& root, const RootConfigState& config)
         root,
         QStringLiteral("directDns"),
         config.dns().directDns,
-        QStringLiteral("https://dns.alidns.com/dns-query"));
+        QStringLiteral("https://223.5.5.5/dns-query"));
     writeIfNotDefault(
         root,
         QStringLiteral("remoteDns"),
         config.dns().remoteDns,
-        QStringLiteral("https://cloudflare-dns.com/dns-query"));
+        QStringLiteral("https://1.1.1.1/dns-query"));
     writeIfNotDefault(
         root,
         QStringLiteral("bootstrapDns"),
         config.dns().bootstrapDns,
-        QStringLiteral("223.5.5.5"));
+        QStringLiteral("https://223.5.5.5/dns-query"));
     writeIfNotEmpty(root, QStringLiteral("proxyServerDns"), config.dns().proxyServerDns);
     writeIfNotDefault(root, QStringLiteral("fakeIp"), config.dns().fakeIp, false);
-    writeIfNotDefault(root, QStringLiteral("globalFakeIp"), config.dns().globalFakeIp, true);
+    writeIfNotDefault(root, QStringLiteral("globalFakeIp"), config.dns().globalFakeIp, false);
     writeIfNotDefault(root, QStringLiteral("serveStale"), config.dns().serveStale, false);
     writeIfNotDefault(root, QStringLiteral("parallelQuery"), config.dns().parallelQuery, false);
     writeIfNotEmpty(root, QStringLiteral("directExpectedIps"), config.dns().directExpectedIps);
