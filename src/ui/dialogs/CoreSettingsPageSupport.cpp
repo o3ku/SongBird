@@ -11,6 +11,28 @@ QString trCoreSettings(const char* text)
     return QCoreApplication::translate("CoreSettingsPageWidget", text);
 }
 
+// Human-readable byte count for a tooltip. Kept here rather than in Qt's
+// QLocale because the unit symbols are the same in every locale this app ships,
+// and this way the numbers line up with what the download reports.
+QString formatByteCount(qint64 bytes)
+{
+    constexpr double kKilo = 1024.0;
+    constexpr double kMega = kKilo * 1024.0;
+    constexpr double kGiga = kMega * 1024.0;
+
+    const double value = static_cast<double>(qMax<qint64>(0, bytes));
+    if (value >= kGiga) {
+        return QStringLiteral("%1 GB").arg(value / kGiga, 0, 'f', 2);
+    }
+    if (value >= kMega) {
+        return QStringLiteral("%1 MB").arg(value / kMega, 0, 'f', 1);
+    }
+    if (value >= kKilo) {
+        return QStringLiteral("%1 KB").arg(value / kKilo, 0, 'f', 1);
+    }
+    return QStringLiteral("%1 B").arg(static_cast<qint64>(value));
+}
+
 } // namespace
 
 QStringList CoreSettingsPageSupport::singBoxMuxProtocolOptions()
@@ -123,5 +145,50 @@ CoreSettingsPageSupport::CoreStatusPresentation CoreSettingsPageSupport::coreSta
     presentation.downloadButtonVisible = !isActive;
     presentation.downloadButtonEnabled = !updateRunning;
     presentation.setAllButtonVisible = !isActive && installed;
+
+    // Cancel is only meaningful while this core is the one being updated and the
+    // worker has not already been asked to stop.
+    presentation.cancelButtonVisible = isActive;
+    presentation.cancelButtonEnabled = isActive && !input.cancelRequested;
+
+    // The button is a retry after a failure, and its tooltip carries the reason so the
+    // user does not have to open the log to find out what went wrong.
+    if (!isActive && input.lastAttemptFailed) {
+        presentation.downloadButtonText = trCoreSettings("Retry");
+        const QString reason = input.failureReason.trimmed();
+        presentation.downloadButtonToolTip = reason.isEmpty()
+            ? trCoreSettings("The last attempt failed. Select to try again.")
+            : trCoreSettings("The last attempt failed: %1").arg(reason);
+    } else if (!isActive && !presentation.downloadButtonEnabled) {
+        presentation.downloadButtonToolTip = trCoreSettings("Another core is being updated.");
+    }
+
+    if (input.downloadActive && isActive) {
+        if (input.downloadTotalBytes > 0) {
+            presentation.downloadPercent = qBound(
+                0,
+                static_cast<int>((input.downloadReceivedBytes * 100) / input.downloadTotalBytes),
+                100);
+            presentation.downloadIndeterminate = false;
+        } else {
+            // Content length unknown: the bar runs as a busy indicator instead of showing a
+            // bogus percentage.
+            presentation.downloadPercent = 0;
+            presentation.downloadIndeterminate = true;
+        }
+        presentation.downloadProgressVisible = true;
+
+        // The bar is only wide enough for the percentage, so the byte counts go in the
+        // tooltip -- which is also the only place the user can see how big the download is.
+        if (input.downloadTotalBytes > 0) {
+            presentation.downloadProgressToolTip = trCoreSettings("%1 of %2 downloaded (%3%)")
+                .arg(formatByteCount(input.downloadReceivedBytes),
+                     formatByteCount(input.downloadTotalBytes))
+                .arg(presentation.downloadPercent);
+        } else {
+            presentation.downloadProgressToolTip = trCoreSettings("%1 downloaded")
+                .arg(formatByteCount(input.downloadReceivedBytes));
+        }
+    }
     return presentation;
 }

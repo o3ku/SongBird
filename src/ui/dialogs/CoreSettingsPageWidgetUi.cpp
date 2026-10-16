@@ -2,9 +2,12 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSizePolicy>
 #include <QTabBar>
@@ -26,9 +29,39 @@ void applyBoldSectionTitle(QLabel* label)
 
 } // namespace
 
+int CoreSettingsPageWidget::coreOptionLabelWidthFor(const QStringList& labels) const
+{
+    const QFontMetrics metrics(font());
+    int widest = 0;
+    for (const QString& label : labels) {
+        widest = qMax(widest, metrics.horizontalAdvance(label));
+    }
+    return widest;
+}
+
+void CoreSettingsPageWidget::alignCoreOptionLabel(QLabel* label) const
+{
+    if (label == nullptr || coreOptionLabelWidth_ <= 0) {
+        return;
+    }
+    label->setMinimumWidth(coreOptionLabelWidth_);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+}
+
 void CoreSettingsPageWidget::setupUi()
 {
     auto* coreLayout = new QVBoxLayout(this);
+
+    // Every "label + input" row on this page shares one label column, the way QFormLayout aligns
+    // the General, DNS and TUN pages. Each row here is its own QHBoxLayout, so nothing otherwise
+    // ties them together: the width used to come from each label's own text, and the four rows
+    // started their editors at three different offsets. Measuring before any label is pinned
+    // keeps a translated string honest -- it simply picks a new width and every row follows.
+    coreOptionLabelWidth_ = coreOptionLabelWidthFor({
+        tr("Mux Protocol"),
+        tr("Proxy Server DNS"),
+        tr("Default User-Agent"),
+        tr("Direct Expected IPs")});
 
     enableCacheFile4SboxCheck_ = new QCheckBox(tr("Enable sing-box cache file"), this);
     enableCacheFile4SboxCheck_->setObjectName(QStringLiteral("settingsEnableCacheFile4SboxCheck"));
@@ -49,12 +82,39 @@ void CoreSettingsPageWidget::setupUi()
         new QCheckBox(tr("Enable legacy protection (pre-socks relay for Xray)"), this);
     tunEnableLegacyProtectCheck_->setObjectName(QStringLiteral("settingsTunEnableLegacyProtectCheck"));
 
+    // Moved here from the DNS page: these are read by exactly one core each, so they
+    // were shown as if they applied to every core while silently doing nothing for
+    // the others. The sing-box ones are below, the Xray ones after them.
+    proxyServerDnsEdit_ = new QLineEdit(this);
+    proxyServerDnsEdit_->setObjectName(QStringLiteral("settingsProxyServerDnsEdit"));
+    proxyServerDnsEdit_->setPlaceholderText(QStringLiteral("https://1.1.1.1/dns-query"));
+    proxyServerDnsEdit_->setToolTip(tr("Resolves the proxy server's own hostname. Empty uses the direct DNS."));
+    blockBindingQueryCheck_ = new QCheckBox(tr("Block binding query"), this);
+    blockBindingQueryCheck_->setObjectName(QStringLiteral("settingsBlockBindingQueryCheck"));
+    globalFakeIpCheck_ = new QCheckBox(tr("Global FakeIP"), this);
+    globalFakeIpCheck_->setObjectName(QStringLiteral("dnsGlobalFakeIpCheck"));
+    globalFakeIpCheck_->setToolTip(tr("Resolve every domain through FakeIP, not only proxied ones. Requires FakeIP on the DNS page."));
+
+    serveStaleCheck_ = new QCheckBox(tr("Serve stale DNS cache"), this);
+    serveStaleCheck_->setObjectName(QStringLiteral("settingsServeStaleCheck"));
+    parallelQueryCheck_ = new QCheckBox(tr("Parallel DNS query"), this);
+    parallelQueryCheck_->setObjectName(QStringLiteral("settingsParallelQueryCheck"));
+    directExpectedIpsEdit_ = new QLineEdit(this);
+    directExpectedIpsEdit_->setObjectName(QStringLiteral("settingsDirectExpectedIpsEdit"));
+    directExpectedIpsEdit_->setPlaceholderText(tr("Comma-separated IPs"));
+
     AppTheme::applyCompactFont({
         enableCacheFile4SboxCheck_,
         mux4SboxProtocolCombo_,
         xrayEnableFragmentCheck_,
         xrayDefaultUserAgentCombo_,
-        tunEnableLegacyProtectCheck_});
+        tunEnableLegacyProtectCheck_,
+        proxyServerDnsEdit_,
+        blockBindingQueryCheck_,
+        globalFakeIpCheck_,
+        serveStaleCheck_,
+        parallelQueryCheck_,
+        directExpectedIpsEdit_});
 
     coreProtocolEntries_ = CoreSettingsPageSupport::coreProtocolEntries();
     const QList<CoreType> allCores = orderedCoreTypes();
@@ -68,7 +128,15 @@ void CoreSettingsPageWidget::setupUi()
     auto* coreTypeTitle = new QLabel(tr("By Protocol"), this);
     coreTypeTitle->setObjectName(QStringLiteral("coreProtocolSectionTitle"));
     applyBoldSectionTitle(coreTypeTitle);
-    coreLayout->addWidget(coreTypeTitle);
+
+    // The per-protocol table is shown directly: it used to sit behind an
+    // "Advanced" toggle, but collapsing it hid the section title and the mapping
+    // rows behind a click for no gain.
+    coreProtocolSection_ = new QWidget(this);
+    auto* coreProtocolSectionLayout = new QVBoxLayout(coreProtocolSection_);
+    coreProtocolSectionLayout->setContentsMargins(0, 0, 0, 0);
+    coreProtocolSectionLayout->setSpacing(4);
+    coreProtocolSectionLayout->addWidget(coreTypeTitle);
 
     auto* coreTypeWidget = new QWidget(this);
     auto* coreTypeGrid = new QGridLayout(coreTypeWidget);
@@ -135,9 +203,24 @@ void CoreSettingsPageWidget::setupUi()
         row.versionLabel->setObjectName(QStringLiteral("coreVersionLabel_%1").arg(coreKey));
         row.statusLabel = new QLabel(row.page);
         row.statusLabel->setObjectName(QStringLiteral("coreStatusLabel_%1").arg(coreKey));
+        row.downloadProgress = new QProgressBar(row.page);
+        row.downloadProgress->setObjectName(QStringLiteral("coreDownloadProgress_%1").arg(coreKey));
+        row.downloadProgress->setRange(0, 100);
+        row.downloadProgress->setTextVisible(true);
+        row.downloadProgress->setFixedWidth(coreStatusInfoWidth);
+        row.downloadProgress->setVisible(false);
         row.downloadButton = new QPushButton(tr("Install"), row.page);
         row.downloadButton->setObjectName(QStringLiteral("coreDownloadButton_%1").arg(coreKey));
-        AppTheme::applyCompactFont({coreNameLabel, row.versionLabel, row.statusLabel, row.downloadButton});
+        row.cancelButton = new QPushButton(tr("Cancel"), row.page);
+        row.cancelButton->setObjectName(QStringLiteral("coreCancelButton_%1").arg(coreKey));
+        row.cancelButton->setToolTip(tr("Stop this update. The partial download is discarded."));
+        row.cancelButton->setVisible(false);
+        AppTheme::applyCompactFont({coreNameLabel, row.versionLabel, row.statusLabel, row.downloadProgress, row.downloadButton, row.cancelButton});
+        connect(row.cancelButton, &QPushButton::clicked, this, [this, core]() {
+            if (coreUpdateCancelHandler_) {
+                coreUpdateCancelHandler_(core);
+            }
+        });
 
         row.setAllButton = new QPushButton(tr("Set All"), row.page);
         row.setAllButton->setToolTip(tr("Set all protocols to %1").arg(coreTypeDisplayName(core)));
@@ -168,10 +251,12 @@ void CoreSettingsPageWidget::setupUi()
         row.statusLabel->setFixedWidth(coreStatusInfoWidth);
         infoLayout->addWidget(row.versionLabel);
         infoLayout->addWidget(row.statusLabel);
+        infoLayout->addWidget(row.downloadProgress);
 
         statusLayout->addWidget(coreNameLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
         statusLayout->addWidget(infoWidget, 0, Qt::AlignLeft | Qt::AlignVCenter);
         statusLayout->addWidget(row.downloadButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        statusLayout->addWidget(row.cancelButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
         statusLayout->addWidget(row.setAllButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
         statusLayout->addStretch(1);
         pageLayout->addWidget(statusRow);
@@ -189,9 +274,23 @@ void CoreSettingsPageWidget::setupUi()
             muxLayout->setContentsMargins(0, 0, 0, 0);
             muxLayout->setSpacing(8);
             auto* muxLabel = new QLabel(tr("Mux Protocol"), muxRow);
+            alignCoreOptionLabel(muxLabel);
             muxLayout->addWidget(muxLabel);
             muxLayout->addWidget(mux4SboxProtocolCombo_, 1);
             row.optionsLayout->addWidget(muxRow);
+
+            // sing-box-only DNS options, moved off the shared DNS page.
+            auto* proxyServerDnsRow = new QWidget(optionsWidget);
+            auto* proxyServerDnsLayout = new QHBoxLayout(proxyServerDnsRow);
+            proxyServerDnsLayout->setContentsMargins(0, 0, 0, 0);
+            proxyServerDnsLayout->setSpacing(8);
+            auto* proxyServerDnsLabel = new QLabel(tr("Proxy Server DNS"), proxyServerDnsRow);
+            alignCoreOptionLabel(proxyServerDnsLabel);
+            proxyServerDnsLayout->addWidget(proxyServerDnsLabel);
+            proxyServerDnsLayout->addWidget(proxyServerDnsEdit_, 1);
+            row.optionsLayout->addWidget(proxyServerDnsRow);
+            row.optionsLayout->addWidget(blockBindingQueryCheck_);
+            row.optionsLayout->addWidget(globalFakeIpCheck_);
             break;
         }
         case CoreType::Xray:
@@ -203,9 +302,25 @@ void CoreSettingsPageWidget::setupUi()
                 userAgentLayout->setContentsMargins(0, 0, 0, 0);
                 userAgentLayout->setSpacing(8);
                 auto* userAgentLabel = new QLabel(tr("Default User-Agent"), userAgentRow);
+                alignCoreOptionLabel(userAgentLabel);
                 userAgentLayout->addWidget(userAgentLabel);
                 userAgentLayout->addWidget(xrayDefaultUserAgentCombo_, 1);
                 row.optionsLayout->addWidget(userAgentRow);
+            }
+
+            // Xray-only DNS options, moved off the shared DNS page.
+            row.optionsLayout->addWidget(serveStaleCheck_);
+            row.optionsLayout->addWidget(parallelQueryCheck_);
+            {
+                auto* expectedIpsRow = new QWidget(optionsWidget);
+                auto* expectedIpsLayout = new QHBoxLayout(expectedIpsRow);
+                expectedIpsLayout->setContentsMargins(0, 0, 0, 0);
+                expectedIpsLayout->setSpacing(8);
+                auto* expectedIpsLabel = new QLabel(tr("Direct Expected IPs"), expectedIpsRow);
+                alignCoreOptionLabel(expectedIpsLabel);
+                expectedIpsLayout->addWidget(expectedIpsLabel);
+                expectedIpsLayout->addWidget(directExpectedIpsEdit_, 1);
+                row.optionsLayout->addWidget(expectedIpsRow);
             }
             break;
         default:
@@ -223,9 +338,10 @@ void CoreSettingsPageWidget::setupUi()
         });
     }
 
-    coreLayout->addWidget(coreTypeWidget);
-    coreLayout->addSpacing(8);
+    coreProtocolSectionLayout->addWidget(coreTypeWidget);
     coreLayout->addWidget(coreStatusTitle);
     coreLayout->addWidget(coreDetailTabs_, 1);
+    coreLayout->addSpacing(8);
+    coreLayout->addWidget(coreProtocolSection_);
     coreLayout->addStretch();
 }

@@ -165,6 +165,14 @@ Config SettingsDialog::config() const
         updated.mux4SboxProtocol = coreSettingsPage_->mux4SboxProtocol();
         updated.dns().enableFragment = coreSettingsPage_->xrayFragmentEnabled();
         updated.dns().defaultUserAgent = coreSettingsPage_->xrayDefaultUserAgent();
+        // sing-box-only DNS options, now on the Core page.
+        updated.dns().proxyServerDns = coreSettingsPage_->proxyServerDns();
+        updated.dns().blockBindingQuery = coreSettingsPage_->blockBindingQuery();
+        updated.dns().globalFakeIp = coreSettingsPage_->globalFakeIp();
+        // Xray-only DNS options, now on the Core page.
+        updated.dns().serveStale = coreSettingsPage_->serveStale();
+        updated.dns().parallelQuery = coreSettingsPage_->parallelQuery();
+        updated.dns().directExpectedIps = coreSettingsPage_->directExpectedIps();
         updated.policy().coreTypeItems = mergeCoreTypeItems(
             updated.policy().coreTypeItems,
             coreSettingsPage_->collectCoreTypeItems());
@@ -197,6 +205,9 @@ void SettingsDialog::setupUi()
         coreDownloadRequested_ = true;
         requestedCoreDownload_ = core;
         emit coreDownloadRequested(static_cast<int>(core));
+    });
+    coreSettingsPage_->setCoreUpdateCancelHandler([this](CoreType core) {
+        emit coreUpdateCancelRequested(static_cast<int>(core));
     });
     tunSettingsPage_ = new TunSettingsPageWidget(this);
     dnsSettingsPage_ = new DnsSettingsPageWidget(this);
@@ -284,6 +295,13 @@ void SettingsDialog::setupUi()
             coreSettingsPage_->setTunOptionsEnabled(enabled);
         }
     });
+    // The sing-box "Global FakeIP" row lives on the Core page but is gated by the
+    // shared FakeIP checkbox on the DNS page.
+    connect(dnsSettingsPage_, &DnsSettingsPageWidget::fakeIpEnabledChanged, this, [this](bool enabled) {
+        if (coreSettingsPage_ != nullptr) {
+            coreSettingsPage_->setFakeIpEnabled(enabled);
+        }
+    });
 }
 
 QList<int> SettingsDialog::selectedSubRows() const
@@ -316,6 +334,20 @@ void SettingsDialog::setCoreUpdateProgress(CoreType coreType, const QString& mes
 {
     if (coreSettingsPage_ != nullptr) {
         coreSettingsPage_->setCoreUpdateProgress(coreType, message);
+    }
+}
+
+void SettingsDialog::setCoreUpdateDownloadProgress(CoreType coreType, qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (coreSettingsPage_ != nullptr) {
+        coreSettingsPage_->setCoreUpdateDownloadProgress(coreType, bytesReceived, bytesTotal);
+    }
+}
+
+void SettingsDialog::markCoreUpdateCancelRequested(CoreType coreType)
+{
+    if (coreSettingsPage_ != nullptr) {
+        coreSettingsPage_->markCoreUpdateCancelRequested(coreType);
     }
 }
 
