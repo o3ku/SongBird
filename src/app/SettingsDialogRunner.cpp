@@ -13,11 +13,13 @@ SettingsDialogRunner::SettingsDialogRunner(
     QWidget* parent,
     TrackThreadFn trackThread,
     DetectCoreVersionFn detectCoreVersion,
-    HandleCoreDownloadFn handleCoreDownload)
+    HandleCoreDownloadFn handleCoreDownload,
+    CancelCoreDownloadFn cancelCoreDownload)
     : parent_(parent)
     , trackThread_(std::move(trackThread))
     , detectCoreVersion_(std::move(detectCoreVersion))
     , handleCoreDownload_(std::move(handleCoreDownload))
+    , cancelCoreDownload_(std::move(cancelCoreDownload))
 {
 }
 
@@ -85,6 +87,19 @@ SettingsDialogRunner::Result SettingsDialogRunner::exec(
             return;
         }
         handleCoreDownload_(static_cast<CoreType>(coreTypeValue), dialogGuard);
+    });
+
+    QObject::connect(&dialog, &SettingsDialog::coreUpdateCancelRequested, &dialog, [this, dialogGuard](int coreTypeValue) {
+        if (dialogGuard.isNull()) {
+            return;
+        }
+
+        // Grey the button out immediately: the worker only notices the flag at its next
+        // cancellation point, and a second press before that would be a no-op.
+        dialogGuard->markCoreUpdateCancelRequested(static_cast<CoreType>(coreTypeValue));
+        if (cancelCoreDownload_) {
+            cancelCoreDownload_();
+        }
     });
 
     if (dialog.exec() != QDialog::Accepted) {

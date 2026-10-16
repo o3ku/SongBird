@@ -114,6 +114,7 @@ void AppBootstrap::wireCoreServices()
     objects_->auxiliaryCoreProcessHost = std::make_unique<QtCoreProcessHost>();
     objects_->autoRunService = std::make_unique<PlatformAutoRunService>();
     objects_->systemProxyService = std::make_unique<PlatformSystemProxyService>();
+    objects_->themePreferenceService = std::make_unique<PlatformThemePreferenceService>();
     auto runtimeEnvironment = std::make_unique<FunctionRuntimeEnvironment>();
     runtimeEnvironment->cleanupPortProcessesFn = [this]() { cleanupCoreProcessesUsingConfiguredPorts(); };
     runtimeEnvironment->removeStaleTunAdapterFn = [this]() { return removeStaleTunAdapterIfPresent(); };

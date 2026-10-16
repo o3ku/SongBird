@@ -11,6 +11,7 @@ private slots:
     void blocksRuntimeHotApplyWhenConfiguredTunNeedsElevation();
     void normalizesLanguageCodesBeforeRestartPromptComparison();
     void detectsThemeChangeAfterNormalizingNames();
+    void treatsALoneFollowSystemThemeChoiceAsAChange();
     void treatsALoneSkipOutboundCheckToggleAsAChange();
     void treatsALoneSpeedTestUrlEditAsAChange();
     void ignoresWhitespaceOnlySpeedTestUrlEdits();
@@ -89,6 +90,39 @@ void SettingsDialogApplyPlanTests::detectsThemeChangeAfterNormalizingNames()
     updated.ui().themeName = QStringLiteral("LIGHT");
     plan = evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
     QVERIFY(!plan.themeChanged);
+}
+
+// Same shape as the General-page regressions below, but for the theme preference.
+// "System" used to be folded into "Light", so choosing Follow system (or leaving
+// it) looked like no change: the plan stayed clean, the save step returned without
+// writing, and the choice was silently dropped on the next launch.
+void SettingsDialogApplyPlanTests::treatsALoneFollowSystemThemeChoiceAsAChange()
+{
+    const auto planFor = [](const QString& previousTheme, const QString& updatedTheme) {
+        Config previous;
+        previous.ui().themeName = previousTheme;
+
+        Config updated = previous;
+        updated.ui().themeName = updatedTheme;
+
+        return evaluateSettingsDialogApplyPlan(previous, updated, true, true, false);
+    };
+
+    const SettingsDialogApplyPlan toSystem = planFor(QStringLiteral("Light"), QStringLiteral("System"));
+    QVERIFY(toSystem.dirty);
+    QVERIFY(toSystem.themeChanged);
+
+    // The reverse has to persist too, otherwise a user who tries Follow system and
+    // then goes back cannot undo it.
+    const SettingsDialogApplyPlan fromSystem = planFor(QStringLiteral("System"), QStringLiteral("Light"));
+    QVERIFY(fromSystem.dirty);
+    QVERIFY(fromSystem.themeChanged);
+
+    // Aliases the rest of the theme code accepts resolve to the same preference, so
+    // they must not read as a change from an already-stored "System".
+    const SettingsDialogApplyPlan alias = planFor(QStringLiteral("System"), QStringLiteral("follow"));
+    QVERIFY(!alias.dirty);
+    QVERIFY(!alias.themeChanged);
 }
 
 // The settings save step returns without persisting when the plan is not dirty,

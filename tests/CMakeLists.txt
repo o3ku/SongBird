@@ -246,6 +246,27 @@ songbird_add_qt_test(songbird_settings_dialog_tests settings-dialog-download
         Qt${QT_VERSION_MAJOR}::Svg
 )
 
+set(SONGBIRD_UI_PRESENTATION_LOGIC_TEST_SOURCES
+    UiPresentationLogicTests.cpp
+    # CoreSettingsPageSupport lives in SONGBIRD_SOURCES, not the shared object
+    # library, so the one production file it needs is compiled in here -- the same
+    # pattern SettingsDialogTests uses for the rest of the settings pages.
+    ../src/ui/dialogs/CoreSettingsPageSupport.h
+    ../src/ui/dialogs/CoreSettingsPageSupport.cpp
+)
+
+# ServerTableResultStyle.h and AppTheme's theme resolution are pure, I/O-free
+# helpers, so they get their own target instead of dragging in a dialog. Those two
+# are already in songbird_shared_objs; only the test file and the one
+# non-shared production file are listed here.
+songbird_add_qt_test(songbird_ui_presentation_logic_tests ui-presentation-logic
+    SOURCES
+        ${SONGBIRD_UI_PRESENTATION_LOGIC_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_TUN_SETTINGS_APPLY_DECISION_TEST_SOURCES
     TunSettingsApplyDecisionTests.cpp
 )
@@ -591,12 +612,16 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/SubscriptionViewController.cpp
     ../src/ui/mainwindow/ServerWorkspaceWidget.h
     ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
+    ../src/ui/mainwindow/ServerTableEmptyStateWidget.h
+    ../src/ui/mainwindow/ServerTableEmptyStateWidget.cpp
     ../src/ui/mainwindow/MainWindowShortcutController.h
     ../src/ui/mainwindow/MainWindowShortcutController.cpp
     ../src/ui/mainwindow/MainWindowTitleSupport.h
     ../src/ui/mainwindow/MainWindowTitleSupport.cpp
     ../src/ui/mainwindow/MainWindowToolbarActions.h
     ../src/ui/mainwindow/MainWindowToolbarActions.cpp
+    ../src/ui/dialogs/ShortcutsCheatSheetDialog.h
+    ../src/ui/dialogs/ShortcutsCheatSheetDialog.cpp
     ../src/ui/mainwindow/MainWindowConfigState.h
     ../src/ui/mainwindow/MainWindowConfigState.cpp
     ../src/ui/mainwindow/MainWindowServerSelectionSupport.h
@@ -637,6 +662,7 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/models/ServerFilterProxyModel.cpp
     ../src/ui/models/ServerTableModel.h
     ../src/ui/models/ServerTableModel.cpp
+    ../src/ui/models/ServerTableResultStyle.h
     ../src/ui/qr/QrCodeRenderer.h
     ../src/ui/qr/QrCodeRenderer.cpp
     ../src/resources/toolbar_icons.qrc

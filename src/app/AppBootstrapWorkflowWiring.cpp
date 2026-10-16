@@ -78,6 +78,7 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
                 QObject* progressContext,
                 QWidget* dialogParent,
                 const std::function<void(const QString&)>& progressObserver,
+                const CoreUpdateService::DownloadProgressHandler& downloadProgressObserver,
                 const std::function<void(const OperationResult&)>& completionObserver) {
                 if (objects_->coreUpdateCoordinator == nullptr) {
                     return;
@@ -91,6 +92,7 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
                 request.skipConfirmation = false;
                 request.skipLocalVersionCheck = false;
                 request.progressObserver = progressObserver;
+                request.downloadProgressObserver = downloadProgressObserver;
                 request.completionObserver = completionObserver;
                 objects_->coreUpdateCoordinator->updateCore(request);
             },
@@ -107,6 +109,11 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
                     }
                 }
                 return saveResult;
+            },
+            [this]() {
+                if (objects_->coreUpdateCoordinator != nullptr) {
+                    objects_->coreUpdateCoordinator->requestCancel();
+                }
             }
         },
         objects_->mainWindow.get());

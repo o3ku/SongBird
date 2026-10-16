@@ -37,10 +37,13 @@ public:
     void setCoreVersion(CoreType coreType, const QString& version);
     void beginCoreUpdate(CoreType coreType);
     void setCoreUpdateProgress(CoreType coreType, const QString& message);
+    void setCoreUpdateDownloadProgress(CoreType coreType, qint64 bytesReceived, qint64 bytesTotal);
+    void markCoreUpdateCancelRequested(CoreType coreType);
     void finishCoreUpdate(CoreType coreType, bool success, const QString& message = {});
 
 signals:
     void coreDownloadRequested(int coreTypeValue);
+    void coreUpdateCancelRequested(int coreTypeValue);
 
 private:
     void setupUi();

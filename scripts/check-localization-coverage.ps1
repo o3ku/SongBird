@@ -90,6 +90,15 @@ $allowlist = @{
     '%1 ms'           = 'pure number + unit template; no translatable prose'
     '%1 %2 ms'        = 'pure number + unit template; no translatable prose'
 
+    # Byte-count formatting for the core-update progress tooltip. Same reasoning as the two
+    # latency templates above: strip the number and all that remains is a unit symbol
+    # (B/KB/MB/GB), spelled identically in every locale this app ships. The size is formatted
+    # at the call site; there is no sentence here for a translator to reword.
+    '%1 B'            = 'pure number + unit template; no translatable prose'
+    '%1 KB'           = 'pure number + unit template; no translatable prose'
+    '%1 MB'           = 'pure number + unit template; no translatable prose'
+    '%1 GB'           = 'pure number + unit template; no translatable prose'
+
     # Generated-and-persisted placeholder. normalizedServerRemarks() writes this into
     # VmessItem::remarks when a custom-config server has none, and remarks is saved to the
     # config file -- so translating it would make stored data depend on the UI language at

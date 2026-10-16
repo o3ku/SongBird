@@ -1,5 +1,7 @@
 #include <QtTest/QtTest>
 
+#include <QPair>
+
 #include "appcore/BackgroundTaskCoordinator.h"
 #include "app/CoreUpdateCoordinator.h"
 
@@ -10,6 +12,10 @@ private slots:
     void canceledConfirmationFinishesTokenAndNotifiesCompletion();
     void runningCoreUpdateIsStoredPendingAndContinuesAfterStop();
     void expiredLifetimeGuardDropsWorkerCallbacks();
+    void downloadProgressObserverReceivesBytesFromUpdateRunner();
+    void pendingCoreUpdateKeepsDownloadProgressObserver();
+    void requestCancelIsObservedByTheRunningWorker();
+    void cancelCheckStaysFalseWithoutARequest();
 };
 
 namespace {
@@ -37,6 +43,12 @@ struct Harness {
     bool runnerCheckPreRelease = false;
     bool runnerIgnoreGeoCore = false;
     QStringList progressMessages = {QStringLiteral("download")};
+    // Byte-level progress events the injected runner reported through UpdateOptions.downloadProgress.
+    QList<QPair<qint64, qint64>> downloadProgressEvents;
+    // Runs inside the injected runner, so a test can press Cancel while the worker is live.
+    std::function<void()> duringRunner;
+    // What options.cancelCheck() answered after duringRunner() ran.
+    bool cancelCheckAfterRunner = false;
 
     CoreUpdateCoordinator::Dependencies dependencies()
     {
@@ -83,6 +95,14 @@ struct Harness {
                     options.progressHandler(message);
                 }
             }
+            if (options.downloadProgress) {
+                options.downloadProgress(25, 100);
+                options.downloadProgress(50, 100);
+            }
+            if (duringRunner) {
+                duringRunner();
+            }
+            cancelCheckAfterRunner = options.cancelCheck ? options.cancelCheck() : false;
             return updateResult;
         };
         deps.startBackgroundTask = [](std::function<void()> task) { task(); };
@@ -167,6 +187,79 @@ void CoreUpdateCoordinatorTests::expiredLifetimeGuardDropsWorkerCallbacks()
     QCOMPARE(harness.runnerCount, 0);
     QCOMPARE(harness.completionCount, 0);
     QCOMPARE(harness.backgroundTasks.isKindActive(BackgroundTaskCoordinator::Kind::CoreUpdate), true);
+}
+
+void CoreUpdateCoordinatorTests::downloadProgressObserverReceivesBytesFromUpdateRunner()
+{
+    Harness harness;
+    CoreUpdateCoordinator coordinator(harness.dependencies());
+    CoreUpdateCoordinator::Request request = harness.request();
+    request.downloadProgressObserver = [&harness](qint64 bytesReceived, qint64 bytesTotal) {
+        harness.downloadProgressEvents.append({bytesReceived, bytesTotal});
+    };
+
+    coordinator.updateCore(request);
+
+    QCOMPARE(harness.runnerCount, 1);
+    QCOMPARE(harness.downloadProgressEvents.size(), 2);
+    QCOMPARE(harness.downloadProgressEvents.at(0), (QPair<qint64, qint64>(25, 100)));
+    QCOMPARE(harness.downloadProgressEvents.at(1), (QPair<qint64, qint64>(50, 100)));
+    QCOMPARE(harness.completionCount, 1);
+    QCOMPARE(harness.backgroundTasks.isActive(), false);
+}
+
+void CoreUpdateCoordinatorTests::pendingCoreUpdateKeepsDownloadProgressObserver()
+{
+    Harness harness;
+    harness.shouldStopRunningCore = true;
+    CoreUpdateCoordinator coordinator(harness.dependencies());
+    CoreUpdateCoordinator::Request request = harness.request();
+    request.startAfterSuccess = true;
+    request.downloadProgressObserver = [&harness](qint64 bytesReceived, qint64 bytesTotal) {
+        harness.downloadProgressEvents.append({bytesReceived, bytesTotal});
+    };
+
+    coordinator.updateCore(request);
+
+    // The runner has not started yet, so no bytes have been reported while the update is parked.
+    QCOMPARE(harness.runnerCount, 0);
+    QCOMPARE(harness.downloadProgressEvents.size(), 0);
+
+    coordinator.continuePendingCoreUpdate();
+
+    // The observer captured before the hand-off must survive the pending store, otherwise the
+    // resumed download would update the log but leave the progress bar frozen.
+    QCOMPARE(harness.runnerCount, 1);
+    QCOMPARE(harness.downloadProgressEvents.size(), 2);
+    QCOMPARE(harness.downloadProgressEvents.at(1), (QPair<qint64, qint64>(50, 100)));
+    QCOMPARE(harness.completionCount, 1);
+}
+
+void CoreUpdateCoordinatorTests::requestCancelIsObservedByTheRunningWorker()
+{
+    Harness harness;
+    CoreUpdateCoordinator coordinator(harness.dependencies());
+    // Cancel lands while the runner is on the stack, which is exactly when the user can press it.
+    harness.duringRunner = [&coordinator]() { coordinator.requestCancel(); };
+
+    coordinator.updateCore(harness.request());
+
+    QCOMPARE(harness.runnerCount, 1);
+    // Without this the button would grey out and the download would keep going, which is the
+    // failure the flag exists to prevent.
+    QCOMPARE(harness.cancelCheckAfterRunner, true);
+}
+
+void CoreUpdateCoordinatorTests::cancelCheckStaysFalseWithoutARequest()
+{
+    Harness harness;
+    CoreUpdateCoordinator coordinator(harness.dependencies());
+
+    coordinator.updateCore(harness.request());
+
+    // Counterpart to the test above: it must not pass just because cancelCheck always answers true.
+    QCOMPARE(harness.runnerCount, 1);
+    QCOMPARE(harness.cancelCheckAfterRunner, false);
 }
 
 QTEST_MAIN(CoreUpdateCoordinatorTests)

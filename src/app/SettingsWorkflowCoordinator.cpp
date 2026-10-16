@@ -31,6 +31,11 @@ void SettingsWorkflowCoordinator::openSettingsDialog(int initialTab)
         deps_.detectCoreVersion,
         [this](CoreType requestedCoreType, QPointer<SettingsDialog> dialogGuard) {
             handleCoreDownload(requestedCoreType, dialogGuard);
+        },
+        [this]() {
+            if (deps_.cancelCoreUpdate) {
+                deps_.cancelCoreUpdate();
+            }
         });
 
     const SettingsDialogRunner::Result sessionResult = session.exec(
@@ -69,18 +74,33 @@ void SettingsWorkflowCoordinator::handleCoreDownload(CoreType requestedCoreType,
     }
 
     const auto updateStarted = std::make_shared<bool>(false);
+    // Both observers can be the first to arrive (a byte-level progress event may
+    // precede the first text milestone), so the "this core is now updating"
+    // transition is idempotent and shared instead of living in one of them.
+    const auto ensureUpdateStarted = [dialogGuard, requestedCoreType, updateStarted]() {
+        if (dialogGuard.isNull() || *updateStarted) {
+            return;
+        }
+        dialogGuard->beginCoreUpdate(requestedCoreType);
+        *updateStarted = true;
+    };
     deps_.updateCore(
         requestedCoreType,
         dialogGuard.data(),
         dialogGuard.data(),
-        [dialogGuard, requestedCoreType, updateStarted](const QString& message) {
-            if (!dialogGuard.isNull()) {
-                if (!*updateStarted) {
-                    dialogGuard->beginCoreUpdate(requestedCoreType);
-                    *updateStarted = true;
-                }
-                dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
+        [dialogGuard, requestedCoreType, ensureUpdateStarted](const QString& message) {
+            if (dialogGuard.isNull()) {
+                return;
             }
+            ensureUpdateStarted();
+            dialogGuard->setCoreUpdateProgress(requestedCoreType, message);
+        },
+        [dialogGuard, requestedCoreType, ensureUpdateStarted](qint64 bytesReceived, qint64 bytesTotal) {
+            if (dialogGuard.isNull()) {
+                return;
+            }
+            ensureUpdateStarted();
+            dialogGuard->setCoreUpdateDownloadProgress(requestedCoreType, bytesReceived, bytesTotal);
         },
         [this, dialogGuard, requestedCoreType](const OperationResult& result) {
             if (dialogGuard.isNull()) {

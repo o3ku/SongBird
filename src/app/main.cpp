@@ -22,6 +22,7 @@
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "common/UiLanguage.h"
+#include "platform/PlatformServices.h"
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
@@ -29,6 +30,15 @@
 #endif
 
 namespace {
+
+QString platformPreferredThemeName()
+{
+    // Resolved directly rather than through the composition root's
+    // IThemePreferenceService: this runs before the object graph exists, and the
+    // concrete class is cheap (one registry read, no window).
+    PlatformThemePreferenceService themePreferenceService;
+    return themePreferenceService.preferredThemeName();
+}
 
 QString normalizeLanguageCode(QString languageCode)
 {
@@ -94,8 +104,20 @@ QString loadConfiguredThemeName(const QString& configPath)
     }
 
     const QJsonObject root = document.object();
-    return AppTheme::normalizeThemeName(
-        root.value(QStringLiteral("ui")).toObject().value(QStringLiteral("themeName")).toString());
+    const QString storedTheme =
+        root.value(QStringLiteral("ui")).toObject().value(QStringLiteral("themeName")).toString();
+    // The stored value may be the "System" preference, which has to be resolved
+    // against the OS before a palette name exists. The platform is read here
+    // rather than through IThemePreferenceService because this runs before the
+    // composition root (and its object graph) exists.
+    if (AppTheme::isSystemThemeName(storedTheme)) {
+        return AppTheme::resolveThemeName(
+            storedTheme,
+            platformPreferredThemeName(),
+            AppTheme::lightThemeName());
+    }
+
+    return AppTheme::normalizeThemeName(storedTheme);
 }
 
 bool loadConfiguredTunEnabled(const QString& configPath)

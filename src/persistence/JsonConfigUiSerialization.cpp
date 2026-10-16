@@ -11,6 +11,24 @@ int normalizeSplitPercent(int value, int fallback)
     return value < 10 || value > 90 ? fallback : value;
 }
 
+// The three stored theme preferences. Duplicated rather than shared with
+// ui/theme/AppTheme.h because persistence/ sits below ui/ in the dependency
+// order and must not include it; the value is a plain on-disk token, so the
+// coupling is the string itself.
+QString normalizeStoredThemeName(const QString& themeName)
+{
+    const QString trimmed = themeName.trimmed();
+    if (trimmed.compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("Dark");
+    }
+    if (trimmed.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("Follow"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("Auto"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("System");
+    }
+    return QStringLiteral("Light");
+}
+
 } // namespace
 
 namespace JsonConfigUiSerialization {
@@ -22,10 +40,7 @@ void read(const QJsonObject& root, UiConfigState& config)
     config.ui().autoRunEnabled = readBool(ui, QStringLiteral("autoRunEnabled"), false);
     config.ui().languageCode = readString(ui, QStringLiteral("languageCode"));
     const QString themeName = readString(ui, QStringLiteral("themeName"), config.ui().themeName).trimmed();
-    config.ui().themeName =
-        themeName.compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0
-            ? QStringLiteral("Dark")
-            : QStringLiteral("Light");
+    config.ui().themeName = normalizeStoredThemeName(themeName);
     config.ui().mainLocationX = readInt(ui, QStringLiteral("mainLocationX"), 0);
     config.ui().mainLocationY = readInt(ui, QStringLiteral("mainLocationY"), 0);
     config.ui().mainSizeWidth = readInt(ui, QStringLiteral("mainSizeWidth"), 0);
@@ -72,10 +87,7 @@ void write(QJsonObject& root, const UiConfigState& config)
     writeIfFalse(ui, QStringLiteral("showMainOnStartup"), config.ui().showMainOnStartup);
     writeIfTrue(ui, QStringLiteral("autoRunEnabled"), config.ui().autoRunEnabled);
     writeIfNotEmpty(ui, QStringLiteral("languageCode"), config.ui().languageCode);
-    const QString themeName =
-        config.ui().themeName.trimmed().compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0
-            ? QStringLiteral("Dark")
-            : QStringLiteral("Light");
+    const QString themeName = normalizeStoredThemeName(config.ui().themeName);
     if (themeName != QStringLiteral("Light")) {
         ui.insert(QStringLiteral("themeName"), themeName);
     }

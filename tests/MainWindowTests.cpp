@@ -36,10 +36,12 @@
 #include "common/LogSeverity.h"
 #include "domain/models/Config.h"
 #include "subscription/ShareUrlBuilder.h"
+#include "ui/dialogs/ShortcutsCheatSheetDialog.h"
 #include "ui/mainwindow/LogItemDelegate.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/MainWindowServerSelectionSupport.h"
 #include "ui/mainwindow/MainWindowTitleSupport.h"
+#include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/StatusBarSupport.h"
 #include "TestSupport.h"
@@ -55,6 +57,14 @@ class MainWindowTests : public QObject {
     Q_OBJECT
 
 private slots:
+    // The window's "Copy Url" actions write to the *system* clipboard, which
+    // outlives the test process. Snapshot whatever the developer had copied and
+    // put it back after every case, so running the suite never clobbers it (and
+    // never leaves the test fixture servers sitting in it).
+    void initTestCase();
+    void cleanupTestCase();
+    void init();
+    void cleanup();
     void appendLogKeepsBottomWhenCursorAtLastLine();
     void appendLogPrefixesTheSeverityMarker();
     void appendLogAlsoWritesTheLineToTheLogFile();
@@ -65,6 +75,7 @@ private slots:
     void logContextMenuUsesViewportCoordinates();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void helpMenuCheckForUpdatesEmitsSignal();
+    void shortcutsCheatSheetListsEveryInstalledShortcut();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
     void runtimeToolbarButtonsUseRoutingComboDefaultBorder();
@@ -120,11 +131,64 @@ private slots:
     void requestExitConfirmationUsesMainWindowAsParentWhenHidden();
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
     void compactUiZonesDoNotExceedServerTableFont();
+    void serverTableEmptyStateShowsGuidanceAndHidesWithRows();
+    void serverTableEmptyStateDistinguishesFilterFromEmptyList();
+    void serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab();
+    void serverTableEmptyStateButtonsDriveTheWindowActions();
+    void serverTableEmptyStateIsLaidOutInCompactMode();
+    void serverTableResultColumnColoursLatencyBands();
 };
 
 namespace {
 
 using TestSupport::emojiMark;
+
+// Saved in initTestCase() and restored in cleanupTestCase(); empty means "the
+// clipboard was empty before the suite ran".
+QString g_savedClipboardText;
+bool g_savedClipboardTextValid = false;
+
+} // namespace
+
+void MainWindowTests::initTestCase()
+{
+    if (QApplication::clipboard() == nullptr) {
+        return;
+    }
+
+    g_savedClipboardText = QApplication::clipboard()->text();
+    g_savedClipboardTextValid = true;
+}
+
+void MainWindowTests::cleanupTestCase()
+{
+    if (QApplication::clipboard() == nullptr || !g_savedClipboardTextValid) {
+        return;
+    }
+
+    // Restore the developer's clipboard exactly, including the case where it was
+    // empty before the suite ran.
+    if (g_savedClipboardText.isEmpty()) {
+        QApplication::clipboard()->clear();
+    } else {
+        QApplication::clipboard()->setText(g_savedClipboardText);
+    }
+}
+
+void MainWindowTests::init()
+{
+}
+
+void MainWindowTests::cleanup()
+{
+    // Each case that copies must not leak its fixture servers into the next case
+    // (or into the developer's clipboard after the process exits).
+    if (QApplication::clipboard() != nullptr) {
+        QApplication::clipboard()->clear();
+    }
+}
+
+namespace {
 
 QString checklistItem(ushort mark, const QString& text)
 {
@@ -652,6 +716,71 @@ void MainWindowTests::helpMenuCheckForUpdatesEmitsSignal()
     action->trigger();
 
     QCOMPARE(spy.count(), 1);
+}
+
+void MainWindowTests::shortcutsCheatSheetListsEveryInstalledShortcut()
+{
+    MainWindow window;
+    window.show();
+    QCoreApplication::processEvents();
+
+    // Every chord the window installs, gathered from the real QActions. The
+    // action may be owned by the window, by the server table (widget-scope
+    // shortcuts are added to the view), or by a controller parented elsewhere,
+    // so both the window and the table are walked.
+    QSet<QString> installed;
+    const auto collect = [&installed](QObject* root) {
+        if (root == nullptr) {
+            return;
+        }
+        for (QAction* action : root->findChildren<QAction*>()) {
+            for (const QKeySequence& sequence : action->shortcuts()) {
+                if (!sequence.isEmpty()) {
+                    installed.insert(sequence.toString(QKeySequence::PortableText));
+                }
+            }
+        }
+    };
+    collect(&window);
+    collect(window.findChild<QWidget*>(QStringLiteral("serverTableView")));
+
+    // Documented chords, with the Alt+1..9 range row expanded into its members.
+    QSet<QString> documented;
+    for (const ShortcutsCheatSheetDialog::ShortcutEntry& entry : ShortcutsCheatSheetDialog::shortcutEntries()) {
+        for (const QKeySequence& sequence : entry.sequences) {
+            documented.insert(sequence.toString(QKeySequence::PortableText));
+        }
+        if (entry.keys == QStringLiteral("Alt+1 .. Alt+9")) {
+            for (int digit = 1; digit <= 9; ++digit) {
+                documented.insert(QKeySequence(Qt::ALT | (Qt::Key_0 + digit)).toString(QKeySequence::PortableText));
+            }
+        }
+    }
+
+    // The sheet documents Shift+? for the cheat sheet itself; the action binds
+    // both the shifted question mark and its Shift+/ spelling, so both are in
+    // the documented set above.
+    QVERIFY(documented.contains(QStringLiteral("Shift+?")));
+
+    QStringList missingFromSheet;
+    for (const QString& chord : installed) {
+        if (!documented.contains(chord)) {
+            missingFromSheet.append(chord);
+        }
+    }
+    missingFromSheet.sort();
+    QVERIFY2(missingFromSheet.isEmpty(),
+             qPrintable(QStringLiteral("Installed but undocumented: %1").arg(missingFromSheet.join(QStringLiteral(", ")))));
+
+    QStringList missingFromWindow;
+    for (const QString& chord : documented) {
+        if (!installed.contains(chord)) {
+            missingFromWindow.append(chord);
+        }
+    }
+    missingFromWindow.sort();
+    QVERIFY2(missingFromWindow.isEmpty(),
+             qPrintable(QStringLiteral("Documented but not installed: %1").arg(missingFromWindow.join(QStringLiteral(", ")))));
 }
 
 void MainWindowTests::routingToolbarButtonEmitsRoutingSettingsSignal()
@@ -2337,6 +2466,7 @@ void MainWindowTests::activeSessionWithUnknownLocationSaysSo()
     RuntimeStateSnapshot snapshot;
     snapshot.currentServerName = QStringLiteral("Test Server");
     snapshot.proxyUiState = ProxyUiState::Active;
+
     window.applyRuntimeState(snapshot);
     QCOMPARE(
         currentServerStatusLabel->text(),
@@ -2712,7 +2842,219 @@ void MainWindowTests::compactUiZonesDoNotExceedServerTableFont()
     QCOMPARE(routingCombo->width(), routingComboWidth);
 }
 
+void MainWindowTests::serverTableEmptyStateShowsGuidanceAndHidesWithRows()
+{
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(emptyState != nullptr);
+
+    // No servers: the table gives way to the guidance panel instead of showing a
+    // blank grid, and the panel offers all three ways in.
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(serverView->isHidden());
+    QVERIFY(emptyState->importButton() != nullptr);
+    QVERIFY(emptyState->addButton() != nullptr);
+    QVERIFY(emptyState->clipboardButton() != nullptr);
+
+    // Both are mounted in the desktop panel layout from construction, before any
+    // resize: the table must not be a layout-less floating child, which is what
+    // it becomes if the constructor forgets to add it (setCompactMode(false) is a
+    // no-op on a wide window and never runs moveServerViewToDesktop()).
+    QWidget* serverPanel = serverView->parentWidget();
+    QVERIFY(serverPanel != nullptr);
+    QCOMPARE(emptyState->parentWidget(), serverPanel);
+    QVERIFY(serverPanel->layout() != nullptr);
+    QVERIFY(serverPanel->layout()->indexOf(serverView) >= 0);
+    QVERIFY(serverPanel->layout()->indexOf(emptyState) >= 0);
+
+    Config withServer;
+    withServer.collection().servers = {createServer(QStringLiteral("server-1"), QStringLiteral("Only"), 1)};
+    window.setConfig(withServer);
+    QCoreApplication::processEvents();
+
+    // One server is enough to put the table back and take the panel away.
+    QVERIFY(!emptyState->isVisible());
+    QVERIFY(!serverView->isHidden());
+    QCOMPARE(serverView->model()->rowCount(), 1);
+    // The visible table is the one being laid out and sized, not a stray child.
+    QVERIFY(serverView->width() > 0);
+    QCOMPARE(serverView->parentWidget(), serverPanel);
+}
+
+void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()
+{
+    MainWindow window;
+    window.setConfig(Config());
+    window.resize(500, 640);
+    window.show();
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(serverView != nullptr);
+    QVERIFY(emptyState != nullptr);
+    QCOMPARE(serverView->property("compactServerTable").toBool(), true);
+
+    // With no servers the panel replaces the table in the compact section body, so
+    // it has to be parented to the compact sections widget *and* mounted in that
+    // layout -- setParent() alone would leave it floating at (0, 0).
+    auto* compactSections = window.findChild<QWidget*>(QStringLiteral("compactSubscriptionSections"));
+    QVERIFY(compactSections != nullptr);
+    QCOMPARE(emptyState->parentWidget(), compactSections);
+    QVERIFY(compactSections->layout() != nullptr);
+    QVERIFY(compactSections->layout()->indexOf(emptyState) >= 0);
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(serverView->isHidden());
+    // indexOf >= 0 alone only proves the layout knows the widget; the size check is
+    // the second half: an unmanaged child keeps its default geometry and never grows
+    // to fill the section body.
+    QVERIFY(emptyState->width() > 0);
+    QVERIFY(emptyState->height() > 0);
+
+    // Rebuilding the sections (a tab switch does this) must not delete the panel
+    // that was borrowed into the layout, nor drop it back out of the layout.
+    window.setConfig(Config());
+    QCoreApplication::processEvents();
+    QCOMPARE(emptyState->parentWidget(), compactSections);
+    QVERIFY(compactSections->layout()->indexOf(emptyState) >= 0);
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(emptyState->width() > 0);
+}
+
+void MainWindowTests::serverTableEmptyStateDistinguishesFilterFromEmptyList()
+{
+    MainWindow window;
+    Config config;
+    config.collection().servers = {
+        createServer(QStringLiteral("server-1"), QStringLiteral("Alpha"), 1),
+        createServer(QStringLiteral("server-2"), QStringLiteral("Beta"), 2)};
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(serverFilterEdit != nullptr);
+    QVERIFY(emptyState != nullptr);
+    QVERIFY(!emptyState->isVisible());
+
+    // A filter that matches nothing hides the rows but the servers still exist, so
+    // the panel must say so rather than claim there are no servers at all.
+    serverFilterEdit->setText(QStringLiteral("no-such-server"));
+    QCoreApplication::processEvents();
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(emptyState->filterActive());
+
+    serverFilterEdit->clear();
+    QCoreApplication::processEvents();
+    QVERIFY(!emptyState->isVisible());
+    QVERIFY(!emptyState->filterActive());
+}
+
+void MainWindowTests::serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab()
+{
+    MainWindow window;
+    // Every server belongs to a subscription, so the "Ungrouped" tab is empty while
+    // the shared source model still holds rows.
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("ungrouped")));
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    auto* serverFilterEdit = window.findChild<QLineEdit*>(QStringLiteral("serverFilterEdit"));
+    QVERIFY(emptyState != nullptr);
+    QVERIFY(serverFilterEdit != nullptr);
+
+    // The tab filter, not the text filter, is what emptied the table: the box is empty,
+    // so the panel must not tell the user to clear it.
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(serverFilterEdit->text().isEmpty());
+    QVERIFY(!emptyState->filterActive());
+
+    // With text typed in as well, the filter really is a contributing cause and the
+    // panel goes back to blaming it.
+    serverFilterEdit->setText(QStringLiteral("no-such-server"));
+    QCoreApplication::processEvents();
+    QVERIFY(emptyState->isVisible());
+    QVERIFY(emptyState->filterActive());
+}
+
+void MainWindowTests::serverTableEmptyStateButtonsDriveTheWindowActions()
+{
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+
+    QSignalSpy addSpy(&window, SIGNAL(addServerRequested()));
+    QSignalSpy clipboardSpy(&window, SIGNAL(importFromClipboardRequested()));
+    QSignalSpy subscriptionsSpy(&window, SIGNAL(openSettingsAtSubscriptionsTabRequested()));
+    QVERIFY(addSpy.isValid());
+    QVERIFY(clipboardSpy.isValid());
+    QVERIFY(subscriptionsSpy.isValid());
+
+    emptyState->addButton()->click();
+    QCOMPARE(addSpy.count(), 1);
+
+    emptyState->clipboardButton()->click();
+    QCOMPARE(clipboardSpy.count(), 1);
+
+    // Importing has no dialog of its own; it opens the Subscriptions tab, which is
+    // where a share link or subscription URL is entered.
+    emptyState->importButton()->click();
+    QCOMPARE(subscriptionsSpy.count(), 1);
+}
+
+void MainWindowTests::serverTableResultColumnColoursLatencyBands()
+{
+    ServerTableModel model;
+    QList<VmessItem> servers;
+    VmessItem fast = createServer(QStringLiteral("server-fast"), QStringLiteral("Fast"), 1);
+    fast.testResult = QStringLiteral("120 ms");
+    VmessItem medium = createServer(QStringLiteral("server-medium"), QStringLiteral("Medium"), 2);
+    medium.testResult = QStringLiteral("500 ms");
+    VmessItem slow = createServer(QStringLiteral("server-slow"), QStringLiteral("Slow"), 3);
+    slow.testResult = QStringLiteral("1500 ms");
+    VmessItem failed = createServer(QStringLiteral("server-failed"), QStringLiteral("Failed"), 4);
+    failed.testResult = QStringLiteral("Timeout");
+    servers << fast << medium << slow << failed;
+    model.setItems(servers);
+
+    constexpr int resultColumn = ServerTableModel::TestResultColumn;
+    const QColor success(AppTheme::successColor());
+    const QColor warning(AppTheme::warningColor());
+    const QColor error(AppTheme::errorColor());
+
+    const auto foregroundAt = [&model, resultColumn](int row) {
+        return qvariant_cast<QBrush>(model.index(row, resultColumn).data(Qt::ForegroundRole)).color();
+    };
+
+    // Three latency bands, then a result the parser cannot read, which is treated
+    // as a failure rather than silently left uncoloured.
+    QCOMPARE(foregroundAt(0), success);
+    QCOMPARE(foregroundAt(1), warning);
+    QCOMPARE(foregroundAt(2), error);
+    QCOMPARE(foregroundAt(3), error);
+
+    // An empty result is not a failure and gets no colour at all.
+    model.updateTestResult(QStringLiteral("server-fast"), QString());
+    QVERIFY(!model.index(0, resultColumn).data(Qt::ForegroundRole).isValid());
+}
+
 QTEST_MAIN(MainWindowTests)
 
 #include "MainWindowTests.moc"
-

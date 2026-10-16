@@ -47,7 +47,7 @@ QToolBar#mainToolBar QToolButton#qrCodeButton:checked { background: @accentSoft@
 QToolBar#mainToolBar QToolButton#qrCodeButton:checked:hover { background: @accentSoft@; border: 1px solid @focus@; }
 QComboBox, QLineEdit, QSpinBox, QListView, QTableView, QTableWidget, QMenu, QTabWidget::pane { background: @surface@; border: 1px solid @border@; border-radius: 0px; }
 QTextEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; }
-QComboBox, QLineEdit, QSpinBox { padding: 2px 8px; }
+QComboBox, QLineEdit, QSpinBox { padding: 2px 4px; }
 QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QListView:hover, QTextEdit:hover { border-color: @inputBorderHover@; }
 QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QListView:focus, QTextEdit:focus { border: 1px solid @focus@; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: none; border-left: 1px solid @border@; background: @surfaceMuted@; border-radius: 0px; }
@@ -60,6 +60,8 @@ QSpinBox::up-button, QSpinBox::down-button { width: 18px; border: none; border-l
 QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: @accentSoft@; }
 QSpinBox::up-arrow { image: url(@upArrowImage@); width: 10px; height: 10px; }
 QSpinBox::down-arrow { image: url(@downArrowImage@); width: 10px; height: 10px; }
+QProgressBar { background: @surfaceMuted@; border: 1px solid @border@; border-radius: 0px; text-align: center; color: @text@; font-size: 8pt; min-height: 12px; }
+QProgressBar::chunk { background: @accent@; border: none; }
 QAbstractItemView { selection-background-color: @selection@; selection-color: @selectionText@; outline: 0; }
 QAbstractItemView#toolbarComboPopupView, QAbstractItemView#settingsComboPopupView { background: @surface@; color: @text@; border: 1px solid @border@; border-radius: 0px; padding: 4px; outline: 0; }
 QAbstractItemView#toolbarComboPopupView::item { min-height: 24px; padding: 4px 8px; border-radius: 0px; }

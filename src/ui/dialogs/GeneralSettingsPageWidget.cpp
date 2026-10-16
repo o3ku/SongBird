@@ -52,7 +52,9 @@ void GeneralSettingsPageWidget::setConfig(const Config& config)
     const int languageIndex = languageCombo_->findData(normalizedLanguage);
     languageCombo_->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
 
-    const QString themeName = AppTheme::normalizeThemeName(config.ui().themeName);
+    const QString themeName = AppTheme::isSystemThemeName(config.ui().themeName)
+        ? AppTheme::systemThemeName()
+        : AppTheme::normalizeThemeName(config.ui().themeName);
     const int themeIndex = themeCombo_->findData(themeName);
     themeCombo_->setCurrentIndex(themeIndex >= 0 ? themeIndex : 0);
 
@@ -72,7 +74,10 @@ void GeneralSettingsPageWidget::applyToConfig(Config& config) const
     config.defaults().speedPingTestUrl = speedPingTestUrlEdit_->text().trimmed();
     config.skipOutboundCheck = skipOutboundCheck_->isChecked();
     config.ui().languageCode = languageCombo_->currentData().toString().trimmed();
-    config.ui().themeName = AppTheme::normalizeThemeName(themeCombo_->currentData().toString());
+    const QString selectedTheme = themeCombo_->currentData().toString();
+    config.ui().themeName = AppTheme::isSystemThemeName(selectedTheme)
+        ? AppTheme::systemThemeName()
+        : AppTheme::normalizeThemeName(selectedTheme);
 }
 
 void GeneralSettingsPageWidget::setupUi()
@@ -115,6 +120,7 @@ void GeneralSettingsPageWidget::setupUi()
 
     themeCombo_ = new QComboBox(this);
     themeCombo_->setObjectName(QStringLiteral("settingsThemeCombo"));
+    themeCombo_->addItem(tr("Follow system"), AppTheme::systemThemeName());
     themeCombo_->addItem(tr("Light"), AppTheme::lightThemeName());
     themeCombo_->addItem(tr("Dark"), AppTheme::darkThemeName());
 

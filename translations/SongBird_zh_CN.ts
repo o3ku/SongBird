@@ -1221,8 +1221,20 @@ Restart SongBird and use the downloaded package to update to the new version.</s
 <context>
     <name>CoreSettingsPageWidget</name>
     <message>
+        <source>Block binding query</source>
+        <translation>阻止绑定查询</translation>
+    </message>
+    <message>
         <source>Checking...</source>
         <translation>正在检查...</translation>
+    </message>
+    <message>
+        <source>Comma-separated IPs</source>
+        <translation>用逗号分隔的 IP</translation>
+    </message>
+    <message>
+        <source>Direct Expected IPs</source>
+        <translation>直连预期 IP</translation>
     </message>
     <message>
         <source>Failed</source>
@@ -1253,8 +1265,32 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>按核心设置</translation>
     </message>
     <message>
+        <source>Global FakeIP</source>
+        <translation>全局 FakeIP</translation>
+    </message>
+    <message>
         <source>Install</source>
         <translation>安装</translation>
+    </message>
+    <message>
+        <source>Parallel DNS query</source>
+        <translation>并行 DNS 查询</translation>
+    </message>
+    <message>
+        <source>Proxy Server DNS</source>
+        <translation>代理服务器 DNS</translation>
+    </message>
+    <message>
+        <source>Resolve every domain through FakeIP, not only proxied ones. Requires FakeIP on the DNS page.</source>
+        <translation>将所有域名都通过 FakeIP 解析，而不仅是代理的域名。需要先在 DNS 页面启用 FakeIP。</translation>
+    </message>
+    <message>
+        <source>Resolves the proxy server&apos;s own hostname. Empty uses the direct DNS.</source>
+        <translation>解析代理服务器自身的主机名。留空则使用直连 DNS。</translation>
+    </message>
+    <message>
+        <source>Serve stale DNS cache</source>
+        <translation>提供过期 DNS 缓存</translation>
     </message>
     <message>
         <source>Set All</source>
@@ -1283,6 +1319,42 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>Update</source>
         <translation>更新</translation>
+    </message>
+    <message>
+        <source>Advanced: assign a core per protocol</source>
+        <translation>高级：按协议指定内核</translation>
+    </message>
+    <message>
+        <source>Another core is being updated.</source>
+        <translation>正在更新另一个内核。</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>重试</translation>
+    </message>
+    <message>
+        <source>Stop this update. The partial download is discarded.</source>
+        <translation>停止本次更新，已下载的部分将被丢弃。</translation>
+    </message>
+    <message>
+        <source>The last attempt failed. Select to try again.</source>
+        <translation>上次尝试失败。点击可重试。</translation>
+    </message>
+    <message>
+        <source>The last attempt failed: %1</source>
+        <translation>上次尝试失败：%1</translation>
+    </message>
+    <message>
+        <source>%1 downloaded</source>
+        <translation>已下载 %1</translation>
+    </message>
+    <message>
+        <source>%1 of %2 downloaded (%3%)</source>
+        <translation>已下载 %1 / %2（%3%）</translation>
     </message>
 </context>
 <context>
@@ -1585,75 +1657,67 @@ The running core will be stopped before installation if needed.</source>
 </context>
 <context>
     <name>DnsSettingsPageWidget</name>
-    <message>
-        <source>Remote DNS</source>
-        <translation>远程 DNS</translation>
-    </message>
-    <message>
-        <source>Direct DNS</source>
-        <translation>直连 DNS</translation>
-    </message>
-    <message>
-        <source>Bootstrap DNS</source>
-        <translation>引导 DNS</translation>
-    </message>
-    <message>
-        <source>Proxy Server DNS</source>
-        <translation>代理服务器 DNS</translation>
-    </message>
-    <message>
-        <source>Resolves the proxy server&apos;s own hostname. Empty uses the direct DNS.</source>
-        <translation>解析代理服务器自身的主机名。留空则使用直连 DNS。</translation>
-    </message>
-    <message>
-        <source>Domain Strategy (Freedom)</source>
-        <translation>域名策略（自由出站）</translation>
-    </message>
-    <message>
-        <source>Domain Strategy (Proxy)</source>
-        <translation>域名策略（代理出站）</translation>
-    </message>
-    <message>
-        <source>Use system hosts file</source>
-        <translation>使用系统 hosts 文件</translation>
-    </message>
-    <message>
+<message>
         <source>Add common hosts (google, github, etc.)</source>
         <translation>添加常用 hosts（google、github 等）</translation>
     </message>
-    <message>
-        <source>Block binding query</source>
-        <translation>阻止绑定查询</translation>
+    
+<message>
+        <source>Bootstrap DNS</source>
+        <translation>引导 DNS</translation>
     </message>
-    <message>
-        <source>Enable FakeIP</source>
-        <translation>启用 FakeIP</translation>
-    </message>
-    <message>
-        <source>Global FakeIP</source>
-        <translation>全局 FakeIP</translation>
-    </message>
-    <message>
-        <source>Serve stale DNS cache</source>
-        <translation>提供过期 DNS 缓存</translation>
-    </message>
-    <message>
-        <source>Parallel DNS query</source>
-        <translation>并行 DNS 查询</translation>
-    </message>
-    <message>
-        <source>Direct Expected IPs</source>
-        <translation>直连预期 IP</translation>
-    </message>
-    <message>
+    
+<message>
         <source>DNS Hosts</source>
         <translation>DNS Hosts</translation>
     </message>
-    <message>
-        <source>Comma-separated IPs</source>
-        <translation>用逗号分隔的 IP</translation>
+<message>
+        <source>Direct DNS</source>
+        <translation>直连 DNS</translation>
     </message>
-</context>
+    
+<message>
+        <source>Domain Strategy (Freedom)</source>
+        <translation>域名策略（自由出站）</translation>
+    </message>
+    
+<message>
+        <source>Domain Strategy (Proxy)</source>
+        <translation>域名策略（代理出站）</translation>
+    </message>
+    
+<message>
+        <source>Enable FakeIP</source>
+        <translation>启用 FakeIP</translation>
+    </message>
+    
+        <message>
+            <source>Not needed - the servers above use IP addresses</source>
+            <translation>不需要：上面的服务器使用的是 IP</translation>
+        </message>
+        <message>
+            <source>Queried directly, without the proxy. Used for domains that resolve best locally.</source>
+            <translation>不经代理直连查询。用于在本地解析效果最好的域名。</translation>
+        </message>
+        <message>
+            <source>Queried through the proxy. Used for domains that must not be resolved directly.</source>
+            <translation>通过代理查询。用于不应该被直接解析的域名。</translation>
+        </message>
+<message>
+        <source>Remote DNS</source>
+        <translation>远程 DNS</translation>
+    </message>
+    
+        <message>
+            <source>Resolves the hostnames of the two servers above. Only needed when Remote DNS or Direct DNS is a hostname rather than an IP; leave empty when they are IP addresses.</source>
+            <translation>用于解析上面两个服务器的域名。仅当 Remote DNS 或 Direct DNS 填写的是域名而不是 IP 时才需要；如果它们都是 IP，可以留空。</translation>
+        </message>
+<message>
+        <source>Use system hosts file</source>
+        <translation>使用系统 hosts 文件</translation>
+    </message>
+    
+        </context>
 <context>
     <name>GeneralSettingsPageWidget</name>
     <message>
@@ -1727,6 +1791,10 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Dark</source>
         <translation>深色</translation>
+    </message>
+    <message>
+        <source>Follow system</source>
+        <translation>跟随系统</translation>
     </message>
 </context>
 <context>
@@ -2070,6 +2138,10 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>UWP Loopback</source>
         <translation>UWP 环回</translation>
+    </message>
+    <message>
+        <source>Keyboard Shortcuts</source>
+        <translation>键盘快捷键</translation>
     </message>
 </context>
 <context>
@@ -3664,6 +3736,176 @@ Switch this protocol to %3?</source>
     <message>
         <source>Xray %1 does not support skipping TLS certificate verification. Configure a trusted certificate or SHA-256 pin, or use sing-box or Mihomo. Explicit node settings override the default in General settings.</source>
         <translation>Xray %1 不支持跳过 TLS 证书验证。请配置可信证书或 SHA-256 指纹，或使用 sing-box、Mihomo。节点自身的明确设置优先于常规设置中的默认选项。</translation>
+    </message>
+</context>
+<context>
+    <name>ServerTableEmptyStateWidget</name>
+    <message>
+        <source>Add Server</source>
+        <translation>添加服务器</translation>
+    </message>
+    <message>
+        <source>Clear the filter box above to see all servers again.</source>
+        <translation>清空上方的筛选框即可重新显示全部服务器。</translation>
+    </message>
+    <message>
+        <source>From Clipboard</source>
+        <translation>从剪贴板导入</translation>
+    </message>
+    <message>
+        <source>Import a subscription or share link to get started.</source>
+        <translation>导入订阅或分享链接即可开始使用。</translation>
+    </message>
+    <message>
+        <source>Import from File or URL</source>
+        <translation>从文件或网址导入</translation>
+    </message>
+    <message>
+        <source>No servers match the filter</source>
+        <translation>没有符合筛选条件的服务器</translation>
+    </message>
+    <message>
+        <source>No servers yet</source>
+        <translation>暂无服务器</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutsCheatSheetDialog</name>
+    <message>
+        <source>Action</source>
+        <translation>操作</translation>
+    </message>
+    <message>
+        <source>Alt+1 .. Alt+9</source>
+        <translation>Alt+1 .. Alt+9</translation>
+    </message>
+    <message>
+        <source>Alt+T</source>
+        <translation>Alt+T</translation>
+    </message>
+    <message>
+        <source>Alt+X</source>
+        <translation>Alt+X</translation>
+    </message>
+    <message>
+        <source>Copy the selected share link(s)</source>
+        <translation>复制所选分享链接</translation>
+    </message>
+    <message>
+        <source>Ctrl+A</source>
+        <translation>Ctrl+A</translation>
+    </message>
+    <message>
+        <source>Ctrl+C</source>
+        <translation>Ctrl+C</translation>
+    </message>
+    <message>
+        <source>Ctrl+Enter</source>
+        <translation>Ctrl+Enter</translation>
+    </message>
+    <message>
+        <source>Ctrl+F</source>
+        <translation>Ctrl+F</translation>
+    </message>
+    <message>
+        <source>Ctrl+R</source>
+        <translation>Ctrl+R</translation>
+    </message>
+    <message>
+        <source>Ctrl+Shift+R</source>
+        <translation>Ctrl+Shift+R</translation>
+    </message>
+    <message>
+        <source>Ctrl+V</source>
+        <translation>Ctrl+V</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <source>Enter</source>
+        <translation>Enter</translation>
+    </message>
+    <message>
+        <source>Exit SongBird</source>
+        <translation>退出 SongBird</translation>
+    </message>
+    <message>
+        <source>Focus the server filter</source>
+        <translation>聚焦服务器筛选框</translation>
+    </message>
+    <message>
+        <source>Import servers from the clipboard</source>
+        <translation>从剪贴板导入服务器</translation>
+    </message>
+    <message>
+        <source>Keyboard Shortcuts</source>
+        <translation>键盘快捷键</translation>
+    </message>
+    <message>
+        <source>Keys</source>
+        <translation>按键</translation>
+    </message>
+    <message>
+        <source>Move the selection to the top / bottom</source>
+        <translation>将选中项移到顶部 / 底部</translation>
+    </message>
+    <message>
+        <source>Move the selection up / down</source>
+        <translation>将选中项上移 / 下移</translation>
+    </message>
+    <message>
+        <source>Open this keyboard shortcuts sheet</source>
+        <translation>打开此键盘快捷键速查表</translation>
+    </message>
+    <message>
+        <source>Remove the selected servers</source>
+        <translation>删除所选服务器</translation>
+    </message>
+    <message>
+        <source>Select all servers</source>
+        <translation>全选服务器</translation>
+    </message>
+    <message>
+        <source>Set current and enable TUN</source>
+        <translation>设为当前并启用 TUN</translation>
+    </message>
+    <message>
+        <source>Set the selected server as current</source>
+        <translation>将所选服务器设为当前</translation>
+    </message>
+    <message>
+        <source>Shift+?</source>
+        <translation>Shift+?</translation>
+    </message>
+    <message>
+        <source>Shortcuts available in the main window.</source>
+        <translation>主窗口中可用的快捷键。</translation>
+    </message>
+    <message>
+        <source>Speed test the selected servers</source>
+        <translation>对所选服务器测速</translation>
+    </message>
+    <message>
+        <source>Switch to subscription tab 1-9</source>
+        <translation>切换到第 1-9 个订阅标签页</translation>
+    </message>
+    <message>
+        <source>T / B</source>
+        <translation>T / B</translation>
+    </message>
+    <message>
+        <source>U / D</source>
+        <translation>U / D</translation>
+    </message>
+    <message>
+        <source>Update all subscriptions</source>
+        <translation>更新全部订阅</translation>
+    </message>
+    <message>
+        <source>Update the current subscription</source>
+        <translation>更新当前订阅</translation>
     </message>
 </context>
 </TS>

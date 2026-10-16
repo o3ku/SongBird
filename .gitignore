@@ -6,3 +6,5 @@
 /.workbuddy-ai/
 # Planning/backlog notes kept next to the tree on purpose; not shipped source.
 /todo.md
+# Local review/scratch artifacts (patches, generated reports, zip bundles).
+/outputs/

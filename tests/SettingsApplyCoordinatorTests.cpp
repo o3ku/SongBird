@@ -50,6 +50,7 @@ private slots:
     void appliesAutoRunChangeWhenWriteSucceeds();
     void reportsFailureWhenSystemProxyReapplyIsRefused();
     void reappliesSystemProxyWhenTheUpdateSucceeds();
+    void persistsALoneFollowSystemThemeChoice();
 };
 
 void SettingsApplyCoordinatorTests::reportsFailureWhenAutoRunWriteIsRefused()
@@ -182,6 +183,31 @@ void SettingsApplyCoordinatorTests::reappliesSystemProxyWhenTheUpdateSucceeds()
     // managed-proxy bookkeeping only runs on the success path.
     QVERIFY(adopted);
     QVERIFY(adoptedValue);
+}
+
+// A theme-only change used to compute dirty=false, so apply() took the early return and never
+// called repository.save(). The dialog closed and the choice was gone on the next launch. This
+// asserts the persisted value, not just the in-memory config, because the write is the point.
+void SettingsApplyCoordinatorTests::persistsALoneFollowSystemThemeChoice()
+{
+    Config config;
+    config.ui().themeName = QStringLiteral("Light");
+
+    MockConfigRepository repository;
+    ServerService serverService(repository);
+
+    SettingsApplyCoordinator::Callbacks callbacks;
+
+    SettingsApplyCoordinator coordinator(
+        SettingsApplyCoordinator::Dependencies{config, serverService, nullptr},
+        callbacks);
+
+    Config updated = config;
+    updated.ui().themeName = QStringLiteral("System");
+    coordinator.apply(updated);
+
+    QCOMPARE(repository.config_.ui().themeName, QStringLiteral("System"));
+    QCOMPARE(config.ui().themeName, QStringLiteral("System"));
 }
 
 QTEST_MAIN(SettingsApplyCoordinatorTests)

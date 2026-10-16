@@ -1,5 +1,7 @@
 #include <QtTest>
 
+#include <cmath>
+
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
@@ -8,12 +10,15 @@
 #include <QHeaderView>
 #include <QImage>
 #include <QPalette>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QLabel>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QStackedLayout>
+#include <QTextEdit>
+#include <QWidget>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -32,6 +37,10 @@ private slots:
     void downloadButtonStartsInlineUpdate_data();
     void downloadButtonStartsInlineUpdate();
     void coreUpdateProgressRefreshesInlineStatus();
+    void coreUpdateDownloadProgressDrivesProgressBar();
+    void coreUpdateCancelRequestsAndDisablesButton();
+    void failedCoreUpdateOffersRetryWithReason();
+    void coreUpdateProgressBarTooltipReportsBytes();
     void successfulCoreUpdateFinishRestoresIdleStatus();
     void installedCoreVersionShowsUpdateAction();
     void sniffingEnabledCheckboxRoundTripsConfig();
@@ -46,6 +55,7 @@ private slots:
     void speedPingTestUrlRoundTripsConfig();
     void skipOutboundCheckRoundTripsConfig();
     void themeComboRoundTripsConfig();
+    void themeComboStoresFollowSystemPreference();
     void tunSettingsRoundTripsConfig();
     void tunToggleControlsDependentFields();
     void tunToggleControlsCoreLegacyProtect();
@@ -71,6 +81,9 @@ private slots:
     void settingsDialogUsesCompactUiFontBaseline();
     void fakeIpToggleControlsGlobalFakeIpCheckbox();
     void dnsPageRoundTripsFields();
+    void dnsPageBootstrapHintFollowsTheAddressesAboveIt();
+    void dnsPageKeepsTheSameRowRhythmAsTheOtherFormPages();
+    void corePageOwnsTheSingleCoreDnsOptions();
     void subscriptionTableUsesServerTableStyle();
     void subscriptionTableUsesDarkThemePalette();
     void serverTableDarkThemePaintsAlternateRowsDark();
@@ -137,6 +150,125 @@ void SettingsDialogTests::coreUpdateProgressRefreshesInlineStatus()
     QVERIFY(!xrayButton->isVisible());
     QCOMPARE(xrayLabel->text(), QStringLiteral("Downloading..."));
     QVERIFY(!xrayStatusLabel->isVisible());
+}
+
+void SettingsDialogTests::coreUpdateDownloadProgressDrivesProgressBar()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.setCoreVersion(CoreType::Xray, QString());
+
+    const int xrayKey = static_cast<int>(CoreType::Xray);
+    auto* xrayLabel = dialog.findChild<QLabel*>(QStringLiteral("coreVersionLabel_%1").arg(xrayKey));
+    auto* xrayBar = dialog.findChild<QProgressBar*>(QStringLiteral("coreDownloadProgress_%1").arg(xrayKey));
+    QVERIFY(xrayLabel != nullptr);
+    QVERIFY(xrayBar != nullptr);
+    QVERIFY(xrayBar->isHidden());
+
+    // While the release is being resolved no byte count exists yet, so the bar runs as a busy
+    // indicator instead of pretending to know a percentage.
+    dialog.beginCoreUpdate(CoreType::Xray);
+    QVERIFY(!xrayBar->isHidden());
+    QCOMPARE(xrayBar->minimum(), 0);
+    QCOMPARE(xrayBar->maximum(), 0);
+    QVERIFY(xrayLabel->isHidden());
+
+    // First bytes with a known content length switch the bar to a real percentage.
+    dialog.setCoreUpdateDownloadProgress(CoreType::Xray, 25, 100);
+    QCOMPARE(xrayBar->minimum(), 0);
+    QCOMPARE(xrayBar->maximum(), 100);
+    QCOMPARE(xrayBar->value(), 25);
+
+    // Progress keeps advancing as more bytes arrive.
+    dialog.setCoreUpdateDownloadProgress(CoreType::Xray, 60, 100);
+    QCOMPARE(xrayBar->value(), 60);
+
+    // An unknown total falls back to the busy indicator rather than a bogus percent.
+    dialog.setCoreUpdateDownloadProgress(CoreType::Xray, 60, 0);
+    QCOMPARE(xrayBar->maximum(), 0);
+
+    // Finishing hides the bar, resets it, and brings the version line back.
+    dialog.finishCoreUpdate(CoreType::Xray, true);
+    QVERIFY(xrayBar->isHidden());
+    QCOMPARE(xrayBar->value(), 0);
+    QCOMPARE(xrayBar->maximum(), 100);
+    QVERIFY(!xrayLabel->isHidden());
+}
+
+void SettingsDialogTests::coreUpdateCancelRequestsAndDisablesButton()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    const int xrayKey = static_cast<int>(CoreType::Xray);
+    auto* cancelButton = dialog.findChild<QPushButton*>(QStringLiteral("coreCancelButton_%1").arg(xrayKey));
+    QVERIFY(cancelButton != nullptr);
+    // The cancel affordance is only meaningful mid-update.
+    QVERIFY(cancelButton->isHidden());
+
+    QSignalSpy cancelSpy(&dialog, SIGNAL(coreUpdateCancelRequested(int)));
+    QVERIFY(cancelSpy.isValid());
+
+    dialog.beginCoreUpdate(CoreType::Xray);
+    QVERIFY(!cancelButton->isHidden());
+    QVERIFY(cancelButton->isEnabled());
+
+    cancelButton->click();
+    QCOMPARE(cancelSpy.count(), 1);
+    QCOMPARE(cancelSpy.at(0).at(0).toInt(), xrayKey);
+
+    // Pressing it again would be a no-op, so the UI stops offering it while the
+    // worker is still winding down.
+    dialog.markCoreUpdateCancelRequested(CoreType::Xray);
+    QVERIFY(!cancelButton->isEnabled());
+
+    dialog.finishCoreUpdate(CoreType::Xray, true);
+    QVERIFY(cancelButton->isHidden());
+}
+
+void SettingsDialogTests::failedCoreUpdateOffersRetryWithReason()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    const int xrayKey = static_cast<int>(CoreType::Xray);
+    auto* xrayButton = dialog.findChild<QPushButton*>(
+        QStringLiteral("coreDownloadButton_%1").arg(xrayKey));
+    QVERIFY(xrayButton != nullptr);
+
+    dialog.beginCoreUpdate(CoreType::Xray);
+    dialog.finishCoreUpdate(CoreType::Xray, false, QStringLiteral("HTTP 404"));
+
+    // The button becomes a retry, and its tooltip carries the reason so the user
+    // does not have to open the log to find out what went wrong.
+    QVERIFY(!xrayButton->isHidden());
+    QVERIFY(xrayButton->isEnabled());
+    QCOMPARE(xrayButton->text(), QStringLiteral("Retry"));
+    QVERIFY(xrayButton->toolTip().contains(QStringLiteral("HTTP 404")));
+
+    // Starting again clears the stale reason.
+    dialog.beginCoreUpdate(CoreType::Xray);
+    QCOMPARE(xrayButton->text(), QStringLiteral("Install"));
+    QVERIFY(xrayButton->toolTip().isEmpty());
+}
+
+void SettingsDialogTests::coreUpdateProgressBarTooltipReportsBytes()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    const int xrayKey = static_cast<int>(CoreType::Xray);
+    auto* xrayBar = dialog.findChild<QProgressBar*>(QStringLiteral("coreDownloadProgress_%1").arg(xrayKey));
+    QVERIFY(xrayBar != nullptr);
+
+    dialog.beginCoreUpdate(CoreType::Xray);
+    dialog.setCoreUpdateDownloadProgress(CoreType::Xray, 512 * 1024, 1024 * 1024);
+
+    // The bar itself only has room for the percentage, so the byte counts live in
+    // the tooltip -- the only place the download size is visible.
+    QVERIFY(xrayBar->toolTip().contains(QStringLiteral("512.0 KB")));
+    QVERIFY(xrayBar->toolTip().contains(QStringLiteral("1.0 MB")));
+    QVERIFY(xrayBar->toolTip().contains(QStringLiteral("50%")));
 }
 
 void SettingsDialogTests::successfulCoreUpdateFinishRestoresIdleStatus()
@@ -421,13 +553,35 @@ void SettingsDialogTests::themeComboRoundTripsConfig()
     auto* themeCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsThemeCombo"));
     QVERIFY(themeCombo != nullptr);
     QCOMPARE(themeCombo->currentData().toString(), AppTheme::darkThemeName());
-    QCOMPARE(themeCombo->findData(AppTheme::lightThemeName()), 0);
-    QCOMPARE(themeCombo->findData(AppTheme::darkThemeName()), 1);
+    // "Follow system" leads the list so it is the visible default, with the two
+    // explicit palettes after it. The stored preference round-trips through data,
+    // not the index, so the order is a presentation choice.
+    QCOMPARE(themeCombo->findData(AppTheme::systemThemeName()), 0);
+    QCOMPARE(themeCombo->findData(AppTheme::lightThemeName()), 1);
+    QCOMPARE(themeCombo->findData(AppTheme::darkThemeName()), 2);
 
     themeCombo->setCurrentIndex(themeCombo->findData(AppTheme::lightThemeName()));
 
     const Config updated = dialog.config();
     QCOMPARE(updated.ui().themeName, AppTheme::lightThemeName());
+}
+
+void SettingsDialogTests::themeComboStoresFollowSystemPreference()
+{
+    SettingsDialog dialog;
+
+    auto* themeCombo = dialog.findChild<QComboBox*>(QStringLiteral("settingsThemeCombo"));
+    QVERIFY(themeCombo != nullptr);
+
+    themeCombo->setCurrentIndex(themeCombo->findData(AppTheme::systemThemeName()));
+    // "System" survives the round-trip: it is a preference, not a palette, so it
+    // must not be folded to Light the way an unrecognised value would be.
+    QCOMPARE(dialog.config().ui().themeName, AppTheme::systemThemeName());
+
+    Config config;
+    config.ui().themeName = AppTheme::systemThemeName();
+    dialog.setConfig(config);
+    QCOMPARE(themeCombo->currentData().toString(), AppTheme::systemThemeName());
 }
 
 void SettingsDialogTests::tunSettingsRoundTripsConfig()
@@ -1309,6 +1463,135 @@ void SettingsDialogTests::dnsPageRoundTripsFields()
     QCOMPARE(updated.dns().dnsHosts, QStringLiteral("full:full.example.com 5.6.7.8"));
 }
 
+// A QFormLayout spends a row's surplus height on the rows it thinks are resizable, and the
+// hosts editor used to be capped at 120px. That made every gap on this page 35-37px while
+// General and TUN read 24-26px, and the leftover space never reached the bottom. The box now
+// expands instead, so the rhythm matches and the hosts text gets the room. This measures the
+// row pitch on both pages, because a comment cannot catch the next person who adds a
+// maximumHeight back.
+void SettingsDialogTests::dnsPageKeepsTheSameRowRhythmAsTheOtherFormPages()
+{
+    SettingsDialog dialog;
+    dialog.selectTab(5);
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    auto* hostsEdit = dialog.findChild<QTextEdit*>(QStringLiteral("settingsDnsHostsEdit"));
+    QVERIFY(hostsEdit != nullptr);
+    QVERIFY(hostsEdit->maximumHeight() == QWIDGETSIZE_MAX);
+    QCOMPARE(hostsEdit->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
+
+    // The filler carries the leftover once the hosts box has grown, so it must stay
+    // zero-height and expanding or the slack comes back as row gaps.
+    auto* filler = hostsEdit->parentWidget()->findChild<QWidget*>(QStringLiteral("settingsBottomFiller"));
+    QVERIFY(filler != nullptr);
+    QCOMPARE(filler->height(), 0);
+    QCOMPARE(filler->sizePolicy().verticalPolicy(), QSizePolicy::Expanding);
+
+    QWidget* dnsPage = hostsEdit->parentWidget();
+    auto* remoteDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsRemoteDnsEdit"));
+    auto* directDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsDirectDnsEdit"));
+    QVERIFY(remoteDnsEdit != nullptr);
+    QVERIFY(directDnsEdit != nullptr);
+    const int dnsPitch = directDnsEdit->mapTo(dnsPage, QPoint(0, 0)).y()
+                       - remoteDnsEdit->mapTo(dnsPage, QPoint(0, 0)).y();
+
+    SettingsDialog generalDialog;
+    generalDialog.selectTab(0);
+    generalDialog.setConfig(Config());
+    generalDialog.show();
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    auto* generalPortSpin = generalDialog.findChild<QSpinBox*>(QStringLiteral("settingsLocalPortSpin"));
+    auto* generalLanguageCombo = generalDialog.findChild<QComboBox*>(QStringLiteral("settingsLanguageCombo"));
+    QVERIFY(generalPortSpin != nullptr);
+    QVERIFY(generalLanguageCombo != nullptr);
+    QWidget* generalPage = generalPortSpin->parentWidget();
+    const int generalPitch = generalLanguageCombo->mapTo(generalPage, QPoint(0, 0)).y()
+                           - generalPortSpin->mapTo(generalPage, QPoint(0, 0)).y();
+
+    qWarning("row rhythm: dns=%d general=%d", dnsPitch, generalPitch);
+    // Before the fix the DNS page measured 35-37 here and this comparison was off by 9-11px.
+    QVERIFY2(std::abs(dnsPitch - generalPitch) <= 1,
+             qPrintable(QStringLiteral("DNS row pitch %1 does not match General %2")
+                            .arg(dnsPitch)
+                            .arg(generalPitch)));
+
+    // The hosts editor must reach the bottom rather than leave a dead void behind it.
+    const int hostsBottom = hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height();
+    QVERIFY2(dnsPage->height() - hostsBottom <= 16,
+             qPrintable(QStringLiteral("DNS page leaves %1px of unused space below the hosts editor")
+                            .arg(dnsPage->height() - hostsBottom)));
+}
+
+
+// The DNS page used to show every option to every user, including six that only one core
+// reads: the sing-box ones (Proxy Server DNS / Block binding query / Global FakeIP) and the
+// Xray ones (Serve stale / Parallel query / Direct Expected IPs). They now sit on the Core
+// page under the core that honours them, next to the sing-box and Xray options that were
+// already there. This pins that split so a future edit cannot quietly move them back.
+void SettingsDialogTests::corePageOwnsTheSingleCoreDnsOptions()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+
+    auto* coreTabs = dialog.findChild<QTabWidget*>(QStringLiteral("coreDetailTabs"));
+    QVERIFY(coreTabs != nullptr);
+
+    // Each core's options live on the tab page that also carries that core's Install button.
+    const auto pageForCore = [coreTabs](CoreType core) -> QWidget* {
+        auto* button = coreTabs->findChild<QPushButton*>(
+            QStringLiteral("coreDownloadButton_%1").arg(static_cast<int>(core)));
+        if (button == nullptr) {
+            return nullptr;
+        }
+        for (int index = 0; index < coreTabs->count(); ++index) {
+            if (coreTabs->widget(index)->isAncestorOf(button)) {
+                return coreTabs->widget(index);
+            }
+        }
+        return nullptr;
+    };
+
+    QWidget* singBoxPage = pageForCore(CoreType::SingBox);
+    QWidget* xrayPage = pageForCore(CoreType::Xray);
+    QVERIFY(singBoxPage != nullptr);
+    QVERIFY(xrayPage != nullptr);
+
+    const auto onPage = [](QWidget* page, QWidget* widget) {
+        return page != nullptr && widget != nullptr && page->isAncestorOf(widget);
+    };
+
+    auto* proxyServerDns = dialog.findChild<QLineEdit*>(QStringLiteral("settingsProxyServerDnsEdit"));
+    auto* blockBinding = dialog.findChild<QCheckBox*>(QStringLiteral("settingsBlockBindingQueryCheck"));
+    auto* globalFakeIp = dialog.findChild<QCheckBox*>(QStringLiteral("dnsGlobalFakeIpCheck"));
+    auto* serveStale = dialog.findChild<QCheckBox*>(QStringLiteral("settingsServeStaleCheck"));
+    auto* parallelQuery = dialog.findChild<QCheckBox*>(QStringLiteral("settingsParallelQueryCheck"));
+    auto* expectedIps = dialog.findChild<QLineEdit*>(QStringLiteral("settingsDirectExpectedIpsEdit"));
+    QVERIFY(proxyServerDns != nullptr);
+    QVERIFY(blockBinding != nullptr);
+    QVERIFY(globalFakeIp != nullptr);
+    QVERIFY(serveStale != nullptr);
+    QVERIFY(parallelQuery != nullptr);
+    QVERIFY(expectedIps != nullptr);
+
+    // The sing-box rows live under the sing-box page, the Xray rows under the Xray page.
+    QVERIFY(onPage(singBoxPage, proxyServerDns));
+    QVERIFY(onPage(singBoxPage, blockBinding));
+    QVERIFY(onPage(singBoxPage, globalFakeIp));
+    QVERIFY(onPage(xrayPage, serveStale));
+    QVERIFY(onPage(xrayPage, parallelQuery));
+    QVERIFY(onPage(xrayPage, expectedIps));
+
+    // FakeIP stayed shared -- two cores read it -- so its checkbox is still the DNS page's.
+    auto* fakeIp = dialog.findChild<QCheckBox*>(QStringLiteral("dnsFakeIpCheck"));
+    QVERIFY(fakeIp != nullptr);
+    QVERIFY(!onPage(singBoxPage, fakeIp));
+    QVERIFY(!onPage(xrayPage, fakeIp));
+}
+
 void SettingsDialogTests::subscriptionTableUsesServerTableStyle()
 {
     AppTheme::applyApplicationTheme(*qApp, AppTheme::lightThemeName());
@@ -1561,6 +1844,51 @@ void SettingsDialogTests::settingsDialogHasMinimumWidth720()
 {
     SettingsDialog dialog;
     QCOMPARE(dialog.minimumWidth(), 720);
+}
+
+// The three DNS address fields are not three interchangeable servers, and Bootstrap DNS only
+// has a job when one of the two above it is addressed by hostname. The page now says so in the
+// placeholder instead of leaving the user to work out why an apparently identical trio exists:
+// with IP addresses it reads "not needed", and it asks for a value as soon as a hostname shows
+// up. Default Direct DNS is a hostname, so the shipped state legitimately still asks for one.
+void SettingsDialogTests::dnsPageBootstrapHintFollowsTheAddressesAboveIt()
+{
+    SettingsDialog dialog;
+    dialog.selectTab(5);
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* remoteDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsRemoteDnsEdit"));
+    auto* directDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsDirectDnsEdit"));
+    auto* bootstrapDnsEdit = dialog.findChild<QLineEdit*>(QStringLiteral("settingsBootstrapDnsEdit"));
+    QVERIFY(remoteDnsEdit != nullptr);
+    QVERIFY(directDnsEdit != nullptr);
+    QVERIFY(bootstrapDnsEdit != nullptr);
+
+    // Both two servers are addressed by IP, so Bootstrap has nothing to do.
+    remoteDnsEdit->setText(QStringLiteral("https://1.1.1.1/dns-query"));
+    directDnsEdit->setText(QStringLiteral("https://223.5.5.5/dns-query"));
+    QVERIFY(bootstrapDnsEdit->placeholderText().startsWith(QStringLiteral("Not needed")));
+
+    // A hostname in either field brings the need back.
+    remoteDnsEdit->setText(QStringLiteral("https://dns.example.com/dns-query"));
+    QVERIFY(!bootstrapDnsEdit->placeholderText().startsWith(QStringLiteral("Not needed")));
+    remoteDnsEdit->setText(QStringLiteral("https://1.1.1.1/dns-query"));
+    QVERIFY(bootstrapDnsEdit->placeholderText().startsWith(QStringLiteral("Not needed")));
+
+    directDnsEdit->setText(QStringLiteral("https://doh.pub/dns-query"));
+    QVERIFY(!bootstrapDnsEdit->placeholderText().startsWith(QStringLiteral("Not needed")));
+    directDnsEdit->setText(QStringLiteral("223.5.5.5"));
+    QVERIFY(bootstrapDnsEdit->placeholderText().startsWith(QStringLiteral("Not needed")));
+
+    // The role of each field has to be discoverable without reading the source.
+    QVERIFY(!remoteDnsEdit->toolTip().isEmpty());
+    QVERIFY(!directDnsEdit->toolTip().isEmpty());
+    QVERIFY(!bootstrapDnsEdit->toolTip().isEmpty());
+    QVERIFY(remoteDnsEdit->toolTip() != directDnsEdit->toolTip());
+    QVERIFY(remoteDnsEdit->toolTip() != bootstrapDnsEdit->toolTip());
+    QVERIFY(directDnsEdit->toolTip() != bootstrapDnsEdit->toolTip());
 }
 
 QTEST_MAIN(SettingsDialogTests)

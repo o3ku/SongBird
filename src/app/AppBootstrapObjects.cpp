@@ -17,6 +17,7 @@
 // know which one the build selected.
 #include "platform/IAutoRunService.h"
 #include "platform/ISystemProxyService.h"
+#include "platform/IThemePreferenceService.h"
 #include "appcore/IUserFeedback.h"
 #include "appcore/OutboundLivenessProbeService.h"
 #include "appcore/OutboundLocationProbeService.h"

@@ -307,9 +307,9 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     QVERIFY(repository.lastLoadError().isEmpty());
     QVERIFY(!config.routeOnly);
     QCOMPARE(config.localPort, 10808);
-    QCOMPARE(config.dns().directDns, QStringLiteral("https://dns.alidns.com/dns-query"));
-    QCOMPARE(config.dns().remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
-    QCOMPARE(config.dns().bootstrapDns, QStringLiteral("223.5.5.5"));
+    QCOMPARE(config.dns().directDns, QStringLiteral("https://223.5.5.5/dns-query"));
+    QCOMPARE(config.dns().remoteDns, QStringLiteral("https://1.1.1.1/dns-query"));
+    QCOMPARE(config.dns().bootstrapDns, QStringLiteral("https://223.5.5.5/dns-query"));
     // The same triple again, but reached through the member initialisers instead of through the
     // loader. They are separate code paths -- for a missing file the loader leaves these fields
     // alone and the defaults below are what the session actually runs on -- and the gate log line
@@ -317,9 +317,9 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     //
     // Only spellings the app actually uses are asserted here.
     const Config defaultInit;
-    QCOMPARE(defaultInit.dns().directDns, QStringLiteral("https://dns.alidns.com/dns-query"));
-    QCOMPARE(defaultInit.dns().remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
-    QCOMPARE(defaultInit.dns().bootstrapDns, QStringLiteral("223.5.5.5"));
+    QCOMPARE(defaultInit.dns().directDns, QStringLiteral("https://223.5.5.5/dns-query"));
+    QCOMPARE(defaultInit.dns().remoteDns, QStringLiteral("https://1.1.1.1/dns-query"));
+    QCOMPARE(defaultInit.dns().bootstrapDns, QStringLiteral("https://223.5.5.5/dns-query"));
     QVERIFY(defaultInit.dns().defaultAllowInsecure);
     // `Config()` is the spelling the app's fallback paths use, so it has to carry the same default.
     QVERIFY(Config().dns().defaultAllowInsecure);
@@ -329,12 +329,12 @@ void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
     // value and bootstrapDns took remoteDns's -- so these five lines are what stops
     // `DnsConfigState() = default;` in Config.h from being deleted as redundant.
     const Config bracedConfig{};
-    QCOMPARE(bracedConfig.dns().directDns, QStringLiteral("https://dns.alidns.com/dns-query"));
-    QCOMPARE(bracedConfig.dns().remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
-    QCOMPARE(bracedConfig.dns().bootstrapDns, QStringLiteral("223.5.5.5"));
+    QCOMPARE(bracedConfig.dns().directDns, QStringLiteral("https://223.5.5.5/dns-query"));
+    QCOMPARE(bracedConfig.dns().remoteDns, QStringLiteral("https://1.1.1.1/dns-query"));
+    QCOMPARE(bracedConfig.dns().bootstrapDns, QStringLiteral("https://223.5.5.5/dns-query"));
     const DnsConfigState bracedDns{};
-    QCOMPARE(bracedDns.remoteDns, QStringLiteral("https://cloudflare-dns.com/dns-query"));
-    QCOMPARE(bracedDns.bootstrapDns, QStringLiteral("223.5.5.5"));
+    QCOMPARE(bracedDns.remoteDns, QStringLiteral("https://1.1.1.1/dns-query"));
+    QCOMPARE(bracedDns.bootstrapDns, QStringLiteral("https://223.5.5.5/dns-query"));
     QVERIFY(config.dns().enableCacheFile4Sbox);
     // On by default: a node whose certificate does not verify must not read as a dead node to a
     // user who has no reason to look here. The key is only written when it is turned off.

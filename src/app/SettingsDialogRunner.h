@@ -32,12 +32,15 @@ public:
     using TrackThreadFn = std::function<void(QThread*)>;
     using DetectCoreVersionFn = std::function<QString(CoreType)>;
     using HandleCoreDownloadFn = std::function<void(CoreType, QPointer<SettingsDialog>)>;
+    // Asks the in-flight core update for the dialog to stop.
+    using CancelCoreDownloadFn = std::function<void()>;
 
     SettingsDialogRunner(
         QWidget* parent,
         TrackThreadFn trackThread,
         DetectCoreVersionFn detectCoreVersion,
-        HandleCoreDownloadFn handleCoreDownload);
+        HandleCoreDownloadFn handleCoreDownload,
+        CancelCoreDownloadFn cancelCoreDownload = {});
 
     Result exec(
         const Config& config,
@@ -50,4 +53,5 @@ private:
     TrackThreadFn trackThread_;
     DetectCoreVersionFn detectCoreVersion_;
     HandleCoreDownloadFn handleCoreDownload_;
+    CancelCoreDownloadFn cancelCoreDownload_;
 };

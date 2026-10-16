@@ -45,6 +45,7 @@ class TunModeCoordinator;
 class TunRuntimeService;
 class IAutoRunService;
 class ISystemProxyService;
+class IThemePreferenceService;
 
 struct AppBootstrapObjects {
     ~AppBootstrapObjects();
@@ -116,4 +117,7 @@ struct AppBootstrapObjects {
     std::unique_ptr<SubscriptionWorkflowCoordinator> subscriptionWorkflowCoordinator;
     std::unique_ptr<TunModeCoordinator> tunModeCoordinator;
     std::unique_ptr<TrayController> trayController;
+    // The OS light/dark preference, read when the stored theme is "System".
+    // Declared last: nothing borrows it.
+    std::unique_ptr<IThemePreferenceService> themePreferenceService;
 };

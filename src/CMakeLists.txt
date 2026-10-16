@@ -266,6 +266,8 @@ set(SONGBIRD_SHARED_SOURCES
     ui/theme/AppThemeStyle.cpp
     ui/theme/ServerTableTheme.h
     ui/theme/ServerTableTheme.cpp
+    platform/IThemePreferenceService.h
+    platform/NullThemePreferenceService.h
     resources/app_icons.qrc
     resources/themes.qrc
 )
@@ -277,6 +279,8 @@ if(WIN32)
     list(APPEND SONGBIRD_SHARED_SOURCES
         platform/windows/WindowsSystemProxyService.h
         platform/windows/WindowsSystemProxyService.cpp
+        platform/windows/WindowsThemePreferenceService.h
+        platform/windows/WindowsThemePreferenceService.cpp
     )
 elseif(APPLE)
     list(APPEND SONGBIRD_SHARED_SOURCES
@@ -390,6 +394,8 @@ set(SONGBIRD_SOURCES
     ui/dialogs/CustomServerDialog.cpp
     ui/dialogs/AboutDialog.h
     ui/dialogs/AboutDialog.cpp
+    ui/dialogs/ShortcutsCheatSheetDialog.h
+    ui/dialogs/ShortcutsCheatSheetDialog.cpp
     ui/dialogs/DnsSettingsPageWidget.h
     ui/dialogs/DnsSettingsPageWidget.cpp
     ui/dialogs/GeneralSettingsPageWidget.h
@@ -433,6 +439,8 @@ set(SONGBIRD_SOURCES
     ui/mainwindow/SubscriptionViewController.cpp
     ui/mainwindow/ServerWorkspaceWidget.h
     ui/mainwindow/ServerWorkspaceWidget.cpp
+    ui/mainwindow/ServerTableEmptyStateWidget.h
+    ui/mainwindow/ServerTableEmptyStateWidget.cpp
     ui/mainwindow/MainWindowShortcutController.h
     ui/mainwindow/MainWindowShortcutController.cpp
     ui/mainwindow/MainWindowTitleSupport.h
@@ -469,6 +477,7 @@ set(SONGBIRD_SOURCES
     ui/models/ServerFilterProxyModel.cpp
     ui/models/ServerTableModel.h
     ui/models/ServerTableModel.cpp
+    ui/models/ServerTableResultStyle.h
     ui/qr/QrCodeRenderer.h
     ui/qr/QrCodeRenderer.cpp
     resources/toolbar_icons.qrc

@@ -156,6 +156,13 @@ private:
     void openSettingsDialog(int initialTab = 0);
     void applySettingsDialogResult(const Config& updatedConfig);
     void openAboutDialog();
+    void openShortcutsCheatSheet();
+    // Applies config_.ui().themeName to the application, resolving a "System"
+    // preference through the platform service first.
+    void applyConfiguredTheme();
+    // Subscribes to the OS light/dark broadcast so a "System" theme follows a
+    // change made while the app is running. No-op where there is no broadcast.
+    void setupSystemThemeWatcher();
     void openUwpLoopbackDialog();
     void openExternalUrl(const QString& url);
     bool askRestartAsAdministratorForTun() const;
