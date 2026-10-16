@@ -46,6 +46,26 @@ function Resolve-RepoPath {
     return (Join-Path $repositoryRoot $Path)
 }
 
+# Hashed with line endings normalised to LF. The .ts is a text file that git stores with
+# whatever endings the contributor had, and core.autocrlf converts on the way back out, so the
+# same committed content arrives as LF on one checkout and CRLF on another -- the recorded hash
+# was pinned to whichever a local -Update happened to run with, and the other spelling failed the
+# check in CI for no change to the file at all. Normalising makes the hash a property of the
+# content, which is what it is meant to prove.
+function Get-ContentSha256 {
+    param([string]$Path)
+
+    $text = [System.IO.File]::ReadAllText($Path)
+    $normalized = $text.Replace("`r`n", "`n")
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+    $stream = [System.IO.MemoryStream]::New($bytes)
+    try {
+        return (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash.ToLowerInvariant()
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Get-Sha256 {
     param([string]$Path)
 
@@ -121,7 +141,7 @@ if ($Update) {
         Stop-CheckWithError "lrelease failed with exit code $LASTEXITCODE while writing $CompiledFile"
     }
 
-    Set-Content -LiteralPath $manifestPath -Value (Get-Sha256 $translationPath) -Encoding ascii
+    Set-Content -LiteralPath $manifestPath -Value (Get-ContentSha256 $translationPath) -Encoding ascii
     Write-Host "Updated $CompiledFile from $TranslationFile and refreshed $manifestPath."
     exit 0
 }
@@ -133,7 +153,7 @@ if (-not (Test-Path -LiteralPath $compiledPath -PathType Leaf)) {
         "Run this script with -Update (needs lrelease) to produce it.")
 }
 
-$currentHash = Get-Sha256 $translationPath
+$currentHash = Get-ContentSha256 $translationPath
 $recordedHash = $null
 if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
     $recordedHash = (Get-Content -LiteralPath $manifestPath -Raw).Trim().ToLowerInvariant()
