@@ -28,6 +28,7 @@ struct MainWindowToolbarActions {
     QAction* setDefaultServerWithTunAction = nullptr;
     QAction* settingsAction = nullptr;
     QAction* aboutAction = nullptr;
+    QAction* shortcutsAction = nullptr;
     QAction* checkAppUpdateAction = nullptr;
     QAction* uwpLoopbackAction = nullptr;
     QAction* proxyToggleAction = nullptr;

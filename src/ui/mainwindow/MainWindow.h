@@ -124,6 +124,7 @@ signals:
     void tunEnabledChanged(bool enabled);
     void settingsRequested();
     void aboutRequested();
+    void shortcutsRequested();
     void checkAppUpdateRequested();
     void downloadAppUpdateRequested();
     void uwpLoopbackRequested();
@@ -234,6 +235,7 @@ private:
     QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
     QAction* settingsAction_ = nullptr;
     QAction* aboutAction_ = nullptr;
+    QAction* shortcutsAction_ = nullptr;
     QAction* checkAppUpdateAction_ = nullptr;
     QAction* uwpLoopbackAction_ = nullptr;
     QAction* proxyToggleAction_ = nullptr;

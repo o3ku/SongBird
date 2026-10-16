@@ -18,6 +18,7 @@ public:
         QAction* testAction = nullptr;
         QAction* updateSubscriptionsAction = nullptr;
         QAction* updateCurrentSubscriptionAction = nullptr;
+        QAction* shortcutsAction = nullptr;
     };
 
     struct Callbacks {
@@ -34,6 +35,7 @@ private:
     void setupUpdateShortcuts();
     void setupExitShortcut();
     void setupSubscriptionTabShortcuts();
+    void setupShortcutsCheatSheetShortcut();
 
     Context context_;
     Callbacks callbacks_;

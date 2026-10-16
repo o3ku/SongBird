@@ -26,6 +26,17 @@ public:
         IsCurrentServerRole = Qt::UserRole + 1
     };
 
+    // Column layout of the server table. Public so callers (including tests) can
+    // name a column instead of hard-coding its index when the order changes.
+    enum Column {
+        DefaultColumn = 0,
+        TypeColumn,
+        RemarksColumn,
+        AddressColumn,
+        TestResultColumn,
+        ColumnCount
+    };
+
     explicit ServerTableModel(QObject* parent = nullptr);
 
     void setItems(const QList<VmessItem>& items, QString currentIndexId = {});
@@ -44,15 +55,6 @@ public:
     Qt::DropActions supportedDropActions() const override;
 
 private:
-    enum Column {
-        DefaultColumn = 0,
-        TypeColumn,
-        RemarksColumn,
-        AddressColumn,
-        TestResultColumn,
-        ColumnCount
-    };
-
     QHash<QString, int> rowByIndexId_;
     QList<ServerTableRow> items_;
     QString currentIndexId_;

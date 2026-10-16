@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "common/ServerDisplayName.h"
+#include "ui/models/ServerTableResultStyle.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
@@ -79,7 +80,7 @@ bool ServerTableModel::updateTestResult(const QString& indexId, const QString& r
 
     item.testResult = trimmedResult;
     const QModelIndex changedIndex = index(row, TestResultColumn);
-    emit dataChanged(changedIndex, changedIndex, {Qt::DisplayRole});
+    emit dataChanged(changedIndex, changedIndex, {Qt::DisplayRole, Qt::ForegroundRole});
     return true;
 }
 
@@ -184,6 +185,23 @@ QVariant ServerTableModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::ForegroundRole && isDefault) {
         return QBrush(QColor(AppTheme::successColor()));
+    }
+
+    // The result column carries a colour band so latency reads at a glance. The
+    // current-server row already colours every cell, so it is left alone.
+    if (role == Qt::ForegroundRole && index.column() == TestResultColumn && !isDefault) {
+        switch (ServerTableResultStyle::classify(item->testResult)) {
+        case ServerTableResultStyle::Severity::Fast:
+            return QBrush(QColor(AppTheme::successColor()));
+        case ServerTableResultStyle::Severity::Medium:
+            return QBrush(QColor(AppTheme::warningColor()));
+        case ServerTableResultStyle::Severity::Slow:
+        case ServerTableResultStyle::Severity::Failure:
+            return QBrush(QColor(AppTheme::errorColor()));
+        case ServerTableResultStyle::Severity::None:
+        default:
+            return {};
+        }
     }
 
     if (role == IsCurrentServerRole) {

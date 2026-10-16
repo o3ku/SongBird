@@ -19,6 +19,7 @@
 
 #include "common/TextElision.h"
 #include "ui/mainwindow/LogPanelWidget.h"
+#include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/SharePanelWidget.h"
 #include "ui/models/ServerFilterProxyModel.h"
@@ -245,7 +246,45 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     subscriptionTabBarContainer_ = subscriptionTabBarContainer;
     subscriptionTabBarLayout_ = subscriptionTabBarLayout;
     serverPanelLayout_->addWidget(serverHeaderRow_);
+
+    // The table and the empty-state panel share the layout and only one is ever
+    // visible: Qt lays out hidden widgets as zero-sized, so showing the overlay
+    // genuinely replaces the table instead of stacking under it. Siblings rather
+    // than a QStackedLayout because setCompactMode() reparents the table into
+    // compactSectionsWidget_, which a stack would fight.
+    //
+    // Both must be mounted here: the desktop path is the initial one, and
+    // setCompactMode(false) never runs moveServerViewToDesktop() because the
+    // compact flag already matches, so nothing else would put the table in a
+    // layout on a wide window.
     serverPanelLayout_->addWidget(serverView_, 1);
+    emptyState_ = new ServerTableEmptyStateWidget(serverPanel_);
+    emptyState_->hide();
+    serverPanelLayout_->addWidget(emptyState_, 1);
+
+    connect(serverFilterModel, &QAbstractItemModel::rowsInserted, this, [this]() {
+        syncEmptyStateVisibility();
+    });
+    connect(serverFilterModel, &QAbstractItemModel::rowsRemoved, this, [this]() {
+        syncEmptyStateVisibility();
+    });
+    connect(serverFilterModel, &QAbstractItemModel::modelReset, this, [this]() {
+        syncEmptyStateVisibility();
+    });
+    connect(serverFilterModel, &QAbstractItemModel::layoutChanged, this, [this]() {
+        syncEmptyStateVisibility();
+    });
+    // No dataChanged connection: a row-count change always arrives as one of the
+    // signals above (the filter is re-applied through rowsInserted/rowsRemoved/
+    // layoutChanged), and a cell edit cannot change how many rows are visible.
+    // The text box is watched separately: typing while the table is already empty
+    // changes which message the panel should show but emits no model signal at all.
+    if (serverFilterEdit_ != nullptr) {
+        connect(serverFilterEdit_, &QLineEdit::textChanged, this, [this]() {
+            syncEmptyStateVisibility();
+        });
+    }
+    syncEmptyStateVisibility();
 
     compactPanel_ = new QWidget(this);
     compactPanel_->setObjectName(QStringLiteral("compactServerPanel"));
@@ -327,6 +366,34 @@ QSplitter* ServerWorkspaceWidget::topSplitter() const
 QSplitter* ServerWorkspaceWidget::rootSplitter() const
 {
     return rootSplitter_;
+}
+
+ServerTableEmptyStateWidget* ServerWorkspaceWidget::emptyState() const
+{
+    return emptyState_;
+}
+
+void ServerWorkspaceWidget::syncEmptyStateVisibility()
+{
+    if (serverView_ == nullptr || emptyState_ == nullptr) {
+        return;
+    }
+
+    const QAbstractItemModel* model = serverView_->model();
+    const bool hasRows = model != nullptr && model->rowCount() > 0;
+    // The panel's "no match" wording is only right when the user's own text filter is
+    // what emptied the table. Read it from the box rather than from the proxy: the
+    // subscription-tab filter also empties the table, and when both are active the
+    // visible row set does not change, so the proxy emits no signal to react to.
+    const bool textFilterActive = serverFilterEdit_ != nullptr
+        && !serverFilterEdit_->text().trimmed().isEmpty();
+
+    emptyState_->setFilterActive(!hasRows && textFilterActive);
+    // Exactly one of the two is visible. The table is hidden while the empty
+    // state shows, so the panel reads as a single placeholder instead of a blank
+    // grid above a block of text.
+    serverView_->setVisible(hasRows);
+    emptyState_->setVisible(!hasRows);
 }
 
 void ServerWorkspaceWidget::setCompactMode(bool compact)
@@ -412,7 +479,9 @@ void ServerWorkspaceWidget::rebuildCompactSections()
 
     while (compactSectionsLayout_->count() > 0) {
         QLayoutItem* item = compactSectionsLayout_->takeAt(0);
-        if (item->widget() != nullptr && item->widget() != serverView_) {
+        // serverView_ and emptyState_ are borrowed for the section body, not
+        // owned by the layout, so they survive the rebuild.
+        if (item->widget() != nullptr && item->widget() != serverView_ && item->widget() != emptyState_) {
             item->widget()->hide();
             item->widget()->deleteLater();
         }
@@ -452,6 +521,11 @@ void ServerWorkspaceWidget::rebuildCompactSections()
 
         if (tabKey == currentTabKey && serverView_ != nullptr) {
             compactSectionsLayout_->addWidget(serverView_, 1);
+            if (emptyState_ != nullptr) {
+                // Same section body as the table; only one of the two is ever
+                // visible, and syncEmptyStateVisibility() decides which.
+                compactSectionsLayout_->addWidget(emptyState_, 1);
+            }
         }
         if (index + 1 < subscriptionTabBar_->count()) {
             compactSectionsLayout_->addSpacing(CompactSectionSpacing);
@@ -491,7 +565,12 @@ void ServerWorkspaceWidget::moveServerViewToDesktop()
     serverView_->setProperty("compactServerTable", false);
     AppTheme::refreshStyle(serverView_);
     serverPanelLayout_->addWidget(serverView_, 1);
-    serverView_->show();
+    if (emptyState_ != nullptr) {
+        // Re-inserted after the table so the two keep their declaration order in
+        // the layout; the empty state is only ever the visible one.
+        serverPanelLayout_->addWidget(emptyState_, 1);
+    }
+    syncEmptyStateVisibility();
 }
 
 void ServerWorkspaceWidget::moveServerViewToCompact()
@@ -503,5 +582,12 @@ void ServerWorkspaceWidget::moveServerViewToCompact()
     serverView_->setParent(compactSectionsWidget_);
     serverView_->setProperty("compactServerTable", true);
     AppTheme::refreshStyle(serverView_);
-    serverView_->show();
+    if (emptyState_ != nullptr) {
+        // The empty state follows the table into the compact sections, otherwise
+        // the hidden serverPanel_ would take it off screen with it. It is added
+        // to the section layout by rebuildCompactSections(), which runs before
+        // this on every path that enters compact mode.
+        emptyState_->setParent(compactSectionsWidget_);
+    }
+    syncEmptyStateVisibility();
 }

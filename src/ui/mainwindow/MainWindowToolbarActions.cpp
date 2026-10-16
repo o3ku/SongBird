@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QCoreApplication>
+#include <QKeySequence>
 
 #include "domain/models/VmessItem.h"
 #include "runtime/ProtocolCoreCompat.h"
@@ -81,6 +82,16 @@ MainWindowToolbarActions createMainWindowToolbarActions(QObject* owner, bool qrP
     setToolbarIcon(actions, actions.settingsAction, QStringLiteral("option.svg"));
 
     actions.aboutAction = createAction(owner, trMainWindow("About"), QStringLiteral("aboutAction"));
+    actions.shortcutsAction = createAction(
+        owner,
+        trMainWindow("Keyboard Shortcuts"),
+        QStringLiteral("shortcutsAction"));
+    // "?" arrives as Qt::Key_Question *with* ShiftModifier on Windows (Shift+/),
+    // so the plain key code alone would never match. Both encodings are bound:
+    // the shifted question mark, and the same chord spelled as Shift+/.
+    actions.shortcutsAction->setShortcuts({
+        QKeySequence(Qt::SHIFT | Qt::Key_Question),
+        QKeySequence(Qt::SHIFT | Qt::Key_Slash)});
     actions.checkAppUpdateAction = createAction(
         owner,
         trMainWindow("Check for Updates"),

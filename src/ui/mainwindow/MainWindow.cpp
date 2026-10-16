@@ -59,6 +59,7 @@
 #include "ui/mainwindow/RoutingModeController.h"
 #include "ui/mainwindow/SharePanelWidget.h"
 #include "ui/mainwindow/ServerWorkspaceWidget.h"
+#include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/MainWindowConfigState.h"
 #include "ui/mainwindow/MainWindowShortcutController.h"
 #include "ui/mainwindow/MainWindowTitleSupport.h"
@@ -739,6 +740,7 @@ void MainWindow::createToolbarActions()
     setDefaultServerWithTunAction_ = actions.setDefaultServerWithTunAction;
     settingsAction_ = actions.settingsAction;
     aboutAction_ = actions.aboutAction;
+    shortcutsAction_ = actions.shortcutsAction;
     checkAppUpdateAction_ = actions.checkAppUpdateAction;
     uwpLoopbackAction_ = actions.uwpLoopbackAction;
     proxyToggleAction_ = actions.proxyToggleAction;
@@ -762,6 +764,7 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
     helpMenu = new QMenu(tr("Help"), toolBar);
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
     helpMenu->addAction(aboutAction_);
+    helpMenu->addAction(shortcutsAction_);
     helpMenu->addAction(checkAppUpdateAction_);
     helpMenu->addSeparator();
     // The loopback exemption is a Windows-only concept, and there is no IUwpLoopbackService
@@ -919,6 +922,19 @@ void MainWindow::setupServerWorkspace()
     qrPreviewVisible_ = windowLayoutStateController_->qrPreviewVisible();
     if (mainContentLayout_ != nullptr) {
         mainContentLayout_->addWidget(serverWorkspace_, 1);
+    }
+
+    // The empty-state buttons drive the same actions the toolbar does, so the
+    // signals (not the actions) are what they emit.
+    if (ServerTableEmptyStateWidget* emptyState = serverWorkspace_->emptyState()) {
+        connect(emptyState, &ServerTableEmptyStateWidget::importRequested, this, [this]() {
+            emit openSettingsAtSubscriptionsTabRequested();
+        });
+        connect(emptyState, &ServerTableEmptyStateWidget::addRequested, this, &MainWindow::addServerRequested);
+        connect(emptyState,
+                &ServerTableEmptyStateWidget::importFromClipboardRequested,
+                this,
+                &MainWindow::importFromClipboardRequested);
     }
 }
 
@@ -1099,6 +1115,7 @@ void MainWindow::setupSettingsActionConnections()
 void MainWindow::setupHelpActionConnections()
 {
     connect(aboutAction_, &QAction::triggered, this, &MainWindow::aboutRequested);
+    connect(shortcutsAction_, &QAction::triggered, this, &MainWindow::shortcutsRequested);
     connect(checkAppUpdateAction_, &QAction::triggered, this, &MainWindow::checkAppUpdateRequested);
     connect(uwpLoopbackAction_, &QAction::triggered, this, &MainWindow::uwpLoopbackRequested);
 }
@@ -1211,7 +1228,8 @@ void MainWindow::setupShortcutController()
             subscriptionTabBar_,
             testAction_,
             updateSubscriptionsAction_,
-            updateCurrentSubscriptionShortcutAction_},
+            updateCurrentSubscriptionShortcutAction_,
+            shortcutsAction_},
         {
             [this]() { triggerCurrentSubscriptionUpdate(); },
             [this]() { requestExit(); }},

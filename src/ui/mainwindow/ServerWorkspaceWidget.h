@@ -16,6 +16,7 @@ class ServerFilterProxyModel;
 class ServerTableView;
 class SharePanelWidget;
 class LogPanelWidget;
+class ServerTableEmptyStateWidget;
 
 class ServerWorkspaceWidget final : public QWidget {
     Q_OBJECT
@@ -35,6 +36,10 @@ public:
     QSplitter* topSplitter() const;
     QSplitter* rootSplitter() const;
 
+    // The overlay shown in place of the table when the visible server list is
+    // empty. Exposed so the empty-state actions can be wired to the window.
+    ServerTableEmptyStateWidget* emptyState() const;
+
     void setCompactMode(bool compact);
     bool compactMode() const;
     void syncCompactSections();
@@ -47,8 +52,12 @@ private:
     void moveServerFilterToCompact();
     void moveServerViewToDesktop();
     void moveServerViewToCompact();
+    // Shows the empty-state overlay when the proxy model has no visible rows,
+    // hides it otherwise.
+    void syncEmptyStateVisibility();
 
     ServerTableView* serverView_ = nullptr;
+    ServerTableEmptyStateWidget* emptyState_ = nullptr;
     QSplitter* topSplitter_ = nullptr;
     QSplitter* rootSplitter_ = nullptr;
     QTabBar* subscriptionTabBar_ = nullptr;

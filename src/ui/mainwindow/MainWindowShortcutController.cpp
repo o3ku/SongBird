@@ -24,6 +24,7 @@ void MainWindowShortcutController::setup()
     setupUpdateShortcuts();
     setupExitShortcut();
     setupSubscriptionTabShortcuts();
+    setupShortcutsCheatSheetShortcut();
 }
 
 void MainWindowShortcutController::setupFilterShortcut()
@@ -111,4 +112,16 @@ void MainWindowShortcutController::setupSubscriptionTabShortcuts()
         });
         context_.owner->addAction(switchTabShortcutAction);
     }
+}
+
+void MainWindowShortcutController::setupShortcutsCheatSheetShortcut()
+{
+    if (context_.owner == nullptr || context_.shortcutsAction == nullptr) {
+        return;
+    }
+
+    // The action already carries Key_Question from MainWindowToolbarActions; it is added here
+    // rather than there so it lands on the same window scope as the other shortcuts.
+    context_.shortcutsAction->setShortcutContext(Qt::WindowShortcut);
+    context_.owner->addAction(context_.shortcutsAction);
 }
