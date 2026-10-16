@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(SongBird VERSION 2.5.0 LANGUAGES CXX)
+project(SongBird VERSION 2.6.0 LANGUAGES CXX)
 
 # The version the application reports. project(VERSION) takes digits only -- a prerelease
 # suffix there is a configure error, not a warning -- so a beta label rides alongside it
