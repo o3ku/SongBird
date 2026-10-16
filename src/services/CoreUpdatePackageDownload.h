@@ -20,6 +20,7 @@ PackageDownloadResult downloadPackage(
     const CoreUpdateReleaseMetadata::GitHubReleaseAsset& asset,
     const CoreUpdateService::DownloadHandler& downloadHandler,
     const CoreUpdateService::CancelCheckHandler& cancelCheck,
-    const CoreUpdateService::ProgressHandler& progressHandler);
+    const CoreUpdateService::ProgressHandler& progressHandler,
+    const CoreUpdateService::DownloadProgressHandler& downloadProgress = {});
 
 } // namespace CoreUpdatePackageDownload

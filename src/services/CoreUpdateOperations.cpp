@@ -137,7 +137,8 @@ OperationResult downloadBytesWithNetwork(
     const QString& userAgent,
     int timeoutMs,
     const CoreUpdateService::CancelCheckHandler& cancelCheck,
-    const CoreUpdateService::ProgressHandler& progressHandler)
+    const CoreUpdateService::ProgressHandler& progressHandler,
+    const CoreUpdateService::DownloadProgressHandler& downloadProgress)
 {
     if (content == nullptr) {
         return OperationResult::fail(
@@ -165,8 +166,18 @@ OperationResult downloadBytesWithNetwork(
     QNetworkReply* reply = manager.get(request);
     auto lastReportedPercent = std::make_shared<int>(-1);
     auto lastReportedBytes = std::make_shared<qint64>(0);
-    QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [progressHandler, lastReportedPercent, lastReportedBytes](qint64 bytesReceived, qint64 bytesTotal) {
-        if (!progressHandler || bytesReceived < 0) {
+    QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [progressHandler, downloadProgress, lastReportedPercent, lastReportedBytes](qint64 bytesReceived, qint64 bytesTotal) {
+        if (bytesReceived < 0) {
+            return;
+        }
+
+        // Byte-level progress goes out on every signal so a progress bar can track the download
+        // exactly; the text report below stays throttled because it becomes a log line.
+        if (downloadProgress) {
+            downloadProgress(bytesReceived, bytesTotal);
+        }
+
+        if (!progressHandler) {
             return;
         }
 

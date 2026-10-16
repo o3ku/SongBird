@@ -32,7 +32,8 @@ CoreUpdatePackageDownload::PackageDownloadResult CoreUpdatePackageDownload::down
     const CoreUpdateReleaseMetadata::GitHubReleaseAsset& asset,
     const CoreUpdateService::DownloadHandler& downloadHandler,
     const CoreUpdateService::CancelCheckHandler& cancelCheck,
-    const CoreUpdateService::ProgressHandler& progressHandler)
+    const CoreUpdateService::ProgressHandler& progressHandler,
+    const CoreUpdateService::DownloadProgressHandler& downloadProgress)
 {
     namespace UpdateOps = CoreUpdateOperations;
 
@@ -66,7 +67,8 @@ CoreUpdatePackageDownload::PackageDownloadResult CoreUpdatePackageDownload::down
                 fallbackUserAgent(),
                 kCoreDownloadTimeoutMs,
                 cancelCheck,
-                progressHandler);
+                progressHandler,
+                downloadProgress);
         if (UpdateOps::isCancelledResult(downloadResult)) {
             return failedDownload(downloadResult);
         }

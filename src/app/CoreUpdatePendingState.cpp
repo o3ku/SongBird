@@ -14,6 +14,7 @@ void CoreUpdatePendingState::store(
     QPointer<QObject> progressContext,
     QPointer<QWidget> dialogParent,
     std::function<void(const QString&)> progressObserver,
+    CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
     std::function<void(const OperationResult&)> completionObserver,
     BackgroundTaskCoordinator::Token taskToken)
 {
@@ -23,6 +24,7 @@ void CoreUpdatePendingState::store(
     snapshot_.progressContext = progressContext;
     snapshot_.dialogParent = dialogParent;
     snapshot_.progressObserver = std::move(progressObserver);
+    snapshot_.downloadProgressObserver = std::move(downloadProgressObserver);
     snapshot_.completionObserver = std::move(completionObserver);
     snapshot_.taskToken = taskToken;
 }

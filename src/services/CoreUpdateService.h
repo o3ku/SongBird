@@ -23,6 +23,11 @@ public:
     using BeforeInstallHandler = std::function<OperationResult()>;
     using ProgressHandler = std::function<void(const QString& message)>;
     using CancelCheckHandler = std::function<bool()>;
+    // Raw byte-level download progress for progress bars, fed from QNetworkReply::downloadProgress.
+    // Deliberately bytes rather than a formatted percent: the caller decides how to render it (a
+    // bar with an unknown content length stays indeterminate), and no message text is localized
+    // here. Empty when the consumer only wants progress text.
+    using DownloadProgressHandler = std::function<void(qint64 bytesReceived, qint64 bytesTotal)>;
     using VersionCommandHandler =
         std::function<OperationResult(const QString& program, const QStringList& arguments, QString* output)>;
 
@@ -30,6 +35,7 @@ public:
         ConfirmDownloadHandler confirmDownload;
         BeforeInstallHandler beforeInstall;
         ProgressHandler progressHandler;
+        DownloadProgressHandler downloadProgress;
         CancelCheckHandler cancelCheck;
         bool skipLocalVersionCheck = false;
     };

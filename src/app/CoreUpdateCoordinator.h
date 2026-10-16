@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -28,6 +29,9 @@ public:
         bool skipConfirmation = false;
         bool skipLocalVersionCheck = false;
         std::function<void(const QString&)> progressObserver;
+        // Raw byte-level download progress for an inline progress bar. Marshalled to the UI thread
+        // exactly like progressObserver before it is invoked.
+        CoreUpdateService::DownloadProgressHandler downloadProgressObserver;
         std::function<void(const OperationResult&)> completionObserver;
     };
 
@@ -71,6 +75,12 @@ public:
     void updateCore(const Request& request);
     void continuePendingCoreUpdate();
 
+    // Asks the in-flight update to stop. The worker polls this through
+    // CoreUpdateService's cancelCheck, so the request is honoured at the next
+    // cancellation point (network read, helper process, install step) rather than
+    // killing the thread outright. Safe to call when nothing is running.
+    void requestCancel();
+
     bool hasPendingCoreUpdate() const;
 
 private:
@@ -82,6 +92,8 @@ private:
         QPointer<QObject> progressContextGuard,
         bool skipLocalVersionCheck,
         std::function<void(const QString&)> progressObserver,
+        CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
+        std::shared_ptr<std::atomic_bool> cancelFlag,
         std::function<void(const OperationResult&)> completionObserver);
     void finalizeCoreUpdate(
         BackgroundTaskCoordinator::Token token,
@@ -103,6 +115,7 @@ private:
         QPointer<QObject> progressContextGuard,
         QPointer<QWidget> dialogParentGuard,
         std::function<void(const QString&)> progressObserver,
+        CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
         std::function<void(const OperationResult&)> completionObserver);
 
     QObject* fallbackUiContext() const;
@@ -113,4 +126,8 @@ private:
 
     Dependencies deps_;
     CoreUpdatePendingState pendingCoreUpdate_;
+    // Set by requestCancel() and read by the worker's cancelCheck. A shared_ptr so the
+    // worker keeps it alive after the coordinator's own reset, and so a stale flag from a
+    // finished run cannot cancel the next one.
+    std::shared_ptr<std::atomic_bool> cancelRequested_;
 };

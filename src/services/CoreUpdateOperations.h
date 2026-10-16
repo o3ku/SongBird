@@ -22,7 +22,8 @@ OperationResult downloadBytesWithNetwork(
     const QString& userAgent,
     int timeoutMs,
     const CoreUpdateService::CancelCheckHandler& cancelCheck,
-    const CoreUpdateService::ProgressHandler& progressHandler = {});
+    const CoreUpdateService::ProgressHandler& progressHandler = {},
+    const CoreUpdateService::DownloadProgressHandler& downloadProgress = {});
 
 OperationResult runVersionCommandWithProcess(
     const QString& program,

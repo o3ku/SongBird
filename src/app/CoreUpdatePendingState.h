@@ -8,6 +8,7 @@
 #include "appcore/BackgroundTaskCoordinator.h"
 #include "common/OperationResult.h"
 #include "domain/models/VmessItem.h"
+#include "services/CoreUpdateService.h"
 
 class QObject;
 class QWidget;
@@ -21,6 +22,7 @@ public:
         QPointer<QObject> progressContext;
         QPointer<QWidget> dialogParent;
         std::function<void(const QString&)> progressObserver;
+        CoreUpdateService::DownloadProgressHandler downloadProgressObserver;
         std::function<void(const OperationResult&)> completionObserver;
         BackgroundTaskCoordinator::Token taskToken;
     };
@@ -33,6 +35,7 @@ public:
         QPointer<QObject> progressContext,
         QPointer<QWidget> dialogParent,
         std::function<void(const QString&)> progressObserver,
+        CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
         std::function<void(const OperationResult&)> completionObserver,
         BackgroundTaskCoordinator::Token taskToken);
     Snapshot take();

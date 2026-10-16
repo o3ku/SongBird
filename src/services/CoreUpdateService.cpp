@@ -194,7 +194,8 @@ OperationResult CoreUpdateService::update(
             *asset,
             downloadHandler_,
             cancelCheck,
-            progressHandler);
+            progressHandler,
+            options.downloadProgress);
     if (downloadResult.hasError) {
         return downloadResult.error;
     }

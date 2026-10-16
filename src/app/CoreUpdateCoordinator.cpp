@@ -115,6 +115,7 @@ void CoreUpdateCoordinator::updateCore(const Request& request)
             progressContextGuard,
             dialogParentGuard,
             request.progressObserver,
+            request.downloadProgressObserver,
             request.completionObserver,
             token);
         if (deps_.stopForCoreUpdate) {
@@ -135,6 +136,7 @@ void CoreUpdateCoordinator::updateCore(const Request& request)
         progressContextGuard,
         dialogParentGuard,
         request.progressObserver,
+        request.downloadProgressObserver,
         request.completionObserver);
 }
 
@@ -169,12 +171,20 @@ void CoreUpdateCoordinator::continuePendingCoreUpdate()
         pending.progressContext,
         pending.dialogParent,
         std::move(pending.progressObserver),
+        std::move(pending.downloadProgressObserver),
         std::move(pending.completionObserver));
 }
 
 bool CoreUpdateCoordinator::hasPendingCoreUpdate() const
 {
     return pendingCoreUpdate_.isValid();
+}
+
+void CoreUpdateCoordinator::requestCancel()
+{
+    if (cancelRequested_ != nullptr) {
+        cancelRequested_->store(true);
+    }
 }
 
 void CoreUpdateCoordinator::runCoreUpdateTask(
@@ -185,6 +195,8 @@ void CoreUpdateCoordinator::runCoreUpdateTask(
     QPointer<QObject> progressContextGuard,
     bool skipLocalVersionCheck,
     std::function<void(const QString&)> progressObserver,
+    CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
+    std::shared_ptr<std::atomic_bool> cancelFlag,
     std::function<void(const OperationResult&)> completionObserver)
 {
     const std::weak_ptr<char> lifetimeGuard = weakLifetimeGuard();
@@ -209,7 +221,32 @@ void CoreUpdateCoordinator::runCoreUpdateTask(
 
     CoreUpdateService::UpdateOptions updateOptions;
     updateOptions.progressHandler = reportProgress;
-    updateOptions.cancelCheck = [this]() {
+    // Byte-level progress drives an inline progress bar. It shares the reportProgress marshalling
+    // rules (UI thread, live token, live lifetime guard) but is deliberately not appended to the
+    // log: one line per network event would drown the real milestones.
+    updateOptions.downloadProgress =
+        [this, progressContextGuard, downloadProgressObserver, token, lifetimeGuard](
+            qint64 bytesReceived, qint64 bytesTotal) {
+            if (!downloadProgressObserver || bytesReceived < 0) {
+                return;
+            }
+
+            QObject* uiTarget = progressContextGuard.isNull() ? fallbackUiContext() : progressContextGuard.data();
+            invokeOnUiThread(uiTarget, [this, downloadProgressObserver, bytesReceived, bytesTotal, token, lifetimeGuard]() {
+                if (lifetimeGuard.expired() || !isCurrent(token) || fallbackUiContext() == nullptr) {
+                    return;
+                }
+                downloadProgressObserver(bytesReceived, bytesTotal);
+            });
+        };
+    updateOptions.cancelCheck = [this, cancelFlag]() {
+        // A user cancel is checked first: it is the one signal the coordinator owns
+        // directly, and it must be honoured even if the thread was never asked to
+        // interrupt (which is the normal case for a button press).
+        if (cancelFlag != nullptr && cancelFlag->load()) {
+            return true;
+        }
+
         QThread* currentThread = QThread::currentThread();
         return isShuttingDown()
             || (currentThread != nullptr && currentThread->isInterruptionRequested());
@@ -324,6 +361,7 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
     QPointer<QObject> progressContextGuard,
     QPointer<QWidget> dialogParentGuard,
     std::function<void(const QString&)> progressObserver,
+    CoreUpdateService::DownloadProgressHandler downloadProgressObserver,
     std::function<void(const OperationResult&)> completionObserver)
 {
     const QString startupMessage = QCoreApplication::translate("AppBootstrap", "Starting %1 update...")
@@ -331,6 +369,12 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
     appendLog(deps_.appendLog, startupMessage);
 
     const std::weak_ptr<char> lifetimeGuard = weakLifetimeGuard();
+
+    // A new flag per run: a cancel that arrived for a previous attempt must not
+    // abort this one, and the worker outlives the coordinator's member reset.
+    const auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+    cancelRequested_ = cancelFlag;
+
     auto task = [this,
                  coreType,
                  workerConfig,
@@ -342,7 +386,9 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
                  progressContextGuard,
                  dialogParentGuard,
                  progressObserver = std::move(progressObserver),
+                 downloadProgressObserver = std::move(downloadProgressObserver),
                  completionObserver = std::move(completionObserver),
+                 cancelFlag,
                  token,
                  lifetimeGuard]() {
         if (lifetimeGuard.expired()) {
@@ -356,6 +402,8 @@ void CoreUpdateCoordinator::startCoreUpdateWorker(
             progressContextGuard,
             skipLocalVersionCheck,
             progressObserver,
+            downloadProgressObserver,
+            cancelFlag,
             [this, title, stoppedForInstall, startAfterSuccess, dialogParentGuard, completionObserver, token, lifetimeGuard](const OperationResult& result) {
                 if (lifetimeGuard.expired() || !isCurrent(token)) {
                     return;
