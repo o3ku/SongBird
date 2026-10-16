@@ -13,6 +13,8 @@
 #include "runtime/TunAdapterNames.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
+#include "persistence/JsonConfigServerSerialization.h"
+#include "subscription/SubscriptionContentParser.h"
 
 class ClientConfigWriterTests : public QObject {
     Q_OBJECT
@@ -24,6 +26,10 @@ private slots:
     void generateClientConfigsBuildsSingBoxHttpOutbound();
     void generateClientConfigsDefaultsHttpAutoCoreToSingBox();
     void generateClientConfigsBuildsMihomoVmessProxy();
+    void generateSingBoxConfigKeepsImportedTrojanTls();
+    void generateMihomoConfigKeepsImportedTrojanTls();
+    void generateSingBoxConfigKeepsSavedTrojanTls();
+    void generateMihomoConfigKeepsSavedTrojanTls();
     void generateClientConfigsUsesWarnSingBoxLogLevelByDefault();
     void generateClientConfigsMapsConfiguredSingBoxWarningLogLevel();
     void generateClientConfigsWritesTheSingBoxLogFileOnlyWhenLoggingIsEnabled();
@@ -128,6 +134,9 @@ private slots:
     void generateClientConfigsDoesNotEmitSingBoxNetworkForAnyTls();
     void generateClientConfigsWritesSingBoxAnyTlsIdleSessionSettings();
     void generateClientConfigsWritesSingBoxVlessPacketEncoding();
+
+private:
+    void verifyImplicitTrojanTlsConfig(CoreType coreType, bool savedServer);
 };
 
 namespace {
@@ -460,6 +469,64 @@ void ClientConfigWriterTests::generateClientConfigsBuildsMihomoVmessProxy()
     QCOMPARE(
         wsOptions.value(QStringLiteral("headers")).toObject().value(QStringLiteral("Host")).toString(),
         QStringLiteral("cdn.example.com"));
+}
+
+void ClientConfigWriterTests::generateSingBoxConfigKeepsImportedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::SingBox, false);
+}
+
+void ClientConfigWriterTests::generateMihomoConfigKeepsImportedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::Mihomo, false);
+}
+
+void ClientConfigWriterTests::generateSingBoxConfigKeepsSavedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::SingBox, true);
+}
+
+void ClientConfigWriterTests::generateMihomoConfigKeepsSavedTrojanTls()
+{
+    verifyImplicitTrojanTlsConfig(CoreType::Mihomo, true);
+}
+
+void ClientConfigWriterTests::verifyImplicitTrojanTlsConfig(CoreType coreType, bool savedServer)
+{
+    QList<VmessItem> servers;
+    if (savedServer) {
+        servers = JsonConfigServerSerialization::readServers(QJsonArray{QJsonObject{
+            {QStringLiteral("configType"), static_cast<int>(ConfigType::Trojan)},
+            {QStringLiteral("address"), QStringLiteral("example.com")},
+            {QStringLiteral("port"), 443},
+            {QStringLiteral("id"), QStringLiteral("password")},
+            {QStringLiteral("sni"), QStringLiteral("tls.example.com")},
+            {QStringLiteral("allowInsecure"), QStringLiteral("true")}}});
+    } else {
+        const QByteArray content = QByteArrayLiteral(
+            "trojan://password@example.com:443?sni=tls.example.com&allowInsecure=true");
+        servers = SubscriptionContentParser::parseMany(QString::fromUtf8(content.toBase64()));
+    }
+    QCOMPARE(servers.size(), 1);
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    setProtocolCore(config, ConfigType::Trojan, coreType);
+
+    ClientConfigWriter writer;
+    const auto generated = writer.generateClientConfigs(config, servers.constFirst());
+    if (coreType == CoreType::SingBox) {
+        const QJsonObject outbound = findObjectByTag(
+            generated.primary.root.value(QStringLiteral("outbounds")).toArray(), QStringLiteral("proxy"));
+        const QJsonObject tls = outbound.value(QStringLiteral("tls")).toObject();
+        QVERIFY(tls.value(QStringLiteral("enabled")).toBool());
+        QCOMPARE(tls.value(QStringLiteral("server_name")).toString(), QStringLiteral("tls.example.com"));
+        QVERIFY(tls.value(QStringLiteral("insecure")).toBool());
+    } else {
+        const QJsonObject proxy = generated.primary.root.value(QStringLiteral("proxies")).toArray().at(0).toObject();
+        QVERIFY(proxy.value(QStringLiteral("tls")).toBool());
+        QCOMPARE(proxy.value(QStringLiteral("sni")).toString(), QStringLiteral("tls.example.com"));
+        QVERIFY(proxy.value(QStringLiteral("skip-cert-verify")).toBool());
+    }
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesWarnSingBoxLogLevelByDefault()

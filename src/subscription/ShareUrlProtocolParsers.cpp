@@ -227,6 +227,10 @@ VmessItem parseTrojan(const QString& shareUrl, bool* ok)
     item.id = decodedUserName(url);
 
     resolveStandardTransport(QUrlQuery(url), item);
+    // Trojan 分享链接省略 security 时仍使用 TLS；保留显式指定的传输安全设置。
+    if (item.streamSecurity.trimmed().isEmpty()) {
+        item.streamSecurity = QStringLiteral("tls");
+    }
 
     if (ok != nullptr) {
         *ok = !item.address.isEmpty() && isValidTcpPort(item.port) && !item.id.isEmpty();

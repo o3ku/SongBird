@@ -276,6 +276,12 @@ private slots:
     void loadMissingFileBuildsDefaultSongBirdConfig();
     void loadReadsCanonicalSongBirdStructure();
     void loadTreatsMissingServerConfigTypeAsVmess();
+    void loadTrojanUsesTlsWhenSecurityIsMissing();
+    void loadTrojanUsesTlsWhenSecurityIsEmpty();
+    void loadTrojanKeepsExplicitNoneSecurity();
+    void loadTrojanKeepsExplicitRealitySecurity();
+    void loadVmessKeepsMissingSecurityEmpty();
+    void loadVlessKeepsMissingSecurityEmpty();
     void loadAndSavePreservesMihomoServerCoreType();
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
@@ -284,6 +290,10 @@ private slots:
     void saveReplacesExistingRootInsteadOfMerging();
     void saveReportsPrimaryConfigWriteFailure();
     void saveReportsStateWriteFailure();
+
+private:
+    void verifyServerSecurityRoundTrip(
+        ConfigType configType, const QString& storedSecurity, const QString& expectedSecurity);
 };
 
 void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
@@ -467,6 +477,67 @@ void JsonConfigRepositoryTests::loadTreatsMissingServerConfigTypeAsVmess()
 
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers.constFirst().configType, ConfigType::VMess);
+}
+
+void JsonConfigRepositoryTests::loadTrojanUsesTlsWhenSecurityIsMissing()
+{
+    verifyServerSecurityRoundTrip(ConfigType::Trojan, QString(), QStringLiteral("tls"));
+}
+
+void JsonConfigRepositoryTests::loadTrojanUsesTlsWhenSecurityIsEmpty()
+{
+    verifyServerSecurityRoundTrip(ConfigType::Trojan, QStringLiteral(""), QStringLiteral("tls"));
+}
+
+void JsonConfigRepositoryTests::loadTrojanKeepsExplicitNoneSecurity()
+{
+    verifyServerSecurityRoundTrip(ConfigType::Trojan, QStringLiteral("none"), QStringLiteral("none"));
+}
+
+void JsonConfigRepositoryTests::loadTrojanKeepsExplicitRealitySecurity()
+{
+    verifyServerSecurityRoundTrip(ConfigType::Trojan, QStringLiteral("reality"), QStringLiteral("reality"));
+}
+
+void JsonConfigRepositoryTests::loadVmessKeepsMissingSecurityEmpty()
+{
+    verifyServerSecurityRoundTrip(ConfigType::VMess, QString(), QString());
+}
+
+void JsonConfigRepositoryTests::loadVlessKeepsMissingSecurityEmpty()
+{
+    verifyServerSecurityRoundTrip(ConfigType::VLESS, QString(), QString());
+}
+
+void JsonConfigRepositoryTests::verifyServerSecurityRoundTrip(
+    ConfigType configType, const QString& storedSecurity, const QString& expectedSecurity)
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QJsonObject server{
+        {QStringLiteral("indexId"), QStringLiteral("server")},
+        {QStringLiteral("configType"), static_cast<int>(configType)},
+        {QStringLiteral("address"), QStringLiteral("example.com")},
+        {QStringLiteral("port"), 443},
+        {QStringLiteral("id"), QStringLiteral("password")},
+        {QStringLiteral("sni"), QStringLiteral("tls.example.com")},
+        {QStringLiteral("allowInsecure"), QStringLiteral("true")}};
+    if (!storedSecurity.isNull()) {
+        server.insert(QStringLiteral("streamSecurity"), storedSecurity);
+    }
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeJsonFile(configPath, QJsonObject{{QStringLiteral("servers"), QJsonArray{server}}}));
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+    QCOMPARE(config.collection().servers.size(), 1);
+    const VmessItem loaded = config.collection().servers.constFirst();
+    QCOMPARE(loaded.streamSecurity, expectedSecurity);
+    QCOMPARE(loaded.sni, QStringLiteral("tls.example.com"));
+    QCOMPARE(loaded.allowInsecure, QStringLiteral("true"));
+    QVERIFY(repository.save(config));
+    QCOMPARE(repository.load().collection().servers.constFirst().streamSecurity, expectedSecurity);
 }
 
 void JsonConfigRepositoryTests::loadAndSavePreservesMihomoServerCoreType()

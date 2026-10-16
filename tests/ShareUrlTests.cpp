@@ -29,9 +29,16 @@ private slots:
     void parseVlessRealityVisionShareUrlKeepsPacketEncoding();
     void parseAnytlsShareUrlKeepsIdleSessionSettings();
     void parseTrojanShareUrlKeepsAllowInsecure();
+    void parseTrojanShareUrlUsesTlsWhenSecurityIsMissing();
+    void parseTrojanShareUrlUsesTlsWhenSecurityIsEmpty();
+    void parseTrojanShareUrlKeepsExplicitNoneSecurity();
+    void parseTrojanShareUrlKeepsExplicitRealitySecurity();
     void parseSocks5ShareUrlWithoutCredentials();
     void parseSocksUrlWithEmptyBase64Credentials();
     void parseLegacyVmessShareUrlKeepsVmessType();
+
+private:
+    void verifyTrojanShareUrlSecurity(const QString& query, const QString& expectedSecurity);
 };
 
 void ShareUrlTests::buildAndParseHttpupgradeTransportRoundTrips()
@@ -429,6 +436,42 @@ void ShareUrlTests::parseTrojanShareUrlKeepsAllowInsecure()
     QCOMPARE(parsed.id, QUrl::fromPercentEncoding(QByteArrayLiteral("%E5%8D%87%E7%BA%A7%E8%AE%A2%E9%98%85")));
     QCOMPARE(parsed.streamSecurity, QStringLiteral("tls"));
     QCOMPARE(parsed.sni, QStringLiteral("www.cloudflare.com"));
+    QCOMPARE(parsed.allowInsecure, QStringLiteral("true"));
+}
+
+void ShareUrlTests::parseTrojanShareUrlUsesTlsWhenSecurityIsMissing()
+{
+    verifyTrojanShareUrlSecurity(
+        QStringLiteral("sni=tls.example.com&allowInsecure=true"), QStringLiteral("tls"));
+}
+
+void ShareUrlTests::parseTrojanShareUrlUsesTlsWhenSecurityIsEmpty()
+{
+    verifyTrojanShareUrlSecurity(
+        QStringLiteral("security=&sni=tls.example.com&allowInsecure=true"), QStringLiteral("tls"));
+}
+
+void ShareUrlTests::parseTrojanShareUrlKeepsExplicitNoneSecurity()
+{
+    verifyTrojanShareUrlSecurity(
+        QStringLiteral("security=none&sni=tls.example.com&allowInsecure=true"), QStringLiteral("none"));
+}
+
+void ShareUrlTests::parseTrojanShareUrlKeepsExplicitRealitySecurity()
+{
+    verifyTrojanShareUrlSecurity(
+        QStringLiteral("security=reality&sni=tls.example.com&allowInsecure=true"), QStringLiteral("reality"));
+}
+
+void ShareUrlTests::verifyTrojanShareUrlSecurity(const QString& query, const QString& expectedSecurity)
+{
+    bool ok = false;
+    const VmessItem parsed = ShareUrlParser::parse(
+        QStringLiteral("trojan://password@example.com:443?") + query, &ok);
+
+    QVERIFY(ok);
+    QCOMPARE(parsed.streamSecurity, expectedSecurity);
+    QCOMPARE(parsed.sni, QStringLiteral("tls.example.com"));
     QCOMPARE(parsed.allowInsecure, QStringLiteral("true"));
 }
 

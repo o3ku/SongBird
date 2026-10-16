@@ -118,6 +118,10 @@ QList<VmessItem> readServers(const QJsonArray& array)
         item.requestHost = object.value(QStringLiteral("requestHost")).toString();
         item.path = object.value(QStringLiteral("path")).toString();
         item.streamSecurity = object.value(QStringLiteral("streamSecurity")).toString();
+        // 兼容旧版导入 Trojan 分享链接时遗漏的默认 TLS，已有节点无需重新订阅。
+        if (item.configType == ConfigType::Trojan && item.streamSecurity.trimmed().isEmpty()) {
+            item.streamSecurity = QStringLiteral("tls");
+        }
         item.allowInsecure = object.value(QStringLiteral("allowInsecure")).toString();
         item.testResult = object.value(QStringLiteral("testResult")).toString();
         item.flow = object.value(QStringLiteral("flow")).toString();
