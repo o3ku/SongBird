@@ -4,6 +4,8 @@
 
 SongBird manages V2Ray-style proxy servers — VMess, VLESS, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, SOCKS and HTTP — from a single small desktop application. It imports subscription links, turns the Windows or macOS system proxy on and off, runs server and speed tests, and drives three interchangeable cores: **Xray**, **sing-box** and **Mihomo**.
 
+It is native rather than embedded, so it starts quickly and stays out of the way in the tray. Everything lives in one JSON config file, so backing up or moving to another machine is a file copy. The interface is available in English and Simplified Chinese, in light and dark themes.
+
 ## Download
 
 Download the build for your platform from the [latest release](https://github.com/o3ku/SongBird/releases/latest). All three are portable — no installer, no runtime, no registry entry.
@@ -18,15 +20,6 @@ Download the build for your platform from the [latest release](https://github.co
 - The macOS DMG is **universal**, so one file runs on both Apple silicon and Intel Macs.
 - Both packages are built by CI from the tagged commit. Neither sends telemetry: the only outbound traffic is the proxy itself, plus subscription, core and geodata downloads and a manual update check.
 
-## Why SongBird
-
-- **Native and small.** A Qt/C++ application — no Electron, no .NET, no WebView2, no bundled browser engine. It starts quickly and stays out of the way in the tray.
-- **Three cores behind one interface.** Xray, sing-box and Mihomo are interchangeable, and SongBird picks a sensible default per protocol. Switching a server to another core does not change how the app works.
-- **Portable configuration.** Everything lives in one JSON config file, so backing up or moving to another machine is a file copy. There is also a built-in backup and restore.
-- **Two front-ends from one codebase.** **SongBird** is the manual client; **SongBirdAuto** selects a working node by itself and keeps it running.
-- **English and Simplified Chinese** user interface.
-- **Light and dark themes.**
-
 ## Features
 
 **Servers and subscriptions**
@@ -40,10 +33,9 @@ Download the build for your platform from the [latest release](https://github.co
 
 - Start and stop the core with a single toggle, with live logs in the main window.
 - On first launch, when no core is found anywhere, SongBird offers to download one.
-- Toggle the **Windows** or **macOS** system proxy, and grant UWP loopback exemptions on Windows.
-- **TUN mode** on Windows.
+- Toggle the **Windows** or **macOS** system proxy, start at login, run from the tray, and start hidden.
+- **TUN mode** and UWP loopback exemptions on Windows.
 - Configure routing rules and DNS behaviour: separate remote, direct and bootstrap DNS servers (including DNS-over-HTTPS endpoints), domain strategy for direct and proxied traffic, a hosts table, and expected direct IPs.
-- Run from the tray, start hidden, start at login, and stay in the background.
 - Single-instance handling, and an elevation prompt where a feature needs it.
 
 **Housekeeping**
@@ -52,9 +44,14 @@ Download the build for your platform from the [latest release](https://github.co
 - Check for application updates.
 - Back up and restore the configuration.
 
+**Two front-ends from one codebase**
+
+- **SongBird** — the manual client, and the one shipped in releases.
+- **SongBirdAuto** — selects a working node by itself (first-available or lowest-latency) and keeps it running. Built from the same sources, but not shipped as a release asset yet.
+
 ## Core Engines and Protocols
 
-SongBird ships three interchangeable core engines — **Xray**, **sing-box** and **Mihomo** — and resolves a default core per protocol. Not every protocol runs on every core:
+Three cores are interchangeable, and SongBird picks a default per protocol. Not every protocol runs on every core:
 
 | Protocol | Xray | sing-box | Mihomo |
 |---|:---:|:---:|:---:|
@@ -68,21 +65,9 @@ SongBird ships three interchangeable core engines — **Xray**, **sing-box** and
 - When more than one core can run a protocol, sing-box is preferred, then Mihomo, then Xray.
 - The generated sing-box config loads on **sing-box 1.13.x and 1.14.x** alike. sing-box 1.14 removed the `strategy` DNS rule action option and introduced `preferred_by` in its place, so the generator emits neither: the per-rule strategies collapse into the global `dns.strategy`, and the hosts table is reached through a plain exact-domain rule list. `independent_cache` is dropped too, since 1.14 deprecates it and 1.16 removes it.
 
-## Supported Platforms
+## macOS
 
-| Capability | Windows | macOS |
-|---|:---:|:---:|
-| System proxy | ✓ | ✓ |
-| Start at login | ✓ | ✓ |
-| TUN mode | ✓ | — |
-| UWP loopback exemption | ✓ | not applicable |
-
-**A note on macOS.** macOS support is new. CI builds the bundle, signs it, starts the application and runs the test suite on macOS, so a broken build or a failure to launch cannot ship — but CI cannot confirm that the system proxy or the login item really took effect on a particular Mac. If something misbehaves there, please open an issue with the version from the About dialog.
-
-## Applications
-
-- **SongBird** — the main client, and the one shipped in releases.
-- **SongBirdAuto** — a second front-end that selects a working node automatically (first-available or lowest-latency strategy) and keeps it running. It is built from the same sources but is not shipped as a release asset yet.
+macOS support is new. CI builds the bundle, signs it, starts the application and runs the test suite on macOS, so a broken build or a failure to launch cannot ship — but CI cannot confirm that the system proxy or the login item really took effect on a particular Mac. If something misbehaves there, please open an issue with the version from the About dialog.
 
 ## Building From Source
 
