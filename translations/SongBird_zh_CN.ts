@@ -1984,6 +1984,30 @@ The running core will be stopped before installation if needed.</source>
 <context>
     <name>MainWindow</name>
     <message>
+        <source>Export as Share Links</source>
+        <translation>导出为分享链接</translation>
+    </message>
+    <message>
+        <source>Export as Clash YAML</source>
+        <translation>导出为 Clash YAML</translation>
+    </message>
+    <message>
+        <source>The selected servers cannot be exported; they have no shareable form.</source>
+        <translation>所选的服务器无法导出，它们没有可分享的形式。</translation>
+    </message>
+    <message>
+        <source>Failed to open the export file for writing.</source>
+        <translation>无法打开导出文件进行写入。</translation>
+    </message>
+    <message>
+        <source>Failed to write the export file.</source>
+        <translation>写入导出文件失败。</translation>
+    </message>
+    <message>
+        <source>Exported %1 server(s) to %2.</source>
+        <translation>已将 %1 个服务器导出到 %2。</translation>
+    </message>
+    <message>
         <source>Location unknown</source>
         <translation>位置未知</translation>
     </message>
@@ -2439,6 +2463,14 @@ The running core will be stopped before installation if needed.</source>
         <translation>核心启动失败后，关闭系统代理失败。</translation>
     </message>
     <message>
+        <source>System proxy restored because core startup failed.</source>
+        <translation>由于核心启动失败，已还原系统代理。</translation>
+    </message>
+    <message>
+        <source>Failed to restore the system proxy after core startup failed.</source>
+        <translation>核心启动失败后，还原系统代理失败。</translation>
+    </message>
+    <message>
         <source>Core data directory is empty.</source>
         <translation>核心数据目录为空。</translation>
     </message>
@@ -2521,6 +2553,14 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Failed to disable system proxy after the core stopped.</source>
         <translation>核心停止后，关闭系统代理失败。</translation>
+    </message>
+    <message>
+        <source>System proxy restored because the core stopped.</source>
+        <translation>由于核心已停止，已还原系统代理。</translation>
+    </message>
+    <message>
+        <source>Failed to restore the system proxy after the core stopped.</source>
+        <translation>核心停止后，还原系统代理失败。</translation>
     </message>
     <message>
         <source>Core did not open the local proxy port %1 within %2 seconds.</source>
@@ -3429,6 +3469,14 @@ Switch this protocol to %3?</source>
     <message>
         <source>Subscription downloaded.</source>
         <translation>订阅已下载。</translation>
+    </message>
+    <message>
+        <source>Subscription not modified.</source>
+        <translation>订阅未变更。</translation>
+    </message>
+    <message>
+        <source>%1 is up to date (not modified).</source>
+        <translation>%1 已是最新（服务器确认未变更）。</translation>
     </message>
     <message>
         <source>Subscription response is empty.</source>

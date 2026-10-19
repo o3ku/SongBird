@@ -135,7 +135,6 @@ void SpeedTestCoordinator::startSpeedTest(const QStringList& indexIds)
         auto it = std::find_if(config.collection().servers.begin(), config.collection().servers.end(),
             [&item](const VmessItem& server) { return server.indexId == item.indexId; });
         if (it != config.collection().servers.end()) {
-            it->testResult = pending;
             pendingIds.append(it->indexId);
         }
     }

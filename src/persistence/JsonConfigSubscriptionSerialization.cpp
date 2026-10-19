@@ -23,6 +23,9 @@ QList<SubItem> readSubscriptions(const QJsonArray& array)
         item.url = JsonConfigUtils::readString(object, QStringLiteral("url"));
         item.enabled = JsonConfigUtils::readBool(object, QStringLiteral("enabled"), true);
         item.userAgent = JsonConfigUtils::readString(object, QStringLiteral("userAgent"));
+        item.etag = JsonConfigUtils::readString(object, QStringLiteral("etag"));
+        item.lastModified = JsonConfigUtils::readString(object, QStringLiteral("lastModified"));
+        item.failStreak = JsonConfigUtils::readInt(object, QStringLiteral("failStreak"), 0);
         items.append(item);
     }
 
@@ -39,6 +42,9 @@ QJsonArray writeSubscriptions(const QList<SubItem>& items)
         JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("url"), item.url);
         JsonConfigUtils::writeIfNotDefault(object, QStringLiteral("enabled"), item.enabled, true);
         JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("userAgent"), item.userAgent);
+        JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("etag"), item.etag);
+        JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("lastModified"), item.lastModified);
+        JsonConfigUtils::writeIfNotDefault(object, QStringLiteral("failStreak"), item.failStreak, 0);
         array.append(object);
     }
 

@@ -21,6 +21,8 @@ public:
         QAction* editServerAction = nullptr;
         QAction* copyUrlAction = nullptr;
         QAction* copyShareLinkAction = nullptr;
+        QAction* exportShareLinksAction = nullptr;
+        QAction* exportClashYamlAction = nullptr;
         QAction* importClipboardAction = nullptr;
         QAction* removeServerAction = nullptr;
         QAction* moveServerTopAction = nullptr;

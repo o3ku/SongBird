@@ -17,6 +17,7 @@
 #include "domain/models/RuntimeState.h"
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
+#include "services/ExportService.h"
 
 class ClientConfigWriter;
 class ProxySession;
@@ -198,6 +199,9 @@ private:
     bool startHidden_ = false;
     bool skipCoreChecks_ = false;
     Config config_;
+    // Stateless and cheap to construct, so it lives here rather than in AppBootstrapObjects: it owns
+    // no QObject, borrows nothing, and therefore has no destruction-order constraint to respect.
+    ExportService exportService_;
     std::unique_ptr<AppBootstrapObjects> objects_;
     QList<CoreType> existingCoreTypes_;
     SystemProxyMode systemProxyMode_ = SystemProxyMode::ForcedClear;

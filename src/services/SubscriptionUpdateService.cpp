@@ -13,6 +13,7 @@
 
 #include "common/UserAgent.h"
 #include "services/ServiceTimeouts.h"
+#include "services/SubscriptionUpdateOrder.h"
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionContentParser.h"
 
@@ -50,6 +51,28 @@ QString appendParseNotes(const QString& message, const SubscriptionParseReport& 
         : QStringLiteral("%1 [%2]").arg(message, report.notes.join(QStringLiteral(" | ")));
 }
 }
+
+// Back-off intervals between retry attempts (index 0 = after first failure).
+// Each value is in milliseconds. The final attempt has no trailing wait.
+constexpr int kRetryIntervalMs[] = {300, 800};
+constexpr int kMaxDownloadAttempts = 3;
+
+// Blocks the calling thread for the given number of milliseconds while remaining
+// responsive to shutdown interruption. Returns false if interrupted.
+bool interruptibleSleep(int ms)
+{
+    constexpr int kSliceMs = 50;
+    int remaining = ms;
+    while (remaining > 0) {
+        if (currentThreadInterruptionRequested()) {
+            return false;
+        }
+        QThread::msleep(static_cast<unsigned long>(qMin(remaining, kSliceMs)));
+        remaining -= kSliceMs;
+    }
+    return !currentThreadInterruptionRequested();
+}
+
 
 SubscriptionUpdateService::SubscriptionUpdateService(
     IConfigRepository& repository,
@@ -168,7 +191,13 @@ OperationResult SubscriptionUpdateService::updateInternal(
     QStringList failureLines;
     int completedCount = 0;
 
-    for (const SubItem& item : items) {
+    // Walk the batch in an order that spreads subscriptions sharing a host apart and defers the ones
+    // that keep failing. The loop itself stays serial -- config is shared mutable state and
+    // parallelising it would be a much larger change -- but the order still decides how the servers
+    // see the traffic, which is what the grouping is for.
+    const QList<SubItem> orderedItems = SubscriptionUpdateOrder::orderForUpdate(items);
+
+    for (const SubItem& item : orderedItems) {
         // Honor cancellation requested by AppBootstrap::waitForBackgroundThreads()
         // at shutdown so we don't keep downloading subscriptions while the app
         // is trying to exit. Per-request timeouts already bound the in-flight
@@ -234,9 +263,67 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
-    QString content;
     const int proxyPort = useProxy ? config.localPort + 1 : 0;
-    const OperationResult downloadResult = downloadText(item.url, item.userAgent, proxyPort, &content);
+
+    // Retry loop: up to kMaxDownloadAttempts attempts with back-off between failures.
+    // A 304 Not Modified response short-circuits the loop immediately.
+    QString content;
+    QString newEtag;
+    QString newLastModified;
+    OperationResult downloadResult = OperationResult::fail(QString());
+    for (int attempt = 0; attempt < kMaxDownloadAttempts; ++attempt) {
+        if (currentThreadInterruptionRequested()) {
+            return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
+        }
+
+        bool notModified = false;
+        downloadResult = downloadText(
+            item.url, item.userAgent, proxyPort,
+            item.etag, item.lastModified,
+            &content, &newEtag, &newLastModified, &notModified);
+
+        if (notModified) {
+            // The server confirmed the cached copy is still current. Update the
+            // fail-streak to 0 and persist the (possibly refreshed) headers, but
+            // do not replace the server list: nothing changed.
+            for (SubItem& sub : config.collection().subscriptions) {
+                if (sub.id == item.id) {
+                    sub.etag = newEtag.isEmpty() ? item.etag : newEtag;
+                    sub.lastModified = newLastModified.isEmpty() ? item.lastModified : newLastModified;
+                    sub.failStreak = 0;
+                    break;
+                }
+            }
+            if (!repository_.save(config)) {
+                // Non-fatal: the in-memory state is already correct.
+            }
+            return OperationResult::ok(QCoreApplication::translate("SubscriptionUpdateService", "%1 is up to date (not modified).").arg(displayName));
+        }
+
+        if (downloadResult.success) {
+            break;
+        }
+
+        // Transient failure: update fail-streak now so it persists even if we
+        // eventually give up. Persist after last attempt to avoid redundant saves.
+        const bool lastAttempt = (attempt + 1 >= kMaxDownloadAttempts);
+        if (lastAttempt) {
+            for (SubItem& sub : config.collection().subscriptions) {
+                if (sub.id == item.id) {
+                    sub.failStreak = item.failStreak + 1;
+                    break;
+                }
+            }
+            repository_.save(config);
+            break;
+        }
+
+        // Back-off before the next attempt.
+        if (!interruptibleSleep(kRetryIntervalMs[attempt])) {
+            return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
+        }
+    }
+
     if (!downloadResult.success) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 download failed: %2").arg(displayName, downloadResult.message));
     }
@@ -259,6 +346,16 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 save failed: %2").arg(displayName, replaceResult.message));
     }
 
+    // Persist the new caching headers and reset the fail-streak.
+    for (SubItem& sub : config.collection().subscriptions) {
+        if (sub.id == item.id) {
+            sub.etag = newEtag;
+            sub.lastModified = newLastModified;
+            sub.failStreak = 0;
+            break;
+        }
+    }
+
     if (importedCount != nullptr) {
         *importedCount = 0;
         for (const VmessItem& server : config.collection().servers) {
@@ -277,7 +374,12 @@ OperationResult SubscriptionUpdateService::downloadText(
     const QString& url,
     const QString& userAgent,
     int proxyPort,
-    QString* content)
+    const QString& ifNoneMatch,
+    const QString& ifModifiedSince,
+    QString* content,
+    QString* outEtag,
+    QString* outLastModified,
+    bool* outNotModified)
 {
     if (content == nullptr) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Download target buffer is null."));
@@ -295,6 +397,12 @@ OperationResult SubscriptionUpdateService::downloadText(
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     const QString resolvedUA = resolveSubscriptionUserAgent(userAgent);
     request.setRawHeader("User-Agent", resolvedUA.toUtf8());
+    if (!ifNoneMatch.trimmed().isEmpty()) {
+        request.setRawHeader("If-None-Match", ifNoneMatch.trimmed().toUtf8());
+    }
+    if (!ifModifiedSince.trimmed().isEmpty()) {
+        request.setRawHeader("If-Modified-Since", ifModifiedSince.trimmed().toUtf8());
+    }
 
     const QNetworkProxy previousProxy = networkAccessManager_.proxy();
     if (proxyPort > 0) {
@@ -349,6 +457,30 @@ OperationResult SubscriptionUpdateService::downloadText(
         return statusCode > 0
             ? OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1: %2").arg(statusCode).arg(error))
             : OperationResult::fail(error);
+    }
+
+    // Capture caching headers before reading the body so callers can persist
+    // them even when notModified == true (body is empty on 304).
+    const QString etag = QString::fromUtf8(reply->rawHeader("ETag")).trimmed();
+    const QString lastModified = QString::fromUtf8(reply->rawHeader("Last-Modified")).trimmed();
+    if (outEtag != nullptr) {
+        *outEtag = etag;
+    }
+    if (outLastModified != nullptr) {
+        *outLastModified = lastModified;
+    }
+
+    // 304 Not Modified: body is intentionally empty; this is a success path.
+    if (statusCode == 304) {
+        networkAccessManager_.setProxy(previousProxy);
+        reply->deleteLater();
+        if (outNotModified != nullptr) {
+            *outNotModified = true;
+        }
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionUpdateService", "Subscription not modified."));
+    }
+    if (outNotModified != nullptr) {
+        *outNotModified = false;
     }
 
     *content = QString::fromUtf8(reply->readAll()).trimmed();

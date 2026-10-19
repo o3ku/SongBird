@@ -75,6 +75,12 @@ public:
     // Config-only update that reuses the previously applied core set.
     void setConfig(const Config& config);
     void setShareUrlResolver(std::function<QString(const QString&)> resolver);
+    // Batch export formatters, injected by the composition root so this window never includes
+    // services/ExportService. Each takes the selected indexIds and returns the text to write; an
+    // empty result means there was nothing exportable, which the window reports rather than
+    // writing an empty file.
+    void setShareLinksExportProvider(std::function<QString(const QStringList&)> provider);
+    void setClashYamlExportProvider(std::function<QString(const QStringList&)> provider);
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     // Borrowed, never owned, and outlives this window: the composition root
     // declares it first so it is destroyed last. Leaving it unset is supported and
@@ -118,6 +124,10 @@ signals:
     void setDefaultServerRequested(const QString& indexId);
     void setDefaultServerWithTunRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);
+    // Batch export. The window owns the selection and the file dialog; the composition root owns
+    // the formatter, so the UI layer never depends on services/ExportService.
+    void exportServersAsShareLinksRequested(const QStringList& indexIds);
+    void exportServersAsClashYamlRequested(const QStringList& indexIds);
     void routingModeSelected(const QString& routingModeId);
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
@@ -191,6 +201,16 @@ private:
     void refreshToolbarIcons();
     void refreshServerSelectionUi();
     QStringList selectedShareLinks() const;
+    // Shared implementation of the two export actions: ask the injected provider for the text, ask
+    // for a destination, then write. Kept as one method because the two differ only in the provider,
+    // the suggested filename and the filter.
+    void exportServersToFile(
+        const QStringList& indexIds,
+        const std::function<QString(const QStringList&)>& provider,
+        const QString& title,
+        const QString& suggestedFileName,
+        const QString& filter,
+        const QString& defaultSuffix);
     void syncStatusBarController();
     void syncProxyToolbarController();
     void applyCompactMode(bool compact);
@@ -217,6 +237,8 @@ private:
     QAction* editServerAction_ = nullptr;
     QAction* copyUrlAction_ = nullptr;
     QAction* copyShareLinkAction_ = nullptr;
+    QAction* exportShareLinksAction_ = nullptr;
+    QAction* exportClashYamlAction_ = nullptr;
     QAction* importClipboardAction_ = nullptr;
     QAction* subAction_ = nullptr;
     QAction* routingSettingsAction_ = nullptr;
@@ -267,6 +289,8 @@ private:
     QList<QAction*> desktopOnlyToolbarWidgetActions_;
     MainWindowConfigSnapshot configSnapshot_;
     std::function<QString(const QString&)> shareUrlResolver_;
+    std::function<QString(const QStringList&)> shareLinksExportProvider_;
+    std::function<QString(const QStringList&)> clashYamlExportProvider_;
     LogFileWriter* logFileWriter_ = nullptr;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;

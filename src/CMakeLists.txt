@@ -24,6 +24,11 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/ProxyCrashRestartPolicy.cpp
     appcore/ProxyHealthWatchPolicy.h
     appcore/ProxyHealthWatchPolicy.cpp
+    appcore/HealthStripPolicy.h
+    appcore/HealthStripPolicy.cpp
+    appcore/RoutingScorePolicy.h
+    appcore/RoutingScorePolicy.cpp
+    appcore/SystemProxyOwnershipPolicy.h
     domain/models/RuntimeState.h
     domain/models/RuntimeState.cpp
     appcore/AppRuntimeResolver.h
@@ -54,6 +59,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/ServerDisplayName.h
     common/StartupSequencer.h
     common/SystemProxyMode.h
+    common/SystemProxySnapshot.h
+    common/SystemProxySnapshot.cpp
     common/TextElision.h
     common/ThreadShutdown.h
     common/ThreadShutdown.cpp
@@ -66,6 +73,9 @@ set(SONGBIRD_SHARED_SOURCES
     domain/models/SubItem.h
     domain/models/VmessItem.h
     platform/ISystemProxyService.h
+    platform/ITerminalProxyService.h
+    platform/TerminalProxyPolicy.h
+    platform/TerminalProxyPolicy.cpp
     platform/PlatformServices.h
     runtime/CoreInfo.h
     runtime/CoreLaunchCompatDecision.h
@@ -218,6 +228,8 @@ set(SONGBIRD_SHARED_SOURCES
     services/SubscriptionService.cpp
     services/SubscriptionUpdateService.h
     services/SubscriptionUpdateService.cpp
+    services/SubscriptionUpdateOrder.h
+    services/SubscriptionUpdateOrder.cpp
     subscription/CustomConfigTextParser.h
     subscription/CustomConfigTextParser.cpp
     subscription/ClashSubscriptionParser.h
@@ -226,6 +238,9 @@ set(SONGBIRD_SHARED_SOURCES
     subscription/ClashProxyItemParser.cpp
     subscription/ClashYamlProxyParser.h
     subscription/ClashYamlProxyParser.cpp
+    subscription/ClashYamlBuilder.h
+    subscription/ClashYamlBuilder.cpp
+    subscription/NodeFingerprint.h
     subscription/ShareUrlParser.h
     subscription/ShareUrlParser.cpp
     subscription/ShareUrlProtocolParsers.h
@@ -277,8 +292,12 @@ set(SONGBIRD_SHARED_SOURCES
 # receives exactly one of them and the composition root can name the interface alone.
 if(WIN32)
     list(APPEND SONGBIRD_SHARED_SOURCES
+        platform/windows/WindowsJobObject.h
+        platform/windows/WindowsJobObject.cpp
         platform/windows/WindowsSystemProxyService.h
         platform/windows/WindowsSystemProxyService.cpp
+        platform/windows/WindowsTerminalProxyService.h
+        platform/windows/WindowsTerminalProxyService.cpp
         platform/windows/WindowsThemePreferenceService.h
         platform/windows/WindowsThemePreferenceService.cpp
     )
@@ -374,6 +393,8 @@ set(SONGBIRD_SOURCES
     services/SpeedTestWorker.cpp
     services/SpeedTestController.h
     services/SpeedTestController.cpp
+    services/ExportService.h
+    services/ExportService.cpp
     subscription/ShareUrlBuilder.h
     subscription/ShareUrlBuilder.cpp
     subscription/ShareUrlProtocolBuilders.h
@@ -537,6 +558,8 @@ set(SONGBIRD_AUTO_SOURCES
     auto/SongBirdAutoCoordinator.cpp
     auto/SongBirdAutoWindow.h
     auto/SongBirdAutoWindow.cpp
+    auto/AutoWindowPalette.h
+    auto/AutoWindowPalette.cpp
     common/DialogUtils.h
     common/CorePidFile.h
     domain/models/TunModeItem.h

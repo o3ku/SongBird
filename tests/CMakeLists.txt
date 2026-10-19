@@ -71,6 +71,17 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -BuildDirectory ${CMAKE_BINARY_DIR}/src
             -Executable $<TARGET_FILE:songbird>
     )
+    # The version has one declaration (project(VERSION) in CMakeLists.txt) and several consumers
+    # (the compile definition, the macOS bundle, the release workflow's tag). Nothing compared them,
+    # so a hardcoded second literal or a tag that disagrees with the declaration published a binary
+    # whose About dialog, update check and release page all claimed different numbers. The release
+    # workflow passes -Tag to this same script; here it runs the in-tree half.
+    add_test(
+        NAME version-consistency
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-version-consistency.ps1
+    )
     # These four do not read the source tree; they exercise the vcpkg cache steps in
     # .github/workflows/release.yml. Each one extracts the step's real run: block from the workflow,
     # substitutes the ${{ }} expressions, and runs it under pwsh 7 against fixtures -- so a step that
@@ -85,6 +96,43 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
                 -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/verify-${harness}.ps1
         )
     endforeach()
+
+    # A worker thread that keeps a raw pointer to a QObject the GUI thread can destroy is a
+    # use-after-free that surfaces later, in unrelated code. This guard was written after six GUI
+    # suites went red at once for exactly this. The rule: a continuation that captures `this` must
+    # either post to `this` or test a lifetime token.
+    add_test(
+        NAME async-owners
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-async-owners.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
+
+    # A guard that can never fail is worse than no guard: it produces the appearance of coverage.
+    # This self-test mutates a temporary copy of the tree once per rule, asserts each guard goes
+    # red, and asserts they all go green on an unmodified copy -- so a guard that fails everything
+    # unconditionally cannot pass it either.
+    add_test(
+        NAME guard-selftest
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/selftest-guards.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
+    set_tests_properties(guard-selftest PROPERTIES LABELS "guard" TIMEOUT 600)
+
+    # Colours live in a palette file and nowhere else. A hex in a stylesheet branch that a runtime
+    # probe never builds is exactly the case no test can observe, so this is the only check that
+    # can catch it. src/auto/AutoWindowPalette.cpp is the second palette: that window deliberately
+    # has its own blue accent instead of the main app's green.
+    add_test(
+        NAME hardcoded-colors
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-hardcoded-colors.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
 endif()
 
 # Qt's platform plugin is named per platform, and the tests are told which one to use by name:
@@ -98,6 +146,27 @@ elseif(APPLE)
     set(SONGBIRD_TEST_QPA_PLATFORM "cocoa")
 else()
     set(SONGBIRD_TEST_QPA_PLATFORM "offscreen")
+endif()
+
+# Registered here rather than beside the other PowerShell guards because it needs the platform
+# plugin name above. It re-runs every test binary to count their cases, so it carries its own
+# label and stays out of the default `ctest` invocation.
+if(SONGBIRD_POWERSHELL_EXECUTABLE)
+    add_test(
+        NAME test-suites-nonempty
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-test-suites.ps1
+            -BuildDirectory ${CMAKE_BINARY_DIR}
+    )
+    # The build directory is passed rather than a hand-built path, so the check follows a
+    # reconfigure into a new preset instead of silently scanning a stale tree.
+    set_tests_properties(test-suites-nonempty PROPERTIES
+        LABELS "suite"
+        TIMEOUT 900
+        ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+    )
 endif()
 
 function(songbird_add_qt_test target_name test_name)
@@ -265,6 +334,19 @@ songbird_add_qt_test(songbird_ui_presentation_logic_tests ui-presentation-logic
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# The SongBirdAuto window has a palette of its own (blue accent) rather than the main window's
+# (green), and this pins that the separation is deliberate. AutoWindowPalette.cpp lives in
+# SONGBIRD_AUTO_SOURCES, not songbird_shared_objs, so it is compiled into this target explicitly.
+songbird_add_qt_test(songbird_auto_window_palette_tests auto-window-palette
+    SOURCES
+        AutoWindowPaletteTests.cpp
+        ../src/auto/AutoWindowPalette.h
+        ../src/auto/AutoWindowPalette.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Gui
 )
 
 set(SONGBIRD_TUN_SETTINGS_APPLY_DECISION_TEST_SOURCES
@@ -802,6 +884,104 @@ songbird_add_qt_test(songbird_subscription_service_tests subscription-service
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# Tests NodeFingerprint dedup logic, ClashYamlBuilder output, ExportService
+# URI/YAML/dedup operations, and round-trips through ClashProxyItemParser.
+# ExportService and ShareUrlBuilder* live in SONGBIRD_SOURCES (not shared_objs),
+# so list them explicitly here alongside the test file.
+set(SONGBIRD_EXPORT_SERVICE_TEST_SOURCES
+    ExportServiceTests.cpp
+    ../src/services/ExportService.h
+    ../src/services/ExportService.cpp
+    ../src/subscription/ShareUrlBuilder.h
+    ../src/subscription/ShareUrlBuilder.cpp
+    ../src/subscription/ShareUrlBuilderSupport.h
+    ../src/subscription/ShareUrlBuilderSupport.cpp
+    ../src/subscription/ShareUrlProtocolBuilders.h
+    ../src/subscription/ShareUrlProtocolBuilders.cpp
+)
+
+songbird_add_qt_test(songbird_export_service_tests export-service
+    SOURCES
+        ${SONGBIRD_EXPORT_SERVICE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
+# SubscriptionUpdateOrder decides the order the serial update loop walks the batch in: it spreads
+# subscriptions sharing a host apart and defers the ones that keep failing. Pure permutation logic,
+# so it gets its own small target instead of dragging in the network stack.
+set(SONGBIRD_SUBSCRIPTION_UPDATE_ORDER_TEST_SOURCES
+    SubscriptionUpdateOrderTests.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_update_order_tests subscription-update-order
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_UPDATE_ORDER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# TerminalProxyPolicy holds the decisions behind the terminal-proxy environment variables: the URL
+# written, the default bypass list, and the "is this value ours?" checks. The registry write and the
+# window broadcast cannot be unit tested, which is why those decisions live here instead.
+set(SONGBIRD_TERMINAL_PROXY_POLICY_TEST_SOURCES
+    TerminalProxyPolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_terminal_proxy_policy_tests terminal-proxy-policy
+    SOURCES
+        ${SONGBIRD_TERMINAL_PROXY_POLICY_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# WindowsTerminalProxyService's registry contract. The key is injectable for the same reason
+# WindowsSystemProxyService's is: a ctest run must not leave the developer's own terminal pointed at a
+# port that is not listening, and the real key cannot be made to refuse a write. The in-process
+# environment mirror and the WM_SETTINGCHANGE broadcast are not testable and are documented as such.
+if(WIN32)
+    set(SONGBIRD_WINDOWS_TERMINAL_PROXY_SERVICE_TEST_SOURCES
+        WindowsTerminalProxyServiceTests.cpp
+    )
+
+    songbird_add_qt_test(songbird_windows_terminal_proxy_service_tests windows-terminal-proxy-service
+        SOURCES
+            ${SONGBIRD_WINDOWS_TERMINAL_PROXY_SERVICE_TEST_SOURCES}
+        LIBRARIES
+            Qt${QT_VERSION_MAJOR}::Test
+    )
+endif()
+
+# HealthStripPolicy folds probe records into the 24-hour strip shown beside a server. Pure integer
+# logic over an explicitly-supplied clock, so it gets its own target and needs no timer.
+set(SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES
+    HealthStripPolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_health_strip_policy_tests health-strip-policy
+    SOURCES
+        ${SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# Drives SubscriptionUpdateService through a local TCP stub server to cover the
+# conditional-GET (ETag/Last-Modified), 304 short-circuit, retry back-off, and
+# fail-streak paths without making real network requests.
+set(SONGBIRD_SUBSCRIPTION_UPDATE_SERVICE_TEST_SOURCES
+    SubscriptionUpdateServiceTests.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_update_service_tests subscription-update-service
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_UPDATE_SERVICE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
 set(SONGBIRD_SUBSCRIPTION_URL_IMPORT_SERVICE_TEST_SOURCES
     SubscriptionUrlImportServiceTests.cpp
     ../src/subscription/SubscriptionUrlImportService.h
@@ -839,6 +1019,21 @@ songbird_add_qt_test(songbird_system_proxy_mode_tests system-proxy-mode
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# The ownership rules -- "did *we* change the system proxy?" -- plus the snapshot's three-state
+# contract. Both are pure logic, which is the point: the defect they were extracted from was a
+# boolean that had the wrong operator, and it was invisible because it sat inside a teardown
+# routine that could only be reached by failing a real startup.
+set(SONGBIRD_SYSTEM_PROXY_OWNERSHIP_TEST_SOURCES
+    SystemProxyOwnershipPolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_system_proxy_ownership_tests system-proxy-ownership
+    SOURCES
+        ${SONGBIRD_SYSTEM_PROXY_OWNERSHIP_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
 )
 
 # LogSeverity decides the marker the information panel prints in front of every
@@ -930,6 +1125,22 @@ set(SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES
 songbird_add_qt_test(songbird_proxy_health_watch_policy_tests proxy-health-watch-policy
     SOURCES
         ${SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# RoutingScorePolicy ranks candidate nodes: EWMA smoothing so one outlier does not reorder the
+# list, a circuit breaker so a dead node cannot win on a stale score, and a switch margin so two
+# nodes within noise of each other do not trade the active connection on every probe. Pure logic,
+# so it gets its own target rather than dragging in the ProxySession chain.
+set(SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES
+    RoutingScorePolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_routing_score_policy_tests routing-score-policy
+    SOURCES
+        ${SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

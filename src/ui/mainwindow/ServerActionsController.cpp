@@ -83,6 +83,21 @@ void ServerActionsController::setup()
     QObject::connect(context_.copyShareLinkAction, &QAction::triggered, context_.window, [this]() {
         copySelectedServerUrlsToClipboard(context_.copyShareLinkAction);
     });
+    // Both export actions go through the window, which owns the file dialog; the formatter lives in
+    // the composition root. Guarding on an empty selection here rather than in the window keeps the
+    // two actions identical to copyShareLinkAction, which also checks before doing anything.
+    QObject::connect(context_.exportShareLinksAction, &QAction::triggered, context_.window, [this]() {
+        const QStringList indexIds = selectedServerIds_();
+        if (!indexIds.isEmpty()) {
+            emit context_.window->exportServersAsShareLinksRequested(indexIds);
+        }
+    });
+    QObject::connect(context_.exportClashYamlAction, &QAction::triggered, context_.window, [this]() {
+        const QStringList indexIds = selectedServerIds_();
+        if (!indexIds.isEmpty()) {
+            emit context_.window->exportServersAsClashYamlRequested(indexIds);
+        }
+    });
     QObject::connect(context_.removeServerAction, &QAction::triggered, context_.window, [this]() {
         const QStringList indexIds = selectedServerIds_();
         if (indexIds.isEmpty()) {
@@ -215,6 +230,17 @@ void ServerActionsController::syncActionState(const ActionState& state)
         context_.copyShareLinkAction->setEnabled(state.hasShareExports);
     }
 
+    // The two export actions share copyShareLinkAction's condition: a node that cannot produce a
+    // share link cannot be exported as one, and the YAML writer skips exactly the same node types
+    // (Custom, Unknown), so one flag covers both.
+    if (context_.exportShareLinksAction != nullptr) {
+        context_.exportShareLinksAction->setEnabled(state.hasShareExports);
+    }
+
+    if (context_.exportClashYamlAction != nullptr) {
+        context_.exportClashYamlAction->setEnabled(state.hasShareExports);
+    }
+
     if (context_.removeServerAction != nullptr) {
         context_.removeServerAction->setEnabled(state.hasSelection);
     }
@@ -285,6 +311,8 @@ void ServerActionsController::showContextMenu(const QPoint& position)
         menu->addAction(context_.setDefaultServerAction);
         menu->addAction(context_.setDefaultServerWithTunAction);
         menu->addAction(context_.copyUrlAction);
+        menu->addAction(context_.exportShareLinksAction);
+        menu->addAction(context_.exportClashYamlAction);
 
         if (ungroupedTabSelected) {
             menu->addAction(context_.editServerAction);
@@ -299,6 +327,10 @@ void ServerActionsController::showContextMenu(const QPoint& position)
         }
     } else {
         menu->addAction(context_.copyUrlAction);
+        // Batch export is most useful with several rows selected, so it belongs in the multi-select
+        // menu as well as the single-select one.
+        menu->addAction(context_.exportShareLinksAction);
+        menu->addAction(context_.exportClashYamlAction);
         menu->addAction(context_.testAction);
         if (ungroupedTabSelected) {
             menu->addSeparator();

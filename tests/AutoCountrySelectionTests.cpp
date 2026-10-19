@@ -61,6 +61,13 @@ private slots:
     void bestServerSupportsUnknownResults();
     void availableCountNormalizesCountry();
     void availableCountExcludesUntestedInferredNodes();
+    // Ranking by a precomputed score rather than raw latency -- the entry point the auto
+    // coordinator uses once RoutingScorePolicy has smoothed the samples.
+    void scoreRankingPicksTheLowestScore();
+    void scoreRankingSkipsNodesWithNoScore();
+    void scoreRankingHonoursTheExcludedServer();
+    void scoreRankingRequiresAvailableAndTested();
+    void scoreRankingKeepsListOrderOnTies();
 };
 
 void AutoCountrySelectionTests::summariesExposeDefaultCountriesForEmptyResults()
@@ -205,6 +212,93 @@ void AutoCountrySelectionTests::availableCountExcludesUntestedInferredNodes()
     };
 
     QCOMPARE(countAvailableAutoServersForCountry(evaluations, QStringLiteral("JP")), 1);
+}
+
+void AutoCountrySelectionTests::scoreRankingPicksTheLowestScore()
+{
+    const QList<AutoNodeEvaluation> evaluations{
+        testedEvaluation(QStringLiteral("jp-slow"), QStringLiteral("JP"), 40),
+        testedEvaluation(QStringLiteral("jp-fast"), QStringLiteral("JP"), 900),
+    };
+    // Deliberately inverted against latencyMs: the score is what decides, so a node whose last
+    // probe was slow but whose smoothed score is best must still win.
+    const QHash<QString, double> scores{
+        {QStringLiteral("jp-slow"), 300.0},
+        {QStringLiteral("jp-fast"), 120.0},
+    };
+
+    QCOMPARE(
+        bestAutoServerIdForCountryByScore(evaluations, QStringLiteral("jp"), scores),
+        QStringLiteral("jp-fast"));
+}
+
+void AutoCountrySelectionTests::scoreRankingSkipsNodesWithNoScore()
+{
+    const QList<AutoNodeEvaluation> evaluations{
+        testedEvaluation(QStringLiteral("jp-untracked"), QStringLiteral("JP"), 10),
+        testedEvaluation(QStringLiteral("jp-tracked"), QStringLiteral("JP"), 500),
+    };
+    const QHash<QString, double> scores{{QStringLiteral("jp-tracked"), 400.0}};
+
+    // A node the caller has no evidence for must not win just because its raw latency looks good.
+    QCOMPARE(
+        bestAutoServerIdForCountryByScore(evaluations, QStringLiteral("JP"), scores),
+        QStringLiteral("jp-tracked"));
+}
+
+void AutoCountrySelectionTests::scoreRankingHonoursTheExcludedServer()
+{
+    const QList<AutoNodeEvaluation> evaluations{
+        testedEvaluation(QStringLiteral("jp-best"), QStringLiteral("JP"), 10),
+        testedEvaluation(QStringLiteral("jp-second"), QStringLiteral("JP"), 50),
+    };
+    const QHash<QString, double> scores{
+        {QStringLiteral("jp-best"), 10.0},
+        {QStringLiteral("jp-second"), 50.0},
+    };
+
+    QCOMPARE(
+        bestAutoServerIdForCountryByScore(
+            evaluations, QStringLiteral("JP"), scores, QStringLiteral("jp-best")),
+        QStringLiteral("jp-second"));
+}
+
+void AutoCountrySelectionTests::scoreRankingRequiresAvailableAndTested()
+{
+    AutoNodeEvaluation untested = evaluation(QStringLiteral("jp-untested"), QStringLiteral("JP"), 10);
+    AutoNodeEvaluation unavailable = testedEvaluation(
+        QStringLiteral("jp-down"), QStringLiteral("JP"), 10, false);
+    const QList<AutoNodeEvaluation> evaluations{
+        untested,
+        unavailable,
+        testedEvaluation(QStringLiteral("jp-ok"), QStringLiteral("JP"), 800),
+    };
+    const QHash<QString, double> scores{
+        {QStringLiteral("jp-untested"), 1.0},
+        {QStringLiteral("jp-down"), 2.0},
+        {QStringLiteral("jp-ok"), 800.0},
+    };
+
+    // The two low scores belong to nodes that cannot carry traffic, so they are not candidates.
+    QCOMPARE(
+        bestAutoServerIdForCountryByScore(evaluations, QStringLiteral("JP"), scores),
+        QStringLiteral("jp-ok"));
+}
+
+void AutoCountrySelectionTests::scoreRankingKeepsListOrderOnTies()
+{
+    const QList<AutoNodeEvaluation> evaluations{
+        testedEvaluation(QStringLiteral("jp-a"), QStringLiteral("JP"), 100),
+        testedEvaluation(QStringLiteral("jp-b"), QStringLiteral("JP"), 100),
+    };
+    const QHash<QString, double> scores{
+        {QStringLiteral("jp-a"), 100.0},
+        {QStringLiteral("jp-b"), 100.0},
+    };
+
+    QCOMPARE(
+        bestAutoServerIdForCountryByScore(evaluations, QStringLiteral("JP"), scores),
+        QStringLiteral("jp-a"));
 }
 
 QTEST_MAIN(AutoCountrySelectionTests)

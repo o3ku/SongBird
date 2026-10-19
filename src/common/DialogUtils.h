@@ -124,4 +124,31 @@ inline QString getOpenFileName(
     return dialog.selectedFiles().constFirst();
 }
 
+// Asks for a destination path. Returns an empty string when the user cancels.
+//
+// `defaultSuffix` is appended by QFileDialog when the user types a name without an extension, so a
+// caller offering "Clash YAML" can pass "yaml" and not silently write an extension-less file.
+inline QString getSaveFileName(
+    QWidget* parent,
+    const QString& title,
+    const QString& initialPath,
+    const QString& filter,
+    const QString& defaultSuffix = {})
+{
+    QFileDialog dialog(parent, title, QString(), filter);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    if (!defaultSuffix.trimmed().isEmpty()) {
+        dialog.setDefaultSuffix(defaultSuffix);
+    }
+    if (!initialPath.trimmed().isEmpty()) {
+        dialog.selectFile(initialPath);
+    }
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return {};
+    }
+    return dialog.selectedFiles().constFirst();
+}
+
 } // namespace DialogUtils

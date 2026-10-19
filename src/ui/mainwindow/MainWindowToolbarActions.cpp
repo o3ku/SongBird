@@ -41,6 +41,10 @@ MainWindowToolbarActions createMainWindowToolbarActions(QObject* owner, bool qrP
     actions.editServerAction = createAction(owner, trMainWindow("Edit Server"));
     actions.copyUrlAction = createAction(owner, trMainWindow("Copy Url"), QStringLiteral("copyUrlAction"));
     actions.copyShareLinkAction = createAction(owner, trMainWindow("Copy Share Link"), QStringLiteral("copyShareLinkAction"));
+    actions.exportShareLinksAction = createAction(
+        owner, trMainWindow("Export as Share Links"), QStringLiteral("exportShareLinksAction"));
+    actions.exportClashYamlAction = createAction(
+        owner, trMainWindow("Export as Clash YAML"), QStringLiteral("exportClashYamlAction"));
     actions.removeServerAction = createAction(owner, trMainWindow("Remove"), QStringLiteral("removeServerAction"));
     actions.moveServerTopAction = createAction(owner, trMainWindow("Move To Top"), QStringLiteral("moveServerTopAction"));
     actions.moveServerUpAction = createAction(owner, trMainWindow("Move Up"), QStringLiteral("moveServerUpAction"));

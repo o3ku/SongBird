@@ -1361,6 +1361,21 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
 
 void SongBirdAutoCoordinator::mergeEvaluationResults(const QList<AutoNodeEvaluation>& results)
 {
+    // Feed every completed probe into the scoring policy before merging, so the pick made below
+    // (and by maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    for (const AutoNodeEvaluation& result : results) {
+        if (!result.tested) {
+            continue;
+        }
+        RoutingScorePolicy::NodeState& state = nodeScores_[result.indexId];
+        // A probe that reports a latency is a measurement; one that reports failure is not. The
+        // policy takes both through the same call so the failure counter and the breaker advance
+        // together.
+        routingScorePolicy_.recordResult(
+            &state, result.available, static_cast<int>(result.latencyMs), nowMs);
+    }
+
     QMap<QString, AutoNodeEvaluation> byId;
     for (const AutoNodeEvaluation& evaluation : std::as_const(evaluations_)) {
         byId.insert(evaluation.indexId, evaluation);
@@ -1483,7 +1498,18 @@ CoreInfo SongBirdAutoCoordinator::resolveCoreInfo(const VmessItem& server) const
 
 QString SongBirdAutoCoordinator::currentCountryBestServerId() const
 {
-    return bestAutoServerIdForCountry(evaluations_, selectedCountryCode_);
+    // Rank by the policy's effective score rather than by the raw latency of the last probe, so a
+    // node that is currently failing cannot win on a stale good reading, and one slow sample does
+    // not reorder the list. The map is rebuilt per call because it is small (one entry per tested
+    // node) and a cached copy would have to be invalidated from four different places.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QHash<QString, double> effectiveScores;
+    effectiveScores.reserve(nodeScores_.size());
+    for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
+        effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
+    }
+    return bestAutoServerIdForCountryByScore(
+        evaluations_, selectedCountryCode_, effectiveScores);
 }
 
 QString SongBirdAutoCoordinator::currentCountryFirstAvailableServerId() const
@@ -1884,6 +1910,9 @@ void SongBirdAutoCoordinator::handleUnavailableActiveServer(const QString& reaso
 void SongBirdAutoCoordinator::clearEvaluationState()
 {
     evaluations_.clear();
+    // Scoring history describes nodes that are about to be replaced, so it must not survive a
+    // clear: a recycled indexId would inherit another server's smoothed latency and breaker state.
+    nodeScores_.clear();
     countrySummaries_ = buildCountrySummaries(evaluations_);
     activeServerId_.clear();
     normalizeSelectedCountryAfterRetest();
@@ -1974,7 +2003,16 @@ bool SongBirdAutoCoordinator::isSelectedCountryLow() const
 QString SongBirdAutoCoordinator::nextFailoverServerId(const QString& failedServerId) const
 {
     if (!usesFirstAvailableStrategy()) {
-        return bestAutoServerIdForCountry(evaluations_, selectedCountryCode_, failedServerId);
+        // Same ranking as currentCountryBestServerId(), with the failed node excluded so a node
+        // that just went dark is not immediately re-picked as its own replacement.
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        QHash<QString, double> effectiveScores;
+        effectiveScores.reserve(nodeScores_.size());
+        for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
+            effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
+        }
+        return bestAutoServerIdForCountryByScore(
+            evaluations_, selectedCountryCode_, effectiveScores, failedServerId);
     }
 
     const QString normalizedCountryCode = normalizeAutoCountryCode(selectedCountryCode_);

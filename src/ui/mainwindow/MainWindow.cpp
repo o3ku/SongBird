@@ -31,6 +31,7 @@
 #include <QTextCursor>
 #include <QRegularExpression>
 #include <QResizeEvent>
+#include <QSaveFile>
 #include <QSet>
 #include <QShowEvent>
 #include <QSignalBlocker>
@@ -263,6 +264,58 @@ void MainWindow::setShareUrlResolver(std::function<QString(const QString&)> reso
 {
     shareUrlResolver_ = std::move(resolver);
     refreshServerSelectionUi();
+}
+
+void MainWindow::setShareLinksExportProvider(std::function<QString(const QStringList&)> provider)
+{
+    shareLinksExportProvider_ = std::move(provider);
+}
+
+void MainWindow::setClashYamlExportProvider(std::function<QString(const QStringList&)> provider)
+{
+    clashYamlExportProvider_ = std::move(provider);
+}
+
+void MainWindow::exportServersToFile(
+    const QStringList& indexIds,
+    const std::function<QString(const QStringList&)>& provider,
+    const QString& title,
+    const QString& suggestedFileName,
+    const QString& filter,
+    const QString& defaultSuffix)
+{
+    if (!provider) {
+        return;
+    }
+
+    const QString content = provider(indexIds);
+    if (content.trimmed().isEmpty()) {
+        // Nothing exportable in the selection. Saying so is better than opening a save dialog and
+        // writing a file that contains only a YAML key or a blank line.
+        appendLog(tr("The selected servers cannot be exported; they have no shareable form."));
+        return;
+    }
+
+    const QString path = DialogUtils::getSaveFileName(
+        this, title, suggestedFileName, filter, defaultSuffix);
+    if (path.isEmpty()) {
+        return;
+    }
+
+    // QSaveFile so a failure half-way through cannot leave a truncated export behind, and so the
+    // original is untouched when the write fails.
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        appendLog(tr("Failed to open the export file for writing."));
+        return;
+    }
+    const QByteArray bytes = content.toUtf8();
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        appendLog(tr("Failed to write the export file."));
+        return;
+    }
+
+    appendLog(tr("Exported %1 server(s) to %2.").arg(indexIds.size()).arg(path));
 }
 
 void MainWindow::setExistingCoreTypes(const QList<CoreType>& coreTypes)
@@ -724,6 +777,8 @@ void MainWindow::createToolbarActions()
     editServerAction_ = actions.editServerAction;
     copyUrlAction_ = actions.copyUrlAction;
     copyShareLinkAction_ = actions.copyShareLinkAction;
+    exportShareLinksAction_ = actions.exportShareLinksAction;
+    exportClashYamlAction_ = actions.exportClashYamlAction;
     importClipboardAction_ = actions.importClipboardAction;
     subAction_ = actions.subAction;
     routingSettingsAction_ = actions.routingSettingsAction;
@@ -1050,6 +1105,8 @@ void MainWindow::setupServerActionsController()
             editServerAction_,
             copyUrlAction_,
             copyShareLinkAction_,
+            exportShareLinksAction_,
+            exportClashYamlAction_,
             importClipboardAction_,
             removeServerAction_,
             moveServerTopAction_,
@@ -1080,6 +1137,30 @@ void MainWindow::setupConnections()
 void MainWindow::setupGeneralActionConnections()
 {
     connect(addServerAction_, &QAction::triggered, this, &MainWindow::addServerRequested);
+    // The two export actions are window-level because they own the save dialog and the write; the
+    // formatter is injected, so this translation unit stays free of services/ExportService.
+    connect(this, &MainWindow::exportServersAsShareLinksRequested, this,
+        [this](const QStringList& indexIds) {
+            exportServersToFile(
+                indexIds,
+                shareLinksExportProvider_,
+                tr("Export as Share Links"),
+                QStringLiteral("songbird-servers.txt"),
+                // File filters are matched by Qt against the literal glob syntax, so they stay
+                // untranslated here, matching CustomServerDialog and ConfigBackupCoordinator.
+                QStringLiteral("Text files (*.txt);;All files (*)"),
+                QStringLiteral("txt"));
+        });
+    connect(this, &MainWindow::exportServersAsClashYamlRequested, this,
+        [this](const QStringList& indexIds) {
+            exportServersToFile(
+                indexIds,
+                clashYamlExportProvider_,
+                tr("Export as Clash YAML"),
+                QStringLiteral("songbird-proxies.yaml"),
+                QStringLiteral("YAML files (*.yaml *.yml);;All files (*)"),
+                QStringLiteral("yaml"));
+        });
     setupImportActionConnections();
     setupUpdateActionConnections();
     setupSettingsActionConnections();

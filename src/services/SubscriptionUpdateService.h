@@ -30,7 +30,16 @@ public:
 private:
     OperationResult updateInternal(Config& config, const QList<SubItem>& items, bool useProxy, const ProgressCallback& progressCallback = {});
     OperationResult updateSingle(Config& config, const SubItem& item, int* importedCount, bool useProxy);
-    OperationResult downloadText(const QString& url, const QString& userAgent, int proxyPort, QString* content);
+    OperationResult downloadText(
+        const QString& url,
+        const QString& userAgent,
+        int proxyPort,
+        const QString& ifNoneMatch,
+        const QString& ifModifiedSince,
+        QString* content,
+        QString* outEtag,
+        QString* outLastModified,
+        bool* outNotModified);
 
     IConfigRepository& repository_;
     SubscriptionService& subscriptionService_;

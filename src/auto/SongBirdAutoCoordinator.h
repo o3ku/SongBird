@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QDateTime>
+#include <QHash>
 #include <QMap>
 #include <QObject>
 #include <QString>
@@ -19,6 +20,7 @@
 #include "appcore/OutboundLivenessProbeService.h"
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxySession.h"
+#include "appcore/RoutingScorePolicy.h"
 #include "appcore/TunRuntimeService.h"
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
@@ -194,6 +196,11 @@ private:
     QList<CoreType> existingCoreTypes_;
     QList<AutoNodeEvaluation> evaluations_;
     QList<AutoCountrySummary> countrySummaries_;
+    // Per-node scoring state, fed by every completed probe. Kept beside evaluations_ rather than
+    // inside AutoNodeEvaluation because it is history (a smoothed value plus breaker state) and the
+    // evaluation list is a snapshot that the window renders and the table sorts.
+    QHash<QString, RoutingScorePolicy::NodeState> nodeScores_;
+    RoutingScorePolicy routingScorePolicy_;
     QString selectedCountryCode_;
     QString activeServerId_;
     bool running_ = false;

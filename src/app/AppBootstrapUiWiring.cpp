@@ -35,6 +35,31 @@ void AppBootstrap::wireUiObjects()
         const VmessItem* server = findServerById(indexId);
         return server == nullptr ? QString() : ShareUrlBuilder::build(*server).trimmed();
     });
+    // Batch export: the window owns the save dialog and the write, this layer owns the formatting.
+    // Both providers resolve the selected ids against the live config in selection order, so a
+    // server removed between the click and the write simply drops out instead of exporting stale
+    // data. They return an empty string when nothing is exportable, which the window reports rather
+    // than writing an empty file.
+    objects_->mainWindow->setShareLinksExportProvider([this](const QStringList& indexIds) {
+        QList<VmessItem> servers;
+        servers.reserve(indexIds.size());
+        for (const QString& indexId : indexIds) {
+            if (const VmessItem* server = findServerById(indexId)) {
+                servers.append(*server);
+            }
+        }
+        return exportService_.exportUris(servers).join(QLatin1Char('\n'));
+    });
+    objects_->mainWindow->setClashYamlExportProvider([this](const QStringList& indexIds) {
+        QList<VmessItem> servers;
+        servers.reserve(indexIds.size());
+        for (const QString& indexId : indexIds) {
+            if (const VmessItem* server = findServerById(indexId)) {
+                servers.append(*server);
+            }
+        }
+        return exportService_.exportClashYaml(servers);
+    });
     objects_->trayController = std::make_unique<TrayController>(objects_->mainWindow.get());
     objects_->speedTestCoordinator = std::make_unique<SpeedTestCoordinator>(
         SpeedTestCoordinator::Dependencies{
