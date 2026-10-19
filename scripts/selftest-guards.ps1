@@ -336,18 +336,28 @@ try {
     Set-Content -LiteralPath (Join-Path $readmeTempRoot "docs\screenshots\shot.png") `
         -Value "not a real png, but non-empty" -Encoding UTF8
 
+    # Each case names the README file it writes, so a case can target the translated page as well as
+    # the English one -- the translated pages share the screenshots and would otherwise have no
+    # protection of their own.
     $readmeCases = @(
         @{
             Name = "readme-assets: a reference to a missing image is rejected"
+            File = "README.md"
             Content = "# Title`n`n![shot](docs/screenshots/missing.png)`n"
         },
         @{
             Name = "readme-assets: a reference to an empty file is rejected"
+            File = "README.md"
             Break = {
                 param($tree)
                 Set-Content -LiteralPath (Join-Path $tree "docs\screenshots\empty.png") -Value "" -NoNewline
             }
             Content = "# Title`n`n![shot](docs/screenshots/empty.png)`n"
+        },
+        @{
+            Name = "readme-assets: a broken image on a translated page is rejected"
+            File = "README_zh_CN.md"
+            Content = "# Title`n`n![shot](docs/screenshots/missing.png)`n"
         }
     )
 
@@ -359,10 +369,9 @@ try {
         if ($case.ContainsKey("Break")) {
             & $case.Break $tree
         }
-        $readmePath = Join-Path $tree "README.md"
-        Set-Content -LiteralPath $readmePath -Value $case.Content -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $tree $case.File) -Value $case.Content -Encoding UTF8
 
-        $exitCode = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Readme", $readmePath)
+        $exitCode = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Root", $tree)
         if ($exitCode -eq 0) {
             $failures.Add("$($case.Name): the guard still reported success on a README that violates it")
         } else {
@@ -372,15 +381,17 @@ try {
         Remove-Item -LiteralPath $tree -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # And a README whose images all resolve must pass, so a guard that always fails cannot satisfy the
+    # And a tree whose images all resolve must pass, so a guard that always fails cannot satisfy the
     # cases above.
     $cleanReadmeTree = Join-Path $readmeTempRoot "clean"
     New-Item -ItemType Directory -Path (Join-Path $cleanReadmeTree "docs\screenshots") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $readmeTempRoot "docs\screenshots\shot.png") `
         -Destination (Join-Path $cleanReadmeTree "docs\screenshots")
-    $cleanReadmePath = Join-Path $cleanReadmeTree "README.md"
-    Set-Content -LiteralPath $cleanReadmePath -Value "# Title`n`n![shot](docs/screenshots/shot.png)`n" -Encoding UTF8
-    $cleanReadmeExit = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Readme", $cleanReadmePath)
+    Set-Content -LiteralPath (Join-Path $cleanReadmeTree "README.md") `
+        -Value "# Title`n`n![shot](docs/screenshots/shot.png)`n" -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $cleanReadmeTree "README_zh_CN.md") `
+        -Value "# Title`n`n![shot](docs/screenshots/shot.png)`n" -Encoding UTF8
+    $cleanReadmeExit = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Root", $cleanReadmeTree)
     if ($cleanReadmeExit -ne 0) {
         $failures.Add("check-readme-assets.ps1: reported a violation in a README whose images all resolve")
     } else {

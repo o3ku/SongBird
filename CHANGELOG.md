@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Docs: the README now opens with a screenshot of the main window and a collapsible one of the Settings dialog, so a visitor can see the interface before reading about it. `scripts/check-readme-assets.ps1` fails the build when a referenced image is missing or empty, which is the failure mode a README otherwise has no defence against.
+- Docs: the README has a Simplified Chinese counterpart at `README_zh_CN.md`, linked from both pages. It is maintained by hand rather than generated, and the asset check covers it too — a translation added later would otherwise have no protection at all.
 
 ## 2.7.0 — The system proxy is now something we restore, not something we erase
 

@@ -1,5 +1,7 @@
 # SongBird
 
+**English** · [简体中文](README_zh_CN.md)
+
 **A lightweight native proxy client for Windows and macOS, written in Qt/C++ — a V2Ray / Xray / sing-box / Mihomo front-end with no Electron, no .NET and no WebView2.**
 
 SongBird manages V2Ray-style proxy servers — VMess, VLESS, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, AnyTLS, Naive, SOCKS and HTTP — from a single small desktop application. It imports subscription links, turns the Windows or macOS system proxy on and off, runs server and speed tests, and drives three interchangeable cores: **Xray**, **sing-box** and **Mihomo**.
