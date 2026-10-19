@@ -59,10 +59,91 @@ $fixtureSlots = @('initTestCase', 'cleanupTestCase', 'init', 'cleanup')
 
 $failures = New-Object System.Collections.Generic.List[string]
 $checked = 0
+$skipped = 0
+
+# CTest knows each test's labels and environment; the executables do not. Two facts from that
+# metadata are needed here, and both were learned the hard way:
+#
+#   LABELS      A target labelled `smoke` is deliberately allowed to run zero cases -- it exercises a
+#               live core, which CI does not have, so every case skips. Demanding a real case from it
+#               turned this guard red on the release build while the product was fine.
+#   ENVIRONMENT A target may need QT_QPA_PLATFORM or a PATH entry that ctest supplies and a bare
+#               Start-Process does not. Without it the binary cannot start, which looks identical to
+#               "ran nothing" and would be reported as a violation of the wrong rule.
+#
+# The metadata is read once from ctest's own JSON export, so this script never keeps a second copy of
+# the per-target configuration in sync with tests/CMakeLists.txt. Targets are matched by the
+# executable path ctest records in `command`, not by name: the target name and the test name differ
+# (songbird_export_service_tests -> export-service).
+$metadataByExecutable = @{}
+$ctest = Get-Command ctest -ErrorAction SilentlyContinue
+if ($null -ne $ctest) {
+    try {
+        $json = & ctest --test-dir $BuildDirectory --show-only=json-v1 2>$null | Out-String
+        if (-not [string]::IsNullOrWhiteSpace($json)) {
+            $parsed = $json | ConvertFrom-Json
+            foreach ($test in $parsed.tests) {
+                $command = @($test.command)
+                if ($command.Count -eq 0) { continue }
+                $key = [System.IO.Path]::GetFileName([string]$command[0])
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                $labels = @()
+                $environment = @{}
+                $workingDirectory = $testDirectory
+                foreach ($property in $test.properties) {
+                    if ($property.name -eq 'LABELS') { $labels = @($property.value) }
+                    if ($property.name -eq 'ENVIRONMENT') {
+                        foreach ($pair in @($property.value)) {
+                            $text = [string]$pair
+                            $split = $text.IndexOf('=')
+                            if ($split -gt 0) {
+                                $environment[$text.Substring(0, $split)] = $text.Substring($split + 1)
+                            }
+                        }
+                    }
+                    if ($property.name -eq 'WORKING_DIRECTORY') { $workingDirectory = [string]$property.value }
+                }
+                $metadataByExecutable[$key] = @{
+                    Labels = $labels
+                    Environment = $environment
+                    WorkingDirectory = $workingDirectory
+                }
+            }
+        }
+    } catch {
+        # Metadata exists for the two exceptions above, not for the check itself. A ctest that cannot
+        # export JSON leaves the map empty, and every target is then held to the strict rule -- which
+        # is the safe direction to fail in.
+    }
+}
 
 foreach ($executable in $executables) {
     $checked += 1
     $outputFile = Join-Path ([System.IO.Path]::GetTempPath()) ("songbird-testsuite-" + [guid]::NewGuid().ToString("N") + ".txt")
+
+    $metadata = $metadataByExecutable[$executable.Name]
+    if ($null -ne $metadata -and $metadata.Labels -contains 'smoke') {
+        # Allowed to run nothing, by design. Counted separately so the summary line cannot imply it
+        # was verified.
+        $skipped += 1
+        continue
+    }
+
+    # Apply ctest's own ENVIRONMENT entries so the binary starts the way it does under ctest.
+    #
+    # PATH is deliberately NOT taken from here. Qt's bin directory reaches the tests through
+    # ENVIRONMENT_MODIFICATION (`path_list_prepend:`), which is a ctest-side directive rather than a
+    # value -- assigning it verbatim would replace PATH with that literal string and every binary
+    # would then fail to find Qt5Core.dll. The caller (the ctest test that invokes this script, or a
+    # developer running it by hand) is responsible for a PATH that can find Qt.
+    $savedEnvironment = @{}
+    if ($null -ne $metadata) {
+        foreach ($name in $metadata.Environment.Keys) {
+            if ($name -eq 'PATH') { continue }
+            $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, $metadata.Environment[$name])
+        }
+    }
 
     try {
         $process = Start-Process -FilePath $executable.FullName `
@@ -106,6 +187,11 @@ foreach ($executable in $executables) {
             continue
         }
     } finally {
+        # Put the environment back before the next target runs: this script shares one process, and a
+        # leftover QT_QPA_PLATFORM from one suite would silently change how the next one behaves.
+        foreach ($name in $savedEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name])
+        }
         if (Test-Path -LiteralPath $outputFile) {
             Remove-Item -LiteralPath $outputFile -Force -ErrorAction SilentlyContinue
         }
@@ -117,4 +203,5 @@ if ($failures.Count -gt 0) {
     exit 1
 }
 
-Write-Host ("Test suite check passed: $checked executable(s) each ran at least one test case.")
+Write-Host ("Test suite check passed: $checked executable(s) checked, each ran at least one test case; " +
+    "$skipped skipped by label (smoke).")
