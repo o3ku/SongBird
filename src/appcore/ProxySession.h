@@ -21,6 +21,15 @@
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
+#include "common/SystemProxySnapshot.h"
+#include "appcore/SystemProxyOwnershipPolicy.h"
+
+// Which event is undoing a system-proxy change. Only used to pick the log sentence: the two
+// callers differ in what the user was doing, not in what has to happen to the registry.
+enum class SystemProxyUndoTrigger {
+    CoreStopped,
+    StartupFailed
+};
 #include "domain/models/Config.h"
 #include "runtime/CoreInfo.h"
 #include "runtime/CoreLaunchCompatDecision.h"
@@ -304,6 +313,8 @@ private:
     void clearServerLocation();
 
     bool updateSystemProxyMode(SystemProxyMode mode) const;
+    // Restores the captured snapshot, or clears when there is none. `trigger` picks the log line.
+    bool undoSystemProxyChange(SystemProxyUndoTrigger trigger);
     void trackBackgroundThread(QThread* thread);
 
     Dependencies deps_;

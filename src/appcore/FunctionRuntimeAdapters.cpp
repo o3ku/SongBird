@@ -45,6 +45,30 @@ bool FunctionProxyActivationCoordinator::updateSystemProxyMode(SystemProxyMode m
     return updateSystemProxyModeFn(mode);
 }
 
+SystemProxySnapshot FunctionProxyActivationCoordinator::capturedSystemProxySnapshot() const
+{
+    return capturedSystemProxySnapshotFn ? capturedSystemProxySnapshotFn() : SystemProxySnapshot{};
+}
+
+SystemProxySnapshot FunctionProxyActivationCoordinator::ensureSystemProxySnapshotCaptured()
+{
+    // The host owns both halves: it is the only thing that can read the registry and the only
+    // thing that can remember what it read. Falling back to the plain getter keeps a host that
+    // implements just one of the two working.
+    if (ensureSystemProxySnapshotCapturedFn) {
+        return ensureSystemProxySnapshotCapturedFn();
+    }
+    return capturedSystemProxySnapshot();
+}
+
+bool FunctionProxyActivationCoordinator::restoreSystemProxySnapshot(
+    const SystemProxySnapshot& snapshot)
+{
+    // An unset restore hook means the host has no system proxy to put back, so reporting success
+    // is honest -- the same convention ISystemProxyService::restore uses for an invalid snapshot.
+    return restoreSystemProxySnapshotFn ? restoreSystemProxySnapshotFn(snapshot) : true;
+}
+
 QObject* FunctionUserFeedback::uiContext() const
 {
     return uiContextFn ? uiContextFn() : nullptr;

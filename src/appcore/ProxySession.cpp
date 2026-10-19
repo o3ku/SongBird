@@ -837,18 +837,22 @@ void ProxySession::cleanupAfterFailedStartup()
     cancelPendingCoreRestarts();
     currentServer_ = {};
 
-    const bool proxyConfigured =
-        normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedClear
-        || currentRequest_.config.ui().mainProxyEnabled;
-    const bool proxyApplied = deps_.activationCoordinator.isSystemProxyEnabled();
-    if (proxyConfigured || proxyApplied || managedSystemProxyActive_) {
-        const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
-        emit logMessage(proxyCleared
-            ? QCoreApplication::translate("ProxySession", "System proxy disabled because core startup failed.")
-            : QCoreApplication::translate("ProxySession", "Failed to disable system proxy after core startup failed."));
-        if (proxyCleared) {
+    // Ownership, not configuration. This used to clear the proxy whenever the config asked for it
+    // OR the registry happened to be enabled -- and both are true for a user who was running
+    // their own proxy before starting this app, so a startup that failed before ever touching the
+    // registry still deleted their settings. The decision lives in a named function now because
+    // it is a one-line rule that is easy to get wrong inline.
+    const bool snapshotRestorable =
+        isRestorableSystemProxySnapshot(deps_.activationCoordinator.capturedSystemProxySnapshot());
+    switch (decideFailedStartupProxyAction(managedSystemProxyActive_, snapshotRestorable)) {
+    case FailedStartupProxyAction::LeaveAlone:
+        break;
+    case FailedStartupProxyAction::Restore:
+    case FailedStartupProxyAction::Clear:
+        if (undoSystemProxyChange(SystemProxyUndoTrigger::StartupFailed)) {
             managedSystemProxyActive_ = false;
         }
+        break;
     }
     clearProxyStateAfterStopped();
 
@@ -1445,6 +1449,13 @@ bool ProxySession::applySystemProxyAfterOutboundCheck()
         return false;
     }
 
+    // Capture before the first write, and only once per session: from here on the registry holds
+    // our port, so a second capture would record our own value as "what the user had". The
+    // snapshot is also what makes a later failure able to put the user's proxy back instead of
+    // deleting it.
+    const SystemProxySnapshot captured =
+        deps_.activationCoordinator.ensureSystemProxySnapshotCaptured();
+
     setPhase(Phase::ApplySystemProxy);
     setCheckpointStatus(CoreStartupCheckpointStatus::Started, proxyStep,
         QCoreApplication::translate("ProxySession", "Applying Global system proxy."));
@@ -1452,6 +1463,11 @@ bool ProxySession::applySystemProxyAfterOutboundCheck()
     if (!proxyUpdated) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, proxyStep,
             QCoreApplication::translate("ProxySession", "Failed to apply the configured Global system proxy."));
+        // A write that failed half-way is still our doing. Put back what the capture saw rather
+        // than leaving the registry between two states.
+        if (isRestorableSystemProxySnapshot(captured)) {
+            deps_.activationCoordinator.restoreSystemProxySnapshot(captured);
+        }
         failStartup(OperationResult::fail(
             QCoreApplication::translate("ProxySession", "Failed to apply the configured Global system proxy after starting the core.")));
         emit statusSyncRequested();
@@ -1657,16 +1673,22 @@ void ProxySession::clearAppliedProxyAfterStopped()
 {
     outboundReachable_ = false;
     const bool systemProxyEnabled = deps_.activationCoordinator.isSystemProxyEnabled();
-    if (!shouldClearManagedSystemProxy(managedSystemProxyActive_, systemProxyEnabled)) {
-        return;
-    }
+    const bool snapshotRestorable =
+        isRestorableSystemProxySnapshot(deps_.activationCoordinator.capturedSystemProxySnapshot());
 
-    const bool proxyCleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
-    emit logMessage(proxyCleared
-        ? QCoreApplication::translate("ProxySession", "System proxy disabled because the core stopped.")
-        : QCoreApplication::translate("ProxySession", "Failed to disable system proxy after the core stopped."));
-    if (proxyCleared) {
-        managedSystemProxyActive_ = false;
+    // Same ownership rule as a failed startup. `systemProxyEnabled` is still consulted, but only
+    // so that a proxy something *else* already turned off is not written back over -- it is an
+    // AND with ownership, never a substitute for it.
+    switch (decideStopProxyAction(
+        managedSystemProxyActive_, systemProxyEnabled, snapshotRestorable)) {
+    case FailedStartupProxyAction::LeaveAlone:
+        return;
+    case FailedStartupProxyAction::Restore:
+    case FailedStartupProxyAction::Clear:
+        if (undoSystemProxyChange(SystemProxyUndoTrigger::CoreStopped)) {
+            managedSystemProxyActive_ = false;
+        }
+        return;
     }
 }
 
@@ -1910,6 +1932,42 @@ void ProxySession::clearServerLocation()
 bool ProxySession::updateSystemProxyMode(SystemProxyMode mode) const
 {
     return deps_.activationCoordinator.updateSystemProxyMode(mode);
+}
+
+// Puts the user's own proxy settings back, or clears when there is nothing to put back.
+//
+// `trigger` selects which pair of sentences the panel shows, rather than being spliced into one.
+// Whole sentences are what the translation file carries: a "%1" that receives an English phrase
+// cannot be translated into Chinese word order, so a fragment would ship as half-translated text.
+// Returns false when the registry write failed; the caller decides what to do about it.
+bool ProxySession::undoSystemProxyChange(SystemProxyUndoTrigger trigger)
+{
+    const SystemProxySnapshot snapshot = deps_.activationCoordinator.capturedSystemProxySnapshot();
+    if (isRestorableSystemProxySnapshot(snapshot)) {
+        const bool restored = deps_.activationCoordinator.restoreSystemProxySnapshot(snapshot);
+        if (restored) {
+            emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
+                ? tr("System proxy restored because the core stopped.")
+                : tr("System proxy restored because core startup failed."));
+        } else {
+            emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
+                ? tr("Failed to restore the system proxy after the core stopped.")
+                : tr("Failed to restore the system proxy after core startup failed."));
+        }
+        return restored;
+    }
+
+    const bool cleared = updateSystemProxyMode(SystemProxyMode::ForcedClear);
+    if (cleared) {
+        emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
+            ? tr("System proxy disabled because the core stopped.")
+            : tr("System proxy disabled because core startup failed."));
+    } else {
+        emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
+            ? tr("Failed to disable system proxy after the core stopped.")
+            : tr("Failed to disable system proxy after core startup failed."));
+    }
+    return cleared;
 }
 
 void ProxySession::trackBackgroundThread(QThread* thread)

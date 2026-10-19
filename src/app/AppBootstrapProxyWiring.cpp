@@ -57,6 +57,7 @@ void AppBootstrap::wireProxyStack()
     systemProxyCallbacks.startManagedProxyCore = [this](bool skipTunCleanup, bool showStartupOverlay) {
         startManagedProxyCoreInternal(skipTunCleanup, showStartupOverlay);
     };
+    systemProxyCallbacks.persistConfig = [this]() { persistUiState(); };
     objects_->systemProxyCoordinator = std::make_unique<SystemProxyCoordinator>(
         SystemProxyCoordinator::Dependencies{
             config_,

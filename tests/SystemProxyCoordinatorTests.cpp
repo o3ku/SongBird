@@ -45,10 +45,28 @@ public:
     bool isEnabled() const override { return enabled_; }
     void resetOnShutdown() const override { ++resetCalls_; }
 
+    SystemProxySnapshot capture() const override
+    {
+        ++captureCalls_;
+        return captured_; // invalid by default, which is what most cases want
+    }
+
+    bool restore(const SystemProxySnapshot& snapshot) const override
+    {
+        ++restoreCalls_;
+        lastRestored_ = snapshot;
+        return restoreAccepts_;
+    }
+
     bool accepts_ = true;
     bool enabled_ = false;
+    SystemProxySnapshot captured_;
+    bool restoreAccepts_ = true;
     mutable int updateCalls_ = 0;
     mutable int resetCalls_ = 0;
+    mutable int captureCalls_ = 0;
+    mutable int restoreCalls_ = 0;
+    mutable SystemProxySnapshot lastRestored_;
     mutable SystemProxyMode lastMode_ = SystemProxyMode::ForcedClear;
     mutable int lastHttpPort_ = 0;
     mutable int lastSocksPort_ = 0;

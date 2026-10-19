@@ -8,6 +8,52 @@ namespace {
 
 using namespace JsonConfigUtils;
 
+// A captured value has three states, not two, and the JSON has to carry all three or a restore
+// cannot tell "this key did not exist" from "this key was empty" -- which is exactly the
+// distinction SystemProxySnapshot exists to preserve.
+//
+//   key absent   -> nullopt (delete the registry key on restore)
+//   key present  -> the string, possibly empty
+//
+// Only reached when the snapshot is valid; an invalid one writes no object at all.
+QJsonObject toSystemProxySnapshotObject(const SystemProxySnapshot& snapshot)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("enabled"), snapshot.enabled);
+
+    const auto writeCaptured = [&object](const QString& key, const std::optional<QString>& value) {
+        if (value.has_value()) {
+            object.insert(key, *value);
+        }
+    };
+    writeCaptured(QStringLiteral("server"), snapshot.server);
+    writeCaptured(QStringLiteral("overrideList"), snapshot.overrideList);
+    writeCaptured(QStringLiteral("autoConfigUrl"), snapshot.autoConfigUrl);
+    return object;
+}
+
+std::optional<QString> readCaptured(const QJsonObject& object, const QString& key)
+{
+    if (!object.contains(key)) {
+        return std::nullopt;
+    }
+    return object.value(key).toString();
+}
+
+SystemProxySnapshot fromSystemProxySnapshotObject(const QJsonObject& object)
+{
+    SystemProxySnapshot snapshot;
+    if (object.isEmpty()) {
+        return snapshot;
+    }
+    snapshot.valid = true;
+    snapshot.enabled = readBool(object, QStringLiteral("enabled"), false);
+    snapshot.server = readCaptured(object, QStringLiteral("server"));
+    snapshot.overrideList = readCaptured(object, QStringLiteral("overrideList"));
+    snapshot.autoConfigUrl = readCaptured(object, QStringLiteral("autoConfigUrl"));
+    return snapshot;
+}
+
 QJsonObject toUiStateObject(const Config& config)
 {
     QJsonObject ui;
@@ -63,6 +109,9 @@ namespace JsonConfigStateSerialization {
 
 void read(const QJsonObject& root, Config& config)
 {
+    config.systemProxySnapshot() = fromSystemProxySnapshotObject(
+        readObject(root, QStringLiteral("systemProxySnapshot")));
+
     const QJsonObject ui = readObject(root, QStringLiteral("ui"));
     if (!ui.isEmpty()) {
         config.ui().mainLocationX = readInt(ui, QStringLiteral("mainLocationX"), config.ui().mainLocationX);
@@ -141,6 +190,14 @@ void write(QJsonObject& root, const Config& config)
 
     const QJsonArray serverStates = toServerStateArray(config.collection().servers);
     writeArrayIfNotEmpty(root, QStringLiteral("serverStates"), serverStates);
+
+    // Written last, and only when capture() actually ran: an invalid snapshot must leave no key
+    // behind, so a config that never touched the proxy stays byte-identical to one written by a
+    // build that predates this field.
+    if (config.systemProxySnapshot().valid) {
+        root.insert(QStringLiteral("systemProxySnapshot"),
+                    toSystemProxySnapshotObject(config.systemProxySnapshot()));
+    }
 }
 
 } // namespace JsonConfigStateSerialization

@@ -35,11 +35,19 @@ public:
     std::function<void()> refreshExistingCoreTypesFn;
     std::function<bool()> isSystemProxyEnabledFn;
     std::function<bool(SystemProxyMode)> updateSystemProxyModeFn;
+    // Set by the host that owns the system proxy. When unset, the snapshot stays "not captured"
+    // and the proxy session falls back to clearing instead of restoring.
+    std::function<SystemProxySnapshot()> capturedSystemProxySnapshotFn;
+    std::function<SystemProxySnapshot()> ensureSystemProxySnapshotCapturedFn;
+    std::function<bool(const SystemProxySnapshot&)> restoreSystemProxySnapshotFn;
 
     void cancelBackgroundTasksForStartup() override;
     void refreshExistingCoreTypes() override;
     bool isSystemProxyEnabled() const override;
     bool updateSystemProxyMode(SystemProxyMode mode) override;
+    SystemProxySnapshot capturedSystemProxySnapshot() const override;
+    SystemProxySnapshot ensureSystemProxySnapshotCaptured() override;
+    bool restoreSystemProxySnapshot(const SystemProxySnapshot& snapshot) override;
 };
 
 class FunctionUserFeedback final : public IUserFeedback

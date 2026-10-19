@@ -25,6 +25,7 @@
 #include "appcore/TunRuntimeService.h"
 #include "common/AppPlatform.h"
 #include "common/SystemProxyMode.h"
+#include "common/SystemProxySnapshot.h"
 #include "domain/models/Config.h"
 #include "domain/models/RuntimeState.h"
 #include "persistence/JsonConfigRepository.h"
@@ -131,6 +132,34 @@ void AppBootstrap::wireCoreServices()
     };
     proxyActivationCoordinator->updateSystemProxyModeFn = [this](SystemProxyMode mode) {
         return updateSystemProxyMode(mode);
+    };
+    // The snapshot lives in config_.systemProxySnapshot(), which is serialized into the .state.json
+    // companion -- so a killed process still knows what the user's proxy looked like.
+    //
+    // Capturing is idempotent: once a valid snapshot exists it is returned unchanged. That matters
+    // because the only correct moment to read the registry is *before* the first write, and every
+    // later call (stop, failed startup, exit) must not re-read a value that is now ours.
+    proxyActivationCoordinator->capturedSystemProxySnapshotFn = [this]() {
+        return config_.systemProxySnapshot();
+    };
+    proxyActivationCoordinator->ensureSystemProxySnapshotCapturedFn = [this]() {
+        if (!config_.systemProxySnapshot().valid && objects_->systemProxyService != nullptr) {
+            config_.systemProxySnapshot() = objects_->systemProxyService->capture();
+        }
+        return config_.systemProxySnapshot();
+    };
+    proxyActivationCoordinator->restoreSystemProxySnapshotFn = [this](const SystemProxySnapshot& snapshot) {
+        if (objects_->systemProxyService == nullptr) {
+            return true;
+        }
+        const bool restored = objects_->systemProxyService->restore(snapshot);
+        if (restored) {
+            // Spent. Keeping it would make the next stop "restore" a state that is no longer the
+            // user's -- for instance after they changed their own proxy while the app was running.
+            config_.systemProxySnapshot() = SystemProxySnapshot{};
+            persistUiState();
+        }
+        return restored;
     };
     objects_->proxyActivationCoordinator = std::move(proxyActivationCoordinator);
 }

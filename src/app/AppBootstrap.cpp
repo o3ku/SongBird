@@ -288,7 +288,7 @@ void AppBootstrap::logStartupBanner()
 
 void AppBootstrap::adoptManagedSystemProxyOnStartup()
 {
-    if (objects_->systemProxyService == nullptr) {
+    if (objects_->systemProxyService == nullptr || objects_->proxySession == nullptr) {
         return;
     }
 

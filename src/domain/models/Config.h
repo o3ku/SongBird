@@ -6,6 +6,7 @@
 #include <QMap>
 #include <QString>
 
+#include "common/SystemProxySnapshot.h"
 #include "domain/models/CoreTypeItem.h"
 #include "domain/models/RoutingItem.h"
 #include "domain/models/SubItem.h"
@@ -154,6 +155,16 @@ struct Config : RootConfigState {
     CollectionConfigState collectionState;
     TunConfigState tunState;
     PolicyConfigState policyState;
+    // What the system proxy looked like before this program first changed it.
+    //
+    // State-only data, written to the .state.json companion rather than the primary config:
+    // it describes this machine's registry at one moment, not the user's preferences, and it
+    // must not travel with a config file copied to another machine. Persisting it is what makes
+    // a faithful restore possible after the process is killed -- an in-memory-only snapshot can
+    // only recognise our own leftovers, never put the user's values back.
+    //
+    // A default-constructed value has `valid == false`, which means "nothing to restore".
+    SystemProxySnapshot systemProxySnapshotState;
 
     RootConfigState& root() { return *this; }
     const RootConfigState& root() const { return *this; }
@@ -175,4 +186,7 @@ struct Config : RootConfigState {
 
     PolicyConfigState& policy() { return policyState; }
     const PolicyConfigState& policy() const { return policyState; }
+
+    SystemProxySnapshot& systemProxySnapshot() { return systemProxySnapshotState; }
+    const SystemProxySnapshot& systemProxySnapshot() const { return systemProxySnapshotState; }
 };

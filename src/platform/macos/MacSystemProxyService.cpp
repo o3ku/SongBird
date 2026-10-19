@@ -260,3 +260,19 @@ void MacSystemProxyService::resetOnShutdown() const
     // pointed at a core that has just stopped.
     update(SystemProxyMode::ForcedClear, 0, 0, QString(), QString());
 }
+
+SystemProxySnapshot MacSystemProxyService::capture() const
+{
+    // See the header: a faithful per-service snapshot is not something this platform can
+    // restore safely, so "not restorable" is the honest answer and the callers fall back to
+    // clearing. An invalid snapshot is what makes them take that branch.
+    return SystemProxySnapshot{};
+}
+
+bool MacSystemProxyService::restore(const SystemProxySnapshot& snapshot) const
+{
+    Q_UNUSED(snapshot);
+    // Nothing to restore, so nothing failed. The caller's fallback -- update(ForcedClear) -- is
+    // what turns the proxy off, and it reports its own result.
+    return true;
+}

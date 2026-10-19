@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/SystemProxySnapshot.h"
+
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -33,6 +35,24 @@ public:
         const QString& advancedProtocol) const override;
     bool isEnabled() const override;
     void resetOnShutdown() const override;
+
+    // Always invalid, deliberately.
+    //
+    // Windows has one proxy setting per user, so a snapshot is four registry values and the
+    // restore is exact. macOS has one setting *per network service*, each with its own HTTP,
+    // HTTPS, SOCKS and bypass list, and the set of services changes while the app runs (a
+    // VPN comes up, Wi-Fi drops). Snapshotting that faithfully means capturing the state of
+    // every service and then re-applying it to a service list that may no longer match -- and
+    // a partial re-apply is worse than the clear this app has always done.
+    //
+    // So the contract is: capture() reports "not restorable" and callers fall back to
+    // update(ForcedClear), which is exactly the pre-existing behaviour. Doing this in the type
+    // rather than by leaving the methods out keeps every platform on the same call path.
+    SystemProxySnapshot capture() const override;
+
+    // No-op that reports success, for the same reason: there is never a valid snapshot on this
+    // platform, and the fallback in the callers is what actually runs.
+    bool restore(const SystemProxySnapshot& snapshot) const override;
 
 private:
     // The services `networksetup` reports as enabled, in its own order. An empty list
