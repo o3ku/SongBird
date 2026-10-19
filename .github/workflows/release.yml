@@ -610,6 +610,17 @@ jobs:
           name: songbird-offline-bundle
           path: ${{ steps.stage-offline-bundle.outputs.offline_asset }}
 
+      - name: Verify tag matches the embedded version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        # A tag and the version the binary reports are two independent edits, and nothing used to
+        # compare them: tagging v2.7.0 without bumping project(VERSION) published a release whose exe
+        # says 2.6.0, and the About dialog, the update check and the release page then disagreed about
+        # what the user is running. The check itself lives in scripts/ so the same rules run in ctest
+        # (in-tree half) and here (with -Tag) instead of being spelled twice.
+        run: |
+          ./scripts/check-version-consistency.ps1 -Tag "${{ github.ref_name }}"
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh

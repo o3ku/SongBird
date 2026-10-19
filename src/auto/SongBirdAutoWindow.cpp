@@ -32,6 +32,7 @@
 
 #include "auto/AutoCountrySelection.h"
 #include "auto/AutoCoordinatorLogic.h"
+#include "auto/AutoWindowPalette.h"
 #include "auto/SongBirdAutoCoordinator.h"
 #include "appcore/StartupAdminElevation.h"
 #include "common/AppPlatform.h"
@@ -526,63 +527,69 @@ void SongBirdAutoWindow::updateTrayToolTip()
 
 void SongBirdAutoWindow::applyCompactStyle()
 {
-    setStyleSheet(QStringLiteral(R"(
+    // Interpolated from AutoWindowPalette rather than a raw QSS literal. The values are identical
+    // to what this string used to carry; the difference is that they now live in one place, so a
+    // colour cannot drift in here without the guard in scripts/check-hardcoded-colors.ps1 saying
+    // so. See the header for why this window has a palette of its own.
+    static const QString kStyleSheet = [] {
+        const AutoThemeInternal::AutoThemePalette& palette = AutoThemeInternal::currentPalette();
+        QString styleSheet = QStringLiteral(R"(
         QMainWindow, QWidget {
-            background: #f7f7f8;
-            color: #161618;
+            background: %background%;
+            color: %text%;
             font-size: 14px;
         }
         QPushButton {
             border: 0;
             padding: 10px 14px;
-            background: #e8e8ed;
-            color: #161618;
+            background: %control%;
+            color: %text%;
             font-weight: 600;
         }
         QPushButton:hover {
-            background: #dedee5;
+            background: %surfaceHover%;
         }
         QPushButton:disabled {
-            color: #92929b;
-            background: #eeeef2;
+            color: %textSubtle%;
+            background: %surfaceDisabled%;
         }
         QPushButton#primaryAction {
-            background: #007aff;
-            color: white;
+            background: %accent%;
+            color: %onAccent%;
             font-size: 16px;
         }
         QPushButton#primaryAction[mode="starting"] {
-            background: #4aa3ff;
-            color: white;
+            background: %accentPending%;
+            color: %onAccent%;
         }
         QPushButton#primaryAction[mode="starting"]:disabled {
-            background: #4aa3ff;
-            color: white;
+            background: %accentPending%;
+            color: %onAccent%;
         }
         QPushButton#dangerAction {
-            background: #ff3b30;
-            color: white;
+            background: %danger%;
+            color: %onAccent%;
             font-size: 16px;
         }
         QPushButton#primaryAction[mode="stop"] {
-            background: #ff3b30;
+            background: %danger%;
         }
         QPushButton#tunToggleButton {
             min-width: 52px;
             padding: 8px 12px;
-            border: 1px solid #d7d7dd;
-            background: white;
-            color: #4a4a52;
+            border: 1px solid %border%;
+            background: %surface%;
+            color: %textMuted%;
         }
         QPushButton#tunToggleButton:checked {
-            background: #0ea5e9;
-            border-color: #0ea5e9;
-            color: white;
+            background: %accentToggle%;
+            border-color: %accentToggle%;
+            color: %onAccent%;
         }
         QComboBox#countryCombo {
-            border: 1px solid #d7d7dd;
+            border: 1px solid %border%;
             padding: 8px 34px 8px 12px;
-            background: white;
+            background: %surface%;
             font-size: 17px;
             font-weight: 700;
             font-family: Consolas, "Courier New", monospace;
@@ -591,8 +598,8 @@ void SongBirdAutoWindow::applyCompactStyle()
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 28px;
-            border-left: 1px solid #d7d7dd;
-            background: #f0f0f4;
+            border-left: 1px solid %border%;
+            background: %surfaceMuted%;
         }
         QComboBox#countryCombo::down-arrow {
             image: url(:/app/down.svg);
@@ -600,30 +607,30 @@ void SongBirdAutoWindow::applyCompactStyle()
             height: 11px;
         }
         QComboBox#countryCombo QAbstractItemView {
-            background: white;
-            border: 1px solid #d7d7dd;
-            selection-background-color: #d8eaff;
-            selection-color: #161618;
+            background: %surface%;
+            border: 1px solid %border%;
+            selection-background-color: %selection%;
+            selection-color: %text%;
             outline: 0;
             font-family: Consolas, "Courier New", monospace;
         }
         QComboBox#strategyCombo {
-            border: 1px solid #d7d7dd;
+            border: 1px solid %border%;
             padding: 7px 28px 7px 10px;
-            background: white;
+            background: %surface%;
             font-size: 12px;
             font-weight: 600;
         }
         QComboBox#strategyCombo:disabled {
-            color: #92929b;
-            background: #eeeef2;
+            color: %textSubtle%;
+            background: %surfaceDisabled%;
         }
         QComboBox#strategyCombo::drop-down {
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 24px;
-            border-left: 1px solid #d7d7dd;
-            background: #f0f0f4;
+            border-left: 1px solid %border%;
+            background: %surfaceMuted%;
         }
         QComboBox#strategyCombo::down-arrow {
             image: url(:/app/down.svg);
@@ -631,23 +638,23 @@ void SongBirdAutoWindow::applyCompactStyle()
             height: 10px;
         }
         QTableWidget {
-            background: white;
-            border: 1px solid #ececf1;
-            gridline-color: #ececf1;
-            selection-background-color: #d8eaff;
-            selection-color: #161618;
+            background: %surface%;
+            border: 1px solid %borderMuted%;
+            gridline-color: %borderMuted%;
+            selection-background-color: %selection%;
+            selection-color: %text%;
         }
         QScrollBar:vertical {
-            background: #f0f0f4;
+            background: %surfaceMuted%;
             width: 12px;
             margin: 0;
         }
         QScrollBar::handle:vertical {
-            background: #c5ced8;
+            background: %scrollbar%;
             min-height: 24px;
         }
         QScrollBar::handle:vertical:hover {
-            background: #aeb9c6;
+            background: %scrollbarHover%;
         }
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical {
@@ -659,16 +666,16 @@ void SongBirdAutoWindow::applyCompactStyle()
             background: transparent;
         }
         QScrollBar:horizontal {
-            background: #f0f0f4;
+            background: %surfaceMuted%;
             height: 12px;
             margin: 0;
         }
         QScrollBar::handle:horizontal {
-            background: #c5ced8;
+            background: %scrollbar%;
             min-width: 24px;
         }
         QScrollBar::handle:horizontal:hover {
-            background: #aeb9c6;
+            background: %scrollbarHover%;
         }
         QScrollBar::add-line:horizontal,
         QScrollBar::sub-line:horizontal {
@@ -680,33 +687,68 @@ void SongBirdAutoWindow::applyCompactStyle()
             background: transparent;
         }
         QHeaderView::section {
-            background: #f0f0f4;
+            background: %surfaceMuted%;
             border: 0;
             padding: 7px;
-            color: #5c5c66;
+            color: %textHeader%;
             font-weight: 700;
         }
         QStatusBar {
-            background: #f7f7f8;
-            color: #6c6c75;
+            background: %background%;
+            color: %textStatus%;
         }
         QLabel#logsStatusLabel {
-            color: #4a4a52;
+            color: %textMuted%;
             font-size: 12px;
             font-weight: 500;
             padding-right: 2px;
         }
         QDialog {
-            background: #f7f7f8;
+            background: %background%;
         }
         QPlainTextEdit, QTextEdit {
-            background: white;
-            border: 1px solid #d7d7dd;
+            background: %surface%;
+            border: 1px solid %border%;
             padding: 10px;
             font-family: Consolas, monospace;
             font-size: 13px;
         }
-    )"));
+    )");
+
+        const struct { const char* token; const char* value; } tokens[] = {
+            {"background", palette.background},
+            {"text", palette.text},
+            {"textMuted", palette.textMuted},
+            {"textHeader", palette.textHeader},
+            {"textStatus", palette.textStatus},
+            {"textSubtle", palette.textSubtle},
+            {"surface", palette.surface},
+            {"control", palette.control},
+            {"surfaceMuted", palette.surfaceMuted},
+            {"surfaceHover", palette.surfaceHover},
+            {"surfaceDisabled", palette.surfaceDisabled},
+            {"border", palette.border},
+            {"borderMuted", palette.borderMuted},
+            {"accent", palette.accent},
+            {"accentPending", palette.accentPending},
+            {"accentToggle", palette.accentToggle},
+            {"danger", palette.danger},
+            {"selection", palette.selection},
+            {"scrollbar", palette.scrollbar},
+            {"scrollbarHover", palette.scrollbarHover},
+            // The text drawn on top of an accent or a danger button. It lives in the palette for
+            // the same reason every other colour does: a future pale accent needs a dark label,
+            // and that cannot be decided at the call site.
+            {"onAccent", AutoThemeInternal::onAccentColor()},
+        };
+        for (const auto& token : tokens) {
+            styleSheet.replace(QStringLiteral("%%1%").arg(QString::fromLatin1(token.token)),
+                               QString::fromLatin1(token.value));
+        }
+        return styleSheet;
+    }();
+
+    setStyleSheet(kStyleSheet);
     runButton_->setObjectName(QStringLiteral("primaryAction"));
     AppTheme::refreshStyle(runButton_);
 }

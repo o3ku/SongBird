@@ -136,6 +136,12 @@ $allowlist = @{
     # pipe-delimited URL Test diagnostic lines allowlisted above. Machine data, not a sentence.
     '<no output>' = 'diagnostic payload inside the pipe-delimited URL Test lines'
 
+    # ClashYamlBuilder::buildProxiesBlock() (subscription/ClashYamlBuilder.cpp) -- the emitted
+    # "proxies: []" block for an empty node list. This is serialised YAML handed to a core
+    # process or written to a config file, not a sentence anyone reads: the key name is fixed
+    # by the Clash schema and a translator must never change it.
+    'proxies: []\n' = 'serialised Clash YAML key, not user-facing prose'
+
     # ---------------------------------------------------------------------------
     # Reviewed and deliberately left English, but *not* reachable from any scan -- so no
     # suppression is in play and these stay a comment rather than allowlist entries. Adding

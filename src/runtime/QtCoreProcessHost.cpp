@@ -9,6 +9,10 @@
 
 #include "common/CorePidFile.h"
 
+#ifdef Q_OS_WIN
+#include "platform/windows/WindowsJobObject.h"
+#endif
+
 QtCoreProcessHost::QtCoreProcessHost() = default;
 
 QtCoreProcessHost::~QtCoreProcessHost()
@@ -196,14 +200,34 @@ void QtCoreProcessHost::bindOutputSignals()
             }
             recordCorePid(process->processId());
 
+            // Best-effort: when the assignment fails the PID file is still the fallback, which
+            // is exactly the pre-job behaviour. The failure is folded into the started message
+            // so it shows up in the log panel instead of vanishing -- an orphan nobody knows
+            // about is how this file ended up owning a PID list in the first place.
+            //
+            // Deliberately no shared default: on Windows the message must reflect the actual
+            // outcome (the start-message probe pins the clean case), while other platforms have
+            // no job concept and must keep the historical message untouched.
+#ifdef Q_OS_WIN
+            const bool jobAssigned = WindowsJobObject::assignProcessToAppJob(
+                static_cast<qint64>(process->processId()));
+#endif
+
             if (startNotified_) {
                 return;
             }
 
             startNotified_ = true;
             if (startedCallback_) {
-                startedCallback_(QStringLiteral("Core process started: %1")
-                                     .arg(QFileInfo(lastCoreInfo_.program).fileName()));
+                QString startedMessage = QStringLiteral("Core process started: %1")
+                                             .arg(QFileInfo(lastCoreInfo_.program).fileName());
+#ifdef Q_OS_WIN
+                if (!jobAssigned) {
+                    startedMessage += QStringLiteral(
+                        " (process job assignment failed; orphan cleanup falls back to the PID file)");
+                }
+#endif
+                startedCallback_(startedMessage);
             }
         });
 
