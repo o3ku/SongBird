@@ -325,6 +325,71 @@ try {
     Remove-Item -LiteralPath $versionTempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# The README asset check needs a README and a docs directory, so it gets its own scratch tree for the
+# same reason the version check does: the working tree must never be mutated by a self-test.
+$readmeTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "songbird-readme-selftest-" + [guid]::NewGuid().ToString("N"))
+try {
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+    New-Item -ItemType Directory -Path (Join-Path $readmeTempRoot "docs\screenshots") -Force | Out-Null
+    # A real, non-empty file so the passing case exercises the same path a genuine screenshot would.
+    Set-Content -LiteralPath (Join-Path $readmeTempRoot "docs\screenshots\shot.png") `
+        -Value "not a real png, but non-empty" -Encoding UTF8
+
+    $readmeCases = @(
+        @{
+            Name = "readme-assets: a reference to a missing image is rejected"
+            Content = "# Title`n`n![shot](docs/screenshots/missing.png)`n"
+        },
+        @{
+            Name = "readme-assets: a reference to an empty file is rejected"
+            Break = {
+                param($tree)
+                Set-Content -LiteralPath (Join-Path $tree "docs\screenshots\empty.png") -Value "" -NoNewline
+            }
+            Content = "# Title`n`n![shot](docs/screenshots/empty.png)`n"
+        }
+    )
+
+    foreach ($case in $readmeCases) {
+        $tree = Join-Path $readmeTempRoot ([guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path (Join-Path $tree "docs\screenshots") -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $readmeTempRoot "docs\screenshots\shot.png") `
+            -Destination (Join-Path $tree "docs\screenshots")
+        if ($case.ContainsKey("Break")) {
+            & $case.Break $tree
+        }
+        $readmePath = Join-Path $tree "README.md"
+        Set-Content -LiteralPath $readmePath -Value $case.Content -Encoding UTF8
+
+        $exitCode = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Readme", $readmePath)
+        if ($exitCode -eq 0) {
+            $failures.Add("$($case.Name): the guard still reported success on a README that violates it")
+        } else {
+            Write-Host "  red as expected: $($case.Name)"
+        }
+
+        Remove-Item -LiteralPath $tree -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    # And a README whose images all resolve must pass, so a guard that always fails cannot satisfy the
+    # cases above.
+    $cleanReadmeTree = Join-Path $readmeTempRoot "clean"
+    New-Item -ItemType Directory -Path (Join-Path $cleanReadmeTree "docs\screenshots") -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $readmeTempRoot "docs\screenshots\shot.png") `
+        -Destination (Join-Path $cleanReadmeTree "docs\screenshots")
+    $cleanReadmePath = Join-Path $cleanReadmeTree "README.md"
+    Set-Content -LiteralPath $cleanReadmePath -Value "# Title`n`n![shot](docs/screenshots/shot.png)`n" -Encoding UTF8
+    $cleanReadmeExit = Invoke-Guard -Guard "check-readme-assets.ps1" -Arguments @("-Readme", $cleanReadmePath)
+    if ($cleanReadmeExit -ne 0) {
+        $failures.Add("check-readme-assets.ps1: reported a violation in a README whose images all resolve")
+    } else {
+        Write-Host "  green on the clean tree: check-readme-assets.ps1"
+    }
+} finally {
+    Remove-Item -LiteralPath $readmeTempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Error (($failures | ForEach-Object { "- $_" }) -join [Environment]::NewLine) -ErrorAction Continue
     exit 1

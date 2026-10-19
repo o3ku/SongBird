@@ -6,6 +6,17 @@ SongBird manages V2Ray-style proxy servers — VMess, VLESS, Shadowsocks, Trojan
 
 It is native rather than embedded, so it starts quickly and stays out of the way in the tray. Everything lives in one JSON config file, so backing up or moving to another machine is a file copy. The interface is available in English and Simplified Chinese, in light and dark themes.
 
+![SongBird's main window, showing servers grouped by subscription with per-server latency results](docs/screenshots/main-window.png)
+
+Servers are grouped by subscription, and the Result column shows each node's last measurement — a red `Timeout` is as visible as a fast node. The log panel below is where the core's own output goes.
+
+<details>
+<summary>Settings</summary>
+
+![The Settings dialog, showing the General page and the Subscriptions, Routing, Core, TUN and DNS tabs](docs/screenshots/settings-general.png)
+
+</details>
+
 ## Download
 
 Download the build for your platform from the [latest release](https://github.com/o3ku/SongBird/releases/latest). All three are portable — no installer, no runtime, no registry entry.

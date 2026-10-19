@@ -71,8 +71,7 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -BuildDirectory ${CMAKE_BINARY_DIR}/src
             -Executable $<TARGET_FILE:songbird>
     )
-    # The version has one declaration (project(VERSION) in CMakeLists.txt) and several consumers
-    # (the compile definition, the macOS bundle, the release workflow's tag). Nothing compared them,
+    # The version has one declaration (project(VERSION) in CMakeLists.txt) and several consumers    # (the compile definition, the macOS bundle, the release workflow's tag). Nothing compared them,
     # so a hardcoded second literal or a tag that disagrees with the declaration published a binary
     # whose About dialog, update check and release page all claimed different numbers. The release
     # workflow passes -Tag to this same script; here it runs the in-tree half.
@@ -81,6 +80,16 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
         COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
             -NoProfile
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-version-consistency.ps1
+    )
+    # The README is the project's front page and nothing compiles it, so a moved or renamed
+    # screenshot leaves a broken image icon there with no build failure. This only checks that every
+    # referenced path exists and is non-empty; whether an image still shows the current UI needs a
+    # human, and that rule is written down in the script rather than pretended to be automated.
+    add_test(
+        NAME readme-assets
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-readme-assets.ps1
     )
     # These four do not read the source tree; they exercise the vcpkg cache steps in
     # .github/workflows/release.yml. Each one extracts the step's real run: block from the workflow,

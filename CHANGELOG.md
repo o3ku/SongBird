@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Docs: the README now opens with a screenshot of the main window and a collapsible one of the Settings dialog, so a visitor can see the interface before reading about it. `scripts/check-readme-assets.ps1` fails the build when a referenced image is missing or empty, which is the failure mode a README otherwise has no defence against.
+
 ## 2.7.0 — The system proxy is now something we restore, not something we erase
 
 - Fix: quitting no longer deletes a system proxy the user had configured before starting SongBird. `WindowsSystemProxyService` captures `ProxyEnable`/`ProxyServer`/`ProxyOverride`/`AutoConfigURL` before the first write and puts them back afterwards; a key that did not exist is removed, a key that existed is restored even when its value was empty. Previously `resetOnShutdown()` removed both keys outright.
