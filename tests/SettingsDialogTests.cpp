@@ -1548,27 +1548,22 @@ void SettingsDialogTests::dnsPageKeepsTheSameRowRhythmAsTheOtherFormPages()
                             .arg(generalPitch)));
 
     // The hosts editor must reach the bottom rather than leave a dead void behind it.
-    // QTRY rather than a fixed pass count: on macOS the cocoa platform finalises the
-    // window geometry asynchronously, so a fixed number of processEvents passes after
-    // show() can still observe the pre-finalise layout, which read 22px of slack below
-    // the hosts box while the same build on Windows read none. QTRY waits for the layout
-    // to settle -- Windows settles on the first pass -- so a real dead zone still fails.
-    // The extras in the message pin where a future difference lives if it ever does.
-    QTRY_VERIFY2_WITH_TIMEOUT(
-        dnsPage->height()
-                - (hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height())
-            <= 16,
-        qPrintable(
-            QStringLiteral("DNS page leaves %1px of unused space below the hosts editor "
-                           "(page %2, hosts top %3, hosts %4, filler %5, page sizeHint %6)")
-                .arg(dnsPage->height()
-                     - (hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height()))
-                .arg(dnsPage->height())
-                .arg(hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y())
-                .arg(hostsEdit->height())
-                .arg(filler->height())
-                .arg(dnsPage->sizeHint().height())),
-        5000);
+    // Below the box the layout's own spacing and bottom margin remain -- the filler row
+    // is pinned to zero height above and nothing else absorbs them -- which reads 15px on
+    // Windows (6px spacing + 9px margin) and 22px on both macOS runners, so the threshold
+    // has to sit above the platform's own composition. What it guards is the capped-hosts
+    // regression, where the leftover page height piled up below the box instead of growing
+    // it: that measured 120px on Windows, far above any spacing/margin a style reports.
+    qWarning("dns page: height=%d sizeHint=%d hostsTop=%d hosts=%d filler=%d",
+             dnsPage->height(),
+             dnsPage->sizeHint().height(),
+             hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y(),
+             hostsEdit->height(),
+             filler->height());
+    const int hostsBottom = hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height();
+    QVERIFY2(dnsPage->height() - hostsBottom <= 28,
+             qPrintable(QStringLiteral("DNS page leaves %1px of unused space below the hosts editor")
+                            .arg(dnsPage->height() - hostsBottom)));
 }
 
 
