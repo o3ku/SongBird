@@ -1548,10 +1548,27 @@ void SettingsDialogTests::dnsPageKeepsTheSameRowRhythmAsTheOtherFormPages()
                             .arg(generalPitch)));
 
     // The hosts editor must reach the bottom rather than leave a dead void behind it.
-    const int hostsBottom = hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height();
-    QVERIFY2(dnsPage->height() - hostsBottom <= 16,
-             qPrintable(QStringLiteral("DNS page leaves %1px of unused space below the hosts editor")
-                            .arg(dnsPage->height() - hostsBottom)));
+    // QTRY rather than a fixed pass count: on macOS the cocoa platform finalises the
+    // window geometry asynchronously, so a fixed number of processEvents passes after
+    // show() can still observe the pre-finalise layout, which read 22px of slack below
+    // the hosts box while the same build on Windows read none. QTRY waits for the layout
+    // to settle -- Windows settles on the first pass -- so a real dead zone still fails.
+    // The extras in the message pin where a future difference lives if it ever does.
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        dnsPage->height()
+                - (hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height())
+            <= 16,
+        qPrintable(
+            QStringLiteral("DNS page leaves %1px of unused space below the hosts editor "
+                           "(page %2, hosts top %3, hosts %4, filler %5, page sizeHint %6)")
+                .arg(dnsPage->height()
+                     - (hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height()))
+                .arg(dnsPage->height())
+                .arg(hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y())
+                .arg(hostsEdit->height())
+                .arg(filler->height())
+                .arg(dnsPage->sizeHint().height())),
+        5000);
 }
 
 
