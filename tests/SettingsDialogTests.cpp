@@ -5,6 +5,7 @@
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -1512,22 +1513,39 @@ void SettingsDialogTests::dnsPageKeepsTheSameRowRhythmAsTheOtherFormPages()
     const int generalPitch = generalLanguageCombo->mapTo(generalPage, QPoint(0, 0)).y()
                            - generalPortSpin->mapTo(generalPage, QPoint(0, 0)).y();
 
-    // The pitch is the row height plus the layout's spacing, and the row height is the
-    // taller of the label and the field. QLineEdit, QSpinBox and QComboBox do not share a
-    // height on every platform -- on the macOS Qt5 style the line-edit rows read 2px taller
-    // than the spin/combo rows -- so comparing raw pitches only holds on the platform the
-    // tolerance was measured on. Subtracting the field height leaves the spacing (plus any
-    // label surplus) that the rhythm is actually about, which is what the original bug
-    // inflated.
+    // Subtracting the field height is kept as a diagnostic only (printed below): it turns
+    // out not to equalise the two pages on macOS, where the 2px lives in the row height
+    // rather than in the field itself.
     const int dnsGap = dnsPitch - remoteDnsEdit->height();
     const int generalGap = generalPitch - generalPortSpin->height();
 
-    qWarning("row rhythm: dns=%d general=%d (gap %d vs %d)", dnsPitch, generalPitch, dnsGap, generalGap);
-    // Before the fix the DNS page measured 35-37 here and this comparison was off by 9-11px.
-    QVERIFY2(std::abs(dnsGap - generalGap) <= 1,
-             qPrintable(QStringLiteral("DNS row gap %1 does not match General %2")
-                            .arg(dnsGap)
-                            .arg(generalGap)));
+    const auto* dnsForm = qobject_cast<const QFormLayout*>(dnsPage->layout());
+    const auto* generalForm = qobject_cast<const QFormLayout*>(generalPage->layout());
+    const QWidget* dnsLabel = dnsForm != nullptr ? dnsForm->labelForField(remoteDnsEdit) : nullptr;
+    const QWidget* generalLabel = generalForm != nullptr ? generalForm->labelForField(generalPortSpin) : nullptr;
+    qWarning("row rhythm: dns=%d general=%d (gap %d vs %d; label %d/%d field %d/%d spacing %d/%d)",
+             dnsPitch,
+             generalPitch,
+             dnsGap,
+             generalGap,
+             dnsLabel != nullptr ? dnsLabel->height() : -1,
+             generalLabel != nullptr ? generalLabel->height() : -1,
+             remoteDnsEdit->height(),
+             generalPortSpin->height(),
+             dnsForm != nullptr ? dnsForm->verticalSpacing() : -1,
+             generalForm != nullptr ? generalForm->verticalSpacing() : -1);
+    // The pitch is a row height plus the layout's spacing, and a row is as tall as the
+    // taller of its label and its field -- so two pages built from different field widgets
+    // never measure pixel-equal on every platform. Windows reads dns=26 general=26, but
+    // both macOS runners read dns=31 general=29: a stable 2px (label, field and spacing are
+    // all printed above to pin where a future difference comes from). No platform-
+    // independent pixel equality exists here; what this test guards is the hosts-box
+    // regression, which inflated every gap on the DNS page by 9-11px, so 3 fails that by a
+    // wide margin while accepting the platform's own row-height difference.
+    QVERIFY2(std::abs(dnsPitch - generalPitch) <= 3,
+             qPrintable(QStringLiteral("DNS row pitch %1 does not match General %2")
+                            .arg(dnsPitch)
+                            .arg(generalPitch)));
 
     // The hosts editor must reach the bottom rather than leave a dead void behind it.
     const int hostsBottom = hostsEdit->mapTo(dnsPage, QPoint(0, 0)).y() + hostsEdit->height();
