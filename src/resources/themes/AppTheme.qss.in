@@ -112,7 +112,8 @@ QTabWidget#routingCustomRuleTabs QTabBar::tab:selected { color: @accent@; border
 QTabWidget#routingCustomRuleTabs QTabBar::tab:hover:!selected { color: @text@; border-bottom: 2px solid @inputBorderHover@; }
 #serverHeaderRow { background: @sectionHeader@; }
 #serverHeaderRow { border-bottom: 1px solid @border@; }
-QLineEdit#serverFilterEdit, QLineEdit#logFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 2px 8px; }
+QLineEdit#serverFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 4px 8px; }
+QLineEdit#logFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 2px 8px; }
 QLineEdit#serverFilterEdit:hover, QLineEdit#logFilterEdit:hover { background: @surface@; border: 1px solid @inputBorderHover@; }
 QLineEdit#serverFilterEdit:focus, QLineEdit#logFilterEdit:focus { background: @surface@; border: 1px solid @focus@; }
 QLineEdit#uwpLoopbackFilterEdit { padding: 4px 8px; }
