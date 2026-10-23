@@ -21,7 +21,10 @@
 //   * A circuit breaker takes a node that has failed N probes in a row out of consideration for a
 //     cooldown, so a dead node cannot win on a stale good score.
 //   * Hysteresis demands the challenger be better by a margin before switching, so two nodes
-//     within noise of each other do not swap the active connection on every probe.
+//     within noise of each other do not swap the active connection on every probe. It also holds
+//     a freshly chosen node for a minimum time: a margin alone still moves the connection whenever
+//     a genuinely faster node shows up, and on a subscription that rotates its nodes every minute
+//     the caller would spend the whole session restarting the core.
 //
 // Failure and latency are deliberately combined into one number rather than compared
 // lexicographically: a node with a perfect score that is currently failing has already been
@@ -59,6 +62,23 @@ public:
         // preferred over a known-good one nor permanently excluded; it sits between "excellent"
         // and "unusable" so the first real probe decides.
         double initialScore = 500.0;
+
+        // Shortest time the active node is kept before a challenger may move it, regardless of how
+        // much better the challenger is. A margin alone still switches when a genuinely faster node
+        // appears, and a subscription that rotates its nodes every minute would then restart the
+        // core on every round. A tripped (currently failing) node is still replaced immediately --
+        // this only delays a move that is about being better, not one that is about being alive.
+        // 0 disables the hold.
+        //
+        // Contract, spelled out because it was once read the other way: the window runs from the
+        // session's activation and is reset only by a stop, finishStopped or a cleared evaluation
+        // state. A successful probe does NOT clear it -- the first evaluation round after a start
+        // records a success for the just-started node almost by definition, so a clear-on-success
+        // would void the window in exactly the scenario it exists for. The practical consequence is
+        // that the first switch opportunity is the first evaluation round that begins after the
+        // window expires, and the window does not pause while the core is down between a crash and
+        // its automatic restart.
+        int minimumHoldMs = 10 * 60 * 1000;
     };
 
     // Per-node state. The caller owns one of these per server and passes it in, because the policy
@@ -105,7 +125,16 @@ public:
     // Returns false when either side has no sample yet: an untested challenger is not evidence,
     // and an untested current node must be measured before it can be replaced. The caller is
     // expected to probe both before asking.
-    bool shouldSwitch(const NodeState& current, const NodeState& challenger, qint64 nowMs) const;
+    //
+    // `activeSinceMs` is when the active node started carrying traffic (0 when unknown, which
+    // skips the hold). Its only job is `minimumHoldMs`: within that window a better challenger is
+    // not yet a reason to pay for a core restart. A tripped current node ignores the window, since
+    // it is failing rather than merely not optimal.
+    bool shouldSwitch(
+        const NodeState& current,
+        const NodeState& challenger,
+        qint64 nowMs,
+        qint64 activeSinceMs = 0) const;
 
 private:
     Config config_;

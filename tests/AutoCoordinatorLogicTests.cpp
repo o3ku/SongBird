@@ -77,6 +77,10 @@ private slots:
     void reconcileReturnsFalseWhenActiveServerMissing();
     void reconcileReturnsFalseWhenAlreadyCurrentAndNoDuplicate();
     void reconcileSetsCurrentIndexIdWhenNoDuplicateExists();
+    void activeServerPrefersTheOneThisSessionStarted();
+    void activeServerFallsBackToTheSavedSelection();
+    void shouldMoveRefusesWithoutStateForEitherSide();
+    void shouldMoveAppliesTheHoldWindowToTheStartedNode();
 };
 
 void AutoCoordinatorLogicTests::proxyActiveDependsOnActivationNotGeo()
@@ -337,6 +341,51 @@ void AutoCoordinatorLogicTests::reconcileSetsCurrentIndexIdWhenNoDuplicateExists
     QVERIFY(reconcilePreservedActiveServer(config, QStringLiteral("a")));
     QCOMPARE(config.currentIndexId, QStringLiteral("a"));
     QCOMPARE(config.collection().servers.size(), 2);
+}
+
+void AutoCoordinatorLogicTests::activeServerPrefersTheOneThisSessionStarted()
+{
+    // The started id wins over the saved selection: the config file can still name the node from
+    // the last run, and comparing a challenger against that one would mean comparing against a node
+    // that is not carrying traffic.
+    Config config = configWith({}, QStringLiteral("saved"));
+    QCOMPARE(AutoCoordinatorLogic::activeServerIdFor(config, QStringLiteral("started")),
+             QStringLiteral("started"));
+}
+
+void AutoCoordinatorLogicTests::activeServerFallsBackToTheSavedSelection()
+{
+    Config config = configWith({}, QStringLiteral("saved"));
+    QCOMPARE(AutoCoordinatorLogic::activeServerIdFor(config, QString()), QStringLiteral("saved"));
+    QCOMPARE(AutoCoordinatorLogic::activeServerIdFor(config, QStringLiteral("   ")),
+             QStringLiteral("saved"));
+    QCOMPARE(AutoCoordinatorLogic::activeServerIdFor(configWith({}, QString()), QString()), QString());
+}
+
+void AutoCoordinatorLogicTests::shouldMoveRefusesWithoutStateForEitherSide()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    policy.recordResult(&current, true, 500, 1000);
+    QVERIFY(!AutoCoordinatorLogic::shouldMoveActiveServer(policy, &current, nullptr, 1000, 0));
+    QVERIFY(!AutoCoordinatorLogic::shouldMoveActiveServer(policy, nullptr, &current, 1000, 0));
+    QVERIFY(!AutoCoordinatorLogic::shouldMoveActiveServer(policy, nullptr, nullptr, 1000, 0));
+}
+
+void AutoCoordinatorLogicTests::shouldMoveAppliesTheHoldWindowToTheStartedNode()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 400, 1000);
+    policy.recordResult(&challenger, true, 100, 1000);
+
+    // Margin alone would move the connection; the hold window is what a node that started a
+    // minute ago gets instead.
+    QVERIFY(AutoCoordinatorLogic::shouldMoveActiveServer(policy, &current, &challenger, 1000, 0));
+    QVERIFY(!AutoCoordinatorLogic::shouldMoveActiveServer(policy, &current, &challenger, 61000, 1000));
+    QVERIFY(AutoCoordinatorLogic::shouldMoveActiveServer(
+        policy, &current, &challenger, 1000 + policy.config().minimumHoldMs, 1000));
 }
 
 QTEST_MAIN(AutoCoordinatorLogicTests)

@@ -43,6 +43,7 @@
 
 // The pure helpers live in AutoCoordinatorLogic so they can be unit tested; the
 // names are re-exported here to keep the call sites in this file unchanged.
+using AutoCoordinatorLogic::activeServerIdFor;
 using AutoCoordinatorLogic::evaluationStateText;
 using AutoCoordinatorLogic::findServerInConfig;
 using AutoCoordinatorLogic::firstCountryWithNodesOrFirst;
@@ -177,6 +178,9 @@ bool SongBirdAutoCoordinator::initialize()
         log(location.trimmed().isEmpty()
             ? QStringLiteral("Proxy active. Exit location not known yet.")
             : QStringLiteral("Proxy active. Location: %1").arg(location));
+        // The hold window counts from here, not from the click: the reconnect and the core start
+        // are the cost the policy is protecting, and they finish when the session is up.
+        activeServerSinceMs_ = QDateTime::currentMSecsSinceEpoch();
         publishActiveServer(location);
         taskSummary(QString());
         setRunning(true);
@@ -494,6 +498,9 @@ void SongBirdAutoCoordinator::stop()
     refreshQueuedAfterBusyForce_ = false;
     refreshAfterFailover_ = false;
     healthCheckInProgress_ = false;
+    // A hold window carried across a stop would delay the first switch of the next session on the
+    // strength of a node that is no longer carrying anything.
+    activeServerSinceMs_ = 0;
     healthCheckTimer_.stop();
     periodicRefreshTimer_.stop();
     cancelWorkers_.store(true);
@@ -1452,6 +1459,13 @@ void SongBirdAutoCoordinator::maybeStartFirstAvailableNode(const AutoNodeEvaluat
     startProxySession();
 }
 
+qint64 SongBirdAutoCoordinator::activeServerSinceMs() const
+{
+    // 0 means "unknown", which is how the policy is told to skip the hold window. Only a session
+    // that actually came up sets this, so a failed start does not silently extend the hold.
+    return activeServerSinceMs_;
+}
+
 void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
 {
     switchToBestAfterEvaluation_ = false;
@@ -1463,18 +1477,23 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
     if (bestServerId.isEmpty()) {
         return;
     }
-    if (bestServerId == activeServerId_) {
+    // The node the challenger has to beat. activeServerId_ is only set by a start that this
+    // session performed; on the rounds before the first start it is empty, and the saved
+    // config.currentIndexId is what the ranking is being compared against.
+    const QString currentServerId = activeServerIdFor(config_, activeServerId_);
+    if (!currentServerId.isEmpty() && bestServerId == currentServerId) {
         log(QStringLiteral("Current node remains the fastest tested node."));
         return;
     }
 
     // Ranking alone is not a reason to move: the fastest node in a batch is often only a few
     // milliseconds ahead of the one already carrying traffic, and trading the connection for that
-    // costs a reconnect plus a fresh core start. The policy holds the switch margin (and the rule
-    // that a node with an open breaker loses its claim regardless of score) -- without this call
-    // both were dead code, and every probe round reordered the active connection.
+    // costs a reconnect plus a fresh core start. The policy holds the switch margin, the minimum
+    // hold window (a rotation subscription is otherwise restarted every round) and the rule that a
+    // node with an open breaker loses its claim regardless of score -- without this call all three
+    // were dead code, and every probe round reordered the active connection.
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const auto currentIt = nodeScores_.constFind(activeServerId_);
+    const auto currentIt = nodeScores_.constFind(currentServerId);
     const auto challengerIt = nodeScores_.constFind(bestServerId);
     // The active node is normally in the map -- it is what an earlier round ranked -- but it can be
     // missing on the first round after a manual pick. An unmeasured side means there is nothing to
@@ -1482,12 +1501,13 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
     if (currentIt == nodeScores_.constEnd() || challengerIt == nodeScores_.constEnd()
         || !currentIt->hasSample || !challengerIt->hasSample) {
         log(QStringLiteral("Keeping the active node; %1 and %2 have not both been measured.")
-                .arg(activeServerId_, bestServerId));
+                .arg(currentServerId, bestServerId));
         return;
     }
-    if (!routingScorePolicy_.shouldSwitch(*currentIt, *challengerIt, nowMs)) {
-        log(QStringLiteral("Keeping %1; %2 is not ahead by the switch margin.")
-                .arg(activeServerId_, bestServerId));
+    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
+            routingScorePolicy_, &currentIt.value(), &challengerIt.value(), nowMs, activeServerSinceMs())) {
+        log(QStringLiteral("Keeping %1; %2 is not ahead by the switch margin, or %1 is still within its hold window.")
+                .arg(currentServerId, bestServerId));
         return;
     }
 
@@ -1938,6 +1958,7 @@ void SongBirdAutoCoordinator::clearEvaluationState()
     nodeScores_.clear();
     countrySummaries_ = buildCountrySummaries(evaluations_);
     activeServerId_.clear();
+    activeServerSinceMs_ = 0;
     normalizeSelectedCountryAfterRetest();
 
     emit nodeEvaluationsChanged(evaluations_);
@@ -2056,10 +2077,48 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     const QString nextId = nextFailoverServerId(failedServerId);
     refreshAfterFailover_ = running_ && availableCount <= kLowCountryNodeThreshold;
 
+    // The health check that got us here has failed, which is evidence about the node -- the one
+    // thing the scoring policy would otherwise have to wait for a start to learn. The node may
+    // never have been probe-tested (a manual pick, or a first start that failed before any
+    // evaluation round ran), and recordResult() deliberately leaves hasSample untouched on
+    // failure: a node must not earn a score from failing. shouldSwitch() refuses to compare an
+    // unmeasured side, so without the seed the breaker would trip invisibly and the gate below
+    // would never open on this side at all. What the seed buys is the comparison, not the verdict: until the breaker trips, the margin still governs, so a seeded but untested current node can be moved for a faster challenger, never merely for a slower one. The seeded initialScore is
+    // overwritten by the first real probe.
+    const auto failedIt = nodeScores_.find(failedServerId);
+    if (failedIt != nodeScores_.end()) {
+        RoutingScorePolicy::NodeState& failedState = failedIt.value();
+        routingScorePolicy_.seed(&failedState);
+        routingScorePolicy_.recordResult(&failedState, false, 0, QDateTime::currentMSecsSinceEpoch());
+    }
+
+    // No challenger is not a question the policy can answer, so it stays outside the gate: with
+    // no alternative there is nothing to compare, and this refresh is the only way a country
+    // whose last usable node just went dark ever learns about new ones. Behind the gate it was
+    // unreachable -- an empty nextId produced a null challenger, the gate returned "keep" and
+    // the country sat in a health-check retry loop forever.
     if (nextId.isEmpty()) {
         log(QStringLiteral("No alternate node for %1. Retesting after subscription update.").arg(selectedCountryCode_));
         refreshAfterFailover_ = false;
         updateSubscriptionsAndRetest(true);
+        return false;
+    }
+
+    // Failover moves the connection too, so it asks the same question as the post-test switch
+    // instead of holding the ranking itself. One failed health check is not a verdict: the probes
+    // that would trip the failing node's breaker have not run yet, and the policy skips the margin
+    // for a tripped node, so a node that is genuinely gone is still replaced -- just on evidence
+    // rather than on a single sample. Until then the hold window applies as usual.
+    const auto currentIt = nodeScores_.constFind(failedServerId);
+    const auto nextIt = nodeScores_.constFind(nextId);
+    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
+            routingScorePolicy_,
+            currentIt == nodeScores_.constEnd() ? nullptr : &currentIt.value(),
+            nextIt == nodeScores_.constEnd() ? nullptr : &nextIt.value(),
+            QDateTime::currentMSecsSinceEpoch(),
+            activeServerSinceMs())) {
+        log(QStringLiteral("Health check failed; keeping the current node until its probes say it is gone."));
+        scheduleHealthCheck(kHealthCheckIntervalMs);
         return false;
     }
 
@@ -2082,6 +2141,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
 void SongBirdAutoCoordinator::finishStopped()
 {
     activeServerId_.clear();
+    activeServerSinceMs_ = 0;
     emit activeServerChanged(QString(), QString(), QString(), QString(), -1);
     if (config_.tun().tunModeItem.enableTun) {
         startTunRuntime(false);

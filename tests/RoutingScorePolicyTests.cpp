@@ -10,7 +10,9 @@
 //   * Breaker   -- N consecutive failures take a node out of consideration for a cooldown, and a
 //                  success closes it early.
 //   * Hysteresis-- a challenger must be better by a margin, so noise does not churn the active
-//                  node, but a tripped current node is replaced without a margin.
+//                  node, but a tripped current node is replaced without a margin. A freshly chosen
+//                  node is also held for a minimum time, which is what a better-but-not-urgent
+//                  challenger waits out.
 //
 // The policy is stateless, so every test owns its own NodeState. Timestamps are passed in rather
 // than read from the clock, so the cooldown is driven without sleeping.
@@ -46,6 +48,17 @@ private slots:
     void switchesWhenChallengerIsBetterByTheMargin();
     void replacesATrippedCurrentNodeWithoutAMargin();
     void noSwitchWhenBothAreTripped();
+
+    // --- minimum hold ---
+    void holdsAFreshlyChosenNodeEvenAgainstABetterChallenger();
+    void switchesOnceTheHoldWindowElapses();
+    void holdDoesNotDelayReplacingATrippedNode();
+    void holdIsSkippedWhenTheActivationTimeIsUnknown();
+    void zeroHoldDisablesTheWindow();
+
+    // --- failover evidence without a probe ---
+    void failuresAloneNeverProduceASample();
+    void seededThenFailedCurrentIsReplacedEvenInsideTheHoldWindow();
 
     // --- config clamping ---
     void clampsOutOfRangeConfig();
@@ -232,9 +245,10 @@ void RoutingScorePolicyTests::noSwitchWhenChallengerIsOnlySlightlyBetter()
     RoutingScorePolicy::NodeState current;
     RoutingScorePolicy::NodeState challenger;
     policy.recordResult(&current, true, 100, now());
-    // 90 is better, but only by 10 %, under the 25 % margin.
+    // 90 is better, but only by 10 %, under the 25 % margin. Checked outside the hold window so
+    // the margin, not the window, is what refuses.
     policy.recordResult(&challenger, true, 90, now());
-    QVERIFY(!policy.shouldSwitch(current, challenger, now()));
+    QVERIFY(!policy.shouldSwitch(current, challenger, now() + policy.config().minimumHoldMs, now()));
 }
 
 void RoutingScorePolicyTests::switchesWhenChallengerIsBetterByTheMargin()
@@ -278,6 +292,119 @@ void RoutingScorePolicyTests::noSwitchWhenBothAreTripped()
     QVERIFY(!policy.shouldSwitch(current, challenger, now()));
 }
 
+void RoutingScorePolicyTests::holdsAFreshlyChosenNodeEvenAgainstABetterChallenger()
+{
+    RoutingScorePolicy policy;  // minimumHoldMs 600000
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 400, now());
+    // Well past the 25 % margin, so the margin alone would move the connection.
+    policy.recordResult(&challenger, true, 100, now());
+    QVERIFY(policy.shouldSwitch(current, challenger, now()));
+
+    const qint64 activatedAt = now();
+    QVERIFY(!policy.shouldSwitch(current, challenger, activatedAt + 1000, activatedAt));
+    QVERIFY(!policy.shouldSwitch(
+        current, challenger, activatedAt + policy.config().minimumHoldMs - 1, activatedAt));
+}
+
+void RoutingScorePolicyTests::switchesOnceTheHoldWindowElapses()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 400, now());
+    policy.recordResult(&challenger, true, 100, now());
+
+    const qint64 activatedAt = now();
+    QVERIFY(policy.shouldSwitch(
+        current, challenger, activatedAt + policy.config().minimumHoldMs, activatedAt));
+}
+
+void RoutingScorePolicyTests::holdDoesNotDelayReplacingATrippedNode()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 50, now());
+    for (int i = 0; i < 3; ++i) {
+        policy.recordResult(&current, false, 0, now());
+    }
+    policy.recordResult(&challenger, true, 900, now());
+
+    // The node is failing, so the hold window does not protect it: waiting is what a working node
+    // gets, not one that has stopped answering.
+    const qint64 activatedAt = now();
+    QVERIFY(policy.isBreakerOpen(current, activatedAt + 1));
+    QVERIFY(policy.shouldSwitch(current, challenger, activatedAt + 1, activatedAt));
+}
+
+void RoutingScorePolicyTests::holdIsSkippedWhenTheActivationTimeIsUnknown()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 400, now());
+    policy.recordResult(&challenger, true, 100, now());
+
+    // 0 is the caller saying "I do not know when this node started", which is not evidence for a
+    // hold -- imposing one would freeze the connection for ten minutes on the first round.
+    QVERIFY(policy.shouldSwitch(current, challenger, now(), 0));
+}
+
+void RoutingScorePolicyTests::zeroHoldDisablesTheWindow()
+{
+    RoutingScorePolicy::Config config;
+    config.minimumHoldMs = 0;
+    RoutingScorePolicy policy(config);
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&current, true, 400, now());
+    policy.recordResult(&challenger, true, 100, now());
+    QVERIFY(policy.shouldSwitch(current, challenger, now() + 1, now()));
+}
+
+// The failover path records health-check failures into the policy for a node that may never have
+// been probe-tested. These two cases pin the mechanism that path depends on: failures alone must
+// not manufacture a sample (a node must not earn a score from failing), and a seeded node whose
+// breaker then trips is replaceable even inside the hold window.
+void RoutingScorePolicyTests::failuresAloneNeverProduceASample()
+{
+    RoutingScorePolicy policy;
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&challenger, true, 100, now());
+
+    for (int i = 0; i < 5; ++i) {
+        policy.recordResult(&current, false, 0, now());
+    }
+    // The breaker may well have tripped, but an unmeasured side is still not comparable, so the
+    // gate stays closed. This is why the failover path seeds the node before recording.
+    QVERIFY(!current.hasSample);
+    QVERIFY(!policy.shouldSwitch(current, challenger, now(), now()));
+}
+
+void RoutingScorePolicyTests::seededThenFailedCurrentIsReplacedEvenInsideTheHoldWindow()
+{
+    RoutingScorePolicy policy;  // failuresToTrip 3, minimumHoldMs 10 min
+    RoutingScorePolicy::NodeState current;
+    RoutingScorePolicy::NodeState challenger;
+    policy.recordResult(&challenger, true, 100, now());
+
+    // The node never answered a probe; the seed stands in for "exists, unmeasured".
+    policy.seed(&current);
+    for (int i = 0; i < 3; ++i) {
+        policy.recordResult(&current, false, 0, now());
+    }
+    QVERIFY(policy.isBreakerOpen(current, now()));
+
+    // Inside the hold window: a tripped current node loses its claim without waiting out the
+    // window, because "broken" is a different reason to move than "not faster".
+    const qint64 activeSince = now() - 1000;
+    QVERIFY(policy.shouldSwitch(current, challenger, now(), activeSince));
+    QVERIFY(!policy.shouldSwitch(challenger, current, now(), activeSince));
+}
+
 void RoutingScorePolicyTests::clampsOutOfRangeConfig()
 {
     RoutingScorePolicy::Config config;
@@ -287,6 +414,7 @@ void RoutingScorePolicyTests::clampsOutOfRangeConfig()
     config.breakerCooldownMs = -1;
     config.switchMargin = -0.5;
     config.initialScore = 0.0;
+    config.minimumHoldMs = -1;
     RoutingScorePolicy policy(config);
 
     QVERIFY(policy.config().alpha > 0.0);
@@ -295,6 +423,7 @@ void RoutingScorePolicyTests::clampsOutOfRangeConfig()
     QCOMPARE(policy.config().breakerCooldownMs, 0);
     QCOMPARE(policy.config().switchMargin, 0.0);
     QVERIFY(policy.config().initialScore > 0.0);
+    QCOMPARE(policy.config().minimumHoldMs, 0);
 }
 
 QTEST_GUILESS_MAIN(RoutingScorePolicyTests)

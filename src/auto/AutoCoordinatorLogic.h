@@ -3,6 +3,7 @@
 #include <QList>
 #include <QString>
 
+#include "appcore/RoutingScorePolicy.h"
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
 
@@ -56,5 +57,25 @@ void preserveActiveServerForSubscriptionUpdate(Config& config, const QString& ac
 // same active selection. Returns true when the config was changed, which means
 // the caller must persist it.
 bool reconcilePreservedActiveServer(Config& config, const QString& activeServerId);
+
+// The server currently carrying traffic: the one the last start actually
+// selected. Falls back to `config.currentIndexId` when nothing has been started
+// this session, which is the node the saved config points at and therefore the
+// one a ranking challenger has to beat -- without the fallback the first round
+// after launch compared against nothing and kept whatever was already there.
+QString activeServerIdFor(const Config& config, const QString& startedServerId);
+
+// The single gate before moving the active connection, so both the post-test
+// switch and the failover path ask the same question.
+//
+// `activeSinceMs` is when the active node started carrying traffic. The score
+// policy only consults it for its minimum hold window; the margin, the breaker
+// and the smoothing all live in the policy.
+bool shouldMoveActiveServer(
+    const RoutingScorePolicy& policy,
+    const RoutingScorePolicy::NodeState* current,
+    const RoutingScorePolicy::NodeState* challenger,
+    qint64 nowMs,
+    qint64 activeSinceMs);
 
 } // namespace AutoCoordinatorLogic

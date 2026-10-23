@@ -121,6 +121,9 @@ private:
     void mergeEvaluationResult(const AutoNodeEvaluation& result);
     void maybeStartFirstAvailableNode(const AutoNodeEvaluation& evaluation);
     void maybeSwitchToBestServerAfterEvaluation();
+    // Wall-clock ms at which the current node came up, or 0 when nothing has been activated this
+    // session. Feeds the scoring policy's minimum hold window.
+    qint64 activeServerSinceMs() const;
     bool isProxySessionRunningOrTransitioning() const;
     const VmessItem* findServerById(const QString& indexId) const;
     CoreType resolveLaunchCoreType(const VmessItem& server) const;
@@ -217,6 +220,9 @@ private:
     bool noUsableRecoveryUpdateAttempted_ = false;
     bool tunRuntimeRelayToProxy_ = false;
     bool healthCheckInProgress_ = false;
+    // When the active node finished starting. Reset with the other per-session state, because a
+    // hold window that survived a stop would delay the first switch of the next session.
+    qint64 activeServerSinceMs_ = 0;
     bool refreshAfterFailover_ = false;
     QDateTime lastSubscriptionUpdateAt_;
     QDateTime lastLowCountryRefreshAt_;

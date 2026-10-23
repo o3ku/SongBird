@@ -37,6 +37,9 @@ RoutingScorePolicy::RoutingScorePolicy(Config config)
     if (config_.initialScore <= 0.0) {
         config_.initialScore = 500.0;
     }
+    if (config_.minimumHoldMs < 0) {
+        config_.minimumHoldMs = 0;
+    }
 }
 
 void RoutingScorePolicy::seed(NodeState* state) const
@@ -96,7 +99,10 @@ double RoutingScorePolicy::effectiveScore(const NodeState& state, qint64 nowMs) 
 }
 
 bool RoutingScorePolicy::shouldSwitch(
-    const NodeState& current, const NodeState& challenger, qint64 nowMs) const
+    const NodeState& current,
+    const NodeState& challenger,
+    qint64 nowMs,
+    qint64 activeSinceMs) const
 {
     // No evidence, no switch. An untested challenger could be worse than a known-good current
     // node, and an untested current node must be measured before it can be judged.
@@ -121,5 +127,18 @@ bool RoutingScorePolicy::shouldSwitch(
     // (rather than merely better) is what stops two nodes within noise of each other from trading
     // the active connection on every probe.
     const double required = current.score * (1.0 - config_.switchMargin);
-    return challenger.score < required;
+    if (!(challenger.score < required)) {
+        return false;
+    }
+
+    // The challenger is genuinely better, so the only remaining question is when. A node chosen a
+    // moment ago has not had the chance to show whether it is simply better, and moving the
+    // connection costs a core restart, so it is held for minimumHoldMs. Failures still move it: the
+    // breaker check above already returned, so reaching this point means the current node is
+    // working -- just not optimally.
+    if (activeSinceMs > 0 && config_.minimumHoldMs > 0
+        && nowMs < activeSinceMs + config_.minimumHoldMs) {
+        return false;
+    }
+    return true;
 }

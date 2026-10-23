@@ -115,4 +115,28 @@ bool reconcilePreservedActiveServer(Config& config, const QString& activeServerI
     return true;
 }
 
+QString activeServerIdFor(const Config& config, const QString& startedServerId)
+{
+    const QString started = startedServerId.trimmed();
+    if (!started.isEmpty()) {
+        return started;
+    }
+    return config.currentIndexId;
+}
+
+bool shouldMoveActiveServer(
+    const RoutingScorePolicy& policy,
+    const RoutingScorePolicy::NodeState* current,
+    const RoutingScorePolicy::NodeState* challenger,
+    qint64 nowMs,
+    qint64 activeSinceMs)
+{
+    // No state for either side means nothing was measured, and an unmeasured
+    // node is not evidence for a reconnect plus a core restart.
+    if (current == nullptr || challenger == nullptr) {
+        return false;
+    }
+    return policy.shouldSwitch(*current, *challenger, nowMs, activeSinceMs);
+}
+
 } // namespace AutoCoordinatorLogic
