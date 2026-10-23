@@ -2,6 +2,7 @@
 
 #include <QJsonArray>
 
+#include "appcore/HealthStripPolicy.h"
 #include "persistence/JsonConfigUtils.h"
 
 namespace {
@@ -88,14 +89,17 @@ QJsonArray toServerStateArray(const QList<VmessItem>& servers)
 {
     QJsonArray array;
     for (const VmessItem& server : servers) {
-        const bool hasTestResult = !server.testResult.trimmed().isEmpty();
-        if (!hasTestResult) {
-            continue;
-        }
-
         QJsonObject object;
         writeIfNotEmpty(object, QStringLiteral("indexId"), server.indexId);
         writeIfNotEmpty(object, QStringLiteral("testResult"), server.testResult);
+        // The health strip is state for the same reason testResult is: it is measured, not
+        // configured, and it belongs next to the other per-server measurement. Written through the
+        // policy's own decoder so a value the policy would reject is never persisted in the first
+        // place -- the encode()/decode() pair is the format, and this is the only writer.
+        const QList<HealthStripPolicy::Cell> cells = HealthStripPolicy::decode(server.healthStrip);
+        if (!cells.isEmpty()) {
+            writeIfNotEmpty(object, QStringLiteral("healthStrip"), HealthStripPolicy::encode(cells));
+        }
         if (object.contains(QStringLiteral("indexId")) && object.size() > 1) {
             array.append(object);
         }
@@ -175,6 +179,13 @@ void read(const QJsonObject& root, Config& config)
 
             if (object.contains(QStringLiteral("testResult"))) {
                 server.testResult = readString(object, QStringLiteral("testResult"));
+            }
+            if (object.contains(QStringLiteral("healthStrip"))) {
+                // Decoded rather than copied: a malformed strip yields an empty history, and an
+                // empty history renders as untested hours. Showing the wrong history would be worse
+                // than showing none, because the user would trust it.
+                server.healthStrip = HealthStripPolicy::encode(
+                    HealthStripPolicy::decode(readString(object, QStringLiteral("healthStrip"))));
             }
             break;
         }

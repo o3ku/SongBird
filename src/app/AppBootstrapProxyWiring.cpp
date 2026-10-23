@@ -16,6 +16,7 @@
 #include "app/SystemProxyCoordinator.h"
 #include "app/TunModeCoordinator.h"
 #include "common/AppPlatform.h"
+#include "common/LocalInboundPorts.h"
 #include "domain/models/Config.h"
 #include "domain/models/RuntimeState.h"
 #include "runtime/ClientConfigWriter.h"
@@ -43,11 +44,11 @@ void AppBootstrap::wireProxyStack()
     // leaves this unset -- it already runs its own health check every 60 s and would otherwise
     // probe the same node twice.
     objects_->proxySession->setAvailabilityCheck(
-        [](int localPort, const QString& speedPingTestUrl) {
-            ProxyAvailabilityCheckConfig config;
-            config.localPort = localPort;
-            config.speedPingTestUrl = speedPingTestUrl;
-            return ProxyAvailabilityCheckService().check(config);
+        [](const Config& sessionConfig) {
+            ProxyAvailabilityCheckConfig checkConfig;
+            checkConfig.httpPort = LocalInboundPorts::httpPort(sessionConfig);
+            checkConfig.speedPingTestUrl = sessionConfig.defaults().speedPingTestUrl;
+            return ProxyAvailabilityCheckService().check(checkConfig);
         });
 
     objects_->runtimeState = std::make_unique<RuntimeState>();

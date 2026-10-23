@@ -128,15 +128,9 @@ QString locationProbeErrorMessage(const QUrl& url, const QString& error)
 
 int OutboundLocationProbeService::resolveHttpPort(const Config& config, bool usesDedicatedProbe)
 {
-    if (usesDedicatedProbe) {
-        return isValidTcpPort(config.localLocationProbePort)
-            ? config.localLocationProbePort
-            : config.localPort + LocationProbePortOffset;
-    }
-
-    return isValidTcpPort(config.localHttpPort)
-        ? config.localHttpPort
-        : config.localPort + 1;
+    return usesDedicatedProbe
+        ? LocalInboundPorts::locationProbePort(config)
+        : LocalInboundPorts::httpPort(config);
 }
 
 OutboundLocationProbeResult OutboundLocationProbeService::probe(int httpPort) const

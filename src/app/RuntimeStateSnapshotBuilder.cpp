@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 
+#include "common/LocalInboundPorts.h"
 #include "domain/models/RoutingProfiles.h"
 #include "appcore/ProxyUiStateDecision.h"
 
@@ -56,7 +57,7 @@ QString RuntimeStateSnapshotBuilder::buildListenSummaryText(const Config& config
 
     return QCoreApplication::translate("AppBootstrap", "SOCKS %1 | HTTP %2")
         .arg(config.localPort)
-        .arg(config.localPort + 1);
+        .arg(LocalInboundPorts::httpPort(config));
 }
 
 ProxyUiState RuntimeStateSnapshotBuilder::computeProxyUiState(const Inputs& inputs) const

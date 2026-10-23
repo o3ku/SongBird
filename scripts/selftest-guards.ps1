@@ -245,6 +245,14 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "src") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot "src\CMakeLists.txt") `
         -Destination (Join-Path $versionTempRoot "src")
+    # The front-end sources too, because one case below mutates main.cpp. They were missing when that
+    # case was written, so Get-Content threw "Cannot find path" and the whole self-test died before it
+    # reached the assertion -- a case that could not pass, guarding a rule nobody could verify.
+    foreach ($frontEnd in @("app", "auto")) {
+        New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "src\$frontEnd") -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repoRoot "src\$frontEnd\main.cpp") `
+            -Destination (Join-Path $versionTempRoot "src\$frontEnd")
+    }
     New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "scripts") -Force | Out-Null
 
     $versionCases = @(
@@ -278,6 +286,29 @@ try {
             Name = "version-consistency: a release tag that disagrees with project(VERSION) is rejected"
             ExtraArguments = @("-Tag", "v999.0.0")
             Break = { param($tree) }
+        },
+        @{
+            Name = "version-consistency: a plausible version fallback in main.cpp is rejected"
+            # The reason this case exists: the literal scan compares against project(VERSION), so a
+            # fallback spelling an *older* release was invisible to it -- and both main.cpp files
+            # carried one for two versions. A number is the shape of the bug, so the fixture is a
+            # number that is not the declared version.
+            Break = {
+                param($tree)
+                $target = Join-Path $tree "src\app\main.cpp"
+                if (-not (Test-Path -LiteralPath $target)) {
+                    throw "selftest fixture is stale: '$target' is not in the sandbox"
+                }
+                $content = Get-Content -LiteralPath $target -Raw
+                $updated = $content -replace '#define\s+SONGBIRD_APP_VERSION\s+"[^"]*"', '#define SONGBIRD_APP_VERSION "9.9.9"'
+                # A -replace that matches nothing returns the input unchanged, and the case would then
+                # pass on the strength of the *other* literal-scan half of the guard. Assert the
+                # mutation landed, so a renamed macro reports "fixture stale" instead of going green.
+                if ($updated -eq $content) {
+                    throw "selftest fixture is stale: no SONGBIRD_APP_VERSION define matched in '$target'"
+                }
+                Set-Content -LiteralPath $target -Value $updated -Encoding UTF8 -NoNewline
+            }
         }
     )
 

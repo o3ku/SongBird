@@ -104,9 +104,10 @@ public:
     // health check and must not get a second one), and a test can supply a scripted answer without
     // standing up a proxy.
     //
-    // Called on a background thread, so the implementation must not touch this object.
-    using AvailabilityCheck =
-        std::function<OperationResult(int localPort, const QString& speedPingTestUrl)>;
+    // Called on a background thread, so the implementation must not touch this object. It gets the
+    // whole config rather than a `localPort + 1` computed here: resolving the HTTP inbound is
+    // common/LocalInboundPorts' job, and the session used to guess it.
+    using AvailabilityCheck = std::function<OperationResult(const Config& config)>;
 
     // The probe period. `intervalMs` is a parameter rather than a constant because the first probe
     // only fires after a full interval, so a test that cannot shorten it can never reach the watch
@@ -308,6 +309,11 @@ private:
     void runHealthWatch();
     void finishHealthWatch(const OperationResult& result);
     void cancelHealthWatch();
+    // Re-probes direct connectivity while a warning that was caused by it is still on screen, and
+    // drops the warning once the machine can reach the probe hosts again. Bounded in the worker.
+    void recheckWaivedOutboundWarning();
+    void runDirectRecheck();
+    void finishDirectRecheck(bool directReachable);
 
     void setServerLocation(QString location);
     void clearServerLocation();
@@ -347,6 +353,13 @@ private:
     DirectConnectivityCheck directConnectivityCheck_;
     int healthWatchIntervalMs_ = kDefaultHealthWatchIntervalMs;
     bool healthWatchInProgress_ = false;
+    // Set only while the status bar is showing the "cannot reach the probe hosts directly either"
+    // waiver. That sentence describes the local network, not the node, so nothing in the health
+    // watch ever retracts it -- it used to survive for the rest of the session even after the
+    // network came back.
+    bool waivedOutboundWarningShown_ = false;
+    bool directRecheckInProgress_ = false;
+    QTimer* directRecheckTimer_ = nullptr;
 
     CoreStartupChecklist checklist_;
 

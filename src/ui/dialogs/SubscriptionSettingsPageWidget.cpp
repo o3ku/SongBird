@@ -204,6 +204,11 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
             item.remarks = subscriptionDomain;
         }
         item.userAgent = userAgentAtRow(row);
+        // This table edits five columns; the rest of a SubItem is server state the page never
+        // showed. Rebuilding the struct from the table alone reset `etag`/`lastModified` (forcing a
+        // full download on the next refresh) and `failStreak` (losing the back-off) every time the
+        // dialog was opened and confirmed, even with nothing changed.
+        carryServerState(item.id, item);
 
         items.append(item);
     }
@@ -259,6 +264,28 @@ void SubscriptionSettingsPageWidget::appendRow(const SubItem& item)
     table_->setItem(row, kRemarksColumn, remarksItem);
     table_->setItem(row, kUserAgentColumn, userAgentItem);
     table_->setCellWidget(row, kUserAgentColumn, createUserAgentCombo(table_, item.userAgent));
+}
+
+void SubscriptionSettingsPageWidget::carryServerState(const QString& id, SubItem& item) const
+{
+    const QString normalizedId = id.trimmed();
+    if (normalizedId.isEmpty()) {
+        return;
+    }
+
+    const auto stored = std::find_if(
+        items_.cbegin(),
+        items_.cend(),
+        [&normalizedId](const SubItem& candidate) {
+            return candidate.id.trimmed() == normalizedId;
+        });
+    if (stored == items_.cend()) {
+        return;
+    }
+
+    item.etag = stored->etag;
+    item.lastModified = stored->lastModified;
+    item.failStreak = stored->failStreak;
 }
 
 QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const

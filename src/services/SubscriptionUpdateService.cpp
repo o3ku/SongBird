@@ -11,6 +11,7 @@
 #include <QUrl>
 #include <QUuid>
 
+#include "common/LocalInboundPorts.h"
 #include "common/UserAgent.h"
 #include "services/ServiceTimeouts.h"
 #include "services/SubscriptionUpdateOrder.h"
@@ -263,7 +264,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
-    const int proxyPort = useProxy ? config.localPort + 1 : 0;
+    const int proxyPort = useProxy ? LocalInboundPorts::httpPort(config) : 0;
 
     // Retry loop: up to kMaxDownloadAttempts attempts with back-off between failures.
     // A 304 Not Modified response short-circuits the loop immediately.

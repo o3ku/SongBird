@@ -5,6 +5,7 @@
 #include <QJsonArray>
 
 #include "backends/singbox/SingBoxOutboundConfigSupport.h"
+#include "common/LocalInboundPorts.h"
 #include "common/RoutingValuePattern.h"
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
@@ -32,14 +33,12 @@ QString normalizedLogLevel(const QString& level)
 
 int httpPort(const Config& config)
 {
-    return config.localHttpPort > 0 ? config.localHttpPort : config.localPort + 1;
+    return LocalInboundPorts::httpPort(config);
 }
 
 int locationProbePort(const Config& config)
 {
-    return config.localLocationProbePort > 0
-        ? config.localLocationProbePort
-        : config.localPort + RoutingConfigFragments::locationProbePortOffset();
+    return LocalInboundPorts::locationProbePort(config);
 }
 
 QString clashPolicyName(const QString& outboundTag)

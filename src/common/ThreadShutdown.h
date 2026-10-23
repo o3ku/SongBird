@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 class QThread;
 
@@ -48,6 +49,27 @@ struct ThreadShutdownBudget
 ///
 /// `nullptr` returns Finished.
 ThreadShutdownOutcome stopThreadForShutdown(QThread* thread, const ThreadShutdownBudget& budget = {});
+
+/// Same ladder as stopThreadForShutdown(), for a caller that cannot end the process -- a
+/// library-like coordinator whose destructor still has to return, or a task that owns nothing the
+/// worker can reach.
+///
+/// The difference is what Abandoned means. It no longer means "the process is about to die": the
+/// caller owns that decision. It must not delete the QThread object (QThread's destructor is fatal
+/// for a running thread) and must not free anything the worker can still reach. The thread is
+/// interrupted and quit, and `abandonedObjectNames` receives its label so the caller can say what
+/// was left behind.
+///
+/// It runs the ladder on the calling thread. An earlier version moved the wait onto a helper
+/// QThread through Qt::BlockingQueuedConnection, on the theory that Qt refuses long blocking waits
+/// from the event thread; the invokeMethod was then queued on the *calling* thread's own event
+/// loop, which the call was blocking. Qt logged "Dead lock detected", dropped the call, and the
+/// function waited for a helper that never ran. Every wait the ladder makes is bounded, so the
+/// caller's own thread is the right place for it.
+ThreadShutdownOutcome collectThreadForShutdown(
+    QThread* thread,
+    const ThreadShutdownBudget& budget = {},
+    QStringList* abandonedObjectNames = nullptr);
 
 /// Appends a timestamped `message` to the shutdown record and mirrors it to the log stream.
 /// Returns the file path, or an empty string when nothing could be written.

@@ -51,6 +51,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/LogFileWriter.cpp
     common/LogSeverity.h
     common/LogSeverity.cpp
+    common/LocalInboundPorts.h
+    common/LocalPortOption.h
     common/PortValidator.h
     common/RoutingValuePattern.h
     common/RoutingValuePattern.cpp
@@ -58,6 +60,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/ProcessRunner.cpp
     common/ServerDisplayName.h
     common/StartupSequencer.h
+    common/SystemProxyExceptions.h
+    common/SystemProxyExceptions.cpp
     common/SystemProxyMode.h
     common/SystemProxySnapshot.h
     common/SystemProxySnapshot.cpp

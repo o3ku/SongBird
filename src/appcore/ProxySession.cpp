@@ -377,6 +377,13 @@ void ProxySession::setPhase(Phase phase)
         // new watch has to earn its warning again from zero rather than inheriting a count.
         healthWatchPolicy_.reset();
         setServerWarning(QString());
+        // A fresh start owns the status bar again: whatever the previous session concluded about
+        // the local network is replaced by this session's own gate.
+        waivedOutboundWarningShown_ = false;
+        directRecheckInProgress_ = false;
+        if (directRecheckTimer_ != nullptr) {
+            directRecheckTimer_->stop();
+        }
         scheduleHealthWatch();
     } else {
         cancelHealthWatch();
@@ -1343,6 +1350,12 @@ void ProxySession::queryOutboundConnection(const QString& serverIndexId)
                         // warning, because one left over from a previous core must not describe the
                         // core now running. Setting it first is how this line was lost.
                         setServerWarning(warning);
+                        // Only this branch's warning describes the local network rather than the
+                        // node, so only this branch arms the retraction. Nothing else in the session
+                        // can retract it: the health watch speaks for the node, and its own clear is
+                        // never reached now that the node is known to be fine.
+                        waivedOutboundWarningShown_ = true;
+                        recheckWaivedOutboundWarning();
                         clearChecklistAfterStableRun(CoreStartupCompletionOverlayDelayMs);
                         queryServerLocation(activeServerId);
                     }
@@ -1699,6 +1712,11 @@ void ProxySession::clearProxyStateAfterStopped()
     currentServer_ = {};
     currentServerLocation_.clear();
     currentServerWarning_.clear();
+    waivedOutboundWarningShown_ = false;
+    directRecheckInProgress_ = false;
+    if (directRecheckTimer_ != nullptr) {
+        directRecheckTimer_->stop();
+    }
 }
 // --- TUN cleanup ---
 
@@ -1822,6 +1840,84 @@ void ProxySession::scheduleHealthWatch()
     healthWatchTimer_->start(healthWatchIntervalMs_);
 }
 
+// --- Waived outbound warning ------------------------------------------------
+//
+// The gate has one branch that comes up anyway: the node answered nothing *and* this machine cannot
+// reach the probe hosts directly, which makes the node innocent and the local network the suspect.
+// That branch raises a warning and lets the session run.
+//
+// Nothing used to retract it. The health watch only speaks for the node, and this sentence is about
+// the machine, so a user who fixed their network (joined a different Wi-Fi, restored a VPN) kept
+// reading "this machine cannot reach the probe hosts directly either" for the rest of the session
+// and had to restart the proxy to be told the truth. This is the retraction: while that specific
+// warning is up, the same unproxied probe runs again on the health watch's cadence, and the warning
+// is dropped the moment it answers.
+
+void ProxySession::recheckWaivedOutboundWarning()
+{
+    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || phase_ != Phase::Proxying) {
+        return;
+    }
+    if (directRecheckTimer_ == nullptr) {
+        directRecheckTimer_ = new QTimer(this);
+        directRecheckTimer_->setSingleShot(true);
+        QObject::connect(directRecheckTimer_, &QTimer::timeout, this, [this]() { runDirectRecheck(); });
+    }
+    directRecheckTimer_->start(healthWatchIntervalMs_);
+}
+
+void ProxySession::runDirectRecheck()
+{
+    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || phase_ != Phase::Proxying
+        || directRecheckInProgress_) {
+        return;
+    }
+
+    directRecheckInProgress_ = true;
+    const int timeoutMs = OutboundLivenessProbeService::LivenessProbeDirectTimeoutMs;
+    const std::weak_ptr<char> guard = lifetimeGuard_;
+    QThread* thread = launchBackgroundThread(
+        [this, guard, timeoutMs]() {
+            // Unproxied, and therefore independent of this object: the worker reads nothing but the
+            // timeout, so a session torn down mid-probe only loses the answer.
+            const bool directReachable = directConnectivityReachable();
+            QMetaObject::invokeMethod(this, [this, guard, directReachable]() {
+                if (guard.expired()) {
+                    return;
+                }
+                finishDirectRecheck(directReachable);
+            }, Qt::QueuedConnection);
+        },
+        [this](QThread* worker) { trackBackgroundThread(worker); });
+    thread->start();
+}
+
+void ProxySession::finishDirectRecheck(bool directReachable)
+{
+    directRecheckInProgress_ = false;
+    if (shuttingDown_.load() || phase_ != Phase::Proxying || !waivedOutboundWarningShown_) {
+        return;
+    }
+
+    if (!directReachable) {
+        // Still no route without the core. The warning stays and the retraction keeps trying --
+        // a local outage is exactly the case the user expects to be told about once and then left
+        // alone until it ends.
+        emit logMessage(tr("Direct connectivity is still unavailable; keeping the outbound warning.")
+            + QStringLiteral(" | ") + activationTag(activationId_));
+        recheckWaivedOutboundWarning();
+        return;
+    }
+
+    // The sentence is no longer true, so it goes. Logged because a warning that disappears without
+    // a trace reads as a glitch.
+    const QString cleared = tr(
+        "Direct connectivity is available again; the outbound warning no longer applies.");
+    waivedOutboundWarningShown_ = false;
+    setServerWarning(QString());
+    emit logMessage(cleared + QStringLiteral(" | ") + activationTag(activationId_));
+}
+
 void ProxySession::runHealthWatch()
 {
     if (shuttingDown_.load() || phase_ != Phase::Proxying || healthWatchInProgress_) {
@@ -1835,14 +1931,13 @@ void ProxySession::runHealthWatch()
         return;
     }
 
-    const int localPort = currentRequest_.config.localPort;
-    const QString speedPingTestUrl = currentRequest_.config.defaults().speedPingTestUrl;
+    const Config config = currentRequest_.config;
 
     healthWatchInProgress_ = true;
     const std::weak_ptr<char> guard = lifetimeGuard_;
     QThread* thread = launchBackgroundThread(
-        [this, guard, check, localPort, speedPingTestUrl]() {
-            const OperationResult result = check(localPort, speedPingTestUrl);
+        [this, guard, check, config]() {
+            const OperationResult result = check(config);
             QMetaObject::invokeMethod(this, [this, result, guard]() {
                 if (guard.expired()) {
                     return;

@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 
+#include "common/LocalPortOption.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
@@ -42,7 +43,7 @@ void GeneralSettingsPageWidget::setConfig(const Config& config)
     allowLanConnectionCheck_->setChecked(config.allowLanConnection);
     sniffingEnabledCheck_->setChecked(config.sniffingEnabled);
     routeOnlyCheck_->setChecked(config.routeOnly);
-    localPortSpin_->setValue(config.localPort > 0 ? config.localPort : 10808);
+    localPortSpin_->setValue(effectiveLocalPort(config.localPort));
     defaultAllowInsecureCheck_->setChecked(config.dns().defaultAllowInsecure);
     defaultFingerprintCombo_->setCurrentText(config.dns().defaultFingerprint);
     speedPingTestUrlEdit_->setText(config.defaults().speedPingTestUrl);

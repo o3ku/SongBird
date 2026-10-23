@@ -760,9 +760,7 @@ void AppBootstrap::cleanupCoreProcessesUsingConfiguredPorts()
     }
 
     const QStringList terminatedProcesses =
-        objects_->coreProcessCleanupService->cleanupCoreProcessesUsingConfiguredPorts(
-            config_,
-            OutboundLocationProbeService::LocationProbePortOffset);
+        objects_->coreProcessCleanupService->cleanupCoreProcessesUsingConfiguredPorts(config_);
     if (!terminatedProcesses.isEmpty()) {
         appendResult(OperationResult::ok(
             QCoreApplication::translate("AppBootstrap", "Cleaned up core processes using configured ports: %1")

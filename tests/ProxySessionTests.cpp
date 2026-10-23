@@ -548,7 +548,7 @@ struct ScriptedAvailability {
 
 ProxySession::AvailabilityCheck makeScriptedCheck(const std::shared_ptr<ScriptedAvailability>& script)
 {
-    return [script](int, const QString&) {
+    return [script](const Config&) {
         script->calls.fetch_add(1);
         return script->failuresRemaining.fetch_sub(1) > 0
             ? OperationResult::fail(QStringLiteral("Availability check: -1 ms"))

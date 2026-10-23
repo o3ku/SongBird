@@ -2,6 +2,7 @@
 
 #include "app/SettingsDialogApplyPlan.h"
 #include "appcore/StartupAdminElevation.h"
+#include "common/LocalPortOption.h"
 
 class SettingsDialogApplyPlanTests : public QObject {
     Q_OBJECT
@@ -16,7 +17,64 @@ private slots:
     void treatsALoneSpeedTestUrlEditAsAChange();
     void ignoresWhitespaceOnlySpeedTestUrlEdits();
     void treatsALoneProxyServerDnsEditAsAChange();
+    void treatsAnUnsetLocalPortAsTheDefaultItStandsFor();
+    void treatsARealLocalPortEditAsAProxyAndRuntimeChange();
+    void treatsAnOutOfRangeLocalPortAsUnset();
 };
+
+void SettingsDialogApplyPlanTests::treatsAnUnsetLocalPortAsTheDefaultItStandsFor()
+{
+    // 0 on disk means "never set", and the settings spin box shows it as 10808. The general-page
+    // comparison already normalised it; the system-proxy comparison did not, so the same unchanged
+    // pair of configs answered "equal" and "changed" to two different questions and a save with
+    // nothing edited reapplied the system proxy.
+    Config previous;
+    previous.localPort = 0;
+
+    Config updated = previous;
+    updated.localPort = kDefaultLocalPort;
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    QVERIFY(!plan.dirty);
+    QVERIFY(!plan.systemProxySettingsChanged);
+    QVERIFY(!plan.runtimeSettingsChanged);
+}
+
+void SettingsDialogApplyPlanTests::treatsARealLocalPortEditAsAProxyAndRuntimeChange()
+{
+    Config previous;
+    previous.localPort = 0;
+
+    Config updated = previous;
+    updated.localPort = 20808;
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    QVERIFY(plan.dirty);
+    QVERIFY(plan.systemProxySettingsChanged);
+    QVERIFY(plan.runtimeSettingsChanged);
+}
+
+void SettingsDialogApplyPlanTests::treatsAnOutOfRangeLocalPortAsUnset()
+{
+    // A port outside 1..65535 is not a port. Folding it into the default is what the spin box
+    // does, so the plan has to agree -- otherwise the dialog shows 10808, the plan sees -1, and
+    // OK is treated as a change that was never made.
+    Config previous;
+    previous.localPort = -1;
+
+    Config updated = previous;
+    updated.localPort = kDefaultLocalPort;
+
+    const SettingsDialogApplyPlan plan =
+        evaluateSettingsDialogApplyPlan(previous, updated, true, true, true);
+
+    QVERIFY(!plan.dirty);
+    QVERIFY(!plan.systemProxySettingsChanged);
+}
 
 void SettingsDialogApplyPlanTests::computesTunProxyAndLanguageFlagsFromUpdatedSettings()
 {

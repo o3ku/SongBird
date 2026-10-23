@@ -16,6 +16,10 @@ struct AutoNodeEvaluation
     QString locationSummary;
     qint64 latencyMs = -1;
     bool available = false;
+    // True when the probe never reached the node: no measurement was taken, so `available` says
+    // nothing about the node. A busy temporary port is the common cause. Kept separate because the
+    // scoring policy treats a failure as evidence, and "we could not test it" is not evidence.
+    bool inconclusive = false;
     bool tested = false;
     QString error;
     QDateTime checkedAt;

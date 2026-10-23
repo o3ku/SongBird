@@ -22,6 +22,7 @@
 #include "appcore/ProxySession.h"
 #include "appcore/RoutingScorePolicy.h"
 #include "appcore/TunRuntimeService.h"
+#include "common/ThreadShutdown.h"
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
 #include "persistence/JsonConfigRepository.h"
@@ -225,6 +226,10 @@ private:
     quint64 evaluationGeneration_ = 0;
     quint64 operationGeneration_ = 0;
     QList<QThread*> workerThreads_;
+    // Workers that outlived the shutdown budget. Kept rather than deleted: destroying a running
+    // QThread calls qFatal, and the worker may still be reading this object. Non-empty here means
+    // the process is about to exit with work in flight, which the shutdown log records.
+    QList<QThread*> abandonedThreads_;
     QTimer healthCheckTimer_;
     QTimer periodicRefreshTimer_;
 };

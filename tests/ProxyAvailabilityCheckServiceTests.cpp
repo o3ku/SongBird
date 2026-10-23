@@ -10,8 +10,8 @@
 // `ProxyAvailabilityCheckConfig::tunEnabled` is set. That guard was wrong, and both the guard and
 // the field have been removed:
 //
-//   * every backend's *main* client config adds the HTTP inbound unconditionally at
-//     `localPort + 1` -- SingBoxCoreBackend::buildInbounds, XrayCoreBackend::buildInbounds and
+//   * every backend's *main* client config adds the HTTP inbound unconditionally --
+//     SingBoxCoreBackend::buildInbounds, XrayCoreBackend::buildInbounds and
 //     MihomoConfigFragments all append it with no TUN condition;
 //   * the TUN sidecar core is built with AuxiliaryTunRouting::RelayToLocalProxy
 //     (ClientConfigWriter::generateClientConfigs), i.e. it relays *into* that inbound, so the
@@ -36,15 +36,15 @@ class ProxyAvailabilityCheckServiceTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void failsImmediatelyForANonPositiveLocalPort();
-    void failsImmediatelyWhenTheDerivedHttpPortOverflows();
+    void failsImmediatelyForANonPositiveHttpPort();
+    void failsImmediatelyWhenTheHttpPortOverflows();
     void reportsTheAvailabilityMessageWhenItFails();
 };
 
-void ProxyAvailabilityCheckServiceTests::failsImmediatelyForANonPositiveLocalPort()
+void ProxyAvailabilityCheckServiceTests::failsImmediatelyForANonPositiveHttpPort()
 {
     ProxyAvailabilityCheckConfig config;
-    config.localPort = 0;
+    config.httpPort = 0;
 
     ProxyAvailabilityCheckService service;
 
@@ -61,10 +61,12 @@ void ProxyAvailabilityCheckServiceTests::failsImmediatelyForANonPositiveLocalPor
     QVERIFY2(elapsedMs < 5000, qPrintable(QStringLiteral("took %1 ms").arg(elapsedMs)));
 }
 
-void ProxyAvailabilityCheckServiceTests::failsImmediatelyWhenTheDerivedHttpPortOverflows()
+void ProxyAvailabilityCheckServiceTests::failsImmediatelyWhenTheHttpPortOverflows()
 {
     ProxyAvailabilityCheckConfig config;
-    config.localPort = 65535; // localPort + 1 is out of range
+    // The service no longer derives `localPort + 1` itself, so the overflow is asserted on the
+    // value it is actually given rather than through a base port that used to overflow.
+    config.httpPort = 70000;
 
     ProxyAvailabilityCheckService service;
 
@@ -81,7 +83,7 @@ void ProxyAvailabilityCheckServiceTests::failsImmediatelyWhenTheDerivedHttpPortO
 void ProxyAvailabilityCheckServiceTests::reportsTheAvailabilityMessageWhenItFails()
 {
     ProxyAvailabilityCheckConfig config;
-    config.localPort = 0;
+    config.httpPort = 0;
 
     ProxyAvailabilityCheckService service;
     const OperationResult result = service.check(config);

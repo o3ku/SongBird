@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include "appcore/HealthStripPolicy.h"
 #include "persistence/JsonConfigRepository.h"
 #include "domain/models/RoutingProfiles.h"
 
@@ -293,9 +294,12 @@ private slots:
     void loadAndSavePreservesMihomoServerCoreType();
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
+    void loadDropsPortOverridesThatDisagreeWithTheLocalPort();
     void saveWritesCanonicalSongBirdStructure();
     void saveRemovesEmptyStateFile();
     void saveReplacesExistingRootInsteadOfMerging();
+    void healthStripRoundTripsThroughTheStateFile();
+    void loadDropsAHealthStripThePolicyCannotRead();
     void saveReportsPrimaryConfigWriteFailure();
     void saveReportsStateWriteFailure();
 
@@ -658,6 +662,138 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
     QVERIFY(config.collection().servers.isEmpty());
     QVERIFY(config.collection().subscriptions.isEmpty());
     QVERIFY(RoutingProfiles::routingItems(config.collection()).size() >= 3);
+}
+
+// `localHttpPort` / `localLocationProbePort` are derived, not stored. The Auto front end computes
+// `localPort + 1` and `localPort + 103` on every start (applyAutoRuntimeDefaults) but never writes
+// them: JsonConfigRootSerialization reads and writes only `localPort`, so a value saved into the
+// inbound block by anyone else is dropped on load. This case exists to keep that story true in both
+// directions -- the keys are ignored on read and absent on write.
+//
+// The alternative was serialising both keys, which is a real option with a real cost: five other
+// cases in this suite compare the state file against an exact object, so their expectations would
+// have to grow two keys each. It was not taken, and that is a size decision, not a finding that the
+// path does not converge.
+//
+// What it means for the stale-override defence: `clearStaleOverrides()` still matters, because
+// `applyAutoRuntimeDefaults()` and the settings dialog can both leave a stale override in memory for
+// the rest of the session. It is not protecting the file -- nothing can write the field there.
+void JsonConfigRepositoryTests::loadDropsPortOverridesThatDisagreeWithTheLocalPort()
+{
+    QTemporaryDir staleDir;
+    QVERIFY(staleDir.isValid());
+
+    QJsonObject staleInbound;
+    staleInbound.insert(QStringLiteral("localPort"), 20808);
+    staleInbound.insert(QStringLiteral("localHttpPort"), 10809);
+    staleInbound.insert(QStringLiteral("localLocationProbePort"), 10911);
+    QJsonObject staleRoot;
+    staleRoot.insert(QStringLiteral("inbound"), QJsonArray{staleInbound});
+    QVERIFY(writeJsonFile(makeConfigPath(staleDir), staleRoot));
+
+    JsonConfigRepository staleRepository(makeConfigPath(staleDir));
+    const Config reloaded = staleRepository.load();
+    QVERIFY(staleRepository.lastLoadError().isEmpty());
+    QCOMPARE(reloaded.localPort, 20808);
+    // Disagreeing, and agreeing with the base port: both end up 0, because the file is not a source
+    // for these two fields at all. 20809 / 20911 below used to be expected here, and reading them
+    // back as 0 is what proves the load path never parses the keys.
+    QCOMPARE(reloaded.localHttpPort, 0);
+    QCOMPARE(reloaded.localLocationProbePort, 0);
+
+    QTemporaryDir matchingDir;
+    QVERIFY(matchingDir.isValid());
+
+    QJsonObject matchingInbound;
+    matchingInbound.insert(QStringLiteral("localPort"), 20808);
+    matchingInbound.insert(QStringLiteral("localHttpPort"), 20809);
+    matchingInbound.insert(QStringLiteral("localLocationProbePort"), 20911);
+    QJsonObject matchingRoot;
+    matchingRoot.insert(QStringLiteral("inbound"), QJsonArray{matchingInbound});
+    QVERIFY(writeJsonFile(makeConfigPath(matchingDir), matchingRoot));
+
+    JsonConfigRepository matchingRepository(makeConfigPath(matchingDir));
+    const Config kept = matchingRepository.load();
+    QVERIFY(matchingRepository.lastLoadError().isEmpty());
+    QCOMPARE(kept.localPort, 20808);
+    QCOMPARE(kept.localHttpPort, 0);
+    QCOMPARE(kept.localLocationProbePort, 0);
+
+    // The same two fields must not come back on save either, or the round trip would disagree with
+    // the load half above on the second pass.
+    Config roundTrip;
+    roundTrip.localPort = 20808;
+    roundTrip.localHttpPort = 20809;
+    roundTrip.localLocationProbePort = 20911;
+    JsonConfigRepository writer(makeConfigPath(matchingDir));
+    QVERIFY(writer.save(roundTrip));
+
+    const QJsonObject writtenRoot = readJsonFile(makeConfigPath(matchingDir));
+    const QJsonArray writtenInbound = writtenRoot.value(QStringLiteral("inbound")).toArray();
+    QCOMPARE(writtenInbound.size(), 1);
+    const QJsonObject written = writtenInbound.first().toObject();
+    QCOMPARE(written.value(QStringLiteral("localPort")).toInt(), 20808);
+    QVERIFY(!written.contains(QStringLiteral("localHttpPort")));
+    QVERIFY(!written.contains(QStringLiteral("localLocationProbePort")));
+}
+
+void JsonConfigRepositoryTests::healthStripRoundTripsThroughTheStateFile()
+{
+    // The strip is measurement, not configuration: it belongs in the state file beside testResult,
+    // and it has to survive a save/load cycle or the 24 hours of history a user just accumulated
+    // disappears the first time the app restarts.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString strip = QStringLiteral("+-0") + QString(HealthStripPolicy::kCellCount - 3, QLatin1Char('0'));
+
+    Config config;
+    config.collection().servers = {makeServer()};
+    config.collection().servers[0].healthStrip = strip;
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    QVERIFY(repository.save(config));
+    QVERIFY(QFileInfo::exists(makeStatePath(tempDir)));
+
+    // The state file, not the primary config: a measured value must never end up in the file the
+    // user may share when reporting a problem.
+    const QJsonObject stateRoot = readJsonFile(makeStatePath(tempDir));
+    const QJsonArray serverStates = stateRoot.value(QStringLiteral("serverStates")).toArray();
+    QCOMPARE(serverStates.size(), 1);
+    QCOMPARE(serverStates.at(0).toObject().value(QStringLiteral("healthStrip")).toString(), strip);
+    QVERIFY(!QJsonDocument(readJsonFile(makeConfigPath(tempDir))).toJson().contains("healthStrip"));
+
+    const Config reloaded = repository.load();
+    QCOMPARE(reloaded.collection().servers.size(), 1);
+    QCOMPARE(reloaded.collection().servers[0].healthStrip, strip);
+}
+
+void JsonConfigRepositoryTests::loadDropsAHealthStripThePolicyCannotRead()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QJsonObject stateRoot;
+    stateRoot.insert(QStringLiteral("serverStates"), QJsonArray{
+        QJsonObject{
+            {QStringLiteral("indexId"), QStringLiteral("server-1")},
+            {QStringLiteral("healthStrip"), QStringLiteral("+-x")}
+        }
+    });
+    QVERIFY(writeJsonFile(makeStatePath(tempDir), stateRoot));
+
+    // The server has to come from somewhere: the state file matches by indexId and cannot create
+    // one, so the primary config carries the same server the state file refers to.
+    const QJsonObject primaryRoot = makeCanonicalRoot();
+    QVERIFY(writeJsonFile(makeConfigPath(tempDir), primaryRoot));
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    const Config config = repository.load();
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.collection().servers.size(), 1);
+    // Nothing rather than a best effort: a strip is only useful if the 24 cells line up with the
+    // 24 hours the UI labels them with, and a partial one cannot.
+    QVERIFY(config.collection().servers[0].healthStrip.isEmpty());
 }
 
 void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()

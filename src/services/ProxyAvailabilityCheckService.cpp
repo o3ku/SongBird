@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include "common/PortValidator.h"
 #include "common/UserAgent.h"
 
 namespace {
@@ -102,8 +103,8 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
 
 OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityCheckConfig& config) const
 {
-    const int httpPort = config.localPort + 1;
-    if (config.localPort <= 0 || httpPort <= 0 || httpPort > 65535) {
+    const int httpPort = config.httpPort;
+    if (!isValidTcpPort(httpPort)) {
         return OperationResult::fail(formatAvailabilityMessage(-1));
     }
 

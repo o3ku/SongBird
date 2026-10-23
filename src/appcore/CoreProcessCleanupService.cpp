@@ -15,6 +15,7 @@
 #endif
 
 #include "common/CorePidFile.h"
+#include "common/LocalInboundPorts.h"
 
 namespace {
 
@@ -162,9 +163,7 @@ QStringList CoreProcessCleanupService::cleanupOrphanCoreProcesses() const
 #endif
 }
 
-QStringList CoreProcessCleanupService::cleanupCoreProcessesUsingConfiguredPorts(
-    const Config& config,
-    int locationProbePortOffset) const
+QStringList CoreProcessCleanupService::cleanupCoreProcessesUsingConfiguredPorts(const Config& config) const
 {
 #if defined(Q_OS_WIN)
     QSet<quint16> ports;
@@ -174,8 +173,8 @@ QStringList CoreProcessCleanupService::cleanupCoreProcessesUsingConfiguredPorts(
         }
     };
     addPort(config.localPort);
-    addPort(config.localPort + 1);
-    addPort(config.localPort + locationProbePortOffset);
+    addPort(LocalInboundPorts::httpPort(config));
+    addPort(LocalInboundPorts::locationProbePort(config));
 
     QSet<qint64> pids;
     for (DWORD pid : tcpListeningPidsForPorts(ports)) {
@@ -185,7 +184,6 @@ QStringList CoreProcessCleanupService::cleanupCoreProcessesUsingConfiguredPorts(
     return terminateCorePids(pids);
 #else
     Q_UNUSED(config);
-    Q_UNUSED(locationProbePortOffset);
     return {};
 #endif
 }

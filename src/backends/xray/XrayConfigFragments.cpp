@@ -4,10 +4,12 @@
 
 #include "backends/xray/XrayOutboundConfigFragments.h"
 #include "backends/xray/XrayStreamConfigFragments.h"
+#include "common/LocalInboundPorts.h"
+#include "runtime/RoutingConfigFragments.h"
 
 namespace {
 
-const QString kLocationProbeTag = QStringLiteral("location-probe");
+const QString kPlainHttpTag = QStringLiteral("http");
 
 } // namespace
 
@@ -50,11 +52,13 @@ QJsonObject XrayConfigFragments::buildHttpInboundWithTag(const Config& config, c
 {
     QJsonObject inbound;
     const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
+    // Resolved through the shared policy rather than `localPort + offset` plus a local override
+    // check, so the port the inbound binds and the port the system proxy writes cannot disagree.
     int port = config.localPort + offset;
-    if (!allowLan && offset == 1 && config.localHttpPort > 0) {
-        port = config.localHttpPort;
-    } else if (tag == kLocationProbeTag && config.localLocationProbePort > 0) {
-        port = config.localLocationProbePort;
+    if (!allowLan && tag == kPlainHttpTag) {
+        port = LocalInboundPorts::httpPort(config);
+    } else if (tag == RoutingConfigFragments::locationProbeTag()) {
+        port = LocalInboundPorts::locationProbePort(config);
     }
     inbound.insert(QStringLiteral("tag"), tag);
     inbound.insert(QStringLiteral("port"), port);

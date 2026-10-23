@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <future>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -75,6 +76,34 @@ AutoNodeEvaluation unavailableResult(const SpeedTestRequestItem& item, const QSt
     return result;
 }
 
+// One attempt, or no attempt: the reservation scans for the same free-triple 64 times and the scan
+// is a race against every other core and probe on the machine, so a single empty result is a lost
+// race rather than a busy machine. Retrying is what separates "the ports really are exhausted" from
+// "a worker took ours", and only the former says anything about the node.
+constexpr int kPortReservationAttempts = 3;
+constexpr int kPortReservationRetryDelayMs = 150;
+
+constexpr int kInconclusive = std::numeric_limits<int>::min();
+
+int takePortsWithRetry(PortPool::Ports& ports, const std::atomic_bool& cancelled)
+{
+    for (int attempt = 0; attempt < kPortReservationAttempts; ++attempt) {
+        ports = PortPool::takeAvailable();
+        if (ports.socksPort > 0 && ports.httpPort > 0 && ports.locationProbePort > 0) {
+            return 0;
+        }
+
+        if (cancelled.load()) {
+            return kInconclusive;
+        }
+        if (attempt + 1 < kPortReservationAttempts) {
+            QThread::msleep(kPortReservationRetryDelayMs);
+        }
+    }
+
+    return kInconclusive;
+}
+
 AutoNodeEvaluation evaluateOne(
     const AutoNodeEvaluationService::Request& request,
     const SpeedTestRequestItem& item,
@@ -95,9 +124,15 @@ AutoNodeEvaluation evaluateOne(
         return unavailableResult(item, QStringLiteral("Core missing"));
     }
 
-    const PortPool::Ports ports = PortPool::takeAvailable();
-    if (ports.socksPort <= 0 || ports.httpPort <= 0 || ports.locationProbePort <= 0) {
-        return unavailableResult(item, QStringLiteral("Port busy"));
+    PortPool::Ports ports;
+    if (takePortsWithRetry(ports, cancelled) != 0) {
+        // No probe ran, so this is not a verdict on the node. Reporting it as a failed test would
+        // push the circuit breaker's failure counter toward tripping a node that is perfectly
+        // healthy -- the symptom would be "a good node went red" with nothing in the log to
+        // explain it.
+        AutoNodeEvaluation result = unavailableResult(item, QStringLiteral("Port busy"));
+        result.inconclusive = true;
+        return result;
     }
     struct ScopedPortRelease
     {
@@ -212,6 +247,11 @@ QList<AutoNodeEvaluation> AutoNodeEvaluationService::evaluate(
     }
 
     const int maxConcurrency = std::max(1, std::min(request.maxConcurrency, request.items.size()));
+
+    // A std::future destructor is not a completion: libstdc++ blocks on the task, MSVC detaches
+    // from it. So a cancelled batch used to leave tasks running after this function returned,
+    // reading `&request` and `&cancelled` -- both of which belong to the caller. The join at the
+    // bottom is what makes those two references safe to leave behind.
     struct PendingItem {
         std::future<AutoNodeEvaluation> future;
     };
@@ -219,6 +259,15 @@ QList<AutoNodeEvaluation> AutoNodeEvaluationService::evaluate(
     std::vector<PendingItem> pending;
     pending.reserve(static_cast<std::size_t>(maxConcurrency));
     int nextIndex = 0;
+
+    // Joins every task still in flight. Each one holds its own ports, temp dir and QProcess, and
+    // every wait inside it is bounded, so this ends on its own: cancellation cannot shorten a
+    // probe that is already out, and pretending otherwise is what left the tasks running.
+    auto joinPending = [&]() {
+        for (PendingItem& item : pending) {
+            item.future.wait();
+        }
+    };
 
     auto flushReady = [&]() {
         for (auto it = pending.begin(); it != pending.end();) {
@@ -256,12 +305,11 @@ QList<AutoNodeEvaluation> AutoNodeEvaluationService::evaluate(
         }
     }
 
-    while (!pending.empty()) {
-        flushReady();
-        if (!pending.empty()) {
-            QThread::msleep(25);
-        }
-    }
+    // Waits even when the loop above ended normally -- the last flush can leave a task a
+    // millisecond short of ready. Results that land after the loop are discarded, because
+    // flushReady only reports them when the batch was not cancelled.
+    joinPending();
+    flushReady();
 
     return results;
 }

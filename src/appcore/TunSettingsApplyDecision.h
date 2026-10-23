@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/LocalPortOption.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/Config.h"
 #include "runtime/ProtocolCoreCompat.h"
@@ -185,10 +186,8 @@ inline bool shouldHotApplyRuntimeSettings(
     const Config& updated,
     const TunSettingsApplyDecision& tunDecision)
 {
-    const int previousLocalPort = previous.localPort > 0 ? previous.localPort : 10808;
-    const int updatedLocalPort = updated.localPort > 0 ? updated.localPort : 10808;
     return !tunDecision.requiresAdminForConfiguredTun
-        && (previousLocalPort != updatedLocalPort
+        && (effectiveLocalPort(previous.localPort) != effectiveLocalPort(updated.localPort)
             || previous.sniffingEnabled != updated.sniffingEnabled
             || previous.routeOnly != updated.routeOnly
             || previous.allowLanConnection != updated.allowLanConnection

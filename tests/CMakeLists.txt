@@ -370,6 +370,16 @@ songbird_add_qt_test(songbird_tun_settings_apply_decision_tests tun-settings-app
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The one rule for "which port would this config actually use". It is a pure header, so this target
+# needs nothing but its own file -- and it exists because the fallback used to be re-derived at
+# every call site, which is how a port comparison and the spin box ended up disagreeing.
+songbird_add_qt_test(songbird_local_port_option_tests local-port-option
+    SOURCES
+        LocalPortOptionTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_SETTINGS_DIALOG_APPLY_PLAN_TEST_SOURCES
     SettingsDialogApplyPlanTests.cpp
 )
@@ -509,6 +519,23 @@ songbird_add_qt_test(songbird_tab_bar_scroll_button_tests tab-bar-scroll-buttons
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Svg
+)
+
+# The bypass list both front ends write through ISystemProxyService::update(). Shared because the
+# two copies drifted apart; this target is what keeps the shared resolver honest on its own, without
+# standing up a coordinator or a fake service.
+#
+# No production sources are listed here. `SystemProxyExceptions::resolve()` does read the routing
+# rules -- which is what pulls in RoutingConfigFragments and, through it, the sing-box DNS builders --
+# but that whole chain already lives in SONGBIRD_SHARED_SOURCES, and songbird_add_qt_test() links
+# songbird_shared_objs. Listing it again compiles a second copy of each symbol into the executable:
+# ld reports "multiple definition of RoutingConfigFragments::locationProbeTag()", and MSVC reports
+# LNK2005. The dependency is real; the source list is what has to stay empty.
+songbird_add_qt_test(songbird_system_proxy_exceptions_tests system-proxy-exceptions
+    SOURCES
+        SystemProxyExceptionsTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
 )
 
 # Drives SystemProxyCoordinator through a stand-in ISystemProxyService, which is the only way to
@@ -853,6 +880,15 @@ songbird_add_qt_test(songbird_proxy_availability_check_tests proxy-availability-
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Network
+)
+
+# The port policy is a header-only pure function set, so this target needs nothing beyond the
+# shared object library every test already links.
+songbird_add_qt_test(songbird_local_inbound_ports_tests local-inbound-ports
+    SOURCES
+        LocalInboundPortsTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
 )
 
 set(SONGBIRD_SPEED_TEST_SERVICE_INTERNAL_TEST_SOURCES

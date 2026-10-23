@@ -57,6 +57,7 @@ private slots:
     void encodeDecodeRoundTrips();
     void decodeRejectsMalformedInput();
     void decodeRejectsAnEmptyString();
+    void decodeRejectsAStripOfTheWrongLength();
 };
 
 void HealthStripPolicyTests::emptyHistoryYieldsAllUnknown()
@@ -173,6 +174,18 @@ void HealthStripPolicyTests::decodeRejectsMalformedInput()
 void HealthStripPolicyTests::decodeRejectsAnEmptyString()
 {
     QVERIFY(HealthStripPolicy::decode(QString()).isEmpty());
+}
+
+void HealthStripPolicyTests::decodeRejectsAStripOfTheWrongLength()
+{
+    // buildCells() always produces exactly kCellCount cells, so a shorter or longer run of valid
+    // characters came from somewhere else. Accepting it would shift every cell's label: the 24
+    // hours the UI prints would no longer line up with the values in them.
+    QVERIFY(HealthStripPolicy::decode(QStringLiteral("+-0")).isEmpty());
+    QVERIFY(HealthStripPolicy::decode(QString(HealthStripPolicy::kCellCount + 1, QLatin1Char('+'))).isEmpty());
+
+    const QString exact = QString(HealthStripPolicy::kCellCount, QLatin1Char('0'));
+    QCOMPARE(HealthStripPolicy::decode(exact).size(), HealthStripPolicy::kCellCount);
 }
 
 QTEST_GUILESS_MAIN(HealthStripPolicyTests)

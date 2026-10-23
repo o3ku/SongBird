@@ -27,7 +27,9 @@
 #include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 #include "common/BackgroundThreadLaunch.h"
+#include "common/LocalInboundPorts.h"
 #include "common/ServerDisplayName.h"
+#include "common/SystemProxyExceptions.h"
 #include "common/SystemProxyMode.h"
 #include "domain/models/RoutingProfiles.h"
 #include "platform/PlatformServices.h"
@@ -59,10 +61,6 @@ constexpr int kSubscriptionUpdateCooldownMs = 10 * 60 * 1000;
 constexpr int kCountryTestCooldownMs = 5 * 60 * 1000;
 constexpr int kLowCountryRefreshCooldownMs = 5 * 60 * 1000;
 constexpr int kLowCountryNodeThreshold = 1;
-
-const QString kDefaultIeProxyExceptions = QStringLiteral(
-    "localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;"
-    "172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*");
 
 } // namespace
 
@@ -133,9 +131,7 @@ bool SongBirdAutoCoordinator::initialize()
         if (coreCleanupService_ == nullptr) {
             return;
         }
-        const QStringList cleaned = coreCleanupService_->cleanupCoreProcessesUsingConfiguredPorts(
-            config_,
-            OutboundLocationProbeService::LocationProbePortOffset);
+        const QStringList cleaned = coreCleanupService_->cleanupCoreProcessesUsingConfiguredPorts(config_);
         if (!cleaned.isEmpty()) {
             log(QStringLiteral("Cleaned core processes: %1").arg(cleaned.join(QStringLiteral(", "))));
         }
@@ -1365,7 +1361,10 @@ void SongBirdAutoCoordinator::mergeEvaluationResults(const QList<AutoNodeEvaluat
     // (and by maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     for (const AutoNodeEvaluation& result : results) {
-        if (!result.tested) {
+        // An inconclusive probe measured nothing: no core ever ran, so nothing was learned about the
+        // node. Feeding it to the policy as a failure is how a temporary port shortage used to trip
+        // the breaker on healthy nodes and take them out of the ranking for a minute.
+        if (!result.tested || result.inconclusive) {
             continue;
         }
         RoutingScorePolicy::NodeState& state = nodeScores_[result.indexId];
@@ -1466,6 +1465,29 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
     }
     if (bestServerId == activeServerId_) {
         log(QStringLiteral("Current node remains the fastest tested node."));
+        return;
+    }
+
+    // Ranking alone is not a reason to move: the fastest node in a batch is often only a few
+    // milliseconds ahead of the one already carrying traffic, and trading the connection for that
+    // costs a reconnect plus a fresh core start. The policy holds the switch margin (and the rule
+    // that a node with an open breaker loses its claim regardless of score) -- without this call
+    // both were dead code, and every probe round reordered the active connection.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const auto currentIt = nodeScores_.constFind(activeServerId_);
+    const auto challengerIt = nodeScores_.constFind(bestServerId);
+    // The active node is normally in the map -- it is what an earlier round ranked -- but it can be
+    // missing on the first round after a manual pick. An unmeasured side means there is nothing to
+    // compare, and startBestServerForSelectedCountry() would restart the core for nothing.
+    if (currentIt == nodeScores_.constEnd() || challengerIt == nodeScores_.constEnd()
+        || !currentIt->hasSample || !challengerIt->hasSample) {
+        log(QStringLiteral("Keeping the active node; %1 and %2 have not both been measured.")
+                .arg(activeServerId_, bestServerId));
+        return;
+    }
+    if (!routingScorePolicy_.shouldSwitch(*currentIt, *challengerIt, nowMs)) {
+        log(QStringLiteral("Keeping %1; %2 is not ahead by the switch margin.")
+                .arg(activeServerId_, bestServerId));
         return;
     }
 
@@ -1813,7 +1835,7 @@ bool SongBirdAutoCoordinator::updateSystemProxyMode(SystemProxyMode mode) const
     return systemProxyService_ == nullptr
         || systemProxyService_->update(
             mode,
-            config_.localPort + 1,
+            LocalInboundPorts::httpPort(config_),
             config_.localPort,
             proxyExceptions(),
             config_.systemProxyAdvancedProtocol);
@@ -1821,9 +1843,10 @@ bool SongBirdAutoCoordinator::updateSystemProxyMode(SystemProxyMode mode) const
 
 QString SongBirdAutoCoordinator::proxyExceptions() const
 {
-    return config_.defaults().defIeProxyExceptions.trimmed().isEmpty()
-        ? kDefaultIeProxyExceptions
-        : config_.defaults().defIeProxyExceptions.trimmed();
+    // Same resolver as SongBird.exe. The two front ends used to carry identical copies of the
+    // default list here, and the main app additionally merged the hosts its routing rules send
+    // direct -- so a `direct` rule bypassed the system proxy in one executable and not the other.
+    return SystemProxyExceptions::resolve(config_);
 }
 
 QString SongBirdAutoCoordinator::selectedCountryDisplayName() const
@@ -1863,7 +1886,7 @@ void SongBirdAutoCoordinator::runHealthCheck()
     }
 
     ProxyAvailabilityCheckConfig checkConfig;
-    checkConfig.localPort = config_.localPort;
+    checkConfig.httpPort = LocalInboundPorts::httpPort(config_);
     checkConfig.speedPingTestUrl = config_.defaults().speedPingTestUrl;
 
     healthCheckInProgress_ = true;
@@ -2158,15 +2181,32 @@ void SongBirdAutoCoordinator::trackThread(QThread* thread)
 
 void SongBirdAutoCoordinator::clearThreads()
 {
+    // A worker can be blocked in urlProbe/QProcess::waitForStarted with no interruption point,
+    // and an unbounded wait() there is a silent hang at exit: the window is already gone, so
+    // there is nothing left on screen to explain it. Go through the same bounded ladder the main
+    // application uses, which records what it had to give up on instead of waiting forever.
+    //
+    // Passing a collector keeps stopThreadForShutdown from firing a QThread::wait() with no
+    // timeout from the GUI thread -- Qt refuses that outright and the refusal is invisible here.
+    QStringList abandonedObjectNames;
     for (QThread* thread : std::as_const(workerThreads_)) {
         if (thread == nullptr) {
             continue;
         }
-        thread->requestInterruption();
-        thread->quit();
-        thread->wait();
+        const ThreadShutdownOutcome outcome = collectThreadForShutdown(thread, {}, &abandonedObjectNames);
+        if (outcome == ThreadShutdownOutcome::Abandoned) {
+            abandonedThreads_.append(thread);
+        }
     }
     workerThreads_.clear();
+
+    if (!abandonedObjectNames.isEmpty()) {
+        // Deliberately not deleting them: QThread's destructor is fatal for a thread that is
+        // still running, and the worker may still be reading members of this object.
+        emit logMessage(QStringLiteral("Shutdown continued with %1 background task(s) still running: %2")
+                            .arg(abandonedObjectNames.size())
+                            .arg(abandonedObjectNames.join(QStringLiteral(", "))));
+    }
 }
 
 quint64 SongBirdAutoCoordinator::nextOperationId()

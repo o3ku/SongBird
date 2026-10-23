@@ -6,6 +6,7 @@
 #include <QMap>
 #include <QStringList>
 
+#include "common/LocalInboundPorts.h"
 #include "domain/models/RoutingRule.h"
 #include "domain/models/RoutingProfiles.h"
 #include "runtime/DnsConfigFragments.h"
@@ -16,7 +17,6 @@ namespace {
 const QString kLocationProbeTag = QStringLiteral("location-probe");
 const QString kLegacyDnsTag = QStringLiteral("dns-module");
 const QString kLegacyDirectDnsTagPrefix = QStringLiteral("direct-dns");
-constexpr int kLocationProbePortOffset = 103;
 
 } // namespace
 
@@ -27,7 +27,10 @@ QString RoutingConfigFragments::locationProbeTag()
 
 int RoutingConfigFragments::locationProbePortOffset()
 {
-    return kLocationProbePortOffset;
+    // Single definition, in common/LocalInboundPorts.h: the probe offset was written out twice (here
+    // and in OutboundLocationProbeService) and changing one side left the runtime config binding a
+    // port the probe never dialled.
+    return LocalInboundPorts::kLocationProbeOffset;
 }
 
 std::optional<RoutingItem> RoutingConfigFragments::resolveSelectedRouting(const Config& config)

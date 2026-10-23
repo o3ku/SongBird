@@ -4,6 +4,7 @@
 #include <QStringList>
 
 #include "appcore/TunSettingsApplyDecision.h"
+#include "common/LocalPortOption.h"
 #include "domain/models/Config.h"
 #include "domain/models/SubItem.h"
 
@@ -141,14 +142,12 @@ inline bool areSettingsRoutingItemListsEqual(const QList<RoutingItem>& lhs, cons
 // OK is pressed, nothing is persisted, and the dialog reopens with it cleared.
 inline bool areSettingsGeneralFieldsEqual(const Config& previousConfig, const Config& updatedConfig)
 {
-    const int previousLocalPort = previousConfig.localPort > 0 ? previousConfig.localPort : 10808;
-    const int updatedLocalPort = updatedConfig.localPort > 0 ? updatedConfig.localPort : 10808;
     return previousConfig.ui().showMainOnStartup == updatedConfig.ui().showMainOnStartup
         && previousConfig.ui().autoRunEnabled == updatedConfig.ui().autoRunEnabled
         && previousConfig.allowLanConnection == updatedConfig.allowLanConnection
         && previousConfig.sniffingEnabled == updatedConfig.sniffingEnabled
         && previousConfig.routeOnly == updatedConfig.routeOnly
-        && previousLocalPort == updatedLocalPort
+        && effectiveLocalPort(previousConfig.localPort) == effectiveLocalPort(updatedConfig.localPort)
         && previousConfig.dns().defaultAllowInsecure == updatedConfig.dns().defaultAllowInsecure
         && previousConfig.dns().defaultFingerprint.trimmed() == updatedConfig.dns().defaultFingerprint.trimmed()
         && previousConfig.defaults().speedPingTestUrl.trimmed() == updatedConfig.defaults().speedPingTestUrl.trimmed()
@@ -214,7 +213,11 @@ inline SettingsDialogApplyPlan evaluateSettingsDialogApplyPlan(
         updatedConfig,
         plan.tunSaveBehavior.applyDecision);
     plan.autoRunChanged = previousConfig.ui().autoRunEnabled != updatedConfig.ui().autoRunEnabled;
-    plan.systemProxySettingsChanged = previousConfig.localPort != updatedConfig.localPort
+    // Normalised the same way as the general-page comparison above. An unset port and the default
+    // it stands for are one value; treating them as two made a save with nothing edited reapply
+    // the system proxy and restart the core.
+    plan.systemProxySettingsChanged =
+        effectiveLocalPort(previousConfig.localPort) != effectiveLocalPort(updatedConfig.localPort)
         || previousConfig.systemProxyAdvancedProtocol != updatedConfig.systemProxyAdvancedProtocol;
     plan.languageChanged =
         normalizeSettingsLanguageCode(previousConfig.ui().languageCode)

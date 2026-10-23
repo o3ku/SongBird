@@ -115,6 +115,54 @@ if ($srcRoot -notmatch 'SONGBIRD_DISPLAY_VERSION') {
         "would come from somewhere other than project(VERSION).")
 }
 
+# Every #ifndef SONGBIRD_APP_VERSION fallback must be "unknown".
+#
+# This is the blind spot the check used to have. The literal scan above compares files against
+# project(VERSION), so a fallback spelling an *older* version could never be caught by it -- and one
+# did: both main.cpp files carried "2.5.0" while the project had moved two versions on. A fallback
+# that names a real release is worse than no fallback, because a build that bypassed CMake then
+# reports a version nobody is running and looks entirely normal doing it.
+$fallbackHits = New-Object System.Collections.Generic.List[string]
+# Split out so the success line at the bottom can quote it: "scanned 0 fallbacks" is what a stale
+# pattern would report, and the number is the only visible evidence it did not.
+$declaredFallbackCount = 0
+$mainFiles = @(Get-ChildItem -LiteralPath (Join-Path $buildRoot "src") -Recurse -File -Include *.cpp -ErrorAction SilentlyContinue)
+foreach ($file in $mainFiles) {
+    $content = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction SilentlyContinue
+    if ($null -eq $content) { continue }
+    if ($content -notmatch '(?m)^\s*#\s*ifndef\s+SONGBIRD_APP_VERSION\b') { continue }
+    $declaredFallbackCount += 1
+    if ($content -notmatch '#\s*define\s+SONGBIRD_APP_VERSION\s+"([^"]*)"') {
+        $fallbackHits.Add("$(Resolve-Path -Relative $file.FullName): the SONGBIRD_APP_VERSION fallback defines no string")
+        continue
+    }
+    $fallbackValue = $Matches[1]
+    if ($fallbackValue -ne 'unknown') {
+        $fallbackHits.Add(
+            "$(Resolve-Path -Relative $file.FullName): the SONGBIRD_APP_VERSION fallback is " +
+            "'$fallbackValue'; it must be 'unknown' so a build that bypassed CMake cannot report a " +
+            "plausible version")
+    }
+}
+if ($fallbackHits.Count -eq 0 -and $mainFiles.Count -gt 0) {
+    # A missing fallback file is not a violation, but a run that found no #ifndef at all would
+    # report success without having checked anything -- the same silent no-op this script exists to
+    # avoid. Reaching here means no front end declares the macro at all, which is itself suspicious.
+    $foundAnyFallback = $false
+    foreach ($file in $mainFiles) {
+        $content = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction SilentlyContinue
+        if ($null -ne $content -and $content -match 'SONGBIRD_APP_VERSION') { $foundAnyFallback = $true; break }
+    }
+    if (-not $foundAnyFallback) {
+        $violations.Add(
+            "No file under src/ mentions SONGBIRD_APP_VERSION; the executables cannot be reporting " +
+            "the composed version at all.")
+    }
+}
+foreach ($hit in $fallbackHits) {
+    $violations.Add($hit)
+}
+
 # Optional tag comparison, used by the release workflow.
 if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $tagVersion = $Tag -replace '^v', ''
@@ -133,4 +181,5 @@ if ($violations.Count -gt 0) {
 # that scanned nothing.
 Write-Host ("Version consistency: declared '$declaredVersion', suffix '$suffix', display " +
             "'$expectedDisplay'; scanned $($scanRoots.Count) root(s), $($literalHits.Count) stray " +
-            "literal(s)" + $(if ($Tag) { ", tag '$Tag' verified" } else { "" }) + ".")
+            "literal(s), $declaredFallbackCount version fallback(s)" +
+            $(if ($Tag) { ", tag '$Tag' verified" } else { "" }) + ".")

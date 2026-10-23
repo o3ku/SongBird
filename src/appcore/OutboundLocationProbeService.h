@@ -3,6 +3,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "common/LocalInboundPorts.h"
 #include "domain/models/Config.h"
 
 struct OutboundLocationProbeResult
@@ -28,7 +29,9 @@ struct LocationProbeTimings;
 class OutboundLocationProbeService
 {
 public:
-    static constexpr int LocationProbePortOffset = 103;
+    // Kept as the named constant callers already pass around; the value itself lives with the rest
+    // of the local inbound policy so the runtime config and this probe cannot drift apart.
+    static constexpr int LocationProbePortOffset = LocalInboundPorts::kLocationProbeOffset;
     static constexpr int LocationProbeTimeoutMs = 5000;
     static constexpr int LocationProbeRetryDelayMs = 300;
     // This probe is display-only now -- it runs after the system proxy is already applied and a

@@ -168,10 +168,10 @@ void SystemProxyCoordinatorTests::updateModePassesTheLocalPortPairToTheService()
     QVERIFY(!systemProxyService.lastProxyExceptions_.trimmed().isEmpty());
 }
 
-// Covers collectRouteDerivedProxyExceptions(), which lives in an anonymous namespace in
-// SystemProxyCoordinator.cpp and is reachable only through buildExceptions(). The system proxy
-// needs a bypass entry for every host the user routed *directly*, and needs none for the hosts
-// routed through the proxy -- a wrong direction here silently sends proxied traffic straight out.
+// Covers the routing-derived half of the bypass list, now shared with SongBirdAuto through
+// common/SystemProxyExceptions and reachable here through buildExceptions(). The system proxy needs
+// a bypass entry for every host the user routed *directly*, and needs none for the hosts routed
+// through the proxy -- a wrong direction here silently sends proxied traffic straight out.
 void SystemProxyCoordinatorTests::buildExceptionsDerivesBypassEntriesFromDirectRoutingRules()
 {
     Config config;

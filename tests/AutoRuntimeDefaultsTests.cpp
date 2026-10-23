@@ -1,7 +1,7 @@
 #include <QtTest/QtTest>
 
 #include "auto/AutoRuntimeDefaults.h"
-#include "appcore/OutboundLocationProbeService.h"
+#include "common/LocalInboundPorts.h"
 #include "common/SystemProxyMode.h"
 
 class AutoRuntimeDefaultsTests : public QObject
@@ -68,7 +68,7 @@ void AutoRuntimeDefaultsTests::normalizesPortBase()
     QCOMPARE(config.localHttpPort, expectedBasePort + 1);
     QCOMPARE(
         config.localLocationProbePort,
-        expectedBasePort + OutboundLocationProbeService::LocationProbePortOffset);
+        expectedBasePort + LocalInboundPorts::kLocationProbeOffset);
 }
 
 QTEST_MAIN(AutoRuntimeDefaultsTests)

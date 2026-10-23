@@ -30,6 +30,7 @@
 #include <optional>
 #include <utility>
 
+#include "common/LocalInboundPorts.h"
 #include "common/SystemProxyMode.h"
 #include "common/UserAgent.h"
 #include "persistence/JsonConfigRepository.h"
@@ -1061,11 +1062,11 @@ void EndToEndSmokeTests::subscriptionToGoogleSmoke()
     if (coreStartedSpy.isEmpty()) {
         QVERIFY2(coreStartedSpy.wait(kCoreReadyTimeoutMs), "Timed out while waiting for the core process to start.");
     }
-    QVERIFY2(waitForLocalPortReady(config.localPort + 1, kPortReadyTimeoutMs), "Final HTTP inbound did not become ready.");
+    QVERIFY2(waitForLocalPortReady(LocalInboundPorts::httpPort(config), kPortReadyTimeoutMs), "Final HTTP inbound did not become ready.");
 
     ProxyAvailabilityCheckService availabilityCheckService;
     ProxyAvailabilityCheckConfig availabilityConfig;
-    availabilityConfig.localPort = config.localPort;
+    availabilityConfig.httpPort = LocalInboundPorts::httpPort(config);
     availabilityConfig.speedPingTestUrl = config.defaults().speedPingTestUrl;
     const OperationResult availabilityResult = availabilityCheckService.check(availabilityConfig);
     QVERIFY2(availabilityResult.success, qPrintable(availabilityResult.message));

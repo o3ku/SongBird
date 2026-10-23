@@ -94,6 +94,14 @@ QString encode(const QList<Cell>& cells)
 
 QList<Cell> decode(const QString& text)
 {
+    // Only the strip this policy writes can be read back. A string of the wrong length is as
+    // malformed as one with an unknown character: buildCells() always produces exactly kCellCount
+    // cells, so anything else came from a different writer and cannot be trusted to line up with
+    // the hours the UI will label.
+    if (text.size() != kCellCount) {
+        return {};
+    }
+
     QList<Cell> cells;
     cells.reserve(text.size());
     for (const QChar ch : text) {

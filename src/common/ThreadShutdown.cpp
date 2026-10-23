@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QThread>
+#include <QStringList>
 
 namespace {
 
@@ -113,6 +114,37 @@ ThreadShutdownOutcome stopThreadForShutdown(QThread* thread, const ThreadShutdow
         budget.recordPath);
 
     return ThreadShutdownOutcome::Abandoned;
+}
+
+ThreadShutdownOutcome collectThreadForShutdown(
+    QThread* thread,
+    const ThreadShutdownBudget& budget,
+    QStringList* abandonedObjectNames)
+{
+    if (thread == nullptr) {
+        return ThreadShutdownOutcome::Finished;
+    }
+
+    // Deliberately no helper thread. An earlier version handed the wait to a QThread created here and
+    // invoked the ladder on it with Qt::BlockingQueuedConnection -- which queues the call on the
+    // receiver's thread. The collector lives in the calling thread, so the caller was asking its own
+    // event loop for a slot while blocking that loop: Qt logged "Dead lock detected", dropped the
+    // call, and the function went on to wait for a collector that had never run its body. It hung on
+    // exactly the shutdown path this file exists to bound.
+    //
+    // The ladder does not need one. Its waits all carry a timeout (`wait(ms)`), and the one call Qt
+    // refuses from a thread's own event loop -- waiting on itself for longer than the event loop
+    // will ever process -- is answered before it happens: the caller may already have interrupted
+    // this very thread, which isFinished() reports, and the waits below are clamped to a budget that
+    // ends whether or not the worker cooperates.
+    const QString label = describeThread(thread);
+    const ThreadShutdownOutcome outcome = stopThreadForShutdown(thread, budget);
+
+    if (outcome == ThreadShutdownOutcome::Abandoned && abandonedObjectNames != nullptr) {
+        abandonedObjectNames->append(label);
+    }
+
+    return outcome;
 }
 
 void abandonProcessAfterStuckThread(const QString& context, const QString& recordPath)

@@ -7,7 +7,9 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QStringList>
+
 #include "common/JsonFile.h"
+#include "common/LocalInboundPorts.h"
 #include "persistence/JsonConfigSerialization.h"
 #include "persistence/JsonConfigStateSerialization.h"
 
@@ -60,6 +62,12 @@ Config JsonConfigRepository::load()
     if (!loadStateInto(config)) {
         return {};
     }
+
+    // A port override that no longer matches `localPort` is a leftover from an earlier run (the
+    // Auto front end persists `localPort + 1`), not a decision the user made. Dropping it here is
+    // what stops a config that has since changed `localPort` from resolving the HTTP inbound and
+    // the location probe off two different bases.
+    LocalInboundPorts::clearStaleOverrides(config);
 
     return config;
 }

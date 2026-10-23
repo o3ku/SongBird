@@ -70,6 +70,9 @@ private slots:
     void recordReportsAnEmptyPathWhenNothingCouldBeWritten();
     void defaultRecordPathIsAnAbsoluteLogFile();
     void trackerReportsAbandonmentAndKeepsTheWorkerTracked();
+    void collectWaitsForACooperativeWorkerWithoutNamingIt();
+    void collectNamesTheWorkerItHadToAbandon();
+    void collectToleratesANullThread();
     void exitProbeEndsTheProcessWithoutUnwinding();
 };
 
@@ -223,6 +226,67 @@ void ThreadShutdownTests::defaultRecordPathIsAnAbsoluteLogFile()
     const QString path = defaultShutdownRecordPath();
     QVERIFY(path.endsWith(QStringLiteral("shutdown-hang.log")));
     QVERIFY(QDir::isAbsolutePath(path));
+}
+
+void ThreadShutdownTests::collectWaitsForACooperativeWorkerWithoutNamingIt()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString recordPath = tempDir.filePath(QStringLiteral("shutdown.log"));
+
+    QThread* worker = QThread::create([]() {
+        while (!QThread::currentThread()->isInterruptionRequested()) {
+            QThread::msleep(5);
+        }
+    });
+    worker->start();
+
+    QStringList abandoned;
+    const ThreadShutdownOutcome outcome =
+        collectThreadForShutdown(worker, shortBudget(recordPath, 5000), &abandoned);
+
+    QCOMPARE(outcomeValue(outcome), outcomeValue(ThreadShutdownOutcome::Finished));
+    QVERIFY(abandoned.isEmpty());
+    QVERIFY(!QFile::exists(recordPath));
+    // It returns only once the worker is actually gone, and it does so from the thread that owns the
+    // event loop. It has to: the collector object this call used to route the wait through lived in
+    // this thread, so the Qt::BlockingQueuedConnection invokeMethod was queued on the very loop the
+    // call was blocking -- "Dead lock detected", the call dropped, and the wait never bounded. This
+    // test is what caught that, by timing out after 300 s instead of finishing in milliseconds.
+    QVERIFY(worker->isFinished());
+    delete worker;
+}
+
+void ThreadShutdownTests::collectNamesTheWorkerItHadToAbandon()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString recordPath = tempDir.filePath(QStringLiteral("shutdown.log"));
+
+    auto stopFlag = std::make_shared<std::atomic_bool>(true);
+    QThread* worker = launchWorkerThatIgnoresInterruption(stopFlag);
+    worker->setObjectName(QStringLiteral("auto-eval"));
+    worker->start();
+
+    QStringList abandoned;
+    const ThreadShutdownOutcome outcome =
+        collectThreadForShutdown(worker, shortBudget(recordPath, 300), &abandoned);
+
+    QCOMPARE(outcomeValue(outcome), outcomeValue(ThreadShutdownOutcome::Abandoned));
+    QCOMPARE(abandoned.size(), 1);
+    // The label is what the caller reports to the user, so it has to identify the thread.
+    QVERIFY(abandoned.first().contains(QStringLiteral("auto-eval")));
+    QCOMPARE(recordLines(recordPath).size(), 2);
+
+    stopFlag->store(false);
+    QVERIFY(worker->wait(5000));
+    delete worker;
+}
+
+void ThreadShutdownTests::collectToleratesANullThread()
+{
+    const ThreadShutdownOutcome outcome = collectThreadForShutdown(nullptr);
+    QCOMPARE(outcomeValue(outcome), outcomeValue(ThreadShutdownOutcome::Finished));
 }
 
 void ThreadShutdownTests::trackerReportsAbandonmentAndKeepsTheWorkerTracked()

@@ -2263,6 +2263,14 @@ The running core will be stopped before installation if needed.</source>
         <translation>出站检查未能完成：本机也无法直连探测主机。</translation>
     </message>
     <message>
+        <source>Direct connectivity is still unavailable; keeping the outbound warning.</source>
+        <translation>直连仍不可用，继续保留出站警告。</translation>
+    </message>
+    <message>
+        <source>Direct connectivity is available again; the outbound warning no longer applies.</source>
+        <translation>直连已恢复，出站警告不再适用。</translation>
+    </message>
+    <message>
         <source>%1 The server certificate does not match the address.</source>
         <translation>%1 服务器证书与地址不匹配。</translation>
     </message>

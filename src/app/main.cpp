@@ -26,7 +26,11 @@
 #include "ui/theme/AppTheme.h"
 
 #ifndef SONGBIRD_APP_VERSION
-#define SONGBIRD_APP_VERSION "2.5.0"
+// Deliberately not a version number. src/CMakeLists.txt always defines this from
+// project(VERSION), so the only way to get here is a build that bypassed CMake -- and a
+// plausible-looking fallback would report a version nobody is running. Saying "unknown" makes
+// that build fail visibly instead.
+#define SONGBIRD_APP_VERSION "unknown"
 #endif
 
 namespace {

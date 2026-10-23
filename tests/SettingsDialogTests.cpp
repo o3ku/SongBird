@@ -90,6 +90,7 @@ private slots:
     void serverTableDarkThemePaintsAlternateRowsDark();
     void applicationThemeLoadsResourceStyleSheet();
     void subscriptionPageRoundTripsSelectedRowsAndItems();
+    void subscriptionPageKeepsServerStateTheTableNeverShows();
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
@@ -1748,6 +1749,46 @@ void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
     QCOMPARE(updated.collection().subscriptions.at(1).id, QStringLiteral("sub-2"));
     QCOMPARE(updated.collection().subscriptions.at(1).url, QStringLiteral("https://b.example"));
     QVERIFY(!updated.collection().subscriptions.at(1).enabled);
+}
+
+// `etag`, `lastModified` and `failStreak` are server state, not settings: the subscriptions table
+// edits five columns and rebuilds a SubItem from them. It used to drop the other three, so opening
+// the dialog and pressing OK reset every subscription's HTTP cache validators (forcing a full
+// download on the next refresh) and its failure streak, with nothing changed.
+void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
+{
+    SubItem stored{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QStringLiteral("ua-a")};
+    stored.etag = QStringLiteral("\"abc123\"");
+    stored.lastModified = QStringLiteral("Wed, 21 Oct 2026 07:28:00 GMT");
+    stored.failStreak = 2;
+
+    Config config;
+    config.collection().subscriptions = {stored};
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    // Nothing edited: the round trip must still come back identical.
+    const Config unchanged = dialog.config();
+    QCOMPARE(unchanged.collection().subscriptions.size(), 1);
+    QCOMPARE(unchanged.collection().subscriptions.at(0).etag, stored.etag);
+    QCOMPARE(unchanged.collection().subscriptions.at(0).lastModified, stored.lastModified);
+    QCOMPARE(unchanged.collection().subscriptions.at(0).failStreak, 2);
+
+    // An edited row keeps the server state too; only the columns the table owns change.
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* remarksItem = subTable->item(0, 2);
+    QVERIFY(remarksItem != nullptr);
+    remarksItem->setText(QStringLiteral("renamed"));
+
+    const Config edited = dialog.config();
+    QCOMPARE(edited.collection().subscriptions.at(0).remarks, QStringLiteral("renamed"));
+    QCOMPARE(edited.collection().subscriptions.at(0).etag, stored.etag);
+    QCOMPARE(edited.collection().subscriptions.at(0).lastModified, stored.lastModified);
+    QCOMPARE(edited.collection().subscriptions.at(0).failStreak, 2);
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()

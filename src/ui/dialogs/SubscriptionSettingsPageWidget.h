@@ -27,6 +27,9 @@ signals:
 private:
     void reloadTable();
     void appendRow(const SubItem& item);
+    // Copies the fields the table does not show (HTTP cache validators and the failure streak) from
+    // the subscription this row was loaded from.
+    void carryServerState(const QString& id, SubItem& item) const;
     QString userAgentAtRow(int row) const;
     void updateActionState();
 

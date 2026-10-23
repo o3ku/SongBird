@@ -149,4 +149,10 @@ struct VmessItem {
     QString idleSessionCheckInterval;
     QString idleSessionTimeout;
     QString minIdleSession;
+    // State, not configuration: the probe history that feeds the 24-hour health strip, encoded by
+    // appcore/HealthStripPolicy ('+' / '-' / '0', oldest hour first). Persisted through
+    // JsonConfigStateSerialization next to testResult, so it survives a restart without touching
+    // the primary config file. Empty means "no history", which is also what an old state file
+    // yields -- the strip then shows 24 untested cells, which is the truth.
+    QString healthStrip;
 };

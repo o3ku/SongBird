@@ -2,13 +2,15 @@
 
 #include "backends/singbox/SingBoxOutboundConfigFragments.h"
 #include "backends/singbox/SingBoxTunCompatConfigFragments.h"
+#include "common/LocalInboundPorts.h"
+#include "runtime/RoutingConfigFragments.h"
 #include "runtime/TunAdapterNames.h"
 
 namespace TunCompatConfig = SingBoxTunCompatConfigFragments;
 
 namespace {
 
-const QString kLocationProbeTag = QStringLiteral("location-probe");
+const QString kPlainHttpTag = QStringLiteral("http");
 
 void insertAllowLanUsers(QJsonObject& inbound, const Config& config, bool allowLan)
 {
@@ -90,11 +92,14 @@ QJsonObject SingBoxConfigFragments::buildHttpInboundWithTag(const Config& config
 {
     QJsonObject inbound;
     const bool allowLan = tag.endsWith(QStringLiteral("-lan"));
+    // The two dedicated inbounds are named by tag, not by their offset: settling them on `offset`
+    // meant a config that carried a port override got the override written by the backend while
+    // every other reader kept assuming `localPort + offset`. Everything else stays offset-based.
     int port = config.localPort + offset;
-    if (!allowLan && offset == 1 && config.localHttpPort > 0) {
-        port = config.localHttpPort;
-    } else if (tag == kLocationProbeTag && config.localLocationProbePort > 0) {
-        port = config.localLocationProbePort;
+    if (!allowLan && tag == kPlainHttpTag) {
+        port = LocalInboundPorts::httpPort(config);
+    } else if (tag == RoutingConfigFragments::locationProbeTag()) {
+        port = LocalInboundPorts::locationProbePort(config);
     }
     inbound.insert(QStringLiteral("type"), QStringLiteral("http"));
     inbound.insert(QStringLiteral("tag"), tag);
