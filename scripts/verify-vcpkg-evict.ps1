@@ -33,7 +33,10 @@ if (-not $repoRoot) {
   exit 1
 }
 $workflowPath = Join-Path $repoRoot '.github/workflows/release.yml'
-$work = Join-Path $env:TEMP 'verify-vcpkg-evict'
+# [System.IO.Path]::GetTempPath() rather than $env:TEMP: TEMP is a Windows variable, and these
+# harnesses also run under ctest on Linux (.cnb.yml), where it is unset and Join-Path
+# fails on a null argument before the case under test is even reached.
+$work = Join-Path ([System.IO.Path]::GetTempPath()) 'verify-vcpkg-evict'
 if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 

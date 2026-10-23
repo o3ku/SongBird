@@ -100,6 +100,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
     logView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     logView_->setMouseTracking(true);
     logView_->setModel(logFilterModel_);
+    logItemDelegate_->setView(logView_);
     logView_->setItemDelegate(logItemDelegate_);
     logView_->viewport()->installEventFilter(this);
     logView_->viewport()->setMouseTracking(true);

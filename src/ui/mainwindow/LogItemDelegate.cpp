@@ -8,17 +8,67 @@
 #include <QStyle>
 #include <QTextLayout>
 #include <QTextOption>
+#include <QWidget>
 
 LogItemDelegate::LogItemDelegate(QObject* parent)
     : QStyledItemDelegate(parent)
 {
 }
 
+void LogItemDelegate::setView(const QWidget* view)
+{
+    view_ = view;
+}
+
 QSize LogItemDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    const int lineCount = index.data(LogListModel::LineCountRole).toInt();
-    const int h = option.fontMetrics.height() * qMax(1, lineCount) + VerticalPadding * 2;
-    return QSize(0, h);
+    // The height of the layout paint() will draw, not the line count LogListModel keeps.
+    //
+    // Two reasons. The model counts lines against the width it was last told about, which is
+    // the viewport width minus HorizontalPadding -- in a QListView that is not the width a row
+    // is laid out at, because the view reserves room for a vertical scrollbar. A row that
+    // paint() wrapped onto two lines therefore reported one, and its second line was clipped.
+    // And that count is only as fresh as the last setWrapConfiguration() call, which is posted
+    // through a queued invocation, so a row appended before it is delivered is measured against
+    // the previous width.
+    //
+    // The height is measured with the metrics of the widget the delegate draws on, not with
+    // QFontMetrics built from option.font. Those are not the same number for the same font:
+    // a QFont that has not been resolved yet resolves differently depending on which object
+    // asks first, and the option's copy of the view's font reports a smaller line than the
+    // view's own fontMetrics() does (measured under the offscreen plugin: 19 against 21 tall
+    // for one 12pt font). The view's answer is the one the row is actually drawn in.
+    const QWidget* owner = view_ != nullptr ? view_ : option.widget;
+    const int lineHeight = owner != nullptr ? owner->fontMetrics().height() : option.fontMetrics.height();
+    return QSize(0, layoutHeight(index.data(Qt::DisplayRole).toString(), option, option.rect.width(), lineHeight) + VerticalPadding * 2);
+}
+
+int LogItemDelegate::layoutHeight(const QString& text, const QStyleOptionViewItem& option, int rowWidth, int lineHeight)
+{
+    const qreal availableWidth = qMax(0, rowWidth - 2 * HorizontalPadding);
+    if (text.isEmpty() || availableWidth <= 0) {
+        return lineHeight;
+    }
+
+    QTextLayout layout(text, option.font);
+    QTextOption textOption;
+    textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(textOption);
+    layout.beginLayout();
+
+    int lineCount = 0;
+    forever {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+
+        line.setLineWidth(availableWidth);
+        ++lineCount;
+    }
+    layout.endLayout();
+
+    return lineHeight * qMax(1, lineCount);
 }
 
 void LogItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const

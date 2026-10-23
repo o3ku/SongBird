@@ -48,7 +48,10 @@ function Sub {
     return [regex]::Replace($Text, $Pattern, $ev)
 }
 
-$root = Join-Path $env:TEMP 'vcpkg-skip-verify'
+# [System.IO.Path]::GetTempPath() rather than $env:TEMP: TEMP is a Windows variable, and these
+# harnesses also run under ctest on Linux (.cnb.yml), where it is unset and Join-Path
+# fails on a null argument before the case under test is even reached.
+$root = Join-Path ([System.IO.Path]::GetTempPath()) 'vcpkg-skip-verify'
 if (Test-Path $root) { Remove-Item -Recurse -Force $root }
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 

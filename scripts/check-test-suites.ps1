@@ -36,10 +36,15 @@ if (-not (Test-Path -LiteralPath $testDirectory)) {
     exit 1
 }
 
-$executables = @(Get-ChildItem -LiteralPath $testDirectory -Filter "songbird_*_tests.exe" -File -ErrorAction SilentlyContinue |
+# The binaries are named songbird_*_tests on every platform, but they only carry the .exe suffix
+# where the linker adds one. Hard-coding it made this check report "a tree with no test binaries"
+# on a Linux build that had just compiled and run all of them -- a false red, which is the same
+# kind of failure as a false green: it says nothing about the tests.
+$executableSuffix = if ($env:OS -eq 'Windows_NT' -or $IsWindows) { '.exe' } else { '' }
+$executables = @(Get-ChildItem -LiteralPath $testDirectory -Filter "songbird_*_tests$executableSuffix" -File -ErrorAction SilentlyContinue |
     Sort-Object Name)
 if ($executables.Count -eq 0) {
-    Write-Error "No songbird_*_tests.exe under '$testDirectory'. A tree with no test binaries must not report a pass." -ErrorAction Continue
+    Write-Error "No songbird_*_tests$executableSuffix under '$testDirectory'. A tree with no test binaries must not report a pass." -ErrorAction Continue
     exit 1
 }
 
@@ -55,6 +60,11 @@ if ($executables.Count -eq 0) {
 #   of the four fixtures gives the number of real test functions that ran.
 $totalsPattern = [regex]'(?m)^Totals:\s*(\d+)\s+passed'
 $passLinePattern = [regex]'(?m)^PASS\s+:\s+\S+::(\w+)\s*\('
+# A skipped case is not a case that ran, but it is also not evidence that the suite lost its body.
+# CoreProcessHostTests is the example: its three cases assert on a Windows console process and a
+# Windows job object, so on any other platform they SKIP by design and there is nothing left to
+# count. Treating that as "ran 0 test cases" reddened the suite the moment it ran off Windows.
+$skipLinePattern = [regex]'(?m)^SKIP\s+:\s+\S+::(\w+)\s*\('
 $fixtureSlots = @('initTestCase', 'cleanupTestCase', 'init', 'cleanup')
 
 $failures = New-Object System.Collections.Generic.List[string]
@@ -176,6 +186,21 @@ foreach ($executable in $executables) {
             if ($fixtureSlots -notcontains $passLine.Groups[1].Value) {
                 $realCases += 1
             }
+        }
+
+        $skippedCases = 0
+        foreach ($skipLine in $skipLinePattern.Matches($text)) {
+            if ($fixtureSlots -notcontains $skipLine.Groups[1].Value) {
+                $skippedCases += 1
+            }
+        }
+
+        if ($realCases -le 0 -and $skippedCases -gt 0) {
+            # Every case declined to run on this platform. That is a decision the suite made, not a
+            # suite that lost its body, so it is counted separately -- like a smoke target, it must
+            # not let the summary line imply it was verified.
+            $skipped += 1
+            continue
         }
 
         if ($realCases -le 0) {

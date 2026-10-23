@@ -60,7 +60,10 @@ function Sub {
     return [regex]::Replace($Text, $Pattern, $ev)
 }
 
-$root = Join-Path $env:TEMP 'vcpkg-guard-verify'
+# [System.IO.Path]::GetTempPath() rather than $env:TEMP: TEMP is a Windows variable, and these
+# harnesses also run under ctest on Linux (.cnb.yml), where it is unset and Join-Path
+# fails on a null argument before the case under test is even reached.
+$root = Join-Path ([System.IO.Path]::GetTempPath()) 'vcpkg-guard-verify'
 if (Test-Path $root) { Remove-Item -Recurse -Force $root }
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 
@@ -86,11 +89,33 @@ function Build-Script {
     $s = Sub $s '\$\{\{\s*steps\.vcpkg-cache\.outputs\.cache-matched-key\s*\}\}' 'FAKE-KEY'
     $s = Sub $s '\$\{\{\s*github\.workspace\s*\}\}' $Store
     $s = Sub $s '\$\{\{\s*runner\.temp\s*\}\}' $TempDir
-    $tail = if ($ExitCode -ne 0) { " & exit /b $ExitCode" } else { '' }
+    # The stub stands in for the native vcpkg call. On Windows it is `cmd.exe /c type <payload>`,
+    # because what the case under test is $LASTEXITCODE surviving a `2>&1 | Tee-Object` pipeline
+    # around a *native* command, and only a real child process reproduces the two hosts disagreeing
+    # about merged stderr (see the header). cmd.exe has no counterpart off Windows, so the same
+    # child is spelled with the platform's own shell there -- the property under test is the
+    # pipeline, not the program inside it.
+    # $IsLinux exists in pwsh 6+; on Windows PowerShell 5.1 it is $null, which is the Windows branch.
+    $isWindowsShell = -not $IsLinux
+    $shell = if ($isWindowsShell) {
+        'cmd.exe /c ''type "' + $Payload + '"'
+    } else {
+        # '-c' is quoted for the same reason the cmd.exe branch quotes '/c'.
+        '/bin/sh ''-c'' ''cat "' + $Payload + '"'
+    }
+    # The exit is emitted *inside* the quoted argument too, so the child -- not this host --
+    # reports it and $LASTEXITCODE is what the step reads.
+    $failed = if ($ExitCode -ne 0) { $true } else { $false }
+    # The redirection belongs *inside* the quoted argument, because it is the child that has to
+    # write to stderr, not this pwsh host -- which is the whole point of the case. It is folded
+    # into the shell string here rather than appended after the closing quote.
     $redir = if ($ToStderr) { ' 1>&2' } else { '' }
-    $stub = '& cmd.exe /c ''type "' + $Payload + '"' + $redir + $tail + ''' 2>&1 | Tee-Object -FilePath $log'
+    $tail = if ($failed) { if ($isWindowsShell) { " & exit /b $ExitCode" } else { "; exit $ExitCode" } } else { '' }
+    # The closing quote terminates the single-quoted argument that began at the shell token:
+    # the original stub was `& cmd.exe /c 'type <payload>' 2>&1 | ...`, one quoted argument.
+    $stub = '& ' + $shell + $redir + $tail + "'" + ' 2>&1 | Tee-Object -FilePath $log'
     $s = Sub $s '(?s)& "\$env:VCPKG_INSTALLATION_ROOT\\vcpkg\.exe" install .*?Tee-Object -FilePath \$log' $stub
-    if ($s -notmatch 'cmd\.exe /c') { throw 'the native invocation was not substituted' }
+    if ($s -notmatch 'Tee-Object -FilePath \$log') { throw 'the native invocation was not substituted' }
     # GitHub's pwsh wrapper prepends this, and a fresh process starts with the default 'Continue',
     # so it has to be emulated or every case proves the wrong thing.
     return ("`$ErrorActionPreference = 'Stop'`n" + $s)

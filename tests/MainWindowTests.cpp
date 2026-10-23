@@ -27,6 +27,8 @@
 #include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QScreen>
+#include <QTextLayout>
 #include <QTextOption>
 #include <QToolBar>
 #include <QToolButton>
@@ -673,12 +675,30 @@ void MainWindowTests::logContextMenuUsesViewportCoordinates()
     QVERIFY(logView->model()->rowCount() > 0);
 
     const QPoint menuPoint = logView->visualRect(logView->model()->index(0, 0)).center();
-    const QPoint expectedGlobal = logView->viewport()->mapToGlobal(menuPoint);
+    const QPoint requestedGlobal = logView->viewport()->mapToGlobal(menuPoint);
 
-    QContextMenuEvent event(QContextMenuEvent::Mouse, menuPoint, expectedGlobal);
+    QContextMenuEvent event(QContextMenuEvent::Mouse, menuPoint, requestedGlobal);
     QApplication::sendEvent(logView->viewport(), &event);
     QTRY_VERIFY(QApplication::activePopupWidget() == logMenu);
-    QCOMPARE(logMenu->pos(), expectedGlobal);
+
+    // The x is the assertion. The widget must forward the coordinate it was handed -- a
+    // viewport position mapped to global -- and a menu that snapped to the *window* origin, or
+    // that used the raw event position as a screen position, lands somewhere else along x for
+    // any viewport that is not at x = 0.
+    //
+    // The y is not asserted, because where QMenu finally opens is geometry rather than
+    // contract: it flips above the point and clamps itself when the menu would run off the
+    // display, and the display a test runs on is not the product. This case used to compare
+    // the whole point and passed only while it ran on a display tall enough that no flip was
+    // needed; the first Linux run -- 800x600 under the offscreen plugin -- put the log panel
+    // low enough that the menu opened 39px higher and the comparison failed for a reason that
+    // has nothing to do with the behaviour being checked.
+    QCOMPARE(logMenu->pos().x(), requestedGlobal.x());
+
+    const QScreen* screen = logView->screen();
+    if (screen != nullptr) {
+        QVERIFY(screen->availableGeometry().contains(logMenu->pos()));
+    }
 
     logMenu->close();
     QTRY_VERIFY(QApplication::activePopupWidget() == nullptr);
@@ -1673,6 +1693,25 @@ void MainWindowTests::trayMenuSupportReservesIconColumnForPlainItems()
     QVERIFY(separator->icon().isNull());
 }
 
+namespace {
+
+// The style option a row is actually painted with. QListView fills option.rect with the row's
+// rectangle before asking the delegate for anything, and the delegate wraps the text against
+// that width -- so a test that leaves option.rect at its default (an empty rect at the origin)
+// describes a row zero pixels wide and asserts on a layout the view never produces. It went
+// unnoticed while sizeHint() read the model's precomputed line count instead of measuring the
+// text; a check written that way can still pass at a width nothing would ever be drawn at.
+QStyleOptionViewItem makeRowOption(const QListView& view, int rowWidth = 0)
+{
+    QStyleOptionViewItem option;
+    option.initFrom(&view);
+    option.fontMetrics = view.fontMetrics();
+    option.rect = QRect(0, 0, rowWidth > 0 ? rowWidth : view.viewport()->width(), 40);
+    return option;
+}
+
+} // namespace
+
 void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
 {
     const QString text = QStringLiteral("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron");
@@ -1686,14 +1725,14 @@ void MainWindowTests::logDelegateUsesViewportWidthForSingleLineHeight()
     model.appendLine(text);
 
     LogItemDelegate delegate;
-    QStyleOptionViewItem option;
-    option.initFrom(&view);
-    option.fontMetrics = view.fontMetrics();
+    delegate.setView(&view);
+    const QSize wideHint = delegate.sizeHint(makeRowOption(view), model.index(0, 0));
 
-    const QSize wideHint = delegate.sizeHint(option, model.index(0, 0));
-
+    // A width the text cannot fit in one line of, which is the case the height has to grow for.
+    // The model is told about it as well so this keeps testing the pair of decisions rather
+    // than the delegate alone.
     model.setWrapConfiguration(view.font(), 80 - 2 * LogItemDelegate::HorizontalPadding);
-    const QSize narrowHint = delegate.sizeHint(option, model.index(0, 0));
+    const QSize narrowHint = delegate.sizeHint(makeRowOption(view, 80), model.index(0, 0));
 
     QVERIFY(wideHint.height() < narrowHint.height());
 }
@@ -1711,13 +1750,35 @@ void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
     model.appendLine(text);
 
     LogItemDelegate delegate;
-    QStyleOptionViewItem option;
-    option.initFrom(&view);
-    option.fontMetrics = view.fontMetrics();
+    delegate.setView(&view);
+    const QStyleOptionViewItem option = makeRowOption(view);
+
+    // Whether this text is one line at this width is a property of the font the platform hands
+    // us, not of the code under test: the string measures roughly 900px in the font Windows and
+    // macOS resolve, and 1362px in the DejaVu that a Linux build gets, against the ~978px this
+    // view offers. Asserting "one line" therefore asserted a Windows-only font metric and went
+    // red the first time the suite ran on a platform with a wider default face. Ask the layout
+    // how many lines it takes instead, and pin the height to that -- which is the rule the
+    // delegate exists to follow, and the one the old line-count-from-the-model hint broke.
+    QTextLayout layout(text, view.font());
+    QTextOption textOption;
+    textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(textOption);
+    layout.beginLayout();
+    int expectedLines = 0;
+    forever {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(view.viewport()->width() - 2 * LogItemDelegate::HorizontalPadding);
+        ++expectedLines;
+    }
+    layout.endLayout();
+    QVERIFY(expectedLines >= 1);
 
     const QSize hint = delegate.sizeHint(option, model.index(0, 0));
-    const int singleLineHeight = option.fontMetrics.height() + 2;
-    QCOMPARE(hint.height(), singleLineHeight);
+    QCOMPARE(hint.height(), view.fontMetrics().height() * expectedLines + 2 * LogItemDelegate::VerticalPadding);
 }
 
 void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
@@ -1733,17 +1794,14 @@ void MainWindowTests::logViewRelayoutsItemHeightAfterResize()
     model.appendLine(text);
 
     LogItemDelegate delegate;
-    QStyleOptionViewItem option;
-    option.initFrom(&view);
-    option.fontMetrics = view.fontMetrics();
-
-    const QSize narrowHint = delegate.sizeHint(option, model.index(0, 0));
+    delegate.setView(&view);
+    const QSize narrowHint = delegate.sizeHint(makeRowOption(view), model.index(0, 0));
 
     view.resize(996, 200);
     QCoreApplication::processEvents();
     model.setWrapConfiguration(view.font(), view.viewport()->width() - 2 * LogItemDelegate::HorizontalPadding);
 
-    const QSize wideHint = delegate.sizeHint(option, model.index(0, 0));
+    const QSize wideHint = delegate.sizeHint(makeRowOption(view), model.index(0, 0));
     QVERIFY(wideHint.height() < narrowHint.height());
 }
 

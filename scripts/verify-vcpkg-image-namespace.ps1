@@ -50,7 +50,10 @@ Write-Output "=== EXTRACTED run: BLOCK (Read runner image version) ==="
 Write-Output $dedented
 Write-Output ''
 
-$root = Join-Path $env:TEMP 'vcpkg-image-verify'
+# [System.IO.Path]::GetTempPath() rather than $env:TEMP: TEMP is a Windows variable, and these
+# harnesses also run under ctest on Linux (.cnb.yml), where it is unset and Join-Path
+# fails on a null argument before the case under test is even reached.
+$root = Join-Path ([System.IO.Path]::GetTempPath()) 'vcpkg-image-verify'
 if (Test-Path $root) { Remove-Item -Recurse -Force $root }
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 

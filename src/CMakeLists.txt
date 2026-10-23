@@ -283,6 +283,8 @@ set(SONGBIRD_SHARED_SOURCES
     ui/theme/ServerTableTheme.cpp
     platform/IThemePreferenceService.h
     platform/NullThemePreferenceService.h
+    platform/null/NullAutoRunService.h
+    platform/null/NullSystemProxyService.h
     resources/app_icons.qrc
     resources/themes.qrc
 )

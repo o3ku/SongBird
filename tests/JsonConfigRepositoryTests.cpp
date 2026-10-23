@@ -19,7 +19,15 @@ QString makeConfigPath(QTemporaryDir& tempDir)
 
 QString makeStatePath(QTemporaryDir& tempDir)
 {
-    return tempDir.filePath(QStringLiteral("SongBird.state.json"));
+    // The companion state file is named after the primary file's base name
+    // (JsonConfigRepository::stateConfigPath), so "songbird.json" pairs with "songbird.state.json".
+    //
+    // This literal used to read "SongBird.state.json", which only worked because the file systems
+    // the suite had ever run on -- NTFS and APFS -- compare names case-insensitively: the helper
+    // wrote one spelling and the repository wrote the other, and every read found it anyway. On a
+    // case-sensitive file system the two names are different files, so the seeded state was never
+    // read and four cases went red for a spelling that was never the product's behaviour.
+    return tempDir.filePath(QStringLiteral("songbird.state.json"));
 }
 
 bool writeJsonFile(const QString& path, const QJsonObject& root)

@@ -33,8 +33,17 @@ using PlatformThemePreferenceService = NullThemePreferenceService;
 
 #else
 
+// Every other platform: the interfaces are still satisfied, because the front-ends construct
+// these unconditionally. Linux is the reason this branch is no longer only a theme stand-in --
+// it builds the full application (see .cnb.yml) while the proxy and auto-run mechanisms here
+// are Windows-only, so the two side effects degrade to stand-ins that report "not applied"
+// rather than the composition root growing a platform conditional at each construction site.
 #include "platform/NullThemePreferenceService.h"
+#include "platform/null/NullAutoRunService.h"
+#include "platform/null/NullSystemProxyService.h"
 
+using PlatformAutoRunService = NullAutoRunService;
+using PlatformSystemProxyService = NullSystemProxyService;
 using PlatformThemePreferenceService = NullThemePreferenceService;
 
 #endif
