@@ -839,6 +839,34 @@ void ProxySession::failStartup(const OperationResult& result)
     emit failed(result.message);
 }
 
+void ProxySession::undoManagedSystemProxyAfterAbortedStartup()
+{
+    // The proxy half of cleanupAfterFailedStartup(), with one deliberate difference: the flag
+    // is dropped only when the undo write succeeded, like stopForCoreUpdate and unlike a failed
+    // startup (which calls clearProxyStateAfterStopped() and forgets ownership wholesale --
+    // nothing there is ever coming back to retry). Here the session stays alive, and a later
+    // stop() must still be able to redo this undo, so a failed write must not erase the claim.
+    // Auto wires no snapshot capture, so a restorable snapshot is always false here and the
+    // decision lands on Clear -- the documented fallback for "ours, and the port is dead".
+    const bool snapshotRestorable =
+        isRestorableSystemProxySnapshot(deps_.activationCoordinator.capturedSystemProxySnapshot());
+    switch (decideFailedStartupProxyAction(managedSystemProxyActive_, snapshotRestorable)) {
+    case FailedStartupProxyAction::LeaveAlone:
+        break;
+    case FailedStartupProxyAction::Restore:
+    case FailedStartupProxyAction::Clear:
+        if (undoSystemProxyChange(SystemProxyUndoTrigger::StartupFailed)) {
+            managedSystemProxyActive_ = false;
+        }
+        break;
+    }
+    // The registry may have changed, so the state sync the two sibling undo paths end with
+    // (:1517, cleanupAfterFailedStartup) belongs here too. Auto does not connect this signal
+    // today -- its UI is session-driven, not registry-driven -- but symmetry is the contract:
+    // an undo path that changes the registry and stays silent is how #8 was found.
+    emit statusSyncRequested();
+}
+
 void ProxySession::cleanupAfterFailedStartup()
 {
     cancelPendingCoreRestarts();

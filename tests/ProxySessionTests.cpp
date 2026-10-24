@@ -61,6 +61,9 @@ private slots:
     void stopDuringTunCleanupCancelsStartupResume();
     void stopClearsAdoptedManagedSystemProxy();
     void stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails();
+    void abortedStartupUndoClearsAProxyTheSessionOwns();
+    void abortedStartupUndoLeavesAProxyItDoesNotOwnAlone();
+    void abortedStartupUndoKeepsTheFlagWhenTheClearFails();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
     void healthWatchToleratesASingleFailedProbe();
@@ -1336,6 +1339,53 @@ void ProxySessionTests::stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails(
     QVERIFY(harness.systemProxyEnabled);
     QVERIFY(logSpy.count() > 0);
     QVERIFY(logSpy.last().at(0).toString().contains(QStringLiteral("Failed to disable")));
+}
+
+// undoManagedSystemProxyAfterAbortedStartup() is what SongBirdAuto's TUN-failure branch calls
+// (issue #8): the start is aborted before ProxySession::start() runs, so this -- not a failed
+// startup -- is the only thing that can undo a proxy an earlier round of this session applied.
+// The harness wires no snapshot capture, exactly like Auto, so the ownership decision can only
+// land on Clear; what these cases pin is that the decision is made at all, and by ownership.
+void ProxySessionTests::abortedStartupUndoClearsAProxyTheSessionOwns()
+{
+    ProxySessionHarness harness;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+
+    harness.session->undoManagedSystemProxyAfterAbortedStartup();
+
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QCOMPARE(static_cast<int>(harness.lastProxyMode), static_cast<int>(SystemProxyMode::ForcedClear));
+    QVERIFY(!harness.session->isManagedProxyActive());
+    QVERIFY(!harness.systemProxyEnabled);
+}
+
+void ProxySessionTests::abortedStartupUndoLeavesAProxyItDoesNotOwnAlone()
+{
+    ProxySessionHarness harness;
+    // The registry is on, but this session never wrote it: the user's own proxy. The ownership
+    // rule says LeaveAlone -- "no live port" is not evidence of "we wrote this".
+    harness.systemProxyEnabled = true;
+
+    harness.session->undoManagedSystemProxyAfterAbortedStartup();
+
+    QCOMPARE(harness.proxyUpdateCount, 0);
+    QVERIFY(harness.systemProxyEnabled);
+}
+
+void ProxySessionTests::abortedStartupUndoKeepsTheFlagWhenTheClearFails()
+{
+    ProxySessionHarness harness;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.proxyUpdateSucceeds = false;
+
+    harness.session->undoManagedSystemProxyAfterAbortedStartup();
+
+    // Same rule as stopForCoreUpdate: a failed write must not make the session forget it owns
+    // the registry -- a later stop would then leave the dead values in place for good.
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QVERIFY(harness.session->isManagedProxyActive());
 }
 
 // --- Node health watch ---

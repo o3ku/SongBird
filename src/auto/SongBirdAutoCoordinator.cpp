@@ -1680,6 +1680,12 @@ void SongBirdAutoCoordinator::startProxySession()
     }
     const OperationResult tunResult = startTunRuntime(true);
     if (!tunResult.success) {
+        // A TUN failure aborts the start before ProxySession::start() runs, so nothing on that
+        // path would undo a proxy an earlier round of this session applied -- issue #8's chain
+        // (core crash -> internal restart -> stop -> the queued continuation re-entering here).
+        // The ownership decision lives in the session, never here: only it knows whether the
+        // registry holds our values.
+        proxySession_->undoManagedSystemProxyAfterAbortedStartup();
         setBusy(false);
         setRunning(false);
         setStatus(QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));

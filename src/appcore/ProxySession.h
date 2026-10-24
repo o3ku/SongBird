@@ -129,6 +129,13 @@ public:
     void setDirectConnectivityCheck(DirectConnectivityCheck check);
 
     void start(const StartRequest& request);
+    // Issue #8: SongBirdAuto owns its TUN runtime and starts it before the session, so a TUN
+    // failure can abort a start without ProxySession::start() ever running -- while the
+    // registry still holds a proxy an earlier round of this session applied. This entry runs
+    // the ownership decision a failed startup would have run (decideFailedStartupProxyAction,
+    // undo) without touching the core or the checklist: there is no core to stop.
+    void undoManagedSystemProxyAfterAbortedStartup();
+
     void stop(bool immediate = false);
     void restartIfRunning(const StartRequest& request);
     void switchServer(const QString& indexId, bool enableTun, bool showOverlay = false);
