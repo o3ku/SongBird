@@ -1,5 +1,6 @@
 #include "common/SystemProxyExceptions.h"
 
+#include <QHostAddress>
 #include <QList>
 
 #include <utility>
@@ -48,23 +49,47 @@ void appendUnique(QStringList& entries, const QString& value)
     entries.append(trimmed);
 }
 
-QStringList routeDerived(const Config& config)
+namespace {
+
+// One ip value as the bypass list should spell it: a single host address, or empty when there is
+// nothing WinINET could match.
+//
+// The list is matched against the text a browser sends as the host of a URL, and that is the
+// compressed IPv6 form -- so a rule written out in full, or as the one-address CIDR a core accepts,
+// has to be written back the same way or it never matches. "/128" is that one-address CIDR.
+QString bypassLiteral(const QString& value)
 {
-    QList<RoutingRule> effectiveRules;
-    for (const RoutingRule& rule : config.collection().routingCustomRules) {
-        if (rule.enabled) {
-            effectiveRules.append(rule);
-        }
+    QString address = value.trimmed();
+    if (address.endsWith(QStringLiteral("/128"))) {
+        address.chop(4);
+    }
+    if (address.isEmpty() || address.contains(QLatin1Char('/'))) {
+        return QString();
     }
 
-    const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
-    if (selectedRouting.has_value()) {
-        for (const RoutingRule& rule : selectedRouting->rules) {
-            if (rule.enabled) {
-                effectiveRules.append(rule);
-            }
-        }
+    QHostAddress host;
+    if (!host.setAddress(address)) {
+        // Not an address this build recognises. Pass the value through rather than dropping it:
+        // the entry is visible in the system UI, which is how a typo gets noticed.
+        return value.trimmed();
     }
+    // toString() is the spelling a URL carries: dotted quad for IPv4, and the compressed form for
+    // IPv6 -- which is what the rule was written in as often as not ("2001:0db8:0000:...:0001").
+    return host.toString();
+}
+
+} // namespace
+
+QStringList routeDerived(const Config& config)
+{
+    // Same list, same order, as the core reads. The first matching rule decides there, so a second
+    // opinion assembled here can disagree with it: a high-priority `proxy` rule covering a host that
+    // a lower-priority `direct` rule names sent that host through the system proxy while the core
+    // sent it direct. effectiveRoutingRules() is that list -- the legacy DNS fragments already take
+    // their direct domains from it for the same reason.
+    const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
+    const RoutingItem* selectedRoutingPtr = selectedRouting.has_value() ? &selectedRouting.value() : nullptr;
+    const QList<RoutingRule> effectiveRules = RoutingConfigFragments::effectiveRoutingRules(config, selectedRoutingPtr);
 
     QStringList derived;
     for (const RoutingRule& rule : std::as_const(effectiveRules)) {
@@ -88,6 +113,19 @@ QStringList routeDerived(const Config& config)
 
             if (parsed.kind == RoutingValuePattern::DomainKind::Exact) {
                 appendUnique(derived, parsed.value);
+            }
+        }
+
+        // The ip field of the same rule says the same thing about literal addresses. WinINET has
+        // no CIDR syntax, so a ranged value stays core-only; a plain literal translates as itself.
+        for (const QString& ipValue : rule.ip) {
+            const RoutingValuePattern::IpValue parsed = RoutingValuePattern::parseIp(ipValue);
+            if (!parsed.recognised || parsed.kind != RoutingValuePattern::IpKind::Address) {
+                continue;
+            }
+            const QString literal = bypassLiteral(parsed.value);
+            if (!literal.isEmpty()) {
+                appendUnique(derived, literal);
             }
         }
     }

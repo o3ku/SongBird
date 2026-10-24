@@ -20,6 +20,9 @@ private slots:
     void resolveKeepsTheUsersOwnList();
     void resolveMergesHostsTheRoutingRulesSendDirect();
     void resolveKeepsTheProxyOutOfDomainsRoutedThroughIt();
+    void resolveMergesIpLiteralsTheRoutingRulesSendDirect();
+    void resolveReadsTheRulesInTheCoresOrder();
+    void resolveWritesIpv6AsTheUrlSpellsIt();
 };
 
 void SystemProxyExceptionsTests::defaultListBypassesLoopbackAndPrivateRanges()
@@ -124,6 +127,111 @@ void SystemProxyExceptionsTests::resolveKeepsTheProxyOutOfDomainsRoutedThroughIt
     // says; a disabled rule is not part of the effective configuration at all.
     QVERIFY(!entries.contains(QStringLiteral("proxied.test")));
     QVERIFY(!entries.contains(QStringLiteral("disabled.test")));
+}
+
+void SystemProxyExceptionsTests::resolveMergesIpLiteralsTheRoutingRulesSendDirect()
+{
+    Config config;
+    config.defaults().defIeProxyExceptions = QStringLiteral("localhost");
+
+    RoutingRule directRule;
+    directRule.outboundTag = QStringLiteral("direct");
+    directRule.ip = QStringList{
+        QStringLiteral("203.0.113.7"),
+        QStringLiteral("geoip:cn"),
+        QStringLiteral("10.20.30.0/24"),
+        QStringLiteral("2001:db8::1"),
+    };
+    config.collection().routingCustomRules.append(directRule);
+
+    RoutingRule proxiedRule;
+    proxiedRule.outboundTag = QStringLiteral("proxy");
+    proxiedRule.ip = QStringList{QStringLiteral("198.51.100.9")};
+    config.collection().routingCustomRules.append(proxiedRule);
+
+    const QStringList entries = SystemProxyExceptions::split(SystemProxyExceptions::resolve(config));
+
+    // A plain literal is the one ip value WinINET can say back; the ranged forms (geoip:, CIDR)
+    // have no bypass-list spelling and stay core-only, and a proxied rule's ip never bypasses.
+    QVERIFY(entries.contains(QStringLiteral("203.0.113.7")));
+    QVERIFY(entries.contains(QStringLiteral("2001:db8::1")));
+    QVERIFY(!entries.contains(QStringLiteral("cn")));
+    QVERIFY(!entries.contains(QStringLiteral("10.20.30.0/24")));
+    QVERIFY(!entries.contains(QStringLiteral("198.51.100.9")));
+    // The entries this resolver produces are what macOS consumes through macProxyBypassDomains();
+    // whether that platform honours an IPv6 literal is a question about networksetup, pinned in
+    // MacOSPlatformServicesTests, not here.
+}
+
+void SystemProxyExceptionsTests::resolveReadsTheRulesInTheCoresOrder()
+{
+    Config config;
+    config.defaults().defIeProxyExceptions = QStringLiteral("localhost");
+
+    // Appended first; the proxy rule that follows is appended later, so a resolver that walked the
+    // list in append order would express them in the opposite order.
+    RoutingRule directIp;
+    directIp.outboundTag = QStringLiteral("direct");
+    directIp.ip = QStringList{QStringLiteral("203.0.113.7")};
+    config.collection().routingCustomRules.append(directIp);
+
+    RoutingRule proxyCatchAll;
+    proxyCatchAll.outboundTag = QStringLiteral("proxy");
+    proxyCatchAll.domain = QStringList{QStringLiteral("full:proxied.test")};
+    config.collection().routingCustomRules.append(proxyCatchAll);
+
+    // A profile rule comes after every custom rule in the list the core reads, so a profile that
+    // sends a host direct still contributes its host -- the two sources are one ordered list, not
+    // two lists concatenated in whatever order the resolver happened to use.
+    RoutingItem profile;
+    // Custom profiles are normalised to "custom:<name>"; matching that is what makes this the
+    // selected profile instead of the first built-in entry.
+    profile.id = QStringLiteral("custom:test-profile");
+    RoutingRule profileDirect;
+    profileDirect.outboundTag = QStringLiteral("direct");
+    profileDirect.domain = QStringList{QStringLiteral("full:profile.test")};
+    profile.rules.append(profileDirect);
+    config.collection().customRoutingItems.append(profile);
+    config.collection().routingModeId = QStringLiteral("custom:test-profile");
+
+    const QStringList entries = SystemProxyExceptions::split(SystemProxyExceptions::resolve(config));
+
+    // Nothing extra has to be configured for this: the selected profile's rules travel through the
+    // same list as the custom rules, and every entry that has no bypass spelling is skipped rather
+    // than written out as raw text.
+    QVERIFY(entries.contains(QStringLiteral("203.0.113.7")));
+    QVERIFY(entries.contains(QStringLiteral("profile.test")));
+    QVERIFY(!entries.contains(QStringLiteral("proxied.test")));
+}
+
+void SystemProxyExceptionsTests::resolveWritesIpv6AsTheUrlSpellsIt()
+{
+    Config config;
+    config.defaults().defIeProxyExceptions = QStringLiteral("localhost");
+
+    RoutingRule directRule;
+    directRule.outboundTag = QStringLiteral("direct");
+    directRule.ip = QStringList{
+        // One address, written three ways, plus a range that is not one.
+        QStringLiteral("2001:0db8:0000:0000:0000:0000:0000:0001"),
+        QStringLiteral("2001:DB8::1"),
+        QStringLiteral("2001:db8::1/128"),
+        QStringLiteral("2001:db8::2"),
+        // Wider than one address: no WinINET spelling, so it stays with the core.
+        QStringLiteral("2001:db8::/32"),
+    };
+    config.collection().routingCustomRules.append(directRule);
+
+    const QStringList entries = SystemProxyExceptions::split(SystemProxyExceptions::resolve(config));
+
+    // A browser sends the compressed form as the host of a URL, so all three spellings of the same
+    // address are one entry and it is written compressed.
+    QVERIFY(entries.contains(QStringLiteral("2001:db8::1")));
+    QVERIFY(!entries.contains(QStringLiteral("2001:0db8:0000:0000:0000:0000:0000:0001")));
+    QVERIFY(!entries.contains(QStringLiteral("2001:db8::1/128")));
+    QCOMPARE(entries.count(QStringLiteral("2001:db8::1")), 1);
+    QVERIFY(entries.contains(QStringLiteral("2001:db8::2")));
+    QVERIFY(!entries.contains(QStringLiteral("2001:db8::/32")));
 }
 
 QTEST_MAIN(SystemProxyExceptionsTests)

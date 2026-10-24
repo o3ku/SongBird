@@ -140,7 +140,7 @@ private:
     bool selectServer(const QString& indexId);
     void startProxySession();
     void stopProxySession(bool immediate);
-    bool startTunRuntime(bool relayToProxy);
+    OperationResult startTunRuntime(bool relayToProxy);
     void stopTunRuntime(bool cleanupAdapter);
     bool syncTunRuntimeForCurrentState();
     QString writeTunRuntimeConfig(bool relayToProxy) const;

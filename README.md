@@ -60,7 +60,7 @@ Download the build for your platform from the [latest release](https://github.co
 **Two front-ends from one codebase**
 
 - **SongBird** — the manual client, and the one shipped in releases.
-- **SongBirdAuto** — selects a working node by itself (first-available or lowest-latency) and keeps it running. Built from the same sources, but not shipped as a release asset yet.
+- **SongBirdAuto** — picks the node for the country you selected and keeps it running. First-available and lowest-latency are still the two strategies, and under lowest-latency the probe results are scored: a failing node is replaced, a good one is not churned on every retest. Built from the same sources, but not shipped as a release asset yet.
 
 ## Core Engines and Protocols
 

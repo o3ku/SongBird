@@ -1678,9 +1678,11 @@ void SongBirdAutoCoordinator::startProxySession()
     if (proxySession_ == nullptr) {
         return;
     }
-    if (config_.tun().tunModeItem.enableTun && !startTunRuntime(true)) {
+    const OperationResult tunResult = startTunRuntime(true);
+    if (!tunResult.success) {
         setBusy(false);
         setRunning(false);
+        setStatus(QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
         return;
     }
     activeServerId_ = config_.currentIndexId;
@@ -1766,22 +1768,21 @@ QString SongBirdAutoCoordinator::writeTunRuntimeConfig(bool relayToProxy) const
     return configPath;
 }
 
-bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
+OperationResult SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
 {
     if (!config_.tun().tunModeItem.enableTun) {
         stopTunRuntime(true);
-        return true;
+        return OperationResult::ok();
     }
     if (tunCore_ == nullptr) {
-        return false;
+        return OperationResult::fail(QStringLiteral("TUN runtime unavailable"));
     }
     if (tunCore_->isRunning() && tunRuntimeRelayToProxy_ == relayToProxy) {
-        return true;
+        return OperationResult::ok();
     }
     if (isWindowsPlatform() && !isProcessElevated()) {
         log(QStringLiteral("TUN requires administrator privileges."));
-        setStatus(QStringLiteral("TUN requires administrator privileges"));
-        return false;
+        return OperationResult::fail(QStringLiteral("TUN requires administrator privileges"));
     }
 
     stopTunRuntime(false);
@@ -1789,19 +1790,23 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
         const OperationResult cleanupResult = tunRuntimeService_->removeStaleAdapterIfPresent();
         log(cleanupResult.message);
         if (!cleanupResult.success) {
-            return false;
+            // Rebuilt rather than returned as-is: the caller composes this message into the status
+            // line, so it must not carry a `cancelled` flag it did not earn.
+            return OperationResult::fail(cleanupResult.message);
         }
     }
 
     const CoreInfo coreInfo = resolveSingBoxCoreInfo();
     if (coreInfo.program.trimmed().isEmpty()) {
-        log(QStringLiteral("TUN requires sing-box, but no sing-box executable was found."));
-        return false;
+        const QString message = QStringLiteral("TUN requires sing-box, but no sing-box executable was found.");
+        log(message);
+        return OperationResult::fail(message);
     }
     const QString configPath = writeTunRuntimeConfig(relayToProxy);
     if (configPath.trimmed().isEmpty()) {
-        log(QStringLiteral("Failed to write TUN runtime config."));
-        return false;
+        const QString message = QStringLiteral("Failed to write TUN runtime config.");
+        log(message);
+        return OperationResult::fail(message);
     }
 
     tunRuntimeRelayToProxy_ = relayToProxy;
@@ -1810,9 +1815,10 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
         configPath,
         [this](const QString& line) { log(QStringLiteral("tun | %1").arg(line)); },
         [this](const QString& message) { log(QStringLiteral("TUN runtime started. %1").arg(message)); },
+        // Logged, not published: the caller composes one status from this result, so a status
+        // written here would only be overwritten by the caller's version of the same fact.
         [this](const QString& message) {
             log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
-            setStatus(QStringLiteral("TUN failed to start"));
         },
         [this](int exitCode, QProcess::ExitStatus, bool stopRequested) {
             if (!stopRequested && config_.tun().tunModeItem.enableTun) {
@@ -1822,10 +1828,10 @@ bool SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
         });
     if (!startResult.success) {
         log(startResult.message);
-        return false;
+        return startResult;
     }
     setStatus(relayToProxy ? QStringLiteral("TUN routing through proxy") : QStringLiteral("TUN device ready"));
-    return true;
+    return OperationResult::ok();
 }
 
 void SongBirdAutoCoordinator::stopTunRuntime(bool cleanupAdapter)
@@ -1847,7 +1853,16 @@ bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
         setStatus(running_ ? QStringLiteral("TUN disabled") : QStringLiteral("Stopped"));
         return true;
     }
-    return startTunRuntime(running_ && isProxySessionRunningOrTransitioning());
+    const OperationResult tunResult = startTunRuntime(running_ && isProxySessionRunningOrTransitioning());
+    if (!tunResult.success) {
+        // The reason startTunRuntime() just logged would otherwise be replaced by whatever the
+        // caller says next -- the same two-step that made a failed TUN indistinguishable from a
+        // plain stop.
+        setStatus(running_
+                ? QStringLiteral("TUN failed: %1").arg(tunResult.message)
+                : QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
+    }
+    return tunResult.success;
 }
 
 bool SongBirdAutoCoordinator::updateSystemProxyMode(SystemProxyMode mode) const
@@ -2143,12 +2158,15 @@ void SongBirdAutoCoordinator::finishStopped()
     activeServerId_.clear();
     activeServerSinceMs_ = 0;
     emit activeServerChanged(QString(), QString(), QString(), QString(), -1);
-    if (config_.tun().tunModeItem.enableTun) {
-        startTunRuntime(false);
-    }
+    // With TUN on, the adapter stays up across a stop (relay off); a failure here is a real state,
+    // not noise. The reason comes from the same call that failed -- writing a generic message over
+    // it is how "Stopped; TUN failed" said nothing about why.
+    const OperationResult tunResult = startTunRuntime(false);
     setRunning(false);
     setBusy(false);
-    setStatus(QStringLiteral("Stopped"));
+    setStatus(tunResult.success
+            ? QStringLiteral("Stopped")
+            : QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
 }
 
 void SongBirdAutoCoordinator::setBusy(bool busy)

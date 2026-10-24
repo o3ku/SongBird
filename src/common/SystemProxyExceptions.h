@@ -27,7 +27,10 @@ QStringList split(const QString& value);
 // written, so "example.com" and "*.example.com" are two entries on purpose.
 void appendUnique(QStringList& entries, const QString& value);
 
-// The hosts this config's routing rules send direct, expressed as bypass entries.
+// The hosts and single IP addresses this config's routing rules send direct, expressed as bypass
+// entries, in the order RoutingConfigFragments::effectiveRoutingRules() gives them -- so this list
+// and the core's first-match order say the same thing. Ranged values (geoip:, CIDR wider than /128)
+// have no WinINET spelling and stay core-only.
 //
 // A rule that routes a domain direct is this config saying "do not proxy this", and the system proxy
 // list is the other half of that same statement -- without it the domain leaves the machine through
