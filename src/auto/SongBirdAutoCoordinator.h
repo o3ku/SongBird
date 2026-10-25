@@ -143,6 +143,10 @@ private:
     OperationResult startTunRuntime(bool relayToProxy);
     void stopTunRuntime(bool cleanupAdapter);
     bool syncTunRuntimeForCurrentState();
+    // A killed process leaves our values in the registry with no one to undo them. The persisted
+    // snapshot is the evidence they are ours: a registry that is on with no snapshot may be the
+    // user's own proxy, and touching that is what the ownership rules exist to prevent.
+    void recoverSystemProxyFromPreviousRun();
     QString writeTunRuntimeConfig(bool relayToProxy) const;
     CoreInfo resolveSingBoxCoreInfo() const;
     bool updateSystemProxyMode(SystemProxyMode mode) const;

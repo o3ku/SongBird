@@ -31,6 +31,7 @@
 #include "common/ServerDisplayName.h"
 #include "common/SystemProxyExceptions.h"
 #include "common/SystemProxyMode.h"
+#include "common/SystemProxySnapshot.h"
 #include "domain/models/RoutingProfiles.h"
 #include "platform/PlatformServices.h"
 #include "runtime/AuxiliaryTunConfig.h"
@@ -157,6 +158,56 @@ bool SongBirdAutoCoordinator::initialize()
     activationCoordinator_->updateSystemProxyModeFn = [this](SystemProxyMode mode) {
         return updateSystemProxyMode(mode);
     };
+    // The snapshot trio. Until this wiring existed Auto captured nothing, so every undo -- every
+    // stop included -- fell to ForcedClear and deleted whatever the user had before us
+    // (issue #10). The snapshot lives in config_, which the repository serialises into the
+    // .state.json companion, so a killed process still knows what the user's proxy looked like.
+    //
+    // Capturing is idempotent and sanitised: the only correct moment to read the registry is
+    // before our first write, and a capture that happens to see our own dead port (a killed
+    // previous run whose leftover the startup recovery below failed to clear) must not record it
+    // as "what the user had". The persist inside ensure runs on the GUI thread (the outbound
+    // probe's continuation) and before the registry write that follows it, so a kill after that
+    // write cannot orphan the snapshot.
+    activationCoordinator_->capturedSystemProxySnapshotFn = [this]() {
+        return config_.systemProxySnapshot();
+    };
+    activationCoordinator_->ensureSystemProxySnapshotCapturedFn = [this]() {
+        if (!config_.systemProxySnapshot().valid && systemProxyService_ != nullptr) {
+            // shortcut: only the plain HTTP string is compared against; an advanced-protocol
+            // template is the service's private composition, so an empty server disables the
+            // check there rather than guessing the string
+            const QString ourServer = config_.systemProxyAdvancedProtocol.trimmed().isEmpty()
+                ? QStringLiteral("127.0.0.1:%1").arg(LocalInboundPorts::httpPort(config_))
+                : QString();
+            config_.systemProxySnapshot() = sanitizeSelfReferentialSnapshot(
+                systemProxyService_->capture(), ourServer);
+            const OperationResult persistResult = saveConfig();
+            if (!persistResult.success) {
+                log(persistResult.message);
+            }
+        }
+        return config_.systemProxySnapshot();
+    };
+    activationCoordinator_->restoreSystemProxySnapshotFn = [this](const SystemProxySnapshot& snapshot) {
+        if (systemProxyService_ == nullptr) {
+            // Not "success": a host that cannot write the registry could not have put anything
+            // back, and reporting true here is what makes a half-wired trio silently skip the
+            // restore while claiming it ran (issue #10, wiring finding).
+            return false;
+        }
+        const bool restored = systemProxyService_->restore(snapshot);
+        if (restored) {
+            // Spent. Keeping it would make the next undo "restore" a state that is no longer the
+            // user's -- for instance after they changed their own proxy while we were running.
+            config_.systemProxySnapshot() = SystemProxySnapshot{};
+            const OperationResult persistResult = saveConfig();
+            if (!persistResult.success) {
+                log(persistResult.message);
+            }
+        }
+        return restored;
+    };
 
     proxySession_ = std::make_unique<ProxySession>(ProxySession::Dependencies{
         *mainCore_,
@@ -230,6 +281,7 @@ bool SongBirdAutoCoordinator::initialize()
     emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
     emit autoSelectionStrategyChanged(autoSelectionStrategy());
     syncTunRuntimeForCurrentState();
+    recoverSystemProxyFromPreviousRun();
     return true;
 }
 
@@ -1839,6 +1891,39 @@ OperationResult SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
     setStatus(relayToProxy ? QStringLiteral("TUN routing through proxy") : QStringLiteral("TUN device ready"));
     return OperationResult::ok();
 }
+void SongBirdAutoCoordinator::recoverSystemProxyFromPreviousRun()
+{
+    if (systemProxyService_ == nullptr) {
+        return;
+    }
+    const SystemProxySnapshot snapshot = config_.systemProxySnapshot();
+    if (!systemProxyService_->isEnabled()) {
+        return;
+    }
+    if (!isRestorableSystemProxySnapshot(snapshot)) {
+        // The registry is on but this state file never captured a snapshot, so the proxy may be
+        // the user's own -- the one case the ownership rules exist to protect. Said out loud
+        // because a silent LeaveAlone is indistinguishable from recovery not having run.
+        log(QStringLiteral(
+            "System proxy is enabled but no snapshot was captured; leaving it untouched."));
+        return;
+    }
+    // Restoring is also the retry for an undo write that failed on the way out of the previous
+    // run: the snapshot is only spent once it has actually been put back.
+    if (systemProxyService_->restore(snapshot)) {
+        log(QStringLiteral("Restored the system proxy a previous run left behind."));
+        config_.systemProxySnapshot() = SystemProxySnapshot{};
+        const OperationResult persistResult = saveConfig();
+        if (!persistResult.success) {
+            log(persistResult.message);
+        }
+    } else {
+        // The snapshot stays valid, so the next launch tries again -- this line is the only
+        // sign that a retry is still pending.
+        log(QStringLiteral("Failed to restore the system proxy a previous run left behind; will retry on the next start."));
+    }
+}
+
 
 void SongBirdAutoCoordinator::stopTunRuntime(bool cleanupAdapter)
 {

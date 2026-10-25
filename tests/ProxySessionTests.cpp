@@ -64,6 +64,8 @@ private slots:
     void abortedStartupUndoClearsAProxyTheSessionOwns();
     void abortedStartupUndoLeavesAProxyItDoesNotOwnAlone();
     void abortedStartupUndoKeepsTheFlagWhenTheClearFails();
+    void wiredSnapshotRestoresInsteadOfClearingOnAbortedStartup();
+    void stopRestoresThroughTheCapturedSnapshotWhenWired();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
     void healthWatchToleratesASingleFailedProbe();
@@ -467,6 +469,39 @@ struct ProxySessionHarness final
         return systemProxyEnabled;
     }
 
+
+    // The snapshot trio, defaulted to the "host does not manage the system proxy" shape the
+    // interface documents. Wiring them on in a test is the Auto-after-issue-#10 shape.
+    SystemProxySnapshot capturedSystemProxySnapshot() const override
+    {
+        return snapshotsWired ? snapshot : SystemProxySnapshot{};
+    }
+
+    SystemProxySnapshot ensureSystemProxySnapshotCaptured() override
+    {
+        if (snapshotsWired && !snapshot.valid) {
+            // Stands in for the registry read: the user's proxy as it looked before this session
+            // wrote anything.
+            snapshot = SystemProxySnapshot{};
+            snapshot.valid = true;
+            snapshot.enabled = true;
+            snapshot.server = QStringLiteral("user-proxy.example:8080");
+        }
+        return capturedSystemProxySnapshot();
+    }
+
+    bool restoreSystemProxySnapshot(const SystemProxySnapshot& toRestore) override
+    {
+        if (!snapshotsWired) {
+            return true;
+        }
+        ++restoreCount;
+        lastRestoredServer = toRestore.server.value_or(QString());
+        if (restoreSucceeds) {
+            snapshot = SystemProxySnapshot{};
+        }
+        return restoreSucceeds;
+    }
     bool updateSystemProxyMode(SystemProxyMode mode) override
     {
         ++proxyUpdateCount;
@@ -530,6 +565,12 @@ struct ProxySessionHarness final
     int tunCleanupDelayMs = 0;
     OperationResult tunCleanupResult = OperationResult::ok(QStringLiteral("tun cleanup skipped"));
     SystemProxyMode lastProxyMode = SystemProxyMode::ForcedClear;
+    // Snapshot-trio state; snapshotsWired stays false unless a test asks for the wired host.
+    bool snapshotsWired = false;
+    bool restoreSucceeds = true;
+    int restoreCount = 0;
+    QString lastRestoredServer;
+    SystemProxySnapshot snapshot;
     // Read on the worker thread the gate runs on, so both are atomic; the count is also the proof
     // that the cross-check is consulted on the failure path and nowhere else.
     std::atomic_bool directConnectivityAvailable{true};
@@ -1386,6 +1427,51 @@ void ProxySessionTests::abortedStartupUndoKeepsTheFlagWhenTheClearFails()
     // the registry -- a later stop would then leave the dead values in place for good.
     QCOMPARE(harness.proxyUpdateCount, 1);
     QVERIFY(harness.session->isManagedProxyActive());
+}
+
+// The two issue-#10 pins: a host that wires the snapshot trio gets the user's own proxy put
+// back on every undo, including the aborted-startup entry and a plain stop, instead of the
+// ForcedClear a snapshotless host (Auto before the wiring, and every other test here) pays.
+void ProxySessionTests::wiredSnapshotRestoresInsteadOfClearingOnAbortedStartup()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.snapshot.valid = true;
+    harness.snapshot.enabled = true;
+    harness.snapshot.server = QStringLiteral("user-proxy.example:8080");
+
+    harness.session->undoManagedSystemProxyAfterAbortedStartup();
+
+    // Restore, not clear: the registry write goes through restoreSystemProxySnapshot, and no
+    // ForcedClear may run for a host that can put the user's values back.
+    QCOMPARE(harness.restoreCount, 1);
+    QCOMPARE(harness.lastRestoredServer, QStringLiteral("user-proxy.example:8080"));
+    QCOMPARE(harness.proxyUpdateCount, 0);
+    QVERIFY(!harness.session->isManagedProxyActive());
+    QVERIFY(!harness.snapshot.valid);
+}
+
+void ProxySessionTests::stopRestoresThroughTheCapturedSnapshotWhenWired()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+
+    // applySystemProxyAfterOutboundCheck captured the snapshot before its write, so the undo a
+    // plain stop runs must put those values back rather than clearing.
+    QVERIFY(harness.snapshot.valid);
+    QCOMPARE(harness.snapshot.server.value_or(QString()), QStringLiteral("user-proxy.example:8080"));
+
+    harness.session->stop(false);
+
+    QCOMPARE(harness.restoreCount, 1);
+    // The only registry write remains the startup's own ForcedChange; the stop restored.
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QVERIFY(!harness.session->isManagedProxyActive());
+    QVERIFY(!harness.snapshot.valid);
 }
 
 // --- Node health watch ---
