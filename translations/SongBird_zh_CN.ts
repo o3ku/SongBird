@@ -2857,6 +2857,10 @@ Switch this protocol to %3?</source>
         <source>Subscription</source>
         <translation>订阅</translation>
     </message>
+    <message>
+        <source>Subscription Details</source>
+        <translation>订阅详情</translation>
+    </message>
 </context>
 <context>
     <name>QtCoreProcessHost</name>
@@ -3954,6 +3958,77 @@ Switch this protocol to %3?</source>
     <message>
         <source>Update the current subscription</source>
         <translation>更新当前订阅</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionViewSupport</name>
+    <message>
+        <source>Subscription</source>
+        <translation>订阅</translation>
+    </message>
+    <message>
+        <source>Unlimited</source>
+        <translation>不限量</translation>
+    </message>
+    <message>
+        <source>Not provided</source>
+        <translation>未提供</translation>
+    </message>
+    <message>
+        <source>%1 (%2 days remaining)</source>
+        <translation>%1（剩余 %2 天）</translation>
+    </message>
+    <message>
+        <source>Used: %1</source>
+        <translation>已用：%1</translation>
+    </message>
+    <message>
+        <source>Total: %1</source>
+        <translation>总量：%1</translation>
+    </message>
+    <message>
+        <source>Remaining: %1</source>
+        <translation>剩余：%1</translation>
+    </message>
+    <message>
+        <source>Upload: %1</source>
+        <translation>上传：%1</translation>
+    </message>
+    <message>
+        <source>Download: %1</source>
+        <translation>下载：%1</translation>
+    </message>
+    <message>
+        <source>The subscription did not provide complete traffic information.</source>
+        <translation>订阅未提供完整的流量信息。</translation>
+    </message>
+    <message>
+        <source>Traffic quota exhausted.</source>
+        <translation>流量额度已用尽。</translation>
+    </message>
+    <message>
+        <source>Traffic quota is almost used up.</source>
+        <translation>流量额度即将用尽。</translation>
+    </message>
+    <message>
+        <source>Next reset: %1</source>
+        <translation>下次重置：%1</translation>
+    </message>
+    <message>
+        <source>Expires: %1</source>
+        <translation>到期日期：%1</translation>
+    </message>
+    <message>
+        <source>No expiry</source>
+        <translation>永不过期</translation>
+    </message>
+    <message>
+        <source>Updated: %1</source>
+        <translation>更新时间：%1</translation>
+    </message>
+    <message>
+        <source>Traffic is reported by the provider when the subscription is updated.</source>
+        <translation>流量数据由服务商提供，随订阅更新刷新。</translation>
     </message>
 </context>
 </TS>

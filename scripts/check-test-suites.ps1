@@ -1,5 +1,6 @@
 param(
-    [string]$BuildDirectory = ""
+    [string]$BuildDirectory = "",
+    [string]$CTestExecutable = "ctest"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,10 +77,10 @@ $skipped = 0
 # executable path ctest records in `command`, not by name: the target name and the test name differ
 # (songbird_export_service_tests -> export-service).
 $metadataByExecutable = @{}
-$ctest = Get-Command ctest -ErrorAction SilentlyContinue
+$ctest = Get-Command $CTestExecutable -ErrorAction SilentlyContinue
 if ($null -ne $ctest) {
     try {
-        $json = & ctest --test-dir $BuildDirectory --show-only=json-v1 2>$null | Out-String
+        $json = & $ctest.Source --test-dir $BuildDirectory --show-only=json-v1 2>$null | Out-String
         if (-not [string]::IsNullOrWhiteSpace($json)) {
             $parsed = $json | ConvertFrom-Json
             foreach ($test in $parsed.tests) {
@@ -160,7 +161,9 @@ foreach ($executable in $executables) {
         if ($process.ExitCode -ne 0) {
             # A non-zero exit is already a real failure and CTest would report it;
             # the point of naming it here is that the message says *which* binary.
-            $failures.Add("$($executable.Name): exited $($process.ExitCode)")
+            $failedCases = @($text -split '\r?\n' | Where-Object { $_ -match '^FAIL!\s+:' })
+            $details = if ($failedCases.Count -gt 0) { ": " + ($failedCases -join "; ") } else { "" }
+            $failures.Add("$($executable.Name): exited $($process.ExitCode)$details")
             continue
         }
 

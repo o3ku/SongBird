@@ -23,6 +23,7 @@
 #include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/SharePanelWidget.h"
+#include "ui/theme/AppThemePalette.h"
 #include "ui/models/ServerFilterProxyModel.h"
 #include "ui/theme/AppTheme.h"
 
@@ -65,6 +66,9 @@ public:
         tabStyle->setParent(this);
         setStyle(tabStyle);
     }
+
+protected:
+    QSize minimumTabSizeHint(int index) const override { return tabSizeHint(index); }
 };
 
 void paintCompactDisclosureArrow(QPainter& painter, const QRect& rect, bool expanded, const QColor& color)
@@ -160,7 +164,8 @@ protected:
             contentRect.top() + ((contentRect.height() - currentIconSize.height()) / 2),
             currentIconSize.width(),
             currentIconSize.height());
-        const QColor textColor = option.palette.color(QPalette::ButtonText);
+        const QColor textColor = property("quotaWarning").toBool()
+            ? QColor(AppThemeInternal::currentPalette().warning) : option.palette.color(QPalette::ButtonText);
         paintCompactDisclosureArrow(painter, iconRect, isChecked(), textColor);
 
         const QRect textRect = contentRect.adjusted(
@@ -170,10 +175,21 @@ protected:
             0);
         painter.setFont(font());
         painter.setPen(textColor);
+        // Keep the traffic suffix visible even when the compact title needs
+        // additional elision to fit the actual window width.
+        const int separator = text().lastIndexOf(QStringLiteral(" · "));
+        QString visibleText = text();
+        if (separator >= 0) {
+            const QString suffix = text().mid(separator);
+            visibleText = TextElision::elideRight(fontMetrics(), text().left(separator),
+                qMax(0, textRect.width() - fontMetrics().horizontalAdvance(suffix))) + suffix;
+        } else {
+            visibleText = TextElision::elideRight(fontMetrics(), text(), textRect.width());
+        }
         painter.drawText(
             textRect,
             Qt::AlignLeft | Qt::AlignVCenter,
-            TextElision::elideRight(fontMetrics(), text(), textRect.width()));
+            visibleText);
     }
 
 private:
@@ -241,6 +257,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     subscriptionTabBar_->setExpanding(false);
     subscriptionTabBar_->setAutoHide(false);
     subscriptionTabBar_->setUsesScrollButtons(true);
+    subscriptionTabBar_->setElideMode(Qt::ElideNone);
 
     auto* subscriptionTabBarContainer = new QWidget(this);
     subscriptionTabBarContainer->setObjectName(QStringLiteral("subscriptionTabBarContainer"));
@@ -525,6 +542,8 @@ void ServerWorkspaceWidget::rebuildCompactSections()
         const QString tabKey = subscriptionTabBar_->tabData(index).toString();
         auto* header = new CompactSubscriptionHeader(tabKey, compactSectionsWidget_);
         header->setLabel(subscriptionTabBar_->tabText(index));
+        header->setToolTip(subscriptionTabBar_->tabToolTip(index));
+        header->setProperty("quotaWarning", subscriptionTabBar_->tabText(index).startsWith(QStringLiteral("! ")));
         header->setExpanded(tabKey == currentTabKey);
         const auto selectSection = [this, tabKey]() {
             if (subscriptionTabBar_ == nullptr) {

@@ -73,6 +73,7 @@ LogPanelWidget::LogPanelWidget(QWidget* parent)
 
     logFilterEdit_ = new QLineEdit(logHeaderRow_);
     logFilterEdit_->setObjectName(QStringLiteral("logFilterEdit"));
+    logFilterEdit_->installEventFilter(this);
     AppTheme::applyCompactFont(logFilterEdit_);
     logFilterEdit_->setClearButtonEnabled(true);
     logFilterEdit_->setPlaceholderText(tr("Filter logs"));
@@ -207,6 +208,11 @@ void LogPanelWidget::setCompactMode(bool compact)
 
 bool LogPanelWidget::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == logFilterEdit_ && event != nullptr && event->type() == QEvent::Resize) {
+        const int height = logFilterEdit_->height();
+        logStickToBottomButton_->setFixedSize(height, height);
+    }
+
     if ((watched == logHeaderRow_ || watched->property("logHeaderCollapseTrigger").toBool()) && event != nullptr
         && event->type() == QEvent::MouseButtonRelease) {
         auto* mouseEvent = static_cast<QMouseEvent*>(event);

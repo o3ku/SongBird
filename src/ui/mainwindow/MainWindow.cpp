@@ -90,7 +90,6 @@ constexpr int MinimumMainWindowWidth = 360;
 constexpr int MinimumMainWindowHeight = 540;
 constexpr int CompactMainWindowWidth = 520;
 constexpr int ProxyToggleButtonWidth = 64;
-constexpr int RoutingModeComboWidth = 90;
 constexpr int WindowTitleServerNameMaximumWidth = 300;
 constexpr int ServerTypeColumn = 1;
 constexpr int ServerAddressColumn = 3;
@@ -908,7 +907,7 @@ void MainWindow::populateToolbarWidgets(QToolBar* toolBar, QMenu* helpMenu)
     AppTheme::applyCompactFont(routingModeCombo_);
     routingModeCombo_->setFixedHeight(ToolbarWidgets::ControlHeight);
     routingModeCombo_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    routingModeCombo_->setFixedWidth(RoutingModeComboWidth);
+    routingModeCombo_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     ToolbarWidgets::configureStyledComboBox(routingModeCombo_);
     toolBar->addWidget(routingModeCombo_);
     QWidget* routingComboSpacing = ToolbarWidgets::createSpacing(toolBar, ToolbarWidgets::ControlSpacing);

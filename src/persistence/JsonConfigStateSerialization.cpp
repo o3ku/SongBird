@@ -103,6 +103,39 @@ QJsonArray toServerStateArray(const QList<VmessItem>& servers)
     return array;
 }
 
+QJsonArray toSubscriptionStateArray(const QList<SubItem>& subscriptions)
+{
+    QJsonArray array;
+    for (const SubItem& sub : subscriptions) {
+        if (sub.id.trimmed().isEmpty() || sub.usage.updatedAt <= 0) {
+            continue;
+        }
+        QJsonObject object;
+        object.insert(QStringLiteral("id"), sub.id);
+        const auto writeNumber = [&object](const QString& key, qint64 number) {
+            if (number >= 0) {
+                // JSON doubles cannot represent every 64-bit byte counter.
+                object.insert(key, QString::number(number));
+            }
+        };
+        writeNumber(QStringLiteral("upload"), sub.usage.uploadBytes);
+        writeNumber(QStringLiteral("download"), sub.usage.downloadBytes);
+        writeNumber(QStringLiteral("total"), sub.usage.totalBytes);
+        writeNumber(QStringLiteral("expire"), sub.usage.expiresAt);
+        writeNumber(QStringLiteral("reset"), sub.usage.resetsAt);
+        writeNumber(QStringLiteral("updatedAt"), sub.usage.updatedAt);
+        array.append(object);
+    }
+    return array;
+}
+
+qint64 readUsageNumber(const QJsonObject& object, const QString& key, qint64 fallback = -1)
+{
+    bool ok = false;
+    const qint64 number = object.value(key).toString().toLongLong(&ok);
+    return ok && number >= 0 ? number : fallback;
+}
+
 } // namespace
 
 namespace JsonConfigStateSerialization {
@@ -179,6 +212,26 @@ void read(const QJsonObject& root, Config& config)
             break;
         }
     }
+
+    for (const QJsonValue& value : readArray(root, QStringLiteral("subscriptionStates"))) {
+        const QJsonObject object = value.toObject();
+        const QString id = readString(object, QStringLiteral("id"));
+        if (id.trimmed().isEmpty()) {
+            continue;
+        }
+        for (SubItem& sub : config.collection().subscriptions) {
+            if (sub.id != id) {
+                continue;
+            }
+            sub.usage.uploadBytes = readUsageNumber(object, QStringLiteral("upload"));
+            sub.usage.downloadBytes = readUsageNumber(object, QStringLiteral("download"));
+            sub.usage.totalBytes = readUsageNumber(object, QStringLiteral("total"));
+            sub.usage.expiresAt = readUsageNumber(object, QStringLiteral("expire"));
+            sub.usage.resetsAt = readUsageNumber(object, QStringLiteral("reset"));
+            sub.usage.updatedAt = readUsageNumber(object, QStringLiteral("updatedAt"), 0);
+            break;
+        }
+    }
 }
 
 void write(QJsonObject& root, const Config& config)
@@ -190,6 +243,9 @@ void write(QJsonObject& root, const Config& config)
 
     const QJsonArray serverStates = toServerStateArray(config.collection().servers);
     writeArrayIfNotEmpty(root, QStringLiteral("serverStates"), serverStates);
+
+    writeArrayIfNotEmpty(root, QStringLiteral("subscriptionStates"),
+                         toSubscriptionStateArray(config.collection().subscriptions));
 
     // Written last, and only when capture() actually ran: an invalid snapshot must leave no key
     // behind, so a config that never touched the proxy stays byte-identical to one written by a

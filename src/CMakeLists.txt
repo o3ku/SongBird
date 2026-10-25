@@ -71,6 +71,8 @@ set(SONGBIRD_SHARED_SOURCES
     domain/models/RoutingItem.h
     domain/models/RoutingRule.h
     domain/models/SubItem.h
+    domain/models/SubscriptionUsage.h
+    subscription/SubscriptionUsageParser.h
     domain/models/VmessItem.h
     platform/ISystemProxyService.h
     platform/ITerminalProxyService.h
@@ -772,6 +774,10 @@ target_link_libraries(songbird
         Qt${QT_VERSION_MAJOR}::Network
         Qt${QT_VERSION_MAJOR}::Svg
 )
+
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    target_link_libraries(songbird PRIVATE Qt6::SvgWidgets)
+endif()
 
 target_link_libraries(songbird_auto
     PRIVATE

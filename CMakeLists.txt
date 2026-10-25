@@ -40,6 +40,7 @@ if(TARGET Qt${QT_VERSION_MAJOR}::lrelease)
 endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    find_package(Qt6 REQUIRED COMPONENTS SvgWidgets)
     qt_standard_project_setup()
 endif()
 

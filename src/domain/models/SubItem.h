@@ -2,6 +2,8 @@
 
 #include <QString>
 
+#include "domain/models/SubscriptionUsage.h"
+
 struct SubItem {
     QString id;
     QString remarks;
@@ -19,4 +21,6 @@ struct SubItem {
     // any successful download (including 304). Used by the retry logic to
     // decide the per-attempt back-off interval.
     int failStreak = 0;
+
+    SubscriptionUsage usage;
 };

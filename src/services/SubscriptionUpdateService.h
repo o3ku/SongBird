@@ -39,7 +39,8 @@ private:
         QString* content,
         QString* outEtag,
         QString* outLastModified,
-        bool* outNotModified);
+        bool* outNotModified,
+        QString* outUserInfo);
 
     IConfigRepository& repository_;
     SubscriptionService& subscriptionService_;

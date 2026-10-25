@@ -10,6 +10,7 @@
 #include "persistence/IConfigRepository.h"
 #include "services/SubscriptionService.h"
 #include "services/SubscriptionUpdateService.h"
+#include "subscription/SubscriptionUsageParser.h"
 
 // ---------------------------------------------------------------------------
 // Minimal stub HTTP/1.1 server: each request gets a canned response.
@@ -137,6 +138,7 @@ public:
     bool save(const Config& c) override
     {
         config_ = c;
+        savedConfig = c;
         ++saveCount;
         return true;
     }
@@ -144,6 +146,7 @@ public:
     QString lastSaveError() const override { return {}; }
 
     Config config_;
+    Config savedConfig;
     int saveCount = 0;
 };
 
@@ -176,6 +179,9 @@ private slots:
     void etagSentOnSubsequentRequest();
     void lastModifiedSentOnSubsequentRequest();
     void invalidUrlFailsImmediately();
+    void usageHeaderParsesPartialUnknownAndInvalidFields();
+    void usageHeaderSavedWithServersAndRefreshedOn304();
+    void missingOrMalformedUsageKeepsLastKnownValues();
 };
 
 // ---- helpers shared across slots ----------------------------------------
@@ -211,6 +217,61 @@ struct Harness {
 };
 
 } // namespace
+
+void SubscriptionUpdateServiceTests::usageHeaderParsesPartialUnknownAndInvalidFields()
+{
+    const auto complete = SubscriptionUsageParser::parse(
+        QStringLiteral("upload=100; download=200; total=1000; expire=1900000000; reset=1800000000; other=ok"), 123);
+    QVERIFY(complete.has_value());
+    QCOMPARE(complete->usedBytes(), qint64(300));
+    QCOMPARE(complete->resetsAt, qint64(1800000000));
+    QCOMPARE(complete->expiresAt, qint64(1900000000));
+    QCOMPARE(complete->updatedAt, qint64(123));
+    const auto partial = SubscriptionUsageParser::parse(QStringLiteral("total=0;expire=0"), 123);
+    QVERIFY(partial.has_value());
+    QCOMPARE(partial->usedBytes(), qint64(-1));
+    QCOMPARE(partial->totalBytes, qint64(0));
+    for (const QString& invalid : {QString(), QStringLiteral("unknown=42"), QStringLiteral("upload=-1"),
+             QStringLiteral("upload=+1"), QStringLiteral("total=1.2"), QStringLiteral("total=9223372036854775808"),
+             QStringLiteral("download=1;download=2"), QStringLiteral("expire=9999999999999"),
+             QStringLiteral("upload=9223372036854775807;download=1")}) {
+        QVERIFY2(!SubscriptionUsageParser::parse(invalid, 123), qPrintable(invalid));
+    }
+}
+
+void SubscriptionUpdateServiceTests::usageHeaderSavedWithServersAndRefreshedOn304()
+{
+    Harness h;
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload,
+        "ETag: v1\r\nSubscription-Userinfo: upload=100;download=200;total=1000;expire=1900000000;reset=1800000000\r\n"));
+    QVERIFY(h.update().success);
+    const SubscriptionUsage first = h.repo.config_.collection().subscriptions.constFirst().usage;
+    QCOMPARE(first.usedBytes(), qint64(300));
+    QVERIFY(first.updatedAt > 0);
+    const QString serverId = h.repo.config_.collection().servers.constFirst().indexId;
+    const auto persistedFirst = h.repo.savedConfig.collection().subscriptions.constFirst();
+    QCOMPARE(persistedFirst.etag, QStringLiteral("v1"));
+    QCOMPARE(persistedFirst.usage.resetsAt, qint64(1800000000));
+    h.server.setNextResponse(makeHttpResponse(304, {},
+        "Subscription-Userinfo: upload=150;download=350;total=1000\r\n"));
+    QVERIFY(h.update().success);
+    QCOMPARE(h.repo.config_.collection().subscriptions.constFirst().usage.usedBytes(), qint64(500));
+    QCOMPARE(h.repo.config_.collection().subscriptions.constFirst().usage.resetsAt, qint64(-1));
+    QCOMPARE(h.repo.config_.collection().servers.constFirst().indexId, serverId);
+}
+
+void SubscriptionUpdateServiceTests::missingOrMalformedUsageKeepsLastKnownValues()
+{
+    Harness h;
+    h.repo.config_.collection().subscriptions[0].usage = {10, 20, 100, -1, -1, 123};
+    for (const QByteArray& header : {QByteArray(), QByteArray("Subscription-Userinfo: upload=bad;total=1000\r\n")}) {
+        h.server.setNextResponse(makeHttpResponse(200, kVmessPayload, header));
+        QVERIFY(h.update().success);
+        const auto usage = h.repo.config_.collection().subscriptions.constFirst().usage;
+        QCOMPARE(usage.usedBytes(), qint64(30));
+        QCOMPARE(usage.updatedAt, qint64(123));
+    }
+}
 
 void SubscriptionUpdateServiceTests::successfulDownloadImportsServersAndSavesEtag()
 {

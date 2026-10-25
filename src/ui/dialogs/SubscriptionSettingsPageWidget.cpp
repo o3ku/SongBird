@@ -206,6 +206,19 @@ QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
         }
         item.userAgent = userAgentAtRow(row);
 
+        // Editing a name or enabled flag must retain downloaded metadata. A
+        // different URL/UA identifies a different response and invalidates it.
+        for (const SubItem& previous : items_) {
+            if (previous.id == item.id && previous.url.trimmed() == item.url
+                && previous.userAgent.trimmed() == item.userAgent) {
+                item.etag = previous.etag;
+                item.lastModified = previous.lastModified;
+                item.failStreak = previous.failStreak;
+                item.usage = previous.usage;
+                break;
+            }
+        }
+
         items.append(item);
     }
 

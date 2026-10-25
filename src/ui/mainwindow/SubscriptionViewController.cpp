@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QRegularExpression>
 #include <QSet>
 #include <QSignalBlocker>
@@ -53,8 +54,9 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
             addedSubscriptionIds.insert(subscriptionId);
             const int index = context_.subscriptionTabBar->insertTab(
                 0,
-                SubscriptionViewSupport::subscriptionDisplayName(item));
+                SubscriptionViewSupport::subscriptionTabLabel(item, context_.subscriptionTabBar->fontMetrics()));
             context_.subscriptionTabBar->setTabData(index, QStringLiteral("sub:%1").arg(subscriptionId));
+            context_.subscriptionTabBar->setTabToolTip(index, SubscriptionViewSupport::subscriptionToolTip(item));
         }
 
         const int ungroupedIndex = context_.subscriptionTabBar->addTab(QObject::tr("Ungrouped"));
@@ -195,6 +197,20 @@ void SubscriptionViewController::showContextMenu(const QString& tabKey, const QP
     QMenu menu(parent == nullptr ? context_.subscriptionTabBar : parent);
 
     if (!subscriptionId.isEmpty()) {
+        auto* detailsAction = menu.addAction(QObject::tr("Subscription Details"));
+        detailsAction->setObjectName(QStringLiteral("subscriptionDetailsAction"));
+        QObject::connect(detailsAction, &QAction::triggered, &menu, [this, subscriptionId]() {
+            for (const SubItem& item : subscriptions_) {
+                if (item.id.trimmed() == subscriptionId) {
+                    QMessageBox dialog(QMessageBox::Information, QObject::tr("Subscription Details"),
+                        SubscriptionViewSupport::subscriptionDetails(item), QMessageBox::Ok, context_.owner);
+                    dialog.setTextFormat(Qt::PlainText);
+                    dialog.exec();
+                    break;
+                }
+            }
+        });
+
         auto* copySubscriptionUrlAction = menu.addAction(QObject::tr("Copy Subscription Url"));
         copySubscriptionUrlAction->setEnabled(!currentSubscriptionUrl().isEmpty());
         QObject::connect(copySubscriptionUrlAction, &QAction::triggered, &menu, [this]() {

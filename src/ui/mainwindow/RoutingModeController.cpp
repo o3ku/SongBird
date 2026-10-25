@@ -44,6 +44,8 @@ void RoutingModeController::setRoutingOptions(const QList<RoutingItem>& routingI
 
     const int comboIndex = routingModeCombo_->findData(routingModeId);
     routingModeCombo_->setCurrentIndex(comboIndex >= 0 ? comboIndex : (routingModeCombo_->count() > 0 ? 0 : -1));
+    routingModeCombo_->ensurePolished();
+    routingModeCombo_->setFixedWidth(routingModeCombo_->sizeHint().width());
 }
 
 QString RoutingModeController::describeRoutingMode(const RoutingItem& item, int index)

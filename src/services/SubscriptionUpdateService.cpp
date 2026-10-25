@@ -1,6 +1,7 @@
 #include "services/SubscriptionUpdateService.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -16,6 +17,7 @@
 #include "services/SubscriptionUpdateOrder.h"
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionContentParser.h"
+#include "subscription/SubscriptionUsageParser.h"
 
 namespace {
 QString subscriptionDisplayName(const SubItem& item)
@@ -270,6 +272,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     QString content;
     QString newEtag;
     QString newLastModified;
+    QString newUserInfo;
     OperationResult downloadResult = OperationResult::fail(QString());
     for (int attempt = 0; attempt < kMaxDownloadAttempts; ++attempt) {
         if (currentThreadInterruptionRequested()) {
@@ -280,7 +283,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         downloadResult = downloadText(
             item.url, item.userAgent, proxyPort,
             item.etag, item.lastModified,
-            &content, &newEtag, &newLastModified, &notModified);
+            &content, &newEtag, &newLastModified, &notModified, &newUserInfo);
 
         if (notModified) {
             // The server confirmed the cached copy is still current. Update the
@@ -291,6 +294,10 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
                     sub.etag = newEtag.isEmpty() ? item.etag : newEtag;
                     sub.lastModified = newLastModified.isEmpty() ? item.lastModified : newLastModified;
                     sub.failStreak = 0;
+                    const auto usage = SubscriptionUsageParser::parse(newUserInfo, QDateTime::currentSecsSinceEpoch());
+                    if (usage) {
+                        sub.usage = *usage;
+                    }
                     break;
                 }
             }
@@ -341,19 +348,24 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
 
-    const OperationResult replaceResult = subscriptionService_.replaceSubscriptionServers(config, item.id, servers);
-    if (!replaceResult.success) {
-        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 save failed: %2").arg(displayName, replaceResult.message));
-    }
-
-    // Persist the new caching headers and reset the fail-streak.
+    // Apply metadata before replacing servers: replaceSubscriptionServers saves
+    // the whole config, including the subscription state companion file.
     for (SubItem& sub : config.collection().subscriptions) {
         if (sub.id == item.id) {
             sub.etag = newEtag;
             sub.lastModified = newLastModified;
             sub.failStreak = 0;
+            const auto usage = SubscriptionUsageParser::parse(newUserInfo, QDateTime::currentSecsSinceEpoch());
+            if (usage) {
+                sub.usage = *usage;
+            }
             break;
         }
+    }
+
+    const OperationResult replaceResult = subscriptionService_.replaceSubscriptionServers(config, item.id, servers);
+    if (!replaceResult.success) {
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 save failed: %2").arg(displayName, replaceResult.message));
     }
 
     if (importedCount != nullptr) {
@@ -379,8 +391,12 @@ OperationResult SubscriptionUpdateService::downloadText(
     QString* content,
     QString* outEtag,
     QString* outLastModified,
-    bool* outNotModified)
+    bool* outNotModified,
+    QString* outUserInfo)
 {
+    if (outUserInfo != nullptr) {
+        outUserInfo->clear();
+    }
     if (content == nullptr) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Download target buffer is null."));
     }
@@ -463,6 +479,9 @@ OperationResult SubscriptionUpdateService::downloadText(
     // them even when notModified == true (body is empty on 304).
     const QString etag = QString::fromUtf8(reply->rawHeader("ETag")).trimmed();
     const QString lastModified = QString::fromUtf8(reply->rawHeader("Last-Modified")).trimmed();
+    if (outUserInfo != nullptr) {
+        *outUserInfo = QString::fromUtf8(reply->rawHeader("Subscription-Userinfo")).trimmed();
+    }
     if (outEtag != nullptr) {
         *outEtag = etag;
     }

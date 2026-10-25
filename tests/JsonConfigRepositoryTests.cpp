@@ -290,11 +290,41 @@ private slots:
     void saveReplacesExistingRootInsteadOfMerging();
     void saveReportsPrimaryConfigWriteFailure();
     void saveReportsStateWriteFailure();
+    void subscriptionUsageRoundTripsInStateWithExactCounters();
 
 private:
     void verifyServerSecurityRoundTrip(
         ConfigType configType, const QString& storedSecurity, const QString& expectedSecurity);
 };
+
+void JsonConfigRepositoryTests::subscriptionUsageRoundTripsInStateWithExactCounters()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    Config config;
+    SubItem sub = makeSubscription();
+    sub.usage = {9007199254740993LL, 7, 9007199254741999LL, 1900000000, 1800000000, 1700000000};
+    config.collection().subscriptions = {sub};
+    QVERIFY(repository.save(config));
+    const auto primary = readJsonFile(makeConfigPath(tempDir));
+    QVERIFY(!primary.contains(QStringLiteral("subscriptionStates")));
+    const auto state = readJsonFile(makeStatePath(tempDir));
+    const auto states = state.value(QStringLiteral("subscriptionStates")).toArray();
+    QCOMPARE(states.size(), 1);
+    QCOMPARE(states.first().toObject().value(QStringLiteral("upload")).toString(), QStringLiteral("9007199254740993"));
+    const auto loaded = repository.load().collection().subscriptions.constFirst().usage;
+    QCOMPARE(loaded.uploadBytes, sub.usage.uploadBytes);
+    QCOMPARE(loaded.usedBytes(), qint64(9007199254741000LL));
+    QCOMPARE(loaded.resetsAt, sub.usage.resetsAt);
+    QCOMPARE(loaded.expiresAt, sub.usage.expiresAt);
+    QCOMPARE(loaded.updatedAt, sub.usage.updatedAt);
+
+    Config withoutUsage;
+    withoutUsage.collection().subscriptions = {makeSubscription()};
+    QVERIFY(repository.save(withoutUsage));
+    QCOMPARE(repository.load().collection().subscriptions.constFirst().usage.totalBytes, qint64(-1));
+}
 
 void JsonConfigRepositoryTests::loadMissingFileBuildsDefaultSongBirdConfig()
 {

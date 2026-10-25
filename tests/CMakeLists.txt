@@ -167,11 +167,13 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -NoProfile
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-test-suites.ps1
             -BuildDirectory ${CMAKE_BINARY_DIR}
+            -CTestExecutable ${CMAKE_CTEST_COMMAND}
     )
     # The build directory is passed rather than a hand-built path, so the check follows a
     # reconfigure into a new preset instead of silently scanning a stale tree.
     set_tests_properties(test-suites-nonempty PROPERTIES
         LABELS "suite"
+        RUN_SERIAL TRUE
         TIMEOUT 900
         ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
@@ -195,6 +197,12 @@ function(songbird_add_qt_test target_name test_name)
     else()
         add_executable(${target_name} ${SONGBIRD_TEST_SOURCES})
     endif()
+
+    # Keep test binaries together so the suite guard finds every target,
+    # independently of the project setup's default executable output directory.
+    set_target_properties(${target_name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 
     target_include_directories(${target_name}
         PRIVATE

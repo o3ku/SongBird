@@ -211,7 +211,7 @@ QList<AutoNodeEvaluation> AutoNodeEvaluationService::evaluate(
         return results;
     }
 
-    const int maxConcurrency = std::max(1, std::min(request.maxConcurrency, request.items.size()));
+    const int maxConcurrency = std::max(1, int(std::min<qsizetype>(request.maxConcurrency, request.items.size())));
     struct PendingItem {
         std::future<AutoNodeEvaluation> future;
     };

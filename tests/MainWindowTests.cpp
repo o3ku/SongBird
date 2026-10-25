@@ -31,6 +31,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTabBar>
+#include <QTranslator>
 #include <QWidgetList>
 
 #include "common/LogFileWriter.h"
@@ -93,7 +94,9 @@ private slots:
     void tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff();
     void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
     void subscriptionViewSupportMapsTabKeysAndLabels();
+    void subscriptionTabsPreserveTrafficAndExposeDetailsInBothLayouts();
     void subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates();
+    void subscriptionDetailsHandleMissingUnlimitedAndTranslatedValues();
     void subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds();
     void windowLayoutStateSupportCapturesAndRestoresServerColumnWidths();
     void trayMenuSupportBuildsServerAndRoutingEntries();
@@ -627,6 +630,12 @@ void MainWindowTests::logStickToBottomButtonMatchesFilterHeight()
 
     QCOMPARE(stickButton->height(), filterEdit->height());
     QCOMPARE(stickButton->width(), stickButton->height());
+    QFont largerFont = filterEdit->font();
+    largerFont.setPointSizeF(largerFont.pointSizeF() + 4);
+    filterEdit->setFont(largerFont);
+    QCoreApplication::processEvents();
+    QCOMPARE(stickButton->height(), filterEdit->height());
+    QCOMPARE(stickButton->width(), stickButton->height());
 }
 
 void MainWindowTests::informationHeaderClickTogglesLogCollapse()
@@ -1095,8 +1104,8 @@ void MainWindowTests::sharePanelShowsSelectedServerShareLink()
     // platform font leaves over -- macOS' default font is not Windows', and comparing the two
     // sides here pins the platform rather than the product. What the ratio was standing in for is
     // asserted below instead: the code stays square and stays inside the placeholder.
-    QTRY_VERIFY(!qrPlaceholder->pixmap()->isNull());
-    const QPixmap qrPixmap = *qrPlaceholder->pixmap();
+    QTRY_VERIFY(!qrPlaceholder->pixmap(Qt::ReturnByValue).isNull());
+    const QPixmap qrPixmap = qrPlaceholder->pixmap(Qt::ReturnByValue);
     const qreal qrPixmapDpr = qrPixmap.devicePixelRatio() <= 0.0 ? qreal(1.0) : qrPixmap.devicePixelRatio();
     const int qrPixmapLogicalWidth = qRound(qrPixmap.width() / qrPixmapDpr);
     const int qrPixmapLogicalHeight = qRound(qrPixmap.height() / qrPixmapDpr);
@@ -1388,9 +1397,66 @@ void MainWindowTests::restoreAndCaptureUiStatePreservesQrPreviewVisibility()
     QVERIFY(captured.ui().mainQrPreviewVisible);
 }
 
+void MainWindowTests::subscriptionTabsPreserveTrafficAndExposeDetailsInBothLayouts()
+{
+    Config config = createGroupedServerSelectionConfig();
+    auto& sub = config.collection().subscriptions[0];
+    sub.remarks = QString(100, QLatin1Char('W')) + QStringLiteral("<private & name>");
+    sub.usage = {2500000000LL, 30000000000LL, 200000000000LL, 1900000000, 1800000000, 1700000000};
+    config.collection().subscriptions[1].usage = {10000000000LL, 85000000000LL, 100000000000LL, -1, -1, 1700000000};
+    MainWindow window;
+    window.setConfig(config);
+    window.resize(1120, 640);
+    window.show();
+    QCoreApplication::processEvents();
+    auto* tabs = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabs != nullptr);
+    int subIndex = -1;
+    for (int index = 0; index < tabs->count(); ++index) {
+        if (tabs->tabData(index).toString() == QStringLiteral("sub:sub-1")) {
+            subIndex = index;
+        }
+    }
+    QVERIFY(subIndex >= 0);
+    QVERIFY(tabs->tabText(subIndex).endsWith(QStringLiteral("32.5/200 GB")));
+    QVERIFY(tabs->tabText(subIndex).contains(QChar(0x2026)));
+    QVERIFY(!tabs->tabText(subIndex).contains(QStringLiteral("private")));
+    QVERIFY(!tabs->tabToolTip(subIndex).contains(QStringLiteral("private")));
+    QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Used: 32.5 GB")));
+    QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Total: 200 GB")));
+    QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Remaining: 167.5 GB")));
+    QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Next reset:")));
+    QCOMPARE(tabs->tabToolTip(subIndex).count(QStringLiteral("<br>")), 3);
+    const QString details = SubscriptionViewSupport::subscriptionDetails(sub);
+    QVERIFY(details.contains(QStringLiteral("<private & name>")));
+    QVERIFY(details.contains(QStringLiteral("Upload: 2.5 GB")));
+    QVERIFY(details.contains(QStringLiteral("Download: 30 GB")));
+    QVERIFY(details.contains(QStringLiteral("Expires:")));
+    QVERIFY(details.contains(QStringLiteral("Updated:")));
+    QCOMPARE(tabs->elideMode(), Qt::ElideNone);
+    QVERIFY(tabs->usesScrollButtons());
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    window.resize(500, 640);
+    QCoreApplication::processEvents();
+    bool found = false;
+    for (auto* header : window.findChildren<QToolButton*>(QStringLiteral("compactSubscriptionHeader"))) {
+        if (header->isVisible() && header->property("tabKey").toString() == QStringLiteral("sub:sub-1")) {
+            found = true;
+            QCOMPARE(header->text(), tabs->tabText(subIndex));
+            QCOMPARE(header->toolTip(), tabs->tabToolTip(subIndex));
+        }
+    }
+    QVERIFY(found);
+    config.collection().subscriptions[0].usage.downloadBytes = 40000000000LL;
+    window.setConfig(config);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QVERIFY(tabs->tabText(tabs->currentIndex()).endsWith(QStringLiteral("42.5/200 GB")));
+}
+
 void MainWindowTests::subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates()
 {
     Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions[0].usage = {0, 95, 100, -1, -1, 1700000000};
     MainWindow window;
     window.setConfig(config);
     window.resize(1120, 640);
@@ -1404,7 +1470,6 @@ void MainWindowTests::subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates()
         }
     }
     QVERIFY(warningIndex >= 0);
-    tabs->setTabText(warningIndex, QStringLiteral("! Provider"));
 
     const auto warningPixels = [tabs](int index) {
         const QPixmap pixmap = tabs->grab(tabs->tabRect(index));
@@ -1443,6 +1508,46 @@ void MainWindowTests::subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates()
         QCoreApplication::processEvents();
         QVERIFY2(warningPixels(warningIndex) > 0, qPrintable(theme + QStringLiteral(" unselected hover")));
     }
+}
+
+void MainWindowTests::subscriptionDetailsHandleMissingUnlimitedAndTranslatedValues()
+{
+    SubItem sub;
+    sub.remarks = QStringLiteral("Example");
+    const QDateTime now = QDateTime::fromSecsSinceEpoch(1700000000);
+    QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
+        "<qt>Used: Not provided<br>Total: Not provided<br>Remaining: Not provided<br>Next reset: Not provided</qt>"));
+    QVERIFY(SubscriptionViewSupport::subscriptionDetails(sub, now).contains(QStringLiteral("Next reset: Not provided")));
+    QVERIFY(!SubscriptionViewSupport::subscriptionDetails(sub, now).contains(QStringLiteral("Used: 0")));
+    sub.usage = {0, 0, 0, 0, -1, 1700000000};
+    QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
+        "<qt>Used: 0 B<br>Total: Unlimited<br>Remaining: Unlimited<br>Next reset: Not provided</qt>"));
+    QVERIFY(SubscriptionViewSupport::subscriptionTabLabel(sub, QFontMetrics(QApplication::font())).contains(QStringLiteral("0 B/Unlimited")));
+    QVERIFY(!SubscriptionViewSupport::quotaWarning(sub));
+    sub.usage = {0, 110, 100, 1900000000, -1, 1700000000};
+    const QString details = SubscriptionViewSupport::subscriptionDetails(sub, now);
+    QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
+        "<qt>Used: 110 B<br>Total: 100 B<br>Remaining: 0 B<br>Next reset: Not provided</qt>"));
+    QVERIFY(details.contains(QStringLiteral("Remaining: 0 B")));
+    QVERIFY(details.contains(QStringLiteral("Next reset: Not provided")));
+    QVERIFY(details.contains(QStringLiteral("Traffic quota exhausted.")));
+
+    class UsageTranslator final : public QTranslator {
+        QString translate(const char* context, const char* text, const char*, int) const override
+        {
+            return qstrcmp(context, "SubscriptionViewSupport") == 0
+                ? QStringLiteral("[zh]") + QString::fromUtf8(text) : QString();
+        }
+    } translator;
+    QApplication::installTranslator(&translator);
+    const QString translated = SubscriptionViewSupport::subscriptionDetails(sub, now);
+    const QString translatedToolTip = SubscriptionViewSupport::subscriptionToolTip(sub);
+    QApplication::removeTranslator(&translator);
+    QVERIFY(translated.contains(QStringLiteral("[zh]Used:")));
+    QVERIFY(translated.contains(QStringLiteral("[zh]Next reset: [zh]Not provided")));
+    QVERIFY(translated.contains(QStringLiteral("[zh]Updated:")));
+    QCOMPARE(translatedToolTip, QStringLiteral(
+        "<qt>[zh]Used: 110 B<br>[zh]Total: 100 B<br>[zh]Remaining: 0 B<br>[zh]Next reset: [zh]Not provided</qt>"));
 }
 
 void MainWindowTests::subscriptionViewSupportMapsTabKeysAndLabels()
@@ -1536,6 +1641,7 @@ void MainWindowTests::windowLayoutStateSupportCapturesAndRestoresServerColumnWid
     QHeaderView* header = table.horizontalHeader();
     QVERIFY(header != nullptr);
 
+    header->setMinimumSectionSize(0);
     const QList<int> initialWidths = {50, 70, 190, 230, 99};
     for (int index = 0; index < initialWidths.size(); ++index) {
         header->resizeSection(index, initialWidths.at(index));
@@ -1763,7 +1869,8 @@ void MainWindowTests::logDelegateKeepsReportedSingleLineAtWideWidth()
 
     LogListModel model;
     QListView view;
-    view.resize(996, 200);
+    view.resize(view.fontMetrics().horizontalAdvance(text) + 2 * LogItemDelegate::HorizontalPadding
+        + 2 * view.frameWidth(), 200);
     view.show();
     QCoreApplication::processEvents();
     model.setWrapConfiguration(view.font(), view.viewport()->width() - 2 * LogItemDelegate::HorizontalPadding);

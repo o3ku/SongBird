@@ -40,6 +40,7 @@ Download the build for your platform from the [latest release](https://github.co
 - Add, edit, delete, reorder and filter servers, grouped by subscription.
 - Import servers from the clipboard or from share links; copy a share link and preview its QR code.
 - Update subscriptions, and run URL tests and latency (speed) tests.
+- See used/total traffic on subscription tabs; hover for used, total and remaining traffic and the next reset date. Open Subscription Details from the tab's context menu for upload/download usage, expiry and the last report time. Values refresh with subscription updates when the provider supplies them.
 - Show the outbound location the running proxy actually exits from, so a node that is up but not working is visible as such.
 
 **Running a proxy**

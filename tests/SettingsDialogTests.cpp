@@ -1690,8 +1690,10 @@ void SettingsDialogTests::serverTableDarkThemePaintsAlternateRowsDark()
     table.setColumnWidth(0, 180);
     table.setRowHeight(0, 28);
     table.setRowHeight(1, 28);
-    table.setFixedSize(180, 56);
     AppTheme::applyServerTableStyle(&table);
+    table.ensurePolished();
+    table.setFixedSize(table.columnWidth(0) + 2 * table.frameWidth(),
+        table.rowHeight(0) + table.rowHeight(1) + 2 * table.frameWidth());
 
     table.show();
     QCoreApplication::processEvents();
@@ -1704,7 +1706,8 @@ void SettingsDialogTests::serverTableDarkThemePaintsAlternateRowsDark()
     QVERIFY(alternateRect.isValid());
 
     const QPoint samplePoint(alternateRect.right() - 8, alternateRect.center().y());
-    const QColor alternatePixel = rendered.pixelColor(samplePoint);
+    QVERIFY(table.viewport()->rect().contains(samplePoint));
+    const QColor alternatePixel = rendered.pixelColor(samplePoint * rendered.devicePixelRatio());
     const QColor expectedAlternate(AppTheme::tableAlternateBaseColor(AppTheme::darkThemeName()));
     QCOMPARE(alternatePixel, expectedAlternate);
 }
@@ -1727,6 +1730,10 @@ void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
         SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QStringLiteral("ua-a")},
         SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), false, QStringLiteral("ua-b")}
     };
+    config.collection().subscriptions[0].usage = {10, 20, 100, -1, -1, 123};
+    config.collection().subscriptions[0].etag = QStringLiteral("v1");
+    config.collection().subscriptions[0].lastModified = QStringLiteral("Wed, 21 Oct 2026 07:28:00 GMT");
+    config.collection().subscriptions[0].failStreak = 2;
 
     SettingsDialog dialog;
     dialog.setConfig(config);
@@ -1746,10 +1753,29 @@ void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
     QCOMPARE(updated.collection().subscriptions.at(0).id, QStringLiteral("sub-1"));
     QCOMPARE(updated.collection().subscriptions.at(0).remarks, QStringLiteral("A"));
     QCOMPARE(updated.collection().subscriptions.at(0).userAgent, QStringLiteral("ua-a"));
+    QCOMPARE(updated.collection().subscriptions.at(0).usage.usedBytes(), qint64(30));
+    QCOMPARE(updated.collection().subscriptions.at(0).usage.updatedAt, qint64(123));
+    QCOMPARE(updated.collection().subscriptions.at(0).etag, QStringLiteral("v1"));
+    QCOMPARE(updated.collection().subscriptions.at(0).lastModified,
+        config.collection().subscriptions.at(0).lastModified);
+    QCOMPARE(updated.collection().subscriptions.at(0).failStreak, 2);
     QCOMPARE(updated.collection().subscriptions.at(1).id, QStringLiteral("sub-2"));
     QCOMPARE(updated.collection().subscriptions.at(1).url, QStringLiteral("https://b.example"));
     QVERIFY(!updated.collection().subscriptions.at(1).enabled);
     QCOMPARE(updated.collection().subscriptions.at(1).userAgent, QStringLiteral("ua-b"));
+
+    subTable->item(0, 2)->setText(QStringLiteral("Renamed"));
+    subTable->item(0, 0)->setCheckState(Qt::Unchecked);
+    QCOMPARE(dialog.config().collection().subscriptions.at(0).usage.usedBytes(), qint64(30));
+    auto* userAgentCombo = qobject_cast<QComboBox*>(subTable->cellWidget(0, 3));
+    QVERIFY(userAgentCombo != nullptr);
+    userAgentCombo->setEditText(QStringLiteral("different-ua"));
+    QCOMPARE(dialog.config().collection().subscriptions.at(0).usage.totalBytes, qint64(-1));
+    QVERIFY(dialog.config().collection().subscriptions.at(0).etag.isEmpty());
+    userAgentCombo->setEditText(QStringLiteral("ua-a"));
+
+    subTable->item(0, 1)->setText(QStringLiteral("https://different.example/sub"));
+    QCOMPARE(dialog.config().collection().subscriptions.at(0).usage.totalBytes, qint64(-1));
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()
