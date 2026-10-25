@@ -30,6 +30,7 @@
 #include <QTextOption>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTabBar>
 #include <QWidgetList>
 
 #include "common/LogFileWriter.h"
@@ -92,6 +93,7 @@ private slots:
     void tunToggleButtonOnlyEmitsTunChangeWhenBothWereOff();
     void restoreAndCaptureUiStatePreservesQrPreviewVisibility();
     void subscriptionViewSupportMapsTabKeysAndLabels();
+    void subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates();
     void subscriptionServerIndexIdsSkipsOtherSubscriptionsAndBlankIds();
     void windowLayoutStateSupportCapturesAndRestoresServerColumnWidths();
     void trayMenuSupportBuildsServerAndRoutingEntries();
@@ -1384,6 +1386,63 @@ void MainWindowTests::restoreAndCaptureUiStatePreservesQrPreviewVisibility()
     window.captureUiState(captured);
 
     QVERIFY(captured.ui().mainQrPreviewVisible);
+}
+
+void MainWindowTests::subscriptionTabsPaintQuotaWarningsAcrossThemesAndStates()
+{
+    Config config = createGroupedServerSelectionConfig();
+    MainWindow window;
+    window.setConfig(config);
+    window.resize(1120, 640);
+    window.show();
+    auto* tabs = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabs != nullptr);
+    int warningIndex = -1;
+    for (int index = 0; index < tabs->count(); ++index) {
+        if (tabs->tabData(index).toString() == QStringLiteral("sub:sub-1")) {
+            warningIndex = index;
+        }
+    }
+    QVERIFY(warningIndex >= 0);
+    tabs->setTabText(warningIndex, QStringLiteral("! Provider"));
+
+    const auto warningPixels = [tabs](int index) {
+        const QPixmap pixmap = tabs->grab(tabs->tabRect(index));
+        const QImage image = pixmap.toImage();
+        const QColor expected(AppTheme::warningColor());
+        int count = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor actual = image.pixelColor(x, y);
+                if (qAbs(actual.red() - expected.red()) <= 5
+                    && qAbs(actual.green() - expected.green()) <= 5
+                    && qAbs(actual.blue() - expected.blue()) <= 5) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    };
+
+    // Reuse the same tabs across theme changes to catch cached warning colours.
+    for (const QString& theme : {AppTheme::darkThemeName(), AppTheme::lightThemeName()}) {
+        AppTheme::applyApplicationTheme(*qApp, theme);
+        QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+        QCoreApplication::processEvents();
+        QVERIFY2(warningPixels(warningIndex) > 0, qPrintable(theme + QStringLiteral(" selected")));
+        QTest::mouseMove(tabs, tabs->tabRect(warningIndex).center());
+        QCoreApplication::processEvents();
+        QVERIFY2(warningPixels(warningIndex) > 0, qPrintable(theme + QStringLiteral(" selected hover")));
+
+        QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+        QTest::mouseMove(tabs, tabs->tabRect(tabs->currentIndex()).center());
+        QCoreApplication::processEvents();
+        QVERIFY2(warningPixels(warningIndex) > 0, qPrintable(theme + QStringLiteral(" unselected")));
+        QCOMPARE(warningPixels(tabs->currentIndex()), 0);
+        QTest::mouseMove(tabs, tabs->tabRect(warningIndex).center());
+        QCoreApplication::processEvents();
+        QVERIFY2(warningPixels(warningIndex) > 0, qPrintable(theme + QStringLiteral(" unselected hover")));
+    }
 }
 
 void MainWindowTests::subscriptionViewSupportMapsTabKeysAndLabels()

@@ -39,9 +39,10 @@ void enableCustomUserAgentInput(QComboBox* combo, const QString& text = QString(
 
     auto* lineEdit = new QLineEdit(combo);
     lineEdit->setObjectName(QStringLiteral("uaComboLineEdit"));
-    lineEdit->setText(text);
     lineEdit->setFrame(false);
     combo->setLineEdit(lineEdit);
+    // setLineEdit() copies the current combo item into the editor.
+    lineEdit->setText(text);
 }
 
 QComboBox* createUserAgentCombo(QWidget* parent, const QString& storedValue)

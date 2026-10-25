@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPainterPath>
+#include <QProxyStyle>
 #include <QSizePolicy>
 #include <QSplitter>
 #include <QStyle>
@@ -33,6 +34,38 @@ constexpr int CompactPanelPadding = 4;
 constexpr int CompactSectionSpacing = 4;
 constexpr int CompactHeaderHorizontalPadding = 10;
 constexpr int CompactHeaderIconTextSpacing = 10;
+
+class SubscriptionTabStyle final : public QProxyStyle {
+public:
+    void drawItemText(QPainter* painter, const QRect& rect, int flags,
+        const QPalette& palette, bool enabled, const QString& text,
+        QPalette::ColorRole textRole = QPalette::NoRole) const override
+    {
+        if (!text.startsWith(QStringLiteral("! "))) {
+            QProxyStyle::drawItemText(painter, rect, flags, palette, enabled, text, textRole);
+            return;
+        }
+
+        // QSS overrides setTabTextColor(), so apply the warning at the final
+        // text draw, after selected/hover rules have resolved the palette.
+        QPalette warningPalette = palette;
+        const QPalette::ColorRole warningRole = textRole == QPalette::NoRole
+            ? QPalette::WindowText : textRole;
+        warningPalette.setColor(warningRole, QColor(AppTheme::warningColor()));
+        QProxyStyle::drawItemText(painter, rect, flags, warningPalette, enabled, text, warningRole);
+    }
+};
+
+class SubscriptionTabBar final : public QTabBar {
+public:
+    explicit SubscriptionTabBar(QWidget* parent = nullptr)
+        : QTabBar(parent)
+    {
+        auto* tabStyle = new SubscriptionTabStyle;
+        tabStyle->setParent(this);
+        setStyle(tabStyle);
+    }
+};
 
 void paintCompactDisclosureArrow(QPainter& painter, const QRect& rect, bool expanded, const QColor& color)
 {
@@ -196,7 +229,7 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
         serverView_->horizontalHeader()->resizeSection(index, defaultColumnWidths.at(index));
     }
 
-    subscriptionTabBar_ = new QTabBar(this);
+    subscriptionTabBar_ = new SubscriptionTabBar(this);
     subscriptionTabBar_->setObjectName(QStringLiteral("subscriptionTabBar"));
     AppTheme::applyCompactFont(subscriptionTabBar_);
     QFont subscriptionTabFont = subscriptionTabBar_->font();

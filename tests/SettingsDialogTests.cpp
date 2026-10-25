@@ -1745,9 +1745,11 @@ void SettingsDialogTests::subscriptionPageRoundTripsSelectedRowsAndItems()
     QCOMPARE(updated.collection().subscriptions.size(), 2);
     QCOMPARE(updated.collection().subscriptions.at(0).id, QStringLiteral("sub-1"));
     QCOMPARE(updated.collection().subscriptions.at(0).remarks, QStringLiteral("A"));
+    QCOMPARE(updated.collection().subscriptions.at(0).userAgent, QStringLiteral("ua-a"));
     QCOMPARE(updated.collection().subscriptions.at(1).id, QStringLiteral("sub-2"));
     QCOMPARE(updated.collection().subscriptions.at(1).url, QStringLiteral("https://b.example"));
     QVERIFY(!updated.collection().subscriptions.at(1).enabled);
+    QCOMPARE(updated.collection().subscriptions.at(1).userAgent, QStringLiteral("ua-b"));
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()
