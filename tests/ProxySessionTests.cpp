@@ -71,6 +71,10 @@ private slots:
     void immediateStopStaysSingleLayeredWhenTheRestoreFails();
     void stopEmitsUndoFailedAndDoesNotRetryTheRegistryWrite();
     void stopEmitsUndoFailedWhenTheClearBranchFails();
+    void failedStartupForgetsOwnershipEvenWhenTheClearFails();
+    void aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot();
+    void aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails();
+    void theDeadCoreForgetNeverWritesToADestroyedSession();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
     void healthWatchToleratesASingleFailedProbe();
@@ -1610,11 +1614,243 @@ void ProxySessionTests::stopEmitsUndoFailedWhenTheClearBranchFails()
     QCOMPARE(spy.count(), 1);
     QCOMPARE(harness.proxyUpdateCount, 1);
 }
+
+// The failed-startup intent, pinned where the ledger asked for it: a dead session forgets the
+// claim even when the undo write failed -- unlike a plain stop, which also drops it, and unlike
+// undoManagedSystemProxyAfterAbortedStartup(), which keeps it -- and the failure is announced
+// through the item-A channel while it happens. Driven through the real failStartup() entry:
+// no active server fails profile resolution on the synchronous half of start().
+void ProxySessionTests::failedStartupForgetsOwnershipEvenWhenTheClearFails()
+{
+    ProxySessionHarness harness;
+    harness.proxyUpdateSucceeds = false;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+
+    QSignalSpy undoFailed(harness.session.get(), &ProxySession::systemProxyUndoFailed);
+    QSignalSpy failedSpy(harness.session.get(), &ProxySession::failed);
+
+    harness.session->start(ProxySession::StartRequest{});
+
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QCOMPARE(undoFailed.count(), 1);
+    QCOMPARE(failedSpy.count(), 1);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
 // --- Node health watch ---
 //
 // These cover the decision the watch makes, not the probe itself: the probe is injected, so what
 // is under test here is when ProxySession starts and stops watching and what it does with each
 // verdict. The policy's own arithmetic is pinned separately by proxy-health-watch-policy.
+
+// The DisableRestart branch of handleCoreExited, reached the only way it is reachable: through the
+// real crash-restart policy rather than by naming the branch. Five crashes are restarted, the sixth
+// exhausts the budget and the policy answers DisableRestart -- #14 item B's second hiding place.
+//
+// Four conditions make the branch's forget the thing under test instead of an artefact:
+//
+// - The budget has to accumulate across the restarts, so the core has to be back up before the next
+//   crash. A round whose start does not reach Proxying resets the count and every round is then
+//   "crash 1"; the loop replays what the restart does (start, answer, crash unprompted), which is
+//   the route the policy sees in production.
+// - The rounds after the first do not go through start(). The previous crash left a restart timer
+//   armed, and start() answers a request that arrives while a slot is still scheduled by opening
+//   the checklist and returning -- the crash budget never advances. What the timer itself calls at
+//   the end of its delay is startInternal(false, false, ...), which is the entry those rounds use.
+// - The exit is reported with stopRequested false, like an unprompted crash. The handler ends at
+//   `if (stopRequested) emit stopped()`, and the window that connects `stopped` calls stop(), so a
+//   stopRequested exit would hand the forgetting to the plain-stop branch.
+// - Ownership is read after the crash settles and before the next start. Arming the claim is the
+//   startup's job (applySystemProxyAfterOutboundCheck sets it after a successful write), so a read
+//   taken after the restart pins startInternal instead of this branch.
+//
+// What the pin is worth, stated plainly: it covers the handler's own ownership decision. It does
+// not claim a lost claim is user-visible -- an orphaned flag is an internal invariant, and the
+// user-facing failure it would cause (the next launch clearing a proxy it no longer owns) is
+// closed by the retired-PID guard in the recovery test, not by this flag.
+//
+// Out of reach from here: the checklist-visible route, the only one that leaves keepOnNextStop_
+// armed. Every crash leaves Proxying, and leaving Proxying clears the checklist; a start issued
+// while the core still runs reaches keepForUserDismissal, but the exit that follows carries
+// `stopRequested = true` and the handler's own stop branch then stops the session first.
+ProxySession::StartRequest crashLoopRequest(const ProxySessionHarness& harness)
+{
+    ProxySession::StartRequest request = harness.launchableRequest();
+    // The TUN-conflict retry sits in front of the crash budget and would send the same exit down a
+    // different branch, so its precondition is off: no conflict was detected at this exit.
+    request.config.tun().tunModeItem.enableTun = false;
+    return request;
+}
+
+// One round: the core starts, answers, and exits unprompted.
+void crashOnce(ProxySessionHarness& harness, bool firstRound)
+{
+    if (firstRound) {
+        harness.session->start(crashLoopRequest(harness));
+    } else {
+        harness.session->startInternalForTest(false, false, false);
+    }
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+    QTest::qWait(20);
+    harness.mainCore.triggerExited(false);
+}
+
+void ProxySessionTests::aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+
+    QVERIFY2(driveToProxying(harness), "session did not reach Proxying");
+    QVERIFY(harness.session->isManagedProxyActive());
+    QVERIFY(harness.snapshot.valid);
+    const int writesAfterStartup = harness.proxyUpdateCount;
+
+    // Nothing re-arms the health watch after a crash, but the watch would probe the real node if it
+    // did, so the injected check stays empty on purpose: the crash loop is the subject.
+    QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
+    QSignalSpy stoppedSpy(harness.session.get(), SIGNAL(stopped()));
+
+    for (int round = 1; round <= 5; ++round) {
+        harness.mainCore.running = false;
+        crashOnce(harness, round == 1);
+        // Budget still in hand, so the branch under test has not run. These say "nothing else
+        // moved" rather than "ownership was still held": ProxySession's own crash-cooldown stops a
+        // restarted core within three seconds, and the undo that follows an owned session with a
+        // spent capture is a Clear -- so ownership does not survive a restart by construction. The
+        // assert below pins the restart count, the write count pins the registry, and the stop
+        // count pins that no exit ran the plain-stop branch. Ownership itself is asserted after
+        // the sixth exit, where the flag is the branch's decision and no restart follows it.
+        QVERIFY2(harness.mainCore.startCount == round + 1, "a crash round did not restart the core");
+        QCOMPARE(harness.proxyUpdateCount, writesAfterStartup);
+        QVERIFY2(stoppedSpy.count() == 0, "a crash round completed a stop");
+    }
+
+    harness.mainCore.running = false;
+    crashOnce(harness, false);
+
+    // The sixth exceeds kMaxCrashRestarts, so this exit took the DisableRestart branch and nothing
+    // else -- the policy's own message is the evidence, not a count assumed here.
+    const QStringList lines = logLines(logSpy);
+    QVERIFY(findLogLine(lines, QStringLiteral("Auto-restart disabled after 6 consecutive failures."))
+                .isEmpty() == false);
+    QVERIFY(findLogLine(lines, QStringLiteral("System proxy restored because the core stopped."))
+                .isEmpty() == false);
+    QCOMPARE(stoppedSpy.count(), 1);
+    // The undo at the top of the handler restored through the capture the startup took; the branch
+    // then forgot. One write, one restore, so no earlier round undid anything.
+    QCOMPARE(harness.proxyUpdateCount, writesAfterStartup);
+    QCOMPARE(harness.restoreCount, 1);
+    QVERIFY(!harness.session->isManagedProxyActive());
+    // The forget dropped the claim and nothing else. The capture is spent here, but a successful
+    // restore is what spends it -- a different decision, taken by the undo. A version that cleared
+    // the claim from inside clearProxyStateAfterStopped() would look identical on the flag while
+    // the rest of that helper's state went with it, which is the reason the clear lives at the
+    // call site.
+    QVERIFY(!harness.snapshot.valid);
+}
+
+// The same branch with the undo write failing: the forget is the caller's intent, not a consequence
+// of the write succeeding. That contrast is the whole difference between this branch and
+// undoManagedSystemProxyAfterAbortedStartup, whose session stays alive and therefore keeps the
+// claim when the write fails.
+void ProxySessionTests::aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    QVERIFY(harness.proxyServer.listen());
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+    // Adopted the way the aborted-startup cases adopt it, and for the reason the harness comment
+    // gives: with no capture wired the undo decision lands on Clear, which is the branch whose
+    // failure is observable. Applying the proxy through the startup path instead would make the
+    // startup's own write the failing one, and a failed startup forgets too -- this case then could
+    // not say which forget it saw.
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.proxyUpdateSucceeds = false;
+
+    QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
+    QSignalSpy undoFailedSpy(harness.session.get(), &ProxySession::systemProxyUndoFailed);
+
+    for (int round = 1; round <= 5; ++round) {
+        harness.mainCore.running = false;
+        crashOnce(harness, round == 1);
+        // One failed undo and one announcement per restart decision, and the claim survives each:
+        // that is the shape the branch below has to break.
+        QCOMPARE(undoFailedSpy.count(), round);
+    }
+
+    harness.mainCore.running = false;
+    crashOnce(harness, false);
+
+    const QStringList lines = logLines(logSpy);
+    QVERIFY(findLogLine(lines, QStringLiteral("Auto-restart disabled after 6 consecutive failures."))
+                .isEmpty() == false);
+    QVERIFY(findLogLine(lines, QStringLiteral("Failed to disable system proxy after the core stopped."))
+                .isEmpty() == false);
+    QCOMPARE(undoFailedSpy.count(), 6);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
+
+// The TSAN half of the two cases above, and the reason the crash loop gives up ownership between
+// rounds instead of holding it.
+//
+// The forget the cases above pin is a *write* to managedSystemProxyActive_, and this member is
+// already written from a worker thread: the result handlers of the activation this session posted
+// (activationFinished, runOutboundCheck, the location probe) land on the worker's thread through a
+// queued invoke that asks no question about the session's lifetime, so a crash and a destruction
+// racing that result write attempt the member from two threads where only the GUI one is supposed
+// to. ThreadSanitizer reports that race, and it is the shape to look for. It is *not* a
+// use-after-free: every one of those handlers opens by re-reading `deps_` under `stateMutex_` and
+// returns when `stopping` is set, and stopInternal sets it before clearing anything -- so the
+// member is always reached through a session whose destruction has not started.
+//
+// The two cases above steer around the race by asserting ownership after the sixth crash, when the
+// crash cooldown has already stopped a restarted core and dropped the claim. This one keeps the
+// crash loop producing orphaned writes on purpose -- a capturing connection to an atomic worker
+// count, no ownership read until the end -- and insists nothing lands after the session is gone.
+// Run the suite under -fsanitize=thread to see the requirement it states.
+void ProxySessionTests::theDeadCoreForgetNeverWritesToADestroyedSession()
+{
+    auto harness = std::make_unique<ProxySessionHarness>();
+    harness->snapshotsWired = true;
+    QVERIFY(harness->tempDir.isValid());
+    // A capturing connection, not one to the harness: the trigger side is reached from the crash
+    // handler on the GUI thread, and a connection to a member that outlives the session is exactly
+    // the thing whose absence is being asserted.
+    auto rounds = std::make_shared<std::atomic_int>(0);
+    QObject::connect(harness->session.get(), &ProxySession::stopped, harness->session.get(),
+                     [rounds]() { rounds->fetch_add(1); });
+
+    QVERIFY2(driveToProxying(*harness), "session did not reach Proxying");
+    QVERIFY(harness->session->isManagedProxyActive());
+    QVERIFY(harness->snapshot.valid);
+
+    for (int round = 1; round <= 5; ++round) {
+        harness->mainCore.running = false;
+        crashOnce(*harness, round == 1);
+        QCOMPARE(harness->mainCore.startCount, round + 1);
+    }
+    harness->mainCore.running = false;
+    crashOnce(*harness, false);
+    QCOMPARE(rounds->load(), 1);
+
+    // Ownership is read once, here. Every write before it -- the undo's, the branch's, and the
+    // orphans the crash cooldown produced -- is what the sanitizer is being asked about.
+    QVERIFY(!harness->session->isManagedProxyActive());
+
+    // Destroying the session while a queued activation result may still be in flight is the case
+    // the handler prologue has to survive; the processing below is what would expose it.
+    harness->session.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(50);
+
+    // And the connection above did not resurrect anything: the round count is the handler's, not a
+    // count of calls into a dead object.
+    QCOMPARE(rounds->load(), 1);
+}
 
 void ProxySessionTests::healthWatchWarnsAfterTwoConsecutiveFailedProbes()
 {

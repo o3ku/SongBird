@@ -172,6 +172,14 @@ public:
     {
         handleCoreExited(exitCode, static_cast<int>(status), stopRequested, auxiliary);
     }
+    // The entry the crash-restart timer uses (scheduleCoreRestart's singleShot body calls
+    // startInternal with these two flags). Exposed for the same reason as the line above: a crash
+    // loop cannot re-drive start(), because a live core and an armed restart timer make
+    // rejectOverlappingStart() answer the request instead of starting anything.
+    void startInternalForTest(bool skipTunCleanup, bool environmentAlreadyChecked, bool showStartupOverlay)
+    {
+        startInternal(skipTunCleanup, environmentAlreadyChecked, showStartupOverlay);
+    }
 
 signals:
     void phaseChanged(Phase phase);

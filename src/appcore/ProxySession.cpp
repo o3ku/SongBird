@@ -843,8 +843,8 @@ void ProxySession::undoManagedSystemProxyAfterAbortedStartup()
 {
     // The proxy half of cleanupAfterFailedStartup(), with one deliberate difference: the flag
     // is dropped only when the undo write succeeded, like stopForCoreUpdate and unlike a failed
-    // startup (which calls clearProxyStateAfterStopped() and forgets ownership wholesale --
-    // nothing there is ever coming back to retry). Here the session stays alive, and a later
+    // startup (which forgets the claim outright -- its session is dead and nothing there is
+    // ever coming back to retry). Here the session stays alive, and a later
     // stop() must still be able to redo this undo, so a failed write must not erase the claim.
     // Auto wires no snapshot capture, so a restorable snapshot is always false here and the
     // decision lands on Clear -- the documented fallback for "ours, and the port is dead".
@@ -889,8 +889,11 @@ void ProxySession::cleanupAfterFailedStartup()
         }
         break;
     }
+    // Forget, and say so here rather than in state cleanup: this session is dead and nothing
+    // retries, unlike undoManagedSystemProxyAfterAbortedStartup(), whose session lives on and
+    // must keep the claim when the write fails. The undo above has already run.
+    managedSystemProxyActive_ = false;
     clearProxyStateAfterStopped();
-
     if (deps_.mainCore.isRunning()) {
         checklist_.markKeepOnNextStop();
         setPhase(Phase::Stopping);
@@ -1549,6 +1552,11 @@ void ProxySession::stopInternal(bool immediate, bool clearPostStopAction)
     }
     clearAppliedProxyAfterStopped();
     if (clearPostStopAction) {
+        // The plain-stop contract: even a failed undo drops the claim. The user asked for
+        // hands-off, and the retry belongs to the next launch's recovery -- the snapshot
+        // survives a failed restore, which is exactly what makes that retry possible.
+        // stopForCoreUpdate keeps the claim, because a core restart is about to redo the undo.
+        managedSystemProxyActive_ = false;
         clearProxyStateAfterStopped();
     }
 
@@ -1681,6 +1689,10 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
 
     if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableAfterTunConflict) {
         emit logMessage(restartDecision.message);
+        // Restart is disabled: the session is over. Forget like a failed startup -- the undo
+        // at the top of this handler already ran, and nothing will be around to retry a write
+        // that failed.
+        managedSystemProxyActive_ = false;
         clearProxyStateAfterStopped();
         emit statusSyncRequested();
         emit stopped();
@@ -1690,6 +1702,8 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
     if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
         emit logMessage(restartDecision.message);
         if (!auxiliary) {
+            // Same forget as the TUN-conflict branch above: restart disabled, session over.
+            managedSystemProxyActive_ = false;
             clearProxyStateAfterStopped();
             emit statusSyncRequested();
         }
@@ -1735,8 +1749,10 @@ void ProxySession::clearAppliedProxyAfterStopped()
 
 void ProxySession::clearProxyStateAfterStopped()
 {
+    // Ownership is deliberately not touched here: the three callers decide it explicitly,
+    // because their intents differ (a dead session forgets, a plain stop hands off) and a
+    // state-cleanup helper must not be the place where that decision hides.
     outboundReachable_ = false;
-    managedSystemProxyActive_ = false;
     currentServer_ = {};
     currentServerLocation_.clear();
     currentServerWarning_.clear();
