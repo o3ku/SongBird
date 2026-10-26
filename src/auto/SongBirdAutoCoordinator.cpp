@@ -2127,10 +2127,13 @@ void SongBirdAutoCoordinator::handleNoCompatibleServers()
     switchToBestAfterEvaluation_ = false;
     log(QStringLiteral("No compatible servers are available for automatic testing."));
     if (running_) {
+        // Keeping the proxy is the only exit. The sole caller (continueAfterSubscriptionUpdate)
+        // guards on running_ at entry, and no exit of the stopped/failed family leaves the shape
+        // this branch would need -- running_ true with the session idle. A ForcedClear used to
+        // sit in an else for that impossible shape: unreachable, and ownership-blind with it
+        // (issue #12's ledger, issue #14).
         if (isProxySessionRunningOrTransitioning()) {
             log(QStringLiteral("Keeping the active proxy while waiting for compatible automatic nodes."));
-        } else {
-            updateSystemProxyMode(SystemProxyMode::ForcedClear);
         }
         setBusy(false);
         setStatus(QStringLiteral("Waiting for compatible servers"));
