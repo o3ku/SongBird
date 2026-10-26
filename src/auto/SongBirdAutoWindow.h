@@ -82,6 +82,7 @@ private:
     QPushButton* routingButton_ = nullptr;
     QPushButton* tunButton_ = nullptr;
     QLabel* logsStatusLabel_ = nullptr;
+    QLabel* proxyWarningLabel_ = nullptr;
     QTimer* subscriptionSaveTimer_ = nullptr;
     QTimer* runButtonAnimationTimer_ = nullptr;
     QSystemTrayIcon* trayIcon_ = nullptr;

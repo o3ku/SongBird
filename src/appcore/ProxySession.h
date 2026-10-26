@@ -182,6 +182,11 @@ signals:
     // up. Kept separate from activated() because the two facts arrive at two different times: a
     // session that cannot say where it exits is still a working session.
     void serverLocationChanged(const QString& location);
+    // The undo write itself failed: the registry still holds whatever it held, and the message
+    // says what (if anything) will retry. The log line inside the undo says the same thing to
+    // the log; this signal exists because a user offline behind a dead proxy cannot see the log.
+    // Display only -- receivers must not write the registry from it (issue #14, item A).
+    void systemProxyUndoFailed(const QString& warning);
     void failed(const QString& reason);
     void stopped();
     void coreOutput(const QString& line);

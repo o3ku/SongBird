@@ -69,6 +69,8 @@ private slots:
     void stopOnAnIdleSessionLeavesAnUnownedProxyAlone();
     void plainStopForgetsOwnershipEvenWhenTheUndoWriteFails();
     void immediateStopStaysSingleLayeredWhenTheRestoreFails();
+    void stopEmitsUndoFailedAndDoesNotRetryTheRegistryWrite();
+    void stopEmitsUndoFailedWhenTheClearBranchFails();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
     void healthWatchToleratesASingleFailedProbe();
@@ -1556,6 +1558,58 @@ void ProxySessionTests::immediateStopStaysSingleLayeredWhenTheRestoreFails()
     QVERIFY(!harness.session->isManagedProxyActive());
 }
 
+
+// Issue #14 item A: the undo write failing is invisible in the log alone -- a user offline
+// behind a dead proxy cannot read the log. The failure must be announced, once, and the
+// announced shape is display-only: a second stop must not write the registry again (the
+// plain-stop contract), the retry belongs to the next launch's recovery.
+void ProxySessionTests::stopEmitsUndoFailedAndDoesNotRetryTheRegistryWrite()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+    harness.restoreSucceeds = false;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.snapshot.valid = true;
+    harness.snapshot.enabled = true;
+    harness.snapshot.server = QStringLiteral("user-proxy.example:8080");
+
+    QSignalSpy spy(harness.session.get(), &ProxySession::systemProxyUndoFailed);
+    harness.session->stop(false);
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(harness.restoreCount, 1);
+
+    harness.session->stop(false);
+
+    // No re-announcement and no second write: the flag is gone after the first plain stop.
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(harness.restoreCount, 1);
+    // And the snapshot is still there, untouched: it is spent only by a successful restore, so
+    // the next launch's recovery is the retry the announcement promised. (This line also pins
+    // the contract a withdrawn review patch wanted to flip -- spend-on-attempt would fail it.)
+    QVERIFY(harness.snapshot.valid);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
+
+// The other failure branch: no snapshot survived, so the undo was a Clear and it failed.
+// The message here cannot promise a retry -- nothing retries -- but the announcement itself
+// is the deliverable; the wording lives in the tr() strings and is not pinned.
+void ProxySessionTests::stopEmitsUndoFailedWhenTheClearBranchFails()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+    harness.proxyUpdateSucceeds = false;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    // No valid snapshot: the undo decision falls to Clear.
+
+    QSignalSpy spy(harness.session.get(), &ProxySession::systemProxyUndoFailed);
+    harness.session->stop(false);
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(harness.proxyUpdateCount, 1);
+}
 // --- Node health watch ---
 //
 // These cover the decision the watch makes, not the probe itself: the probe is injected, so what

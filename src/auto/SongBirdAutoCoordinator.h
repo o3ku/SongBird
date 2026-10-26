@@ -96,6 +96,10 @@ signals:
     void busyChanged(bool busy);
     void activeServerChanged(const QString& serverId, const QString& serverName, const QString& countryDisplay, const QString& location, qint64 latencyMs);
     void statusMessageChanged(const QString& message);
+    // A proxy-undo failure the user must see; it persists on the status bar until a new session
+    // activates, because the transient status message is immediately overwritten by the stop's
+    // own terminal status ("Stopped"). Empty string clears it.
+    void proxyWarningChanged(const QString& warning);
     void subscriptionUrlsTextChanged(const QString& text);
     void tunEnabledChanged(bool enabled);
     void autoSelectionStrategyChanged(const QString& strategy);
@@ -196,6 +200,7 @@ private:
     // places now: activation, and the exit location arriving later.
     void publishActiveServer(const QString& location);
     void setStatus(const QString& status);
+    void setProxyWarning(const QString& warning);
     void log(const QString& message);
     void taskSummary(const QString& message);
     void trackThread(QThread* thread);
@@ -236,6 +241,7 @@ private:
     RoutingScorePolicy routingScorePolicy_;
     QString selectedCountryCode_;
     QString activeServerId_;
+    QString proxyWarning_;
     bool running_ = false;
     bool busy_ = false;
     bool refreshQueuedAfterBusy_ = false;

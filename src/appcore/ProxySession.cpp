@@ -2076,6 +2076,9 @@ bool ProxySession::undoSystemProxyChange(SystemProxyUndoTrigger trigger)
             emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
                 ? tr("Failed to restore the system proxy after the core stopped.")
                 : tr("Failed to restore the system proxy after core startup failed."));
+            // The snapshot survives a failed restore, so the next launch's recovery is the retry.
+            emit systemProxyUndoFailed(
+                tr("Failed to restore your system proxy. It will be retried on the next launch."));
         }
         return restored;
     }
@@ -2089,6 +2092,10 @@ bool ProxySession::undoSystemProxyChange(SystemProxyUndoTrigger trigger)
         emit logMessage(trigger == SystemProxyUndoTrigger::CoreStopped
             ? tr("Failed to disable system proxy after the core stopped.")
             : tr("Failed to disable system proxy after core startup failed."));
+        // No snapshot survived to this branch, so nothing retries: the registry keeps pointing
+        // wherever it pointed, and the user is the one who can change that.
+        emit systemProxyUndoFailed(
+            tr("Failed to turn off the system proxy; it may still point at this app. Turn it off manually."));
     }
     return cleared;
 }

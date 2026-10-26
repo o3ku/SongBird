@@ -266,6 +266,12 @@ void SongBirdAutoWindow::buildUi()
     root->addStretch(1);
 
     setCentralWidget(central);
+    proxyWarningLabel_ = new QLabel(this);
+    proxyWarningLabel_->setObjectName(QStringLiteral("proxyWarningLabel"));
+    proxyWarningLabel_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    proxyWarningLabel_->setMinimumWidth(0);
+    proxyWarningLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    proxyWarningLabel_->hide();
     logsStatusLabel_ = new QLabel(this);
     logsStatusLabel_->setObjectName(QStringLiteral("logsStatusLabel"));
     logsStatusLabel_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -273,6 +279,7 @@ void SongBirdAutoWindow::buildUi()
     logsStatusLabel_->setMinimumWidth(0);
     logsStatusLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     logsStatusLabel_->installEventFilter(this);
+    statusBar()->addPermanentWidget(proxyWarningLabel_);
     statusBar()->addPermanentWidget(logsStatusLabel_, 1);
     statusBar()->showMessage(QStringLiteral("Initializing"));
     applyCompactStyle();
@@ -366,6 +373,10 @@ void SongBirdAutoWindow::connectSignals()
     connect(&coordinator_, &SongBirdAutoCoordinator::activeServerChanged, this, &SongBirdAutoWindow::setActiveServer);
     connect(&coordinator_, &SongBirdAutoCoordinator::statusMessageChanged, this, [this](const QString& message) {
         statusBar()->showMessage(message);
+    });
+    connect(&coordinator_, &SongBirdAutoCoordinator::proxyWarningChanged, this, [this](const QString& warning) {
+        proxyWarningLabel_->setText(warning);
+        proxyWarningLabel_->setVisible(!warning.isEmpty());
     });
     connect(&coordinator_, &SongBirdAutoCoordinator::subscriptionUrlsTextChanged, this, &SongBirdAutoWindow::setSubscriptionUrlsText);
     connect(&coordinator_, &SongBirdAutoCoordinator::tunEnabledChanged, this, &SongBirdAutoWindow::setTunEnabled);
@@ -696,6 +707,12 @@ void SongBirdAutoWindow::applyCompactStyle()
         QStatusBar {
             background: %background%;
             color: %textStatus%;
+        }
+        QLabel#proxyWarningLabel {
+            color: %danger%;
+            font-size: 12px;
+            font-weight: 600;
+            padding-right: 8px;
         }
         QLabel#logsStatusLabel {
             color: %textMuted%;

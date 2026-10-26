@@ -2563,6 +2563,14 @@ The running core will be stopped before installation if needed.</source>
         <translation>核心停止后，关闭系统代理失败。</translation>
     </message>
     <message>
+        <source>Failed to restore your system proxy. It will be retried on the next launch.</source>
+        <translation>还原系统代理失败，将在下次启动时重试。</translation>
+    </message>
+    <message>
+        <source>Failed to turn off the system proxy; it may still point at this app. Turn it off manually.</source>
+        <translation>关闭系统代理失败，它可能仍指向本程序。请手动关闭。</translation>
+    </message>
+    <message>
         <source>System proxy restored because the core stopped.</source>
         <translation>由于核心已停止，已还原系统代理。</translation>
     </message>

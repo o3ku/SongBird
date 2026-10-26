@@ -276,7 +276,13 @@ void SongBirdAutoCoordinator::createProxySession()
     QObject::connect(proxySession_.get(), &ProxySession::phaseChanged, this, [this](ProxySession::Phase) {
         emit proxyActiveChanged(isProxyActive());
     });
+    QObject::connect(proxySession_.get(), &ProxySession::systemProxyUndoFailed, this, [this](const QString& warning) {
+        log(warning);
+        setProxyWarning(warning);
+    });
     QObject::connect(proxySession_.get(), &ProxySession::activated, this, [this](const QString& location) {
+        // A working session is the one state in which the warning is definitely stale.
+        setProxyWarning(QString());
         // The exit location is asked for only after the session is already up, so it is normally not
         // known yet; serverLocationChanged below publishes it when it arrives.
         log(location.trimmed().isEmpty()
@@ -1783,7 +1789,7 @@ void SongBirdAutoCoordinator::startProxySession()
         proxySession_->undoManagedSystemProxyAfterAbortedStartup();
         setBusy(false);
         setRunning(false);
-        setStatus(QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
+        setStatus(QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
         return;
     }
     activeServerId_ = config_.currentIndexId;
@@ -1997,8 +2003,8 @@ bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
         // caller says next -- the same two-step that made a failed TUN indistinguishable from a
         // plain stop.
         setStatus(running_
-                ? QStringLiteral("TUN failed: %1").arg(tunResult.message)
-                : QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
+                ? QStringLiteral("TUN failed: %1 (the proxy is still active)").arg(tunResult.message)
+                : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
     }
     return tunResult.success;
 }
@@ -2307,7 +2313,7 @@ void SongBirdAutoCoordinator::finishStopped()
     setBusy(false);
     setStatus(tunResult.success
             ? QStringLiteral("Stopped")
-            : QStringLiteral("Stopped; TUN failed: %1").arg(tunResult.message));
+            : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
 }
 
 void SongBirdAutoCoordinator::setBusy(bool busy)
@@ -2369,6 +2375,15 @@ void SongBirdAutoCoordinator::setRunning(bool running)
 void SongBirdAutoCoordinator::setStatus(const QString& status)
 {
     emit statusMessageChanged(status);
+}
+
+void SongBirdAutoCoordinator::setProxyWarning(const QString& warning)
+{
+    if (proxyWarning_ == warning) {
+        return;
+    }
+    proxyWarning_ = warning;
+    emit proxyWarningChanged(proxyWarning_);
 }
 
 void SongBirdAutoCoordinator::log(const QString& message)
