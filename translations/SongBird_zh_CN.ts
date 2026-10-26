@@ -4011,10 +4011,6 @@ Switch this protocol to %3?</source>
         <translation>流量额度即将用尽。</translation>
     </message>
     <message>
-        <source>Next reset: %1</source>
-        <translation>下次重置：%1</translation>
-    </message>
-    <message>
         <source>Expires: %1</source>
         <translation>到期日期：%1</translation>
     </message>

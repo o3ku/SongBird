@@ -1425,14 +1425,15 @@ void MainWindowTests::subscriptionTabsPreserveTrafficAndExposeDetailsInBothLayou
     QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Used: 32.5 GB")));
     QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Total: 200 GB")));
     QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Remaining: 167.5 GB")));
-    QVERIFY(tabs->tabToolTip(subIndex).contains(QStringLiteral("Next reset:")));
-    QCOMPARE(tabs->tabToolTip(subIndex).count(QStringLiteral("<br>")), 3);
+    QVERIFY(!tabs->tabToolTip(subIndex).contains(QStringLiteral("Next reset:")));
+    QCOMPARE(tabs->tabToolTip(subIndex).count(QStringLiteral("<br>")), 2);
     const QString details = SubscriptionViewSupport::subscriptionDetails(sub);
     QVERIFY(details.contains(QStringLiteral("<private & name>")));
     QVERIFY(details.contains(QStringLiteral("Upload: 2.5 GB")));
     QVERIFY(details.contains(QStringLiteral("Download: 30 GB")));
     QVERIFY(details.contains(QStringLiteral("Expires:")));
     QVERIFY(details.contains(QStringLiteral("Updated:")));
+    QVERIFY(!details.contains(QStringLiteral("Next reset:")));
     QCOMPARE(tabs->elideMode(), Qt::ElideNone);
     QVERIFY(tabs->usesScrollButtons());
     QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
@@ -1516,20 +1517,20 @@ void MainWindowTests::subscriptionDetailsHandleMissingUnlimitedAndTranslatedValu
     sub.remarks = QStringLiteral("Example");
     const QDateTime now = QDateTime::fromSecsSinceEpoch(1700000000);
     QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
-        "<qt>Used: Not provided<br>Total: Not provided<br>Remaining: Not provided<br>Next reset: Not provided</qt>"));
-    QVERIFY(SubscriptionViewSupport::subscriptionDetails(sub, now).contains(QStringLiteral("Next reset: Not provided")));
+        "<qt>Used: Not provided<br>Total: Not provided<br>Remaining: Not provided</qt>"));
+    QVERIFY(!SubscriptionViewSupport::subscriptionDetails(sub, now).contains(QStringLiteral("Next reset:")));
     QVERIFY(!SubscriptionViewSupport::subscriptionDetails(sub, now).contains(QStringLiteral("Used: 0")));
     sub.usage = {0, 0, 0, 0, -1, 1700000000};
     QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
-        "<qt>Used: 0 B<br>Total: Unlimited<br>Remaining: Unlimited<br>Next reset: Not provided</qt>"));
+        "<qt>Used: 0 B<br>Total: Unlimited<br>Remaining: Unlimited</qt>"));
     QVERIFY(SubscriptionViewSupport::subscriptionTabLabel(sub, QFontMetrics(QApplication::font())).contains(QStringLiteral("0 B/Unlimited")));
     QVERIFY(!SubscriptionViewSupport::quotaWarning(sub));
     sub.usage = {0, 110, 100, 1900000000, -1, 1700000000};
     const QString details = SubscriptionViewSupport::subscriptionDetails(sub, now);
     QCOMPARE(SubscriptionViewSupport::subscriptionToolTip(sub), QStringLiteral(
-        "<qt>Used: 110 B<br>Total: 100 B<br>Remaining: 0 B<br>Next reset: Not provided</qt>"));
+        "<qt>Used: 110 B<br>Total: 100 B<br>Remaining: 0 B</qt>"));
     QVERIFY(details.contains(QStringLiteral("Remaining: 0 B")));
-    QVERIFY(details.contains(QStringLiteral("Next reset: Not provided")));
+    QVERIFY(!details.contains(QStringLiteral("Next reset:")));
     QVERIFY(details.contains(QStringLiteral("Traffic quota exhausted.")));
 
     class UsageTranslator final : public QTranslator {
@@ -1544,10 +1545,10 @@ void MainWindowTests::subscriptionDetailsHandleMissingUnlimitedAndTranslatedValu
     const QString translatedToolTip = SubscriptionViewSupport::subscriptionToolTip(sub);
     QApplication::removeTranslator(&translator);
     QVERIFY(translated.contains(QStringLiteral("[zh]Used:")));
-    QVERIFY(translated.contains(QStringLiteral("[zh]Next reset: [zh]Not provided")));
+    QVERIFY(!translated.contains(QStringLiteral("Next reset:")));
     QVERIFY(translated.contains(QStringLiteral("[zh]Updated:")));
     QCOMPARE(translatedToolTip, QStringLiteral(
-        "<qt>[zh]Used: 110 B<br>[zh]Total: 100 B<br>[zh]Remaining: 0 B<br>[zh]Next reset: [zh]Not provided</qt>"));
+        "<qt>[zh]Used: 110 B<br>[zh]Total: 100 B<br>[zh]Remaining: 0 B</qt>"));
 }
 
 void MainWindowTests::subscriptionViewSupportMapsTabKeysAndLabels()

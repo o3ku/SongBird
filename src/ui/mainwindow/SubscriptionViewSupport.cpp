@@ -191,7 +191,6 @@ QString SubscriptionViewSupport::subscriptionDetails(const SubItem& item, const 
         lines.append(used >= usage.totalBytes ? QCoreApplication::translate("SubscriptionViewSupport", "Traffic quota exhausted.")
                                              : QCoreApplication::translate("SubscriptionViewSupport", "Traffic quota is almost used up."));
     }
-    lines.append(QCoreApplication::translate("SubscriptionViewSupport", "Next reset: %1").arg(dateText(usage.resetsAt, now)));
     lines.append(QCoreApplication::translate("SubscriptionViewSupport", "Expires: %1").arg(usage.expiresAt == 0
         ? QCoreApplication::translate("SubscriptionViewSupport", "No expiry") : dateText(usage.expiresAt, now)));
     lines.append(QCoreApplication::translate("SubscriptionViewSupport", "Updated: %1").arg(usage.updatedAt > 0
@@ -217,8 +216,7 @@ QString SubscriptionViewSupport::subscriptionToolTip(const SubItem& item)
         QCoreApplication::translate("SubscriptionViewSupport", "Used: %1").arg(used >= 0 ? formatBytes(used) : notProvided),
         QCoreApplication::translate("SubscriptionViewSupport", "Total: %1").arg(usage.totalBytes == 0
             ? unlimited : usage.totalBytes > 0 ? formatBytes(usage.totalBytes) : notProvided),
-        QCoreApplication::translate("SubscriptionViewSupport", "Remaining: %1").arg(remaining),
-        QCoreApplication::translate("SubscriptionViewSupport", "Next reset: %1").arg(dateText(usage.resetsAt, QDateTime::currentDateTime()))};
+        QCoreApplication::translate("SubscriptionViewSupport", "Remaining: %1").arg(remaining)};
     return QStringLiteral("<qt>%1</qt>").arg(lines.join(QLatin1Char('\n')).toHtmlEscaped().replace(
         QLatin1Char('\n'), QStringLiteral("<br>")));
 }
