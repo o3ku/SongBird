@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QTemporaryDir>
 
 #include <memory>
 #include <utility>
@@ -132,9 +133,34 @@ class SongBirdAutoCoordinatorStopTests : public QObject
     Q_OBJECT
 
 private slots:
+    void initializeBuildsTheEnvironmentItWires();
     void stopLeavesAnUnownedProxyAlone();
     void exitLeavesAnUnownedProxyAlone();
 };
+
+// Regression pin for the seam refactor: initialize() called wireRuntimeEnvironment() before
+// anything had constructed runtimeEnvironment_ -- only the standalone createProxySession()
+// path built one -- which null-derefed on the first fn assignment. Invisible while no test
+// drove initialize(); this is the first that does (a real one: real config files in a real
+// temporary directory, the injected recorder as the only double).
+void SongBirdAutoCoordinatorStopTests::initializeBuildsTheEnvironmentItWires()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    auto recorder = std::make_shared<RecordingSystemProxyService>();
+    // Declaration order is destruction order: the coordinator must die before the directory it
+    // writes into.
+
+    // A machine with a leftover songbird_tun adapter pays two 30s PowerShell cleanup
+    // timeouts here (startup sync + destructor); CI is Linux and skips the cleanup entirely.
+    SongBirdAutoCoordinator coordinator(
+        directory.filePath(QStringLiteral("songbird-auto-test.json")),
+        std::unique_ptr<ISystemProxyService>(new RecordingProxyForwarder(recorder)));
+
+    QVERIFY(coordinator.initialize());
+    QCOMPARE(recorder->updateCount, 0);
+    QCOMPARE(recorder->restoreCount, 0);
+}
 
 // The stop the user presses on a session that never applied a proxy. The deleted line wrote
 // ForcedClear unconditionally at the end of stop(); the registry is reported as on, which is what

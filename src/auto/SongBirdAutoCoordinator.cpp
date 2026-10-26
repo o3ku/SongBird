@@ -129,6 +129,11 @@ bool SongBirdAutoCoordinator::initialize()
         existingCoreTypes_,
         coreDiscoveryService_.get());
 
+    // initialize() reaches wireRuntimeEnvironment(), which writes through this member, so it has
+    // to exist by then. Only the standalone createProxySession() path built one, which left this
+    // entry dereferencing a null -- invisible until something drove initialize(), and the
+    // recovery tests are the first that do.
+    runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
     wireRuntimeEnvironment();
 
     wireActivationCoordinator();
