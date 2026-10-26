@@ -1254,6 +1254,37 @@ songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logi
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The coordinator itself, not a pure helper: this suite exists because issue #12's deletion had no
+# coverage -- the mutation check (put the ForcedClear back) left every suite green, since
+# ProxySessionTests drives a session that cannot see the coordinator. It links the production
+# coordinator and injects a recording ISystemProxyService.
+set(SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES
+    SongBirdAutoCoordinatorStopTests.cpp
+    ../src/auto/SongBirdAutoCoordinator.h
+    ../src/auto/SongBirdAutoCoordinator.cpp
+    ../src/auto/AutoCoordinatorLogic.h
+    ../src/auto/AutoCoordinatorLogic.cpp
+    ../src/auto/AutoCountryInference.h
+    ../src/auto/AutoCountryInference.cpp
+    ../src/auto/AutoCountrySelection.h
+    ../src/auto/AutoCountrySelection.cpp
+    ../src/auto/AutoCountrySupport.h
+    ../src/auto/AutoCountrySupport.cpp
+    ../src/auto/AutoNodeEvaluationService.h
+    ../src/auto/AutoNodeEvaluationService.cpp
+    ../src/auto/AutoRuntimeDefaults.h
+    ../src/auto/AutoRuntimeDefaults.cpp
+    ../src/auto/AutoTypes.h
+)
+
+songbird_add_qt_test(songbird_auto_coordinator_stop_tests auto-coordinator-stop
+    SOURCES
+        ${SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
 )

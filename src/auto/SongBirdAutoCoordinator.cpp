@@ -1,7 +1,6 @@
 #include "auto/SongBirdAutoCoordinator.h"
 
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -33,7 +32,6 @@
 #include "common/SystemProxyMode.h"
 #include "common/SystemProxySnapshot.h"
 #include "domain/models/RoutingProfiles.h"
-#include "platform/PlatformServices.h"
 #include "runtime/AuxiliaryTunConfig.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
@@ -66,9 +64,13 @@ constexpr int kLowCountryNodeThreshold = 1;
 
 } // namespace
 
-SongBirdAutoCoordinator::SongBirdAutoCoordinator(QString configPath, QObject* parent)
+SongBirdAutoCoordinator::SongBirdAutoCoordinator(
+    QString configPath,
+    std::unique_ptr<ISystemProxyService> systemProxy,
+    QObject* parent)
     : QObject(parent)
     , configPath_(std::move(configPath))
+    , systemProxyService_(std::move(systemProxy))
 {
     qRegisterMetaType<AutoNodeEvaluation>();
     qRegisterMetaType<QList<AutoNodeEvaluation>>();
@@ -116,7 +118,6 @@ bool SongBirdAutoCoordinator::initialize()
     locationProbe_ = std::make_unique<OutboundLocationProbeService>();
     livenessProbe_ = std::make_unique<OutboundLivenessProbeService>();
     backgroundTasks_ = std::make_unique<BackgroundTaskCoordinator>();
-    systemProxyService_ = std::make_unique<PlatformSystemProxyService>();
 
     reloadConfig();
     ensureDefaultSubscriptions();
@@ -128,7 +129,32 @@ bool SongBirdAutoCoordinator::initialize()
         existingCoreTypes_,
         coreDiscoveryService_.get());
 
-    runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
+    wireRuntimeEnvironment();
+
+    wireActivationCoordinator();
+
+    createProxySession();
+    completeStartup();
+    return true;
+}
+
+void SongBirdAutoCoordinator::completeStartup()
+{
+    log(QStringLiteral("SongBirdAuto config: %1").arg(QDir::toNativeSeparators(configPath_)));
+    countrySummaries_ = buildCountrySummaries(evaluations_);
+    emit countrySummariesChanged(countrySummaries_);
+    normalizeSelectedCountryAfterRetest();
+    emit subscriptionUrlsTextChanged(subscriptionUrlsText());
+    emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
+    emit autoSelectionStrategyChanged(autoSelectionStrategy());
+    syncTunRuntimeForCurrentState();
+    recoverSystemProxyFromPreviousRun();
+}
+
+// One wiring, two entries: initialize() and createProxySession()'s standalone path share
+// these lambdas, so a test-built session decides with exactly the production wiring.
+void SongBirdAutoCoordinator::wireRuntimeEnvironment()
+{
     runtimeEnvironment_->cleanupPortProcessesFn = [this]() {
         if (coreCleanupService_ == nullptr) {
             return;
@@ -146,7 +172,10 @@ bool SongBirdAutoCoordinator::initialize()
     runtimeEnvironment_->skipCoreChecksFn = []() { return false; };
     runtimeEnvironment_->isWindowsPlatformFn = []() { return isWindowsPlatform(); };
     runtimeEnvironment_->isProcessElevatedFn = []() { return isProcessElevated(); };
+}
 
+void SongBirdAutoCoordinator::wireActivationCoordinator()
+{
     activationCoordinator_ = std::make_unique<FunctionProxyActivationCoordinator>();
     activationCoordinator_->cancelBackgroundTasksForStartupFn = [this]() {
         cancelWorkers_.store(true);
@@ -208,7 +237,31 @@ bool SongBirdAutoCoordinator::initialize()
         }
         return restored;
     };
+}
 
+void SongBirdAutoCoordinator::createProxySession()
+{
+    // initialize() builds every member below before its tail reaches this function; the null
+    // guards keep the same call usable standalone -- the teardown tests build the session (and
+    // only the session) without a config file, a core or the network. The activation
+    // coordinator gets the full production wiring (shared with initialize()), so the teardown
+    // decides with exactly the lambdas a production session uses.
+    if (!mainCore_) {
+        mainCore_ = std::make_unique<QtCoreProcessHost>();
+        auxiliaryCore_ = std::make_unique<QtCoreProcessHost>();
+        clientConfigWriter_ = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
+        locationProbe_ = std::make_unique<OutboundLocationProbeService>();
+        livenessProbe_ = std::make_unique<OutboundLivenessProbeService>();
+        backgroundTasks_ = std::make_unique<BackgroundTaskCoordinator>();
+        runtimeResolver_ = std::make_unique<AppRuntimeResolver>(
+            configPath_,
+            config_,
+            existingCoreTypes_,
+            coreDiscoveryService_.get());
+        runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
+        wireRuntimeEnvironment();
+        wireActivationCoordinator();
+    }
     proxySession_ = std::make_unique<ProxySession>(ProxySession::Dependencies{
         *mainCore_,
         *auxiliaryCore_,
@@ -272,17 +325,6 @@ bool SongBirdAutoCoordinator::initialize()
         log(QStringLiteral("tun-compat | %1").arg(line));
     });
     QObject::connect(proxySession_.get(), &ProxySession::logMessage, this, &SongBirdAutoCoordinator::logMessage);
-
-    log(QStringLiteral("SongBirdAuto config: %1").arg(QDir::toNativeSeparators(configPath_)));
-    countrySummaries_ = buildCountrySummaries(evaluations_);
-    emit countrySummariesChanged(countrySummaries_);
-    normalizeSelectedCountryAfterRetest();
-    emit subscriptionUrlsTextChanged(subscriptionUrlsText());
-    emit tunEnabledChanged(config_.tun().tunModeItem.enableTun);
-    emit autoSelectionStrategyChanged(autoSelectionStrategy());
-    syncTunRuntimeForCurrentState();
-    recoverSystemProxyFromPreviousRun();
-    return true;
 }
 
 QString SongBirdAutoCoordinator::configPath() const
@@ -565,7 +607,8 @@ void SongBirdAutoCoordinator::stop()
         }
     }
     stopProxySession(false);
-    updateSystemProxyMode(SystemProxyMode::ForcedClear);
+    // The session's ownership undo in stopProxySession() above is the whole teardown; a
+    // ForcedClear here ran after it and defeated the restore it had just delivered.
     if (waitForCoreStop) {
         setBusy(false);
         setStatus(QStringLiteral("Stopping"));
@@ -1772,10 +1815,14 @@ void SongBirdAutoCoordinator::startProxySession()
 void SongBirdAutoCoordinator::stopProxySession(bool immediate)
 {
     if (proxySession_ != nullptr) {
+        // The session's ownership undo is all there is now. The immediate path used to follow this
+        // call with an unconditional ForcedClear: a snapshot-blind write, run after the undo, over
+        // whatever the undo had just decided on. It is gone here and in stop().
+        //
+        // The main app's exit clear is a different shape, not a second layer: the undo runs first
+        // (applyModeOnExit -> restoreCapturedSnapshot) and the clear only runs where that restore
+        // did not succeed, i.e. as the documented fallback. Nothing runs after it.
         proxySession_->stop(immediate);
-    }
-    if (immediate) {
-        updateSystemProxyMode(SystemProxyMode::ForcedClear);
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
 
 #include <QList>
 #include <QDateTime>
@@ -27,6 +28,7 @@
 #include "domain/models/Config.h"
 #include "persistence/JsonConfigRepository.h"
 #include "platform/ISystemProxyService.h"
+#include "platform/PlatformServices.h" // PlatformSystemProxyService, the constructor's default
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/QtCoreProcessHost.h"
 #include "services/ServerService.h"
@@ -41,10 +43,25 @@ class SongBirdAutoCoordinator final : public QObject
     Q_OBJECT
 
 public:
-    explicit SongBirdAutoCoordinator(QString configPath, QObject* parent = nullptr);
+    // `systemProxy` is the platform's registry writer. The default is what the executable
+    // uses; the parameter exists so a test can inject a recording double, which is the only
+    // way the coordinator's own teardown -- the half that ran a second, snapshot-blind
+    // ForcedClear until issue #12 -- can be pinned from the outside.
+    explicit SongBirdAutoCoordinator(
+        QString configPath,
+        std::unique_ptr<ISystemProxyService> systemProxy = std::make_unique<PlatformSystemProxyService>(),
+        QObject* parent = nullptr);
+    // The exit teardown is stopProxySession(true), and it is the session's ownership undo and
+    // nothing else. There used to be a ForcedClear after it here (issue #12): a snapshot-blind
+    // second undo, run over whatever the ownership undo had just decided. Do not put one back --
+    // tests/SongBirdAutoCoordinatorStopTests.cpp now fails when you do.
     ~SongBirdAutoCoordinator() override;
 
     bool initialize();
+    // The tail of initialize() that builds the session (and only that). Split out so the
+    // teardown half of this class is reachable in a test without a config file, a core or
+    // the network -- the wiring inside is the production one, nothing is stubbed.
+    void createProxySession();
     QString configPath() const;
     Config currentConfig() const;
     QString selectedCountryCode() const;
@@ -139,6 +156,14 @@ private:
     void updateSubscriptionsAndRetest(bool forceUpdate);
     bool selectServer(const QString& indexId);
     void startProxySession();
+    // End of initialize(). Split out so the sequence stays readable as prepare -> session ->
+    // announce: the log line, the country summaries and the startup proxy recovery all need
+    // the session to exist already. Tests do not need it -- they build the session alone.
+    void completeStartup();
+    // The activation coordinator and its lambdas, shared by initialize() and
+    // createProxySession()'s standalone path -- one wiring, two entries.
+    void wireActivationCoordinator();
+    void wireRuntimeEnvironment();
     void stopProxySession(bool immediate);
     OperationResult startTunRuntime(bool relayToProxy);
     void stopTunRuntime(bool cleanupAdapter);

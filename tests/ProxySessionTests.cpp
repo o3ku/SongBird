@@ -66,6 +66,9 @@ private slots:
     void abortedStartupUndoKeepsTheFlagWhenTheClearFails();
     void wiredSnapshotRestoresInsteadOfClearingOnAbortedStartup();
     void stopRestoresThroughTheCapturedSnapshotWhenWired();
+    void stopOnAnIdleSessionLeavesAnUnownedProxyAlone();
+    void plainStopForgetsOwnershipEvenWhenTheUndoWriteFails();
+    void immediateStopStaysSingleLayeredWhenTheRestoreFails();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
     void healthWatchToleratesASingleFailedProbe();
@@ -1471,7 +1474,86 @@ void ProxySessionTests::stopRestoresThroughTheCapturedSnapshotWhenWired()
     // The only registry write remains the startup's own ForcedChange; the stop restored.
     QCOMPARE(harness.proxyUpdateCount, 1);
     QVERIFY(!harness.session->isManagedProxyActive());
-    QVERIFY(!harness.snapshot.valid);
+    // The spent evidence is behavioural, not the double's own bookkeeping: ownership is gone,
+    // so a second stop must be a no-op -- the restore must not fire twice.
+    harness.session->stop(false);
+    QCOMPARE(harness.restoreCount, 1);
+}
+
+// The idle-session shapes SongBirdAutoCoordinator::stop() relies on since the unconditional
+// ForcedClear was removed (issue #12): a session that never wrote the registry must leave a
+// proxy it does not own alone even when the registry is on, and a plain stop drops the
+// ownership flag on a failed undo write while leaving the snapshot valid -- spent only by a
+// successful restore, whatever retries on it later.
+void ProxySessionTests::stopOnAnIdleSessionLeavesAnUnownedProxyAlone()
+{
+    ProxySessionHarness harness;
+    // The registry is on, but with a user's own proxy: this session never applied one, so the
+    // ownership decision must be LeaveAlone even though the user pressed stop.
+    harness.systemProxyEnabled = true;
+
+    harness.session->stop(false);
+
+    QCOMPARE(harness.proxyUpdateCount, 0);
+    QCOMPARE(harness.restoreCount, 0);
+    QVERIFY(harness.systemProxyEnabled);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
+
+void ProxySessionTests::plainStopForgetsOwnershipEvenWhenTheUndoWriteFails()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+    harness.restoreSucceeds = false;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.snapshot.valid = true;
+    harness.snapshot.enabled = true;
+    harness.snapshot.server = QStringLiteral("user-proxy.example:8080");
+
+    const SystemProxySnapshot before = harness.snapshot;
+
+    harness.session->stop(false);
+
+    // The restore was attempted and failed, and a plain stop still drops the flag: only
+    // stopForCoreUpdate keeps it on a failed write, because a core restart is about to retry.
+    QCOMPARE(harness.restoreCount, 1);
+    // No ForcedClear may follow the failed restore. "The undo did not succeed" is not a reason
+    // to clear, and a clear could not see the snapshot anyway -- the deleted coordinator line
+    // used to be exactly this second write.
+    QCOMPARE(harness.proxyUpdateCount, 0);
+    // The snapshot survives a failed restore verbatim, spent only by a successful one, so
+    // whatever retries later (as wired today, the next launch's recovery) sees exactly what to
+    // put back. Compared field by field on purpose: "still valid" alone is vacuous in a harness
+    // whose restore only spends on success.
+    QVERIFY(harness.snapshot == before);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
+
+// The session-level half of the issue-#12 pin: the coordinator's immediate path (the
+// destructor's exit) used to fire an unconditional ForcedClear after stop(true) returned, and
+// what this case covers is that nothing *inside* the session does the same -- an immediate stop
+// performs exactly one registry operation, and a failed restore is not retried with a Clear.
+// The coordinator half is pinned directly in SongBirdAutoCoordinatorStopTests, now that the
+// coordinator takes its ISystemProxyService by constructor and createProxySession() can be built
+// without initialize(). Neither case alone would have caught the deletion: this one cannot see
+// the coordinator, and that one does not reach a failed restore.
+void ProxySessionTests::immediateStopStaysSingleLayeredWhenTheRestoreFails()
+{
+    ProxySessionHarness harness;
+    harness.snapshotsWired = true;
+    harness.restoreSucceeds = false;
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+    harness.snapshot.valid = true;
+    harness.snapshot.enabled = true;
+    harness.snapshot.server = QStringLiteral("user-proxy.example:8080");
+
+    harness.session->stop(true);
+
+    QCOMPARE(harness.restoreCount, 1);
+    QCOMPARE(harness.proxyUpdateCount, 0);
+    QVERIFY(!harness.session->isManagedProxyActive());
 }
 
 // --- Node health watch ---
