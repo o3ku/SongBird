@@ -3428,10 +3428,6 @@ Switch this protocol to %3?</source>
         <source>Failed to save the subscription order.</source>
         <translation>保存订阅顺序失败。</translation>
     </message>
-    <message>
-        <source>Failed to rebuild the requested subscription order.</source>
-        <translation>无法按请求重建订阅顺序。</translation>
-    </message>
 </context>
 <context>
     <name>SubscriptionSettingsPageWidget</name>
