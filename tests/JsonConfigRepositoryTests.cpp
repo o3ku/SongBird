@@ -7,9 +7,15 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <QNetworkAccessManager>
+#include <QTcpServer>
+#include <QTcpSocket>
+
 #include "appcore/HealthStripPolicy.h"
 #include "persistence/JsonConfigRepository.h"
 #include "domain/models/RoutingProfiles.h"
+#include "services/SubscriptionService.h"
+#include "services/SubscriptionUpdateService.h"
 
 namespace {
 
@@ -298,6 +304,8 @@ private slots:
     void saveWritesCanonicalSongBirdStructure();
     void saveRemovesEmptyStateFile();
     void saveReplacesExistingRootInsteadOfMerging();
+    void textImportFailureNamesTheProtocolsItCouldNotUse();
+    void subscriptionFetchFailureNamesTheProtocolsItCouldNotUse();
     void healthStripRoundTripsThroughTheStateFile();
     void loadDropsAHealthStripThePolicyCannotRead();
     void saveReportsPrimaryConfigWriteFailure();
@@ -1075,6 +1083,122 @@ void JsonConfigRepositoryTests::saveReportsStateWriteFailure()
     // reported as losing the user's servers.
     QVERIFY(QFileInfo::exists(configPath));
     QVERIFY(!QFileInfo(configPath).isDir());
+}
+
+void JsonConfigRepositoryTests::textImportFailureNamesTheProtocolsItCouldNotUse()
+{
+    // End of the path the reported log line came from: nothing in the payload is
+    // supported, so the import fails. The message is what the empty server panel
+    // shows, and "no supported share URL or subscription payload was detected"
+    // describes a document with no nodes in it -- these payloads have nodes, they
+    // are just protocols this build cannot run. The types have to be named.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    SubscriptionService subscriptionService(repository);
+    QNetworkAccessManager networkAccessManager;
+    SubscriptionUpdateService updateService(repository, subscriptionService, networkAccessManager);
+    Config config;
+
+    const OperationResult clashResult = updateService.importFromText(
+        config,
+        QStringLiteral("proxies:\n"
+                       "  - name: h1\n"
+                       "    type: hysteria\n"
+                       "    server: 1.2.3.4\n"
+                       "    port: 443\n"
+                       "  - name: m1\n"
+                       "    type: ssh\n"
+                       "    server: 5.6.7.8\n"
+                       "    port: 22\n"));
+    QVERIFY(!clashResult.success);
+    QVERIFY(config.collection().servers.isEmpty());
+    const QString firstLine = clashResult.message.section(QChar('\n'), 0, 0);
+    QVERIFY2(firstLine.startsWith(QStringLiteral("No supported share URL")),
+             qPrintable(clashResult.message));
+    QVERIFY2(firstLine.contains(QStringLiteral("skipped 2 node(s)")), qPrintable(clashResult.message));
+    QVERIFY2(firstLine.contains(QStringLiteral("hysteria")), qPrintable(clashResult.message));
+    QVERIFY2(firstLine.contains(QStringLiteral("ssh")), qPrintable(clashResult.message));
+
+    // A share-link list of unsupported protocols takes the other parser and has to
+    // fail the same way -- it reports no skipped types, but it still must not claim
+    // the reason is a missing payload, and it must still lead with its own sentence.
+    const OperationResult textResult = updateService.importFromText(config, QStringLiteral("not a subscription at all"));
+    QVERIFY(!textResult.success);
+    QVERIFY(textResult.message.startsWith(QStringLiteral("No supported share URL")));
+}
+
+
+void JsonConfigRepositoryTests::subscriptionFetchFailureNamesTheProtocolsItCouldNotUse()
+{
+    // The reported log line came from this path: a subscription URL that downloaded
+    // fine and parsed to nothing. An unparseable payload is retried before the fail
+    // streak moves, so this case waits out one back-off rather than pinning the
+    // ordering to an implementation detail -- what it asserts is the message, which
+    // is the same on every attempt.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    const int listenPort = server.serverPort();
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&server]() {
+        while (QTcpSocket* socket = server.nextPendingConnection()) {
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
+                socket->readAll();
+                const QByteArray body = QByteArrayLiteral(
+                    "proxies:\n"
+                    "  - name: h1\n"
+                    "    type: hysteria\n"
+                    "    server: 1.2.3.4\n"
+                    "    port: 443\n"
+                    "  - name: s1\n"
+                    "    type: snell\n"
+                    "    server: 5.6.7.8\n"
+                    "    port: 443\n");
+                QByteArray response = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n");
+                response += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
+                response += "Connection: close\r\n\r\n";
+                response += body;
+                socket->write(response);
+                socket->disconnectFromHost();
+            });
+            QObject::connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
+        }
+    });
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    SubscriptionService subscriptionService(repository);
+    QNetworkAccessManager networkAccessManager;
+    SubscriptionUpdateService updateService(repository, subscriptionService, networkAccessManager);
+
+    Config config;
+    SubItem feed = makeSubscription();
+    feed.remarks = QStringLiteral("feed");
+    feed.url = QStringLiteral("http://127.0.0.1:%1/sub.yaml").arg(listenPort);
+    config.collection().subscriptions = {feed};
+    QVERIFY(repository.save(config));
+
+    const OperationResult result = updateService.updateAll(config);
+    QVERIFY2(!result.success, qPrintable(result.message));
+    QVERIFY(config.collection().servers.isEmpty());
+
+    // The batch line: one subscription, nothing imported. This is the verdict the
+    // empty server panel reads, and it is what makes "import failed" the right
+    // thing to say about a table that has no rows.
+    const QString batchLine = result.message.section(QChar('\n'), 0, 0);
+    QVERIFY2(batchLine.contains(QStringLiteral("Updated 0 of 1 subscription(s), imported 0 server(s).")),
+             qPrintable(result.message));
+
+    // The reason, which is the line after it. Every node in the payload was a
+    // protocol this build cannot run, and that has to be the first thing said --
+    // "returned no supported servers" alone describes a document with no nodes.
+    const QString failLine = result.message.section(QChar('\n'), 1, 1);
+    QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers.")), qPrintable(result.message));
+    QVERIFY2(failLine.contains(QStringLiteral("(skipped 2 node(s): hysteria, snell)")), qPrintable(result.message));
+    QVERIFY2(failLine.contains(QStringLiteral("hysteria")) && failLine.contains(QStringLiteral("snell")),
+             qPrintable(result.message));
 }
 
 QTEST_MAIN(JsonConfigRepositoryTests)

@@ -13,6 +13,7 @@
 #include <QThread>
 #include <QUuid>
 
+#include "app/SubscriptionImportFailure.h"
 #include "common/BackgroundThreadLaunch.h"
 #include "persistence/JsonConfigRepository.h"
 #include "services/ServerService.h"
@@ -372,11 +373,18 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
         uiCallbacks_.syncWindow();
     }
     if (uiCallbacks_.reportImportFailure) {
-        // After syncWindow, so the panel already knows whether the list is empty;
-        // a failed import is exactly the case where it is. A failure that still
-        // left servers behind must not claim the panel, so only a failure that
-        // imported nothing is reported as one.
-        uiCallbacks_.reportImportFailure(completion.result.success ? QString() : completion.result.message);
+        // After syncWindow, so the panel already knows whether the list is empty.
+        //
+        // The reason is kept rather than recomputed: every import and update the
+        // user starts lands here, and clearing it on each one would wipe the
+        // explanation while the user is still reading it. Only a run that put
+        // servers back on the table means the panel no longer has to explain
+        // anything.
+        if (completion.result.success) {
+            uiCallbacks_.reportImportFailure(QString());
+        } else if (SubscriptionImportFailure::shouldExplainInEmptyServerPanel(completion.result)) {
+            uiCallbacks_.reportImportFailure(completion.result.message);
+        }
     }
     if (completion.selectLastSubscription && uiCallbacks_.selectSubscriptionTab) {
         uiCallbacks_.selectSubscriptionTab(completion.lastSubscriptionId);

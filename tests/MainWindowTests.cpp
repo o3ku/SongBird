@@ -135,6 +135,7 @@ private slots:
     void compactUiZonesDoNotExceedServerTableFont();
     void serverTableEmptyStateShowsGuidanceAndHidesWithRows();
     void serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCopy();
+    void serverTableEmptyStateKeepsTheWholeImportFailureAsTooltip();
     void serverTableEmptyStateDistinguishesFilterFromEmptyList();
     void serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
@@ -2992,6 +2993,40 @@ void MainWindowTests::serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCo
     emptyState->setFilterActive(true);
     QCoreApplication::processEvents();
     QCOMPARE(title->text(), QStringLiteral("No servers match the filter"));
+    // ...and the tooltip behind the one visible line goes with it, because the line
+    // it described is no longer on screen.
+    QVERIFY(title->toolTip().isEmpty());
+    QVERIFY(hint->toolTip().isEmpty());
+}
+
+void MainWindowTests::serverTableEmptyStateKeepsTheWholeImportFailureAsTooltip()
+{
+    // The panel has the height of one line for the reason, so the rest of it has to
+    // survive somewhere reachable without opening the log: the parser report is what
+    // says which nodes were dropped. Truncating it out of existence would leave the
+    // user with "no supported servers" and no idea which protocols those were.
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* title = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateTitle"));
+    auto* hint = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateHint"));
+    QVERIFY(title != nullptr);
+    QVERIFY(hint != nullptr);
+
+    const QString reason = QStringLiteral(
+        "cnb.cool returned no supported servers. (skipped 3 node(s): hysteria, ssh)\n"
+        "Subscription parse: pass 0 clash count=0");
+    window.setImportFailure(reason);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(title->toolTip(), reason);
+    QCOMPARE(hint->toolTip(), reason);
+    // Still one line of body text: the report does not grow the panel. The first
+    // line already carries the skipped summary here, which is exactly why it is the
+    // line that gets shown.
+    QVERIFY(!hint->text().contains(QStringLiteral("Subscription parse")));
 }
 
 void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()

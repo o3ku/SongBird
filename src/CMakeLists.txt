@@ -319,6 +319,8 @@ set(SONGBIRD_SOURCES
     app/AppBootstrap.h
     app/AppBootstrap.cpp
     app/AppBootstrapObjects.h
+    app/SubscriptionImportFailure.h
+    app/SubscriptionImportFailure.cpp
     app/StartupBanner.h
     app/StartupWindowPolicy.h
     app/AppBootstrapObjects.cpp

@@ -843,6 +843,23 @@ songbird_add_qt_test(songbird_tun_compat_core_requirement_tests tun-compat-core-
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The verdict the empty server panel is given: it decides whether a finished
+# import/update gets to explain the table it emptied. Pure, and separate from the
+# coordinator because the coordinator's other job -- downloading and reparsing --
+# is what a test of this rule should not have to set up.
+set(SONGBIRD_SUBSCRIPTION_IMPORT_FAILURE_TEST_SOURCES
+    SubscriptionImportFailureTests.cpp
+    ../src/app/SubscriptionImportFailure.h
+    ../src/app/SubscriptionImportFailure.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_import_failure_tests subscription-import-failure
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_IMPORT_FAILURE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_JSON_CONFIG_REPOSITORY_TEST_SOURCES
     JsonConfigRepositoryTests.cpp
 )

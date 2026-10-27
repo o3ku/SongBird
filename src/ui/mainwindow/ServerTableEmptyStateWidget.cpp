@@ -131,13 +131,27 @@ void ServerTableEmptyStateWidget::refreshTexts()
         // subscription's user agent, or give up on that protocol. Only the first
         // line goes here -- the parser report follows it and would push the panel
         // past the height of the table it is standing in for.
+        //
+        // The whole reason is still put on the tooltip: the panel has one line for
+        // it, and the report behind that line is what tells a user which nodes were
+        // dropped and why.
+        const QString firstLine = importFailure_.section(QChar('\n'), 0, 0);
         titleLabel_->setText(tr("Import failed"));
         hintLabel_->setText(
             tr("%1\nFix the reason above, then import again. The log panel below has the full report.")
-                .arg(importFailure_.section(QChar('\n'), 0, 0)));
+                .arg(firstLine));
+        titleLabel_->setToolTip(importFailure_);
+        hintLabel_->setToolTip(importFailure_);
     } else {
         titleLabel_->setText(tr("No servers yet"));
         hintLabel_->setText(tr("Import a subscription or share link to get started."));
+    }
+
+    if (filterActive_ || importFailure_.isEmpty()) {
+        // Both labels are rewritten wholesale above, so a tooltip left over from
+        // an earlier failure would describe text that is no longer there.
+        titleLabel_->setToolTip(QString());
+        hintLabel_->setToolTip(QString());
     }
 
     importButton_->setText(tr("Import from File or URL"));
