@@ -69,6 +69,12 @@ public:
     QString autoSelectionStrategy() const;
     bool isRunning() const;
     bool isTunEnabled() const;
+    // Test seams, same reason as ProxySession's: the TUN-abort path only runs on a machine where
+    // TUN cannot start (no elevation, no sing-box, no adapter cleanup), so the coordinator's
+    // rollback was not reachable from a test at all. Both are what the production wiring calls,
+    // nothing is stubbed; the binary never calls them.
+    void setTunRuntimeEnvironmentForTest(std::unique_ptr<IRuntimeEnvironment> environment);
+    void startSessionForTest();
 
 public slots:
     void setSelectedCountryCode(const QString& countryCode);
@@ -160,6 +166,10 @@ private:
     void updateSubscriptionsAndRetest(bool forceUpdate);
     bool selectServer(const QString& indexId);
     void startProxySession();
+    // Gives back every flag a start claimed when TUN fails before the session is ever asked to
+    // start, and writes the status first: busyChanged listeners read the line setBusy() would
+    // otherwise precede.
+    void rollbackStartAfterTunFailure(const QString& status);
     // End of initialize(). Split out so the sequence stays readable as prepare -> session ->
     // announce: the log line, the country summaries and the startup proxy recovery all need
     // the session to exist already. Tests do not need it -- they build the session alone.

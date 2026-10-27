@@ -58,6 +58,7 @@ private slots:
     void stopCancelsPendingServerSwitchResume();
     void stopCancelsPendingCoreUpdateResume();
     void stopCancelsPendingRestartResume();
+    void stopCancelsARestartScheduledAfterTheCoreExited();
     void stopDuringTunCleanupCancelsStartupResume();
     void stopClearsAdoptedManagedSystemProxy();
     void stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails();
@@ -145,10 +146,10 @@ public:
         }
     }
 
-    void triggerExited(bool stopRequested = true)
+    void triggerExited(bool stopRequested = true, QProcess::ExitStatus status = QProcess::NormalExit)
     {
         if (exitedCallback_) {
-            exitedCallback_(0, QProcess::NormalExit, stopRequested);
+            exitedCallback_(0, status, stopRequested);
         }
     }
 
@@ -1323,6 +1324,38 @@ void ProxySessionTests::stopCancelsPendingRestartResume()
 
     QVERIFY(harness.mainCore.stopCount >= 1);
     QCOMPARE(harness.mainCore.startCount, 0);
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+// Issue #14, item 2. handleCoreExited() reacts to a crash by scheduling a start 50 ms out, and
+// that decision is made before the timer runs -- nothing recorded a stop arriving in between. The
+// start it re-enters is guarded by rejectOverlappingStart(), which refuses only a live core or the
+// Stopping phase, and the stop has already taken both away. So the session resumed itself after
+// the user asked it to stop: the connection they gave up came back on its own.
+//
+// The window is what made this invisible by hand -- the crash and the click are two events from
+// two origins, and the test drives exactly that order.
+void ProxySessionTests::stopCancelsARestartScheduledAfterTheCoreExited()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+
+    // No exit callback here: the stop below runs before the host gets to report the exit, which
+    // is the scheduling decision on its own.
+    harness.mainCore.running = true;
+    harness.session->handleCoreExitedForTest(1, QProcess::CrashExit, false, false);
+    // The user stops inside the gap. This is the last word, and it must be.
+    harness.session->stop(true);
+
+    // The armed start's only visible effect is beginActivation() asking the activation
+    // coordinator to cancel the startup background work before it does anything else, so that
+    // counter proves whether it ran at all -- and a resumed start would also start a core.
+    const int cancelsAfterStop = harness.cancelBackgroundTaskCount;
+    const int startsAfterStop = harness.mainCore.startCount;
+    QTest::qWait(200);
+
+    QCOMPARE(harness.cancelBackgroundTaskCount, cancelsAfterStop);
+    QCOMPARE(harness.mainCore.startCount, startsAfterStop);
     QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
 }
 

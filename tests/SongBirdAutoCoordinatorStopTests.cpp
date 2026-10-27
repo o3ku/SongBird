@@ -4,6 +4,7 @@
 #include <memory>
 #include <utility>
 
+#include "appcore/ProxyRuntimeInterfaces.h"
 #include "auto/SongBirdAutoCoordinator.h"
 #include "platform/ISystemProxyService.h"
 
@@ -126,6 +127,22 @@ private:
     std::unique_ptr<SongBirdAutoCoordinator> coordinator_;
 };
 
+// A TUN runtime that cannot start, for the reason the product has on most machines: no elevation,
+// no sing-box, or an adapter it cannot clear. It reports the admin requirement, which the real
+// startTunRuntime() asks about *before* it touches a process, so nothing is spawned here.
+class FailingRuntimeEnvironment final : public IRuntimeEnvironment
+{
+public:
+    void cleanupPortProcesses() override {}
+    OperationResult removeStaleTunAdapter() override
+    {
+        return OperationResult::ok(QStringLiteral("No stale adapter."));
+    }
+    bool skipCoreChecks() const override { return false; }
+    bool isWindowsPlatform() const override { return true; }
+    bool isProcessElevated() const override { return false; }
+};
+
 } // namespace
 
 class SongBirdAutoCoordinatorStopTests : public QObject
@@ -136,6 +153,7 @@ private slots:
     void initializeBuildsTheEnvironmentItWires();
     void stopLeavesAnUnownedProxyAlone();
     void exitLeavesAnUnownedProxyAlone();
+    void aFailedTunStartGivesEveryFlagBack();
 };
 
 // Regression pin for the seam refactor: initialize() called wireRuntimeEnvironment() before
@@ -194,6 +212,57 @@ void SongBirdAutoCoordinatorStopTests::exitLeavesAnUnownedProxyAlone()
     QCOMPARE(harness.proxy().updateCount, 0);
     QCOMPARE(harness.proxy().restoreCount, 0);
     QVERIFY(harness.proxy().enabled);
+}
+
+// Issue #14, item 1. A TUN failure aborts the start before ProxySession::start() ever runs, and
+// that path used to return with running_ true and busy_ stuck: the window showed "Stopped" with
+// its Stop button disabled by busy_, so the user could neither see what was happening nor end it.
+// The rollback has to land before the flags are announced, too -- busyChanged is emitted inside
+// setBusy(), and its listeners read the status line.
+void SongBirdAutoCoordinatorStopTests::aFailedTunStartGivesEveryFlagBack()
+{
+    Harness harness;
+    harness.coordinator().setTunRuntimeEnvironmentForTest(std::make_unique<FailingRuntimeEnvironment>());
+    harness.coordinator().setTunEnabled(true);
+    QVERIFY(harness.coordinator().isTunEnabled());
+
+    struct Observation {
+        int busyEvents = 0;
+        bool busyDuringLastEvent = false;
+        bool runningDuringLastEvent = false;
+        QString status;
+        QString statusDuringLastBusyEvent;
+    };
+    auto observed = std::make_shared<Observation>();
+    SongBirdAutoCoordinator& coordinator = harness.coordinator();
+    QObject::connect(&coordinator, &SongBirdAutoCoordinator::statusMessageChanged, &coordinator,
+        [observed](const QString& message) { observed->status = message; });
+    QObject::connect(&coordinator, &SongBirdAutoCoordinator::busyChanged, &coordinator,
+        [observed, &coordinator](bool busy) {
+            observed->busyEvents += 1;
+            observed->busyDuringLastEvent = busy;
+            observed->runningDuringLastEvent = coordinator.isRunning();
+            observed->statusDuringLastBusyEvent = observed->status;
+        });
+
+    coordinator.startSessionForTest();
+
+    // The pair the failure used to leave out of step: the status says stopped, the flags said
+    // otherwise, and busy_ is what disables the Stop button the user would need.
+    QVERIFY(!coordinator.isRunning());
+    QVERIFY(observed->status.startsWith(QStringLiteral("Stopped")));
+    QVERIFY2(observed->status.contains(QStringLiteral("TUN direct mode failed")),
+        qPrintable(QStringLiteral("status was: %1").arg(observed->status)));
+
+    // Ordering: the busy flag has to be released *after* the status is final. Emitted before it,
+    // the listener reacting to "not busy any more" renders the line from before the failure --
+    // the inversion the live UI only hid because Qt coalesces event-loop turns.
+    // The session this harness builds never comes up, so the flag is only ever announced once,
+    // and it is announced released.
+    QCOMPARE(observed->busyEvents, 1);
+    QVERIFY(!observed->busyDuringLastEvent);
+    QVERIFY(!observed->runningDuringLastEvent);
+    QCOMPARE(observed->statusDuringLastBusyEvent, observed->status);
 }
 
 QTEST_MAIN(SongBirdAutoCoordinatorStopTests)

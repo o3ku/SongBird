@@ -870,6 +870,10 @@ void ProxySession::undoManagedSystemProxyAfterAbortedStartup()
 void ProxySession::cleanupAfterFailedStartup()
 {
     cancelPendingCoreRestarts();
+    // Ordering rather than state: a start that fails can fail after the timer above has already
+    // passed its token check, and stopping the timer then cannot call back the start it began.
+    // This is the second half of the same rule -- no resume may outlive the attempt that armed it.
+    ++pendingResumeId_;
     currentServer_ = {};
 
     // Ownership, not configuration. This used to clear the proxy whenever the config asked for it
@@ -1543,6 +1547,10 @@ void ProxySession::stopInternal(bool immediate, bool clearPostStopAction)
     }
     clearServerLocation();
     cancelPendingCoreRestarts();
+    // A stop of the user's supersedes a restart this session had already decided on: bumping the
+    // token is what scheduleCoreStartAfterStop()'s timer re-reads. The two cancelPendingCoreRestarts()
+    // callers that follow a failure (cleanupAfterFailedStartup, beginStartupAttempt) bump it too.
+    ++pendingResumeId_;
 
     if (tunCleanupState_ == TunCleanupState::CleaningThenResume) {
         setTunCleanupState(TunCleanupState::Cleaning);
@@ -1695,7 +1703,10 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         managedSystemProxyActive_ = false;
         clearProxyStateAfterStopped();
         emit statusSyncRequested();
-        emit stopped();
+        if (auxiliary) {
+            emit stopped();
+        }
+        emit failed(restartDecision.message);
         return;
     }
 
@@ -1706,6 +1717,8 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
             managedSystemProxyActive_ = false;
             clearProxyStateAfterStopped();
             emit statusSyncRequested();
+            emit failed(restartDecision.message);
+            return;
         }
         emit stopped();
         return;
@@ -1714,10 +1727,17 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
     scheduleCoreRestart(restartDecision.message, restartDecision.auxiliary, restartDecision.delayMs);
 }
 
+// Resuming an internal restart after a stop of our own. The delay exists because the old core has
+// to be gone before the new one can bind, and a user can press Stop inside it -- so the timer
+// carries a token and gives way to a stop that arrives while it is armed. `startInternal()` cannot
+// be the only guard: it skips the shutdown where the phase reads Stopping, and a core that is
+// already gone no longer blocks it, so a stop landing in the gap resumed the session anyway
+// (issue #14, item 2).
 void ProxySession::scheduleCoreStartAfterStop(bool showStartupOverlay)
 {
-    QTimer::singleShot(50, this, [this, showStartupOverlay]() {
-        if (shuttingDown_.load()) {
+    const quint64 resumeId = ++pendingResumeId_;
+    QTimer::singleShot(50, this, [this, showStartupOverlay, resumeId]() {
+        if (shuttingDown_.load() || resumeId != pendingResumeId_) {
             return;
         }
         startInternal(false, false, showStartupOverlay);

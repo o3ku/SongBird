@@ -366,6 +366,9 @@ private:
 
     QTimer* coreRestartTimer_ = nullptr;
     QTimer* auxiliaryRestartTimer_ = nullptr;
+    // The identity of the armed scheduleCoreStartAfterStop() lambda. Bumped by stopInternal() and
+    // cleanupAfterFailedStartup() so a resume armed before either of them cannot run afterwards.
+    quint64 pendingResumeId_ = 0;
     QTimer* healthWatchTimer_ = nullptr;
     ProxyCrashRestartPolicy crashRestartPolicy_;
     ProxyHealthWatchPolicy healthWatchPolicy_;

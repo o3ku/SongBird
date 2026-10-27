@@ -628,6 +628,19 @@ void SongBirdAutoCoordinator::stop()
     }
 }
 
+void SongBirdAutoCoordinator::setTunRuntimeEnvironmentForTest(std::unique_ptr<IRuntimeEnvironment> environment)
+{
+    if (environment == nullptr) {
+        return;
+    }
+    runtimeEnvironment_ = std::move(environment);
+}
+
+void SongBirdAutoCoordinator::startSessionForTest()
+{
+    startProxySession();
+}
+
 void SongBirdAutoCoordinator::updateSubscriptionsAndRetest()
 {
     updateSubscriptionsAndRetest(false);
@@ -1792,9 +1805,7 @@ void SongBirdAutoCoordinator::startProxySession()
         // The ownership decision lives in the session, never here: only it knows whether the
         // registry holds our values.
         proxySession_->undoManagedSystemProxyAfterAbortedStartup();
-        setBusy(false);
-        setRunning(false);
-        setStatus(QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
+        rollbackStartAfterTunFailure(QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
         return;
     }
     activeServerId_ = config_.currentIndexId;
@@ -1821,6 +1832,28 @@ void SongBirdAutoCoordinator::startProxySession()
     request.showOverlay = false;
     request.warnOnFailure = true;
     proxySession_->start(request);
+}
+
+void SongBirdAutoCoordinator::rollbackStartAfterTunFailure(const QString& status)
+{
+    // A start that failed before ProxySession::start() still has to give every flag back, or the
+    // window renders "Stopped" with a Stop button that busy_ disables.
+    //
+    // Order is the other half. busyChanged is emitted from inside setBusy() and its listeners read
+    // the status line, so the status has to be final before the flag says the work is done:
+    // written after it, the last thing a listener saw was the previous line. That inversion was
+    // invisible live only because Qt coalesces the event-loop turns.
+    setStatus(status);
+    // The pending bits go too, and they are the whole of the retry marker: nothing here is left
+    // claiming a start is still on its way, and pressing Start again is the retry (start() resets
+    // every one of these). A rolled-back session and a stopped one are meant to look identical --
+    // neither is proxying -- and what separates them is the status line, which is all a separate
+    // tunRetry_ flag could honestly add without pretending a retry is running.
+    pendingStartAfterStop_ = false;
+    pendingStartAfterEvaluation_ = false;
+    switchToBestAfterEvaluation_ = false;
+    setRunning(false);
+    setBusy(false);
 }
 
 void SongBirdAutoCoordinator::stopProxySession(bool immediate)
@@ -2139,10 +2172,10 @@ void SongBirdAutoCoordinator::handleNoCompatibleServers()
     log(QStringLiteral("No compatible servers are available for automatic testing."));
     if (running_) {
         // Keeping the proxy is the only exit. The sole caller (continueAfterSubscriptionUpdate)
-        // guards on running_ at entry, and no exit of the stopped/failed family leaves the shape
-        // this branch would need -- running_ true with the session idle. A ForcedClear used to
-        // sit in an else for that impossible shape: unreachable, and ownership-blind with it
-        // (issue #12's ledger, issue #14).
+        // guards on running_ at entry, and every exit of the stopped/failed family clears both
+        // flags -- which the TUN abort did *not* do until issue #14 item 1, so "running_ true with
+        // the session idle" was reachable then and is not now. A ForcedClear used to sit in an
+        // else for that shape: unreachable, and ownership-blind with it (issue #12's ledger).
         if (isProxySessionRunningOrTransitioning()) {
             log(QStringLiteral("Keeping the active proxy while waiting for compatible automatic nodes."));
         }
