@@ -471,6 +471,7 @@ void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
     currentServerName_ = snapshot.currentServerName.trimmed();
     currentServerLocation_ = snapshot.currentServerLocation.trimmed();
     currentServerWarning_ = snapshot.currentServerWarning.trimmed();
+    systemProxyUndoWarning_ = snapshot.systemProxyUndoWarning.trimmed();
     routingSummary_ = snapshot.routingSummary.trimmed();
     listenSummary_ = snapshot.listenSummary.trimmed();
     proxyUiState_ = snapshot.proxyUiState;
@@ -1532,10 +1533,18 @@ void MainWindow::syncStatusBarController()
         statusLocation = tr("Location unknown");
     }
 
+    // The undo warning rides the same segment as the server warning: one slot, the rarer
+    // event second, and no new permanent widget -- a layout change here means new README
+    // screenshots, which a status text is not worth.
+    const QString composedWarning = currentServerWarning_.isEmpty()
+        ? systemProxyUndoWarning_
+        : (systemProxyUndoWarning_.isEmpty()
+               ? currentServerWarning_
+               : currentServerWarning_ + QStringLiteral(" | ") + systemProxyUndoWarning_);
     statusBarController_->refresh(
         currentServerName_,
         statusLocation,
-        currentServerWarning_,
+        composedWarning,
         listenSummary_,
         backgroundTaskRunning_,
         backgroundTaskDescription_,

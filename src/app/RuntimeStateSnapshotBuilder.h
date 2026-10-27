@@ -16,6 +16,7 @@ public:
         QString currentServerName;
         QString currentServerLocation;
         QString currentServerWarning;
+        QString systemProxyUndoWarning;
         QString proxyPhaseName;
         SystemProxyMode systemProxyMode = SystemProxyMode::ForcedClear;
         bool systemProxyApplied = false;

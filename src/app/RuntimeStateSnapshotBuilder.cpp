@@ -19,6 +19,7 @@ RuntimeStateSnapshot RuntimeStateSnapshotBuilder::buildSnapshot(const Inputs& in
     snapshot.currentServerName = inputs.currentServerName;
     snapshot.currentServerLocation = inputs.currentServerLocation;
     snapshot.currentServerWarning = inputs.currentServerWarning;
+    snapshot.systemProxyUndoWarning = inputs.systemProxyUndoWarning;
     if (inputs.config != nullptr) {
         snapshot.routingSummary = buildRoutingSummaryText(*inputs.config);
         snapshot.listenSummary = buildListenSummaryText(*inputs.config);

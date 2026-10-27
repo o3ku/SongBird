@@ -124,6 +124,20 @@ void AppBootstrap::wireProxySessionSignals()
     QObject::connect(objects_->proxySession.get(), &ProxySession::activated,
                      objects_->mainWindow.get(), [this]() {
                          setCurrentActivationPending_ = false;
+                         // A working session is the one state in which the undo warning is
+                         // definitely stale -- the same rule SongBirdAuto uses.
+                         if (!systemProxyUndoWarning_.isEmpty()) {
+                             systemProxyUndoWarning_.clear();
+                             syncStatusIndicators();
+                         }
+                     });
+    QObject::connect(objects_->proxySession.get(), &ProxySession::systemProxyUndoFailed,
+                     objects_->mainWindow.get(), [this](const QString& warning) {
+                         // Display only, like the exit-location warning: a log line and a
+                         // status-bar segment, never a second registry write.
+                         appendResult(OperationResult::fail(warning), LogSeverity::Warning);
+                         systemProxyUndoWarning_ = warning;
+                         syncStatusIndicators();
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::stopped,
                      objects_->mainWindow.get(), [this]() {
@@ -178,7 +192,7 @@ void AppBootstrap::wireRuntimeStateSignals()
 {
     QObject::connect(objects_->runtimeState.get(), &RuntimeState::snapshotApplied,
                      objects_->mainWindow.get(), &MainWindow::applyRuntimeState);
-    QObject::connect(objects_->runtimeState.get(), &RuntimeState::currentServerChanged,
+    QObject::connect(objects_->runtimeState.get(), &RuntimeState::currentServerSegmentChanged,
                      objects_->trayController.get(), [this](const QString& name, const QString&, const QString&) {
                          if (objects_->trayController != nullptr) {
                              objects_->trayController->setCurrentServerName(name);

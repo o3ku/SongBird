@@ -12,9 +12,14 @@ RuntimeStateSnapshot RuntimeState::snapshot() const
 
 void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
 {
-    const bool currentServerChanged = snapshot_.currentServerName != snapshot.currentServerName
+    // The undo warning is part of this segment's content now (PR #19): without the term a
+    // snapshot whose only semantic change is the warning would keep the segment signal
+    // silent. The status-bar label itself repaints through the unconditional snapshotApplied;
+    // this predicate only decides the segment-scoped signal.
+    const bool currentServerSegmentChanged = snapshot_.currentServerName != snapshot.currentServerName
         || snapshot_.currentServerLocation != snapshot.currentServerLocation
-        || snapshot_.currentServerWarning != snapshot.currentServerWarning;
+        || snapshot_.currentServerWarning != snapshot.currentServerWarning
+        || snapshot_.systemProxyUndoWarning != snapshot.systemProxyUndoWarning;
     const bool proxyUiStateChanged = snapshot_.proxyUiState != snapshot.proxyUiState;
     const bool systemProxyStateChanged = snapshot_.systemProxyMode != snapshot.systemProxyMode
         || snapshot_.systemProxyApplied != snapshot.systemProxyApplied;
@@ -26,8 +31,8 @@ void RuntimeState::applySnapshot(const RuntimeStateSnapshot& snapshot)
 
     emit this->snapshotApplied(snapshot_);
 
-    if (currentServerChanged) {
-        emit this->currentServerChanged(
+    if (currentServerSegmentChanged) {
+        emit this->currentServerSegmentChanged(
             snapshot_.currentServerName,
             snapshot_.currentServerLocation,
             snapshot_.currentServerWarning);

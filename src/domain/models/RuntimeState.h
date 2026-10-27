@@ -16,6 +16,10 @@ struct RuntimeStateSnapshot {
     QString currentServerName;
     QString currentServerLocation;
     QString currentServerWarning;
+    // Set when the session could not undo its registry write (display only, like the
+    // OutboundLocationProbe warning): non-empty means the user must act or wait for the
+    // next launch's recovery. Cleared when a new activation succeeds.
+    QString systemProxyUndoWarning;
     QString routingSummary;
     QString listenSummary;
     ProxyUiState proxyUiState = ProxyUiState::Idle;
@@ -35,7 +39,7 @@ public:
 
 signals:
     void snapshotApplied(const RuntimeStateSnapshot& snapshot);
-    void currentServerChanged(const QString& name, const QString& location, const QString& warning);
+    void currentServerSegmentChanged(const QString& name, const QString& location, const QString& warning);
     void proxyUiStateChanged(ProxyUiState state);
     void systemProxyStateChanged(int mode, bool enabled);
     void autoRunChanged(bool enabled);

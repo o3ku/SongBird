@@ -276,6 +276,7 @@ private:
     bool qrPreviewVisible_ = false;
     QString currentServerLocation_;
     QString currentServerWarning_;
+    QString systemProxyUndoWarning_;
     bool backgroundTaskRunning_ = false;
     bool coreStartupChecklistVisible_ = false;
     bool coreStartupChecklistFailed_ = false;

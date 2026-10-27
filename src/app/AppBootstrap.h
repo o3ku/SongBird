@@ -195,6 +195,7 @@ private:
     void cleanupOrphanCoreProcesses();
     void cleanupCoreProcessesUsingConfiguredPorts();
 
+    QString systemProxyUndoWarning_;
     QString configPath_;
     bool startHidden_ = false;
     bool skipCoreChecks_ = false;

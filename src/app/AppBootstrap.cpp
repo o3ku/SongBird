@@ -512,6 +512,7 @@ void AppBootstrap::syncStatusIndicators()
         inputs.currentServerName = currentServerName;
         inputs.currentServerLocation = currentServerLocation;
         inputs.currentServerWarning = currentServerWarning;
+        inputs.systemProxyUndoWarning = systemProxyUndoWarning_;
         inputs.proxyPhaseName = objects_->proxySession != nullptr ? proxySessionPhaseName(objects_->proxySession->phase()) : QStringLiteral("Stopped");
         inputs.systemProxyMode = systemProxyMode_;
         inputs.systemProxyApplied = systemProxyEnabled;

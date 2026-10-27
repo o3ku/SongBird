@@ -7,12 +7,13 @@ class RuntimeStateTests : public QObject {
 
 private slots:
     void applySnapshotEmitsOnlyChangedGroups();
+    void undoWarningAloneCountsAsCurrentServerChange();
 };
 
 void RuntimeStateTests::applySnapshotEmitsOnlyChangedGroups()
 {
     RuntimeState state;
-    QSignalSpy currentServerSpy(&state, &RuntimeState::currentServerChanged);
+    QSignalSpy currentServerSpy(&state, &RuntimeState::currentServerSegmentChanged);
     QSignalSpy proxyUiStateSpy(&state, &RuntimeState::proxyUiStateChanged);
     QSignalSpy systemProxySpy(&state, &RuntimeState::systemProxyStateChanged);
     QSignalSpy autoRunSpy(&state, &RuntimeState::autoRunChanged);
@@ -56,7 +57,29 @@ void RuntimeStateTests::applySnapshotEmitsOnlyChangedGroups()
     QCOMPARE(routingSpy.count(), 1);
     QCOMPARE(currentServerSpy.takeLast().at(1).toString(), QStringLiteral("Japan"));
 }
+void RuntimeStateTests::undoWarningAloneCountsAsCurrentServerChange()
+{
+    RuntimeState state;
+    QSignalSpy currentServerSpy(&state, &RuntimeState::currentServerSegmentChanged);
+    QSignalSpy proxyUiStateSpy(&state, &RuntimeState::proxyUiStateChanged);
 
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("HK-01");
+    state.applySnapshot(snapshot);
+    QCOMPARE(currentServerSpy.count(), 1);
+
+    // The undo warning rides the current-server segment (PR #19). A snapshot whose only
+    // semantic change is that warning must still fire the segment signal -- this is exactly
+    // the shape of a failed undo on a stopped session, where nothing else moved.
+    snapshot.systemProxyUndoWarning = QStringLiteral("Failed to restore your system proxy.");
+    state.applySnapshot(snapshot);
+    QCOMPARE(currentServerSpy.count(), 2);
+
+    // And an identical replay fires nothing.
+    state.applySnapshot(snapshot);
+    QCOMPARE(currentServerSpy.count(), 2);
+    QCOMPARE(proxyUiStateSpy.count(), 0);
+}
 QTEST_MAIN(RuntimeStateTests)
 
 #include "RuntimeStateTests.moc"

@@ -121,6 +121,8 @@ private slots:
     void subscriptionUpdateOverlayCentersTextWithoutActionArea();
     void currentServerStatusUsesNoServerPlaceholderWhenEmpty();
     void currentServerStatusAppendsLocation();
+    void undoWarningRidesTheServerWarningSegment();
+    void clickingTheServerStatusKeepsTheUndoWarning();
     void activeSessionWithUnknownLocationSaysSo();
     void currentServerStatusAppendsManualVerificationWarning();
     void statusBarSupportFormatsLabelsAndTransientState();
@@ -2505,10 +2507,55 @@ void MainWindowTests::currentServerStatusAppendsLocation()
         currentServerStatusLabel->text(),
         QStringLiteral("Current: Test Server | United States, Los Angeles"));
 
+
     snapshot.currentServerLocation.clear();
     window.applyRuntimeState(snapshot);
     QCOMPARE(currentServerStatusLabel->text(), QStringLiteral("Current: Test Server"));
 }
+
+// The undo warning rides the same status-bar segment as the server warning (issue #14 item 5):
+// one slot, the rarer event second, no new permanent widget. It must appear on its own when
+// there is no server warning, after it when there is, and disappear with the next snapshot.
+void MainWindowTests::undoWarningRidesTheServerWarningSegment()
+{
+    MainWindow window;
+    window.setConfig(Config());
+
+    auto* currentServerStatusLabel =
+        window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("Test Server");
+    snapshot.systemProxyUndoWarning = QStringLiteral("Failed to restore your system proxy.");
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server | Failed to restore your system proxy."));
+
+    snapshot.currentServerWarning = QStringLiteral("Please verify manually");
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server | Please verify manually | Failed to restore your system proxy."));
+
+
+    // A stopped session has no server name, and the undo failure is exactly then at its most
+    // urgent: the warning must survive the "<No Server>" placeholder, not be swallowed by it.
+    snapshot.currentServerName.clear();
+    snapshot.currentServerWarning.clear();
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: <No Server> | Failed to restore your system proxy."));
+    snapshot.currentServerName = QStringLiteral("Test Server");
+    snapshot.systemProxyUndoWarning.clear();
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(
+        currentServerStatusLabel->text(),
+        QStringLiteral("Current: Test Server"));
+}
+
 
 // The location probe is display-only, so an active session that never learned where it exits must
 // still say something: a blank field next to a running proxy reads as a broken session.
@@ -3111,6 +3158,47 @@ void MainWindowTests::serverTableResultColumnColoursLatencyBands()
     // An empty result is not a failure and gets no colour at all.
     model.updateTestResult(QStringLiteral("server-fast"), QString());
     QVERIFY(!model.index(0, resultColumn).data(Qt::ForegroundRole).isValid());
+}
+
+// The status label is clickable, and a user staring at an undo warning is exactly the user
+// who clicks it. Whichever branch showCurrentServerInTable() takes (empty id: early return;
+// set id: select the row), it must never touch the label: the warning has no other home on
+// this bar. Pins the code-reading conclusion from the PR #19 review round 2 (B.2), which a
+// worst-case sabotage stayed green against -- that gap is why this exists.
+void MainWindowTests::clickingTheServerStatusKeepsTheUndoWarning()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+
+    auto* currentServerStatusLabel =
+        window.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(currentServerStatusLabel != nullptr);
+
+    RuntimeStateSnapshot snapshot;
+    snapshot.systemProxyUndoWarning = QStringLiteral("Failed to restore your system proxy.");
+    window.applyRuntimeState(snapshot);
+    const QString withWarning = currentServerStatusLabel->text();
+    QVERIFY(withWarning.contains(QStringLiteral("Failed to restore your system proxy.")));
+
+    QTest::mouseClick(currentServerStatusLabel, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(4, currentServerStatusLabel->height() / 2));
+    QCoreApplication::processEvents();
+    QCOMPARE(currentServerStatusLabel->text(), withWarning);
+
+    // Same through the empty-id early return: a stopped session whose index id is gone.
+    MainWindow stopped;
+    stopped.setConfig(Config());
+    auto* stoppedLabel = stopped.findChild<QLabel*>(QStringLiteral("currentServerStatusLabel"));
+    QVERIFY(stoppedLabel != nullptr);
+    RuntimeStateSnapshot stoppedSnapshot;
+    stoppedSnapshot.systemProxyUndoWarning = QStringLiteral("Failed to restore your system proxy.");
+    stopped.applyRuntimeState(stoppedSnapshot);
+    const QString stoppedWithWarning = stoppedLabel->text();
+    QVERIFY(stoppedWithWarning.contains(QStringLiteral("Failed to restore your system proxy.")));
+    QTest::mouseClick(stoppedLabel, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(4, stoppedLabel->height() / 2));
+    QCoreApplication::processEvents();
+    QCOMPARE(stoppedLabel->text(), stoppedWithWarning);
 }
 
 QTEST_MAIN(MainWindowTests)
