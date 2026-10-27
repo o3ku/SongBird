@@ -8,6 +8,9 @@
 #include <QSignalBlocker>
 #include <QTabBar>
 
+#include <algorithm>
+#include <iterator>
+
 #include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/models/ServerFilterProxyModel.h"
 
@@ -32,9 +35,14 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
 
     context_.serverFilterModel->setKnownSubscriptionIds(
         SubscriptionViewSupport::enabledSubscriptionIds(subscriptions_));
+    tabBarWithDragReorder();
 
     {
         const QSignalBlocker blocker(context_.subscriptionTabBar);
+        // Rebuilding the bar emits tabMoved as tabs are removed and re-inserted; that is not the
+        // user dragging anything, and treating it as a reorder would write the list back on every
+        // refresh.
+        rebuildingTabs_ = true;
         for (int index = context_.subscriptionTabBar->count() - 1; index >= 0; --index) {
             context_.subscriptionTabBar->removeTab(index);
         }
@@ -51,12 +59,14 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
             }
 
             addedSubscriptionIds.insert(subscriptionId);
-            const int index = context_.subscriptionTabBar->insertTab(
-                0,
+            // Appended, not inserted at 0: the persisted subscription order is the tab order, and
+            // rebuilding it backwards is what a saved order could never survive.
+            const int index = context_.subscriptionTabBar->addTab(
                 SubscriptionViewSupport::subscriptionDisplayName(item));
             context_.subscriptionTabBar->setTabData(index, QStringLiteral("sub:%1").arg(subscriptionId));
         }
 
+        // Ungrouped is not a subscription and has no place in the order, so it stays pinned last.
         const int ungroupedIndex = context_.subscriptionTabBar->addTab(QObject::tr("Ungrouped"));
         context_.subscriptionTabBar->setTabData(ungroupedIndex, QStringLiteral("ungrouped"));
 
@@ -71,6 +81,7 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
         if (context_.subscriptionTabBar->count() > 0) {
             context_.subscriptionTabBar->setCurrentIndex(restoreIndex >= 0 ? restoreIndex : 0);
         }
+        rebuildingTabs_ = false;
     }
 }
 
@@ -148,6 +159,65 @@ QString SubscriptionViewController::persistedSelectionId() const
     return SubscriptionViewSupport::persistedSelectionIdFromTabKey(currentTabKey());
 }
 
+QString SubscriptionViewController::subscriptionIdAtTab(int index) const
+{
+    return context_.subscriptionTabBar == nullptr
+        ? QString()
+        : SubscriptionViewSupport::subscriptionIdFromTabKey(
+            context_.subscriptionTabBar->tabData(index).toString());
+}
+
+QTabBar* SubscriptionViewController::tabBarWithDragReorder() const
+{
+    if (context_.subscriptionTabBar != nullptr) {
+        // Movable so a drag persists the order; the bar is the only place the order is visible, so
+        // it is the only place it can be edited.
+        context_.subscriptionTabBar->setMovable(true);
+    }
+    return context_.subscriptionTabBar;
+}
+
+void SubscriptionViewController::invokeMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation)
+{
+    if (subscriptionId.isEmpty() || !canMove(subscriptionId, operation)) {
+        return;
+    }
+
+    if (callbacks_.moveSubscription) {
+        callbacks_.moveSubscription(subscriptionId, operation);
+    }
+}
+
+bool SubscriptionViewController::canMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation) const
+{
+    // Disabled subscriptions keep their place in the persisted list but have no tab, so "can this
+    // move" is a question the visible tabs answer: a subscription needs a neighbour after it (or
+    // before it) to swap with, and Ungrouped is never one of those neighbours.
+    QStringList movableIds;
+    for (const SubItem& item : subscriptions_) {
+        const QString id = item.id.trimmed();
+        if (item.enabled && !id.isEmpty() && !movableIds.contains(id)) {
+            movableIds.append(id);
+        }
+    }
+
+    const int position = movableIds.indexOf(subscriptionId.trimmed());
+    if (position < 0 || movableIds.size() < 2) {
+        return false;
+    }
+
+    switch (operation) {
+    case SubscriptionOrder::MoveOperation::Up:
+    case SubscriptionOrder::MoveOperation::Top:
+        return position > 0;
+    case SubscriptionOrder::MoveOperation::Down:
+    case SubscriptionOrder::MoveOperation::Bottom:
+        return position < movableIds.size() - 1;
+    }
+
+    return false;
+}
+
 bool SubscriptionViewController::isUngroupedTabSelected() const
 {
     return currentTabKey() == QStringLiteral("ungrouped");
@@ -186,6 +256,67 @@ void SubscriptionViewController::showContextMenuForTabKey(const QString& tabKey,
             showContextMenu(tabKey, globalPosition, context_.subscriptionTabBar);
             return;
         }
+    }
+}
+
+void SubscriptionViewController::handleTabMoved(int from, int to)
+{
+    if (rebuildingTabs_ || context_.subscriptionTabBar == nullptr) {
+        return;
+    }
+
+    if (from == to || to < 0) {
+        return;
+    }
+
+    // tabMoved() arrives after the bar has already performed the move, so `to` addresses the
+    // dragged tab and `from` addresses whatever now sits where it left from. The dragged tab is
+    // therefore read at `to`.
+    const QString movedId = subscriptionIdAtTab(to);
+    if (movedId.isEmpty()) {
+        return;
+    }
+
+    QList<SubItem> reordered = subscriptions_;
+    const auto draggedPosition = std::find_if(
+        reordered.begin(),
+        reordered.end(),
+        [&movedId](const SubItem& item) { return item.id.trimmed() == movedId; });
+    if (draggedPosition == reordered.end()) {
+        return;
+    }
+
+    const int currentRank = static_cast<int>(std::distance(reordered.begin(), draggedPosition));
+    const SubItem draggedItem = *draggedPosition;
+    reordered.removeAt(currentRank);
+
+    // The new rank is read off the bar: `to` counts the tabs the moved one now sits after, and
+    // those tabs are the list's own order minus the hidden subscriptions -- one for one. Counting
+    // the bar instead of replaying step operations is what makes a drop an endpoint rather than
+    // "up three times".
+    //
+    // Ungrouped is pinned last and is not part of the order, so a drop onto the final tab means
+    // "after the last subscription". It is not read as a rank, because Ungrouped has none.
+    int targetRank = 0;
+    const int lastTab = context_.subscriptionTabBar->count() - 1;
+    for (int index = 0; index < to && index < lastTab; ++index) {
+        const QString anchorId = subscriptionIdAtTab(index);
+        if (anchorId.isEmpty()) {
+            continue;
+        }
+        const auto anchorPosition = std::find_if(
+            reordered.begin(),
+            reordered.end(),
+            [&anchorId](const SubItem& item) { return item.id.trimmed() == anchorId; });
+        if (anchorPosition != reordered.end()) {
+            targetRank = static_cast<int>(std::distance(reordered.begin(), anchorPosition)) + 1;
+        }
+    }
+
+    reordered.insert(qBound(0, targetRank, reordered.size()), draggedItem);
+
+    if (callbacks_.reorderSubscriptions) {
+        callbacks_.reorderSubscriptions(reordered);
     }
 }
 
@@ -228,6 +359,34 @@ void SubscriptionViewController::showContextMenu(const QString& tabKey, const QP
                 callbacks_.updateCurrentSubscriptionViaProxy(subscriptionId);
             }
         });
+
+        menu.addSeparator();
+
+        // Order entries live next to the other per-subscription commands and are greyed out at the
+        // edges, so pressing "Move Up" on the first tab says why it did nothing. The state is read
+        // here, while the menu is being built, rather than kept from an earlier selection: the
+        // current tab can change without anything telling this controller to recompute.
+        auto addMoveAction = [this, &menu, subscriptionId](
+                                 const QString& text,
+                                 const QString& objectName,
+                                 SubscriptionOrder::MoveOperation operation) {
+            auto* action = menu.addAction(text);
+            action->setObjectName(objectName);
+            action->setEnabled(canMove(subscriptionId, operation));
+            QObject::connect(action, &QAction::triggered, &menu, [this, subscriptionId, operation]() {
+                invokeMove(subscriptionId, operation);
+            });
+        };
+        addMoveAction(QObject::tr("Move Up"), QStringLiteral("moveSubscriptionTabUpAction"),
+                      SubscriptionOrder::MoveOperation::Up);
+        addMoveAction(QObject::tr("Move Down"), QStringLiteral("moveSubscriptionTabDownAction"),
+                      SubscriptionOrder::MoveOperation::Down);
+        addMoveAction(QObject::tr("Move To Top"), QStringLiteral("moveSubscriptionTabTopAction"),
+                      SubscriptionOrder::MoveOperation::Top);
+        addMoveAction(QObject::tr("Move To Bottom"), QStringLiteral("moveSubscriptionTabBottomAction"),
+                      SubscriptionOrder::MoveOperation::Bottom);
+
+        menu.addSeparator();
 
         auto* hideAction = menu.addAction(QObject::tr("Hide"));
         QObject::connect(hideAction, &QAction::triggered, &menu, [this, subscriptionId]() {

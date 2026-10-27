@@ -43,6 +43,25 @@ void ServerCollectionCoordinator::moveServers(const QStringList& indexIds, Serve
     syncWindow();
 }
 
+void ServerCollectionCoordinator::moveSubscriptions(
+    const QStringList& subscriptionIds,
+    SubscriptionOrder::MoveOperation operation)
+{
+    // No core work here on purpose: the subscription order decides the tab order and the order
+    // servers are listed in, never which node is active or how it is configured. Restarting the
+    // core for it would drop a working connection to reorder a list.
+    appendResult(deps_.subscriptionService.moveSubscriptions(deps_.config, subscriptionIds, operation));
+    syncWindow();
+}
+
+void ServerCollectionCoordinator::reorderSubscriptions(const QStringList& orderedSubscriptionIds)
+{
+    // Same reasoning as moveSubscriptions(): the order is presentation, so a drag writes the list
+    // and refreshes the window without touching the core.
+    appendResult(deps_.subscriptionService.reorderSubscriptions(deps_.config, orderedSubscriptionIds));
+    syncWindow();
+}
+
 void ServerCollectionCoordinator::reorderServers(const QStringList& orderedIndexIds)
 {
     appendResult(deps_.serverService.reorderServers(deps_.config, orderedIndexIds));

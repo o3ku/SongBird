@@ -55,6 +55,11 @@ inline QStringList normalizedSettingsStringList(QStringList values)
     return values;
 }
 
+// Identity as well as content. The list comparison walks both lists in order, so a reorder is
+// caught by the id mismatch at some index -- the id has always taken part in this comparison, and
+// that is what keeps an edit which only swaps two rows from reading as "nothing changed" and being
+// dropped while the dialog closes as if saved. `SettingsDialogTests` pins the behaviour now that
+// reordering is something the settings page can actually express.
 inline bool areSettingsSubItemsEqual(const SubItem& lhs, const SubItem& rhs)
 {
     return lhs.id.trimmed() == rhs.id.trimmed()

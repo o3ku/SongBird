@@ -2,13 +2,18 @@
 
 #include <algorithm>
 
+#include <QAction>
+#include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QComboBox>
 #include <QSignalBlocker>
+#include <QStringList>
+#include <QKeySequence>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QUrl>
@@ -167,6 +172,42 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     connect(table_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this]() {
         updateActionState();
     });
+
+    // Order actions are shared by the right-click menu and, through their shortcuts, the table
+    // itself: the server table binds T/B/U/D for the same four moves, and a subscription row is
+    // still a row in a list.
+    const auto createMoveAction = [this](
+                                      const QString& text,
+                                      const QString& objectName,
+                                      SubscriptionOrder::MoveOperation operation,
+                                      const QList<QKeySequence>& shortcuts) {
+        auto* action = new QAction(text, this);
+        action->setObjectName(objectName);
+        action->setShortcuts(shortcuts);
+        action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        connect(action, &QAction::triggered, this, [this, operation]() {
+            moveSelectedRows(operation);
+        });
+        table_->addAction(action);
+        return action;
+    };
+    moveTopAction_ = createMoveAction(
+        tr("Move To Top"), QStringLiteral("moveSubscriptionTopAction"),
+        SubscriptionOrder::MoveOperation::Top, {QKeySequence(Qt::Key_T)});
+    moveUpAction_ = createMoveAction(
+        tr("Move Up"), QStringLiteral("moveSubscriptionUpAction"),
+        SubscriptionOrder::MoveOperation::Up, {QKeySequence(Qt::Key_U)});
+    moveDownAction_ = createMoveAction(
+        tr("Move Down"), QStringLiteral("moveSubscriptionDownAction"),
+        SubscriptionOrder::MoveOperation::Down, {QKeySequence(Qt::Key_D)});
+    moveBottomAction_ = createMoveAction(
+        tr("Move To Bottom"), QStringLiteral("moveSubscriptionBottomAction"),
+        SubscriptionOrder::MoveOperation::Bottom, {QKeySequence(Qt::Key_B)});
+
+    table_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table_, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
+        showTableContextMenu(position);
+    });
 }
 
 QString SubscriptionSettingsPageWidget::resolveUserAgent(const QString& storedValue)
@@ -307,6 +348,227 @@ QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const
     return userAgentItem == nullptr ? QString() : userAgentItem->text().trimmed();
 }
 
+void SubscriptionSettingsPageWidget::moveSelectedRows(SubscriptionOrder::MoveOperation operation)
+{
+    if (table_ == nullptr) {
+        return;
+    }
+
+    // The persisted order lives in the table, and a move is a reordering of its rows -- including
+    // rows the user added a moment ago and whose URL is still being typed. Rebuilding the
+    // SubItems first would drop those, so the move is expressed as a row permutation.
+    //
+    // A row's identity here is its slot in the list, not its subscription id: a freshly added row
+    // carries no id until it is saved, and a run of blank ids can move nothing. The permutation
+    // returns old row numbers in their new order, so every lookup below starts from a row number.
+    const int rowCount = table_->rowCount();
+    QList<int> selectedRowNumbers = selectedRows();
+    if (selectedRowNumbers.isEmpty()) {
+        return;
+    }
+
+    QStringList orderedRows;
+    orderedRows.reserve(rowCount);
+    for (int row = 0; row < rowCount; ++row) {
+        orderedRows.append(QString::number(row));
+    }
+
+    QStringList selectedIdentities;
+    selectedIdentities.reserve(selectedRowNumbers.size());
+    for (int row : selectedRowNumbers) {
+        selectedIdentities.append(QString::number(row));
+    }
+
+    if (!SubscriptionOrder::moveKeys(orderedRows, selectedIdentities, operation)) {
+        return;
+    }
+
+    QList<int> newOrder;
+    newOrder.reserve(orderedRows.size());
+    for (const QString& identity : orderedRows) {
+        newOrder.append(identity.toInt());
+    }
+
+    const int previousCurrentRow = table_->currentRow();
+    const int currentRowAfterMove = newOrder.indexOf(previousCurrentRow);
+    const QStringList selectedIds = selectedSubscriptionIds();
+    const int currentColumn = table_->currentColumn();
+
+    {
+        const QSignalBlocker blocker(table_);
+        moveRowsToOrder(newOrder);
+    }
+
+    // The permutation rebuilds the rows it moved, so the selection the move was made from is gone.
+    // Restoring it is what makes a second press of U/D (a shortcut, not a menu item -- the menu
+    // re-selects on right-click) act on the same rows instead of on row 0. The current cell comes
+    // first: selecting a cell also selects it, and doing that afterwards would leave one extra
+    // cell selected next to the rows.
+    table_->clearSelection();
+    if (currentRowAfterMove >= 0 && currentRowAfterMove < table_->rowCount()) {
+        const int column = currentColumn < 0 ? 0 : currentColumn;
+        table_->setCurrentCell(currentRowAfterMove, column);
+        table_->selectionModel()->select(
+            table_->model()->index(currentRowAfterMove, column),
+            QItemSelectionModel::Deselect);
+    }
+    // The rows the move was made from are named the way they were read. A row that already had a
+    // subscription id still has the same one, so the id finds it; a row added a moment ago has none,
+    // and only its position can say where it went.
+    const auto selectRowForId = [this](const QString& id) {
+        for (int row = 0; row < table_->rowCount(); ++row) {
+            if (subscriptionIdAtRow(row) == id) {
+                table_->selectionModel()->select(
+                    table_->model()->index(row, 0),
+                    QItemSelectionModel::Select | QItemSelectionModel::Rows);
+                return;
+            }
+        }
+    };
+
+    const auto selectRowAt = [this](int row) {
+        if (row >= 0 && row < table_->rowCount()) {
+            table_->selectionModel()->select(
+                table_->model()->index(row, 0),
+                QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        }
+    };
+
+    if (selectedIds.size() == selectedRowNumbers.size()) {
+        for (const QString& id : selectedIds) {
+            selectRowForId(id);
+        }
+    } else {
+        for (int previousRow : selectedRowNumbers) {
+            selectRowAt(newOrder.indexOf(previousRow));
+        }
+    }
+    updateActionState();
+}
+
+QStringList SubscriptionSettingsPageWidget::selectedSubscriptionIds() const
+{
+    QStringList ids;
+    for (int row : selectedRows()) {
+        const QString id = subscriptionIdAtRow(row);
+        if (!id.isEmpty()) {
+            ids.append(id);
+        }
+    }
+    return ids;
+}
+
+void SubscriptionSettingsPageWidget::showTableContextMenu(const QPoint& position)
+{
+    if (table_ == nullptr || table_->selectionModel() == nullptr) {
+        return;
+    }
+
+    const QModelIndex clickedIndex = table_->indexAt(position);
+    if (clickedIndex.isValid()
+        && !table_->selectionModel()->isRowSelected(clickedIndex.row(), QModelIndex())) {
+        table_->clearSelection();
+        table_->selectRow(clickedIndex.row());
+        table_->setCurrentIndex(clickedIndex);
+    }
+
+    updateActionState();
+    // A row added from this page has no id until it is saved, so its "is anything selected" answer
+    // has to be about rows, not about ids. Asking about ids refused to open the menu for exactly
+    // the rows the move was rewritten to handle.
+    if (selectedRows().isEmpty()) {
+        return;
+    }
+
+    auto* menu = new QMenu(table_);
+    menu->setObjectName(QStringLiteral("subscriptionRowContextMenu"));
+    menu->addAction(moveUpAction_);
+    menu->addAction(moveDownAction_);
+    menu->addAction(moveTopAction_);
+    menu->addAction(moveBottomAction_);
+    QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    menu->popup(table_->viewport()->mapToGlobal(position));
+}
+
+QString SubscriptionSettingsPageWidget::subscriptionIdAtRow(int row) const
+{
+    if (table_ == nullptr || row < 0 || row >= table_->rowCount()) {
+        return {};
+    }
+
+    auto* remarksItem = table_->item(row, kRemarksColumn);
+    return remarksItem == nullptr ? QString() : remarksItem->data(Qt::UserRole).toString().trimmed();
+}
+
+void SubscriptionSettingsPageWidget::moveRowsToOrder(const QList<int>& newOrder)
+{
+    // QTableWidget cannot permute rows, and removeRow() deletes the row's cell widget -- the user
+    // agent combo. The rows therefore travel through this container: each is taken out as a bundle
+    // of items plus its cell widget, and the bundles are put back at the positions `newOrder`
+    // names. `newOrder.at(destination)` is the row that belongs at `destination`.
+    //
+    // Only rows that actually move travel. A middle-row move otherwise takes the whole table
+    // apart -- every item re-parented and every combo re-created -- for a result that is mostly
+    // the same table.
+    QList<int> movedRows;
+    movedRows.reserve(newOrder.size());
+    for (int destination = 0; destination < newOrder.size(); ++destination) {
+        if (newOrder.at(destination) != destination) {
+            movedRows.append(newOrder.at(destination));
+        }
+    }
+    if (movedRows.isEmpty()) {
+        return;
+    }
+
+    struct RowBundle {
+        QList<QTableWidgetItem*> items;
+        QWidget* cellWidget = nullptr;
+    };
+
+    const int columnCount = table_->columnCount();
+    QHash<int, RowBundle> bundles;
+    for (int row : movedRows) {
+        RowBundle bundle;
+        bundle.items.reserve(columnCount);
+        for (int column = 0; column < columnCount; ++column) {
+            // takeItem() hands ownership over, so the items survive the row's removal.
+            bundle.items.append(table_->takeItem(row, column));
+        }
+        bundle.cellWidget = table_->cellWidget(row, kUserAgentColumn);
+        if (bundle.cellWidget != nullptr) {
+            // Detached so the bundle owns it: removeRow() destroys whatever the row still points
+            // at, and rows shift up as others are removed, so a later row can share the index of
+            // a row whose widget is already in a bundle.
+            bundle.cellWidget->setParent(nullptr);
+        }
+        bundles.insert(row, bundle);
+    }
+
+    QList<int> rowsToRemove = movedRows;
+    std::sort(rowsToRemove.begin(), rowsToRemove.end(), [](int left, int right) { return left > right; });
+    for (int row : rowsToRemove) {
+        table_->removeRow(row);
+    }
+
+    for (int destination = 0; destination < newOrder.size(); ++destination) {
+        const auto bundle = bundles.find(newOrder.at(destination));
+        if (bundle == bundles.end()) {
+            continue;
+        }
+
+        table_->insertRow(destination);
+        for (int column = 0; column < columnCount; ++column) {
+            if (QTableWidgetItem* item = bundle->items.at(column)) {
+                table_->setItem(destination, column, item);
+            }
+        }
+        if (bundle->cellWidget != nullptr) {
+            table_->setCellWidget(destination, kUserAgentColumn, bundle->cellWidget);
+        }
+    }
+}
+
 void SubscriptionSettingsPageWidget::updateActionState()
 {
     const bool hasSelection = !selectedRows().isEmpty();
@@ -315,5 +577,14 @@ void SubscriptionSettingsPageWidget::updateActionState()
     }
     if (updateButton_ != nullptr) {
         updateButton_->setEnabled(hasSelection);
+    }
+
+    // The order actions are reachable as shortcuts as well as through the menu, so the edge cases
+    // ("nothing to swap with") are disabled here rather than silently doing nothing.
+    const bool canMove = hasSelection && table_ != nullptr && table_->rowCount() > 1;
+    for (QAction* action : {moveTopAction_, moveUpAction_, moveDownAction_, moveBottomAction_}) {
+        if (action != nullptr) {
+            action->setEnabled(canMove);
+        }
     }
 }

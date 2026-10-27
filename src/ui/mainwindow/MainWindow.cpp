@@ -2,6 +2,7 @@
 #include "common/AppPlatform.h"
 #include "common/DialogUtils.h"
 #include "common/LogFileWriter.h"
+#include "common/SubscriptionOrder.h"
 #include "domain/models/RuntimeState.h"
 
 #include <QAction>
@@ -1090,6 +1091,19 @@ void MainWindow::setupSubscriptionViewController()
                 }
                 return false;
             },
+            [this](const QString& subscriptionId, SubscriptionOrder::MoveOperation operation) {
+                emit moveSubscriptionsRequested({subscriptionId}, static_cast<int>(operation));
+            },
+            // A drag is not a step: the bar knows the order the user dropped the tab into, so the
+            // whole list is handed over and persisted as it now stands.
+            [this](const QList<SubItem>& reordered) {
+                QStringList orderedIds;
+                orderedIds.reserve(reordered.size());
+                for (const SubItem& item : reordered) {
+                    orderedIds.append(item.id.trimmed());
+                }
+                emit reorderSubscriptionsRequested(orderedIds);
+            },
             [this]() { emit openSettingsAtSubscriptionsTabRequested(); }});
     if (serverWorkspace_ != nullptr) {
         serverWorkspace_->setCompactSelectionHandler([this](const QString&) {
@@ -1353,6 +1367,13 @@ void MainWindow::setupSubscriptionViewConnections()
     connect(subscriptionTabBar_, &QTabBar::customContextMenuRequested, this, [this](const QPoint& position) {
         if (subscriptionViewController_ != nullptr) {
             subscriptionViewController_->showTabContextMenu(position);
+        }
+    });
+    // QTabBar emits tabMoved for every reorder, including the ones rebuildTabs() performs while
+    // refreshing the bar; the controller knows to ignore those.
+    connect(subscriptionTabBar_, &QTabBar::tabMoved, this, [this](int from, int to) {
+        if (subscriptionViewController_ != nullptr) {
+            subscriptionViewController_->handleTabMoved(from, to);
         }
     });
 }

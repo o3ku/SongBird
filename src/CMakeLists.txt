@@ -60,6 +60,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/ProcessRunner.cpp
     common/ServerDisplayName.h
     common/StartupSequencer.h
+    common/SubscriptionOrder.h
+    common/SubscriptionOrder.cpp
     common/SystemProxyExceptions.h
     common/SystemProxyExceptions.cpp
     common/SystemProxyMode.h

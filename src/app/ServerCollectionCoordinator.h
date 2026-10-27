@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include "common/OperationResult.h"
+#include "common/SubscriptionOrder.h"
 #include "domain/models/Config.h"
 #include "domain/models/VmessItem.h"
 #include "services/ServerService.h"
@@ -34,6 +35,8 @@ public:
 
     void removeServers(const QStringList& indexIds);
     void moveServers(const QStringList& indexIds, ServerMoveOperation operation);
+    void moveSubscriptions(const QStringList& subscriptionIds, SubscriptionOrder::MoveOperation operation);
+    void reorderSubscriptions(const QStringList& orderedSubscriptionIds);
     void reorderServers(const QStringList& orderedIndexIds);
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);

@@ -127,6 +127,10 @@ signals:
     void removeServersRequested(const QStringList& indexIds);
     void moveServersRequested(const QStringList& indexIds, int operation);
     void reorderServersRequested(const QStringList& orderedIndexIds);
+    // The subscription list order is the tab order, so moving a tab is a config write: the window
+    // reports the ids and the operation, and the composition root owns the service call.
+    void moveSubscriptionsRequested(const QStringList& subscriptionIds, int operation);
+    void reorderSubscriptionsRequested(const QStringList& orderedSubscriptionIds);
     void setDefaultServerRequested(const QString& indexId);
     void setDefaultServerWithTunRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);

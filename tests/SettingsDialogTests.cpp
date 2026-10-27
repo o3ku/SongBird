@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <QAction>
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
@@ -92,6 +93,10 @@ private slots:
     void subscriptionPageRoundTripsSelectedRowsAndItems();
     void subscriptionPageKeepsServerStateTheTableNeverShows();
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
+    void subscriptionRowMoveActionsReorderRowsAndPersistOrder();
+    void subscriptionRowMoveActionsKeepTheMovedRowsSelected();
+    void subscriptionRowMoveActionsMoveRowsWithoutIds();
+    void subscriptionRowMoveActionsDisableAtTheEdges();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -1789,6 +1794,202 @@ void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
     QCOMPARE(edited.collection().subscriptions.at(0).etag, stored.etag);
     QCOMPARE(edited.collection().subscriptions.at(0).lastModified, stored.lastModified);
     QCOMPARE(edited.collection().subscriptions.at(0).failStreak, 2);
+}
+
+// The subscription list order is the tab order in the main window and the order servers are
+// listed in, so the table's up/down/top/bottom menu is a config edit, not a view-only sort. It has
+// to come out of dialog.config() in the new order for the save step to persist it at all.
+void SettingsDialogTests::subscriptionRowMoveActionsReorderRowsAndPersistOrder()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("C"), QStringLiteral("https://c.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    QCOMPARE(subTable->rowCount(), 3);
+
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    auto* moveUpAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionUpAction"));
+    QVERIFY(moveBottomAction != nullptr);
+    QVERIFY(moveUpAction != nullptr);
+    // A shortcut reachable from the table but not added to it would never fire.
+    QVERIFY(subTable->actions().contains(moveBottomAction));
+    QVERIFY(subTable->actions().contains(moveUpAction));
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    // Bound to a named Config first: dialog.config() returns by value, and ranging over a member of
+    // a temporary leaves the loop walking freed memory.
+    const Config afterMoveToBottom = dialog.config();
+    QStringList order;
+    for (const SubItem& item : afterMoveToBottom.collection().subscriptions) {
+        order.append(item.id);
+    }
+    QCOMPARE(order, (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-3"), QStringLiteral("sub-1")}));
+
+    // The table and the config must agree, otherwise the next accept writes the old order back.
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+
+    subTable->selectRow(2);
+    QCoreApplication::processEvents();
+    moveUpAction->trigger();
+    QCoreApplication::processEvents();
+
+    const Config afterMoveUp = dialog.config();
+    order.clear();
+    for (const SubItem& item : afterMoveUp.collection().subscriptions) {
+        order.append(item.id);
+    }
+    QCOMPARE(order, (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1"), QStringLiteral("sub-3")}));
+
+    // The cell widgets have to survive the row permutation: a lost user agent combo would ship a
+    // subscription with no User-Agent, silently changed from what the user typed.
+    for (int row = 0; row < subTable->rowCount(); ++row) {
+        QVERIFY(qobject_cast<QComboBox*>(subTable->cellWidget(row, 3)) != nullptr);
+    }
+}
+
+// The order actions are also keyboard shortcuts pressed in sequence, so each one has to leave the
+// moved rows selected. Losing the selection sends the second press to row 0, which reads as "the
+// first press worked and then it stopped responding".
+void SettingsDialogTests::subscriptionRowMoveActionsKeepTheMovedRowsSelected()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("C"), QStringLiteral("https://c.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveBottomAction != nullptr);
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    // The row still selected is the one that moved, so the second press moves it further.
+    QCOMPARE(subTable->selectionModel()->selectedRows().size(), 1);
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 2);
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+
+    // Moving down again is the edge: sub-1 is already last, so triggering the action leaves the
+    // table alone instead of moving whatever row the selection fell back to.
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 2);
+}
+
+// A row added from this page has no subscription id until the dialog is confirmed, so a move that
+// used ids as row identity could not move it -- the note in moveSelectedRows() says the opposite.
+// The rows are identified by position for that reason; this pins the case that made it necessary.
+void SettingsDialogTests::subscriptionRowMoveActionsMoveRowsWithoutIds()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    QPushButton* addButton = nullptr;
+    for (QPushButton* button : dialog.findChildren<QPushButton*>()) {
+        if (button != nullptr && button->text() == QStringLiteral("Add")) {
+            addButton = button;
+            break;
+        }
+    }
+    QVERIFY(addButton != nullptr);
+
+    addButton->click();
+    addButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(subTable->rowCount(), 2);
+    QCOMPARE(subTable->item(0, 2)->data(Qt::UserRole).toString(), QString());
+
+    // The first row is typed in so the two rows can be told apart after the move.
+    subTable->item(0, 2)->setText(QStringLiteral("first"));
+
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveBottomAction != nullptr);
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    QVERIFY(moveBottomAction->isEnabled());
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(subTable->item(1, 2)->text(), QStringLiteral("first"));
+    QCOMPARE(subTable->selectionModel()->selectedRows().size(), 1);
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 1);
+}
+
+void SettingsDialogTests::subscriptionRowMoveActionsDisableAtTheEdges()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* moveTopAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionTopAction"));
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveTopAction != nullptr);
+    QVERIFY(moveBottomAction != nullptr);
+
+    // Nothing selected: there is nothing to move.
+    subTable->clearSelection();
+    QCoreApplication::processEvents();
+    QVERIFY(!moveTopAction->isEnabled());
+
+    // One row selected: between the two extremes the operation at the edge is pointless.
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    QVERIFY(moveTopAction->isEnabled());
+    QVERIFY(moveBottomAction->isEnabled());
+
+    // With one subscription in the list there is nowhere to move it to.
+    Config single;
+    single.collection().subscriptions = {config.collection().subscriptions.first()};
+    SettingsDialog singleDialog;
+    singleDialog.setConfig(single);
+    singleDialog.show();
+    QCoreApplication::processEvents();
+    auto* singleTable = singleDialog.findChild<QTableWidget*>();
+    QVERIFY(singleTable != nullptr);
+    singleTable->selectRow(0);
+    QCoreApplication::processEvents();
+    auto* singleMoveUp = singleDialog.findChild<QAction*>(QStringLiteral("moveSubscriptionUpAction"));
+    QVERIFY(singleMoveUp != nullptr);
+    QVERIFY(!singleMoveUp->isEnabled());
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()

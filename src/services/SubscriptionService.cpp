@@ -77,6 +77,90 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
             : QCoreApplication::translate("SubscriptionService", "Subscription hidden."));
 }
 
+OperationResult SubscriptionService::moveSubscriptions(
+    Config& config,
+    const QList<QString>& subscriptionIds,
+    SubscriptionOrder::MoveOperation operation)
+{
+    if (!SubscriptionOrder::moveSubscriptions(config.collection().subscriptions, subscriptionIds, operation)) {
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order unchanged."));
+    }
+
+    if (!repository_.save(config)) {
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save the subscription order."));
+    }
+
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order updated."));
+}
+
+OperationResult SubscriptionService::reorderSubscriptions(
+    Config& config,
+    const QList<QString>& orderedSubscriptionIds)
+{
+    // A drop runs on the drag-release path, so the lookups are hashed rather than linear: with a
+    // hundred subscriptions a nested scan turns one drop into a hundred-thousand string
+    // comparisons, right where the user is watching for the tab to land.
+    const QList<SubItem>& subscriptions = config.collection().subscriptions;
+    QHash<QString, const SubItem*> byId;
+    byId.reserve(subscriptions.size());
+    for (const SubItem& item : subscriptions) {
+        const QString id = item.id.trimmed();
+        if (!id.isEmpty() && !byId.contains(id)) {
+            byId.insert(id, &item);
+        }
+    }
+
+    QList<SubItem> reordered;
+    reordered.reserve(subscriptions.size());
+
+    QSet<QString> seenIds;
+    for (const QString& rawId : orderedSubscriptionIds) {
+        const QString id = rawId.trimmed();
+        if (id.isEmpty() || seenIds.contains(id)) {
+            continue;
+        }
+
+        const auto it = byId.constFind(id);
+        if (it == byId.constEnd()) {
+            continue;
+        }
+
+        seenIds.insert(id);
+        reordered.append(*it.value());
+    }
+
+    // Subscriptions the caller never mentioned -- a hidden one, which has no tab to drag -- are
+    // appended in their existing relative order rather than dropped. Every entry in `subscriptions`
+    // is therefore either in `reordered` or in this tail, so the result is the same size by
+    // construction; the order is still rebuilt from scratch, which is what the comparison below
+    // needs.
+    for (const SubItem& item : subscriptions) {
+        if (!seenIds.contains(item.id.trimmed())) {
+            reordered.append(item);
+        }
+    }
+    Q_ASSERT(reordered.size() == subscriptions.size());
+
+    bool unchanged = true;
+    for (int index = 0; index < reordered.size(); ++index) {
+        if (reordered.at(index).id.trimmed() != config.collection().subscriptions.at(index).id.trimmed()) {
+            unchanged = false;
+            break;
+        }
+    }
+    if (unchanged) {
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order unchanged."));
+    }
+
+    config.collection().subscriptions = reordered;
+    if (!repository_.save(config)) {
+        return repository_.saveFailureResult(
+            QCoreApplication::translate("SubscriptionService", "Failed to save the subscription order."));
+    }
+
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order updated."));
+}
+
 OperationResult SubscriptionService::removeSubscription(Config& config, const QString& subscriptionId)
 {
     const QString normalizedId = subscriptionId.trimmed();

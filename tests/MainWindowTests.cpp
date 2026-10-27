@@ -116,6 +116,12 @@ private slots:
     void serverContextMenuCopyUrlActionSupportsSingleAndMultiSelection();
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears();
+    void subscriptionTabsFollowTheSubscriptionListOrderAndPinUngroupedLast();
+    void tabDragPersistsTheDroppedOrder();
+    void tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder();
+    void tabDragOntoUngroupedMovesTheSubscriptionLast();
+    void subscriptionTabMenuMoveActionsFollowTheCurrentTab();
+    void rebuiltTabsAreNotReportedAsAUserReorder();
     void coreStartupChecklistOverlayCoversMainWindowUntilCleared();
     void coreStartupChecklistOverlayUpdatesExistingRows();
     void coreStartupChecklistOverlayShowsCoreDownloadProgress();
@@ -2241,6 +2247,215 @@ void MainWindowTests::setConfigReappliesFallbackSubscriptionFilterWhenSelectedTa
     QCOMPARE(serverView->model()->rowCount(), 2);
     QCOMPARE(serverView->model()->index(0, 2).data(Qt::DisplayRole).toString(), QStringLiteral("First"));
     QCOMPARE(serverView->model()->index(1, 2).data(Qt::DisplayRole).toString(), QStringLiteral("Second"));
+}
+
+namespace {
+
+QStringList tabTexts(QTabBar* bar)
+{
+    QStringList texts;
+    for (int index = 0; index < bar->count(); ++index) {
+        texts.append(bar->tabText(index));
+    }
+    return texts;
+}
+
+QStringList tabKeys(QTabBar* bar)
+{
+    QStringList keys;
+    for (int index = 0; index < bar->count(); ++index) {
+        keys.append(bar->tabData(index).toString());
+    }
+    return keys;
+}
+
+} // namespace
+
+// The saved subscription order is the tab order. The bar used to insert each tab at index 0, which
+// reversed the list on every refresh -- so a persisted order could never be shown back to the user,
+// and dragging a tab would have been undone by the next config sync.
+void MainWindowTests::subscriptionTabsFollowTheSubscriptionListOrderAndPinUngroupedLast()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("Group 2"), QStringLiteral("https://example.com/2"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("Group 3"), QStringLiteral("https://example.com/3"), false, QString()},
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("Group 1"), QStringLiteral("https://example.com/1"), true, QString()}};
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    // A hidden subscription has no tab, and Ungrouped is not a subscription: it stays pinned last.
+    QCOMPARE(tabTexts(tabBar), (QStringList{
+        QStringLiteral("Group 2"), QStringLiteral("Group 1"), QStringLiteral("Ungrouped")}));
+    QCOMPARE(tabKeys(tabBar), (QStringList{
+        QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
+    QVERIFY(tabBar->isMovable());
+}
+
+// Dragging a tab is the same edit as the context menu's Move Up/Down/Top/Bottom: both end up in the
+// subscription list, and the list is what gets saved.
+void MainWindowTests::tabDragPersistsTheDroppedOrder()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("Group 1"), QStringLiteral("https://example.com/1"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("Group 2"), QStringLiteral("https://example.com/2"), true, QString()}};
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabKeys(tabBar), (QStringList{
+        QStringLiteral("sub:sub-1"), QStringLiteral("sub:sub-2"), QStringLiteral("ungrouped")}));
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    // QTabBar::moveTab() is what an accepted drop calls, so it is the exact event the window has to
+    // turn into a config write.
+    tabBar->moveTab(1, 0);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(reorderSpy.count(), 1);
+    QCOMPARE(reorderSpy.first().first().toStringList(),
+             (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1")}));
+}
+
+// A drop position in the bar is not a position in the list: a hidden subscription has no tab, so
+// counting tabs would rank the dragged one against a shorter list and write back an order that did
+// not change. The user would drag, see nothing stick, and later find the hidden entry at the end.
+void MainWindowTests::tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("Group 1"), QStringLiteral("https://example.com/1"), false, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("Group 2"), QStringLiteral("https://example.com/2"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("Group 3"), QStringLiteral("https://example.com/3"), true, QString()}};
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabKeys(tabBar), (QStringList{
+        QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-3"), QStringLiteral("ungrouped")}));
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    // Dropping Group 2 after Group 3 must put sub-2 after sub-3 in the list. The hidden sub-1 keeps
+    // its place at the front -- it is in the list, just not in the bar.
+    tabBar->moveTab(0, 1);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(reorderSpy.count(), 1);
+    QCOMPARE(reorderSpy.first().first().toStringList(),
+             (QStringList{QStringLiteral("sub-1"), QStringLiteral("sub-3"), QStringLiteral("sub-2")}));
+}
+
+// Ungrouped is pinned last and is not part of the order, so it has no rank to be dropped on. A
+// drop past the final subscription is read as "last subscription" -- the tab the user dragged ends
+// up where they dropped it, and the list says the same thing.
+void MainWindowTests::tabDragOntoUngroupedMovesTheSubscriptionLast()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabBar->count(), 3);
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    tabBar->moveTab(0, tabBar->count() - 1);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(reorderSpy.count(), 1);
+    QCOMPARE(reorderSpy.first().first().toStringList(),
+             (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1")}));
+}
+
+// "Move Up" is greyed out on the first tab and enabled on the second. The state is answered while
+// the menu is built, so it follows whichever tab is current now -- a cached answer would leave the
+// entry disabled after the user opened the menu on the first tab and then switched tabs.
+void MainWindowTests::subscriptionTabMenuMoveActionsFollowTheCurrentTab()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabBar->count(), 3);
+
+    QList<bool> firstTabUpEnabled;
+    bool secondTabUpEnabled = false;
+    for (int pass = 0; pass < 2; ++pass) {
+        const int tabIndex = pass == 0 ? 0 : 1;
+        const QString tabKey = tabBar->tabData(tabIndex).toString();
+        bool captured = false;
+        QTimer::singleShot(0, [&captured, &firstTabUpEnabled, &secondTabUpEnabled, pass]() {
+            for (QWidget* widget : QApplication::allWidgets()) {
+                auto* menu = qobject_cast<QMenu*>(widget);
+                if (menu == nullptr) {
+                    continue;
+                }
+                auto* upAction = menu->findChild<QAction*>(QStringLiteral("moveSubscriptionTabUpAction"));
+                if (upAction == nullptr) {
+                    continue;
+                }
+                if (pass == 0) {
+                    firstTabUpEnabled.append(upAction->isEnabled());
+                } else {
+                    secondTabUpEnabled = upAction->isEnabled();
+                }
+                captured = true;
+                menu->close();
+            }
+        });
+
+        QMetaObject::invokeMethod(
+            tabBar,
+            "customContextMenuRequested",
+            Qt::DirectConnection,
+            Q_ARG(QPoint, tabBar->tabRect(tabIndex).center()));
+        QCoreApplication::processEvents();
+        QVERIFY(captured);
+        Q_UNUSED(tabKey);
+    }
+
+    QCOMPARE(firstTabUpEnabled.size(), 1);
+    QVERIFY(!firstTabUpEnabled.first());
+    QVERIFY(secondTabUpEnabled);
+}
+
+// rebuildTabs() removes and re-inserts every tab, and QTabBar reports each of those as tabMoved. If
+// that reached the window it would write the list back on every refresh -- including the one that
+// follows a save, so the saved order and the saved file would keep disagreeing.
+void MainWindowTests::rebuiltTabsAreNotReportedAsAUserReorder()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    // Any config refresh goes through setConfig() -> syncConfigControllers() -> rebuildTabs().
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(reorderSpy.count(), 0);
 }
 
 void MainWindowTests::coreStartupChecklistOverlayCoversMainWindowUntilCleared()

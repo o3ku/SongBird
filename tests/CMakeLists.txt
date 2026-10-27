@@ -947,6 +947,21 @@ songbird_add_qt_test(songbird_subscription_service_tests subscription-service
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# Subscription order is presentation state that happens to live in the config file, so it is tested
+# twice over: the pure move rules (which is where the edge cases are -- a selection already at an
+# edge, a scattered selection, every row selected) and the service that persists the result. The
+# service half is only reachable here because the repository is an interface.
+set(SONGBIRD_SUBSCRIPTION_ORDER_TEST_SOURCES
+    SubscriptionOrderTests.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_order_tests subscription-order
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_ORDER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 # Tests NodeFingerprint dedup logic, ClashYamlBuilder output, ExportService
 # URI/YAML/dedup operations, and round-trips through ClashProxyItemParser.
 # ExportService and ShareUrlBuilder* live in SONGBIRD_SOURCES (not shared_objs),
