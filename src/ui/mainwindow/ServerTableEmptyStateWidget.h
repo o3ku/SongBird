@@ -44,6 +44,10 @@ public:
     // is starting, so the button has to follow that rule rather than stay clickable
     // and do nothing. Without a predicate the button is always enabled.
     void setCanStartBackgroundTask(std::function<bool()> predicate);
+    // Re-asks the predicate and updates the refresh button. Exposed because the answer
+    // changes on paths that touch nothing this widget watches -- a proxy activation, the
+    // startup checklist -- and the last config sync's answer is stale by then.
+    void refreshActionEnablement();
 
     QPushButton* importButton() const;
     QPushButton* addButton() const;
@@ -61,8 +65,10 @@ signals:
 private:
     void setupUi();
     void refreshTexts();
-    void refreshActionVisibility();
+    void syncActionVisibility();
+    void refreshActionState();
     bool canStartBackgroundTask() const;
+    static bool sameSubscriptionIdentity(const QList<SubItem>& left, const QList<SubItem>& right);
     QString subscriptionDisplayName(const QString& subscriptionId) const;
 
     QLabel* titleLabel_ = nullptr;

@@ -43,16 +43,52 @@ bool ServerTableEmptyStateWidget::filterActive() const
 void ServerTableEmptyStateWidget::setCanStartBackgroundTask(std::function<bool()> predicate)
 {
     canStartBackgroundTask_ = std::move(predicate);
-    refreshActionVisibility();
+    refreshActionEnablement();
+}
+
+void ServerTableEmptyStateWidget::refreshActionEnablement()
+{
+    refreshButton_->setEnabled(canStartBackgroundTask());
 }
 
 void ServerTableEmptyStateWidget::setSubscriptions(
     const QList<SubItem>& subscriptions,
     const QString& listedSubscriptionId)
 {
+    const QString trimmedListedId = listedSubscriptionId.trimmed();
+    // The owner pushes this on every refresh, including one per keystroke in the filter
+    // box. Rebuilding every label through tr() for an unchanged context is work nobody
+    // sees, and it also re-arms nothing: the node counts reach the panel through the
+    // proxy's own row signals, not through this call.
+    if (listedSubscriptionId_ == trimmedListedId && sameSubscriptionIdentity(subscriptions_, subscriptions)) {
+        return;
+    }
+
     subscriptions_ = subscriptions;
-    listedSubscriptionId_ = listedSubscriptionId.trimmed();
+    listedSubscriptionId_ = trimmedListedId;
     refreshTexts();
+}
+
+bool ServerTableEmptyStateWidget::sameSubscriptionIdentity(
+    const QList<SubItem>& left,
+    const QList<SubItem>& right)
+{
+    // Only what the wording depends on: which subscriptions exist, what they are called,
+    // and whether they are enabled. The download bookkeeping (etag, failStreak) changes
+    // without changing a single character on screen.
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (int index = 0; index < left.size(); ++index) {
+        const SubItem& a = left.at(index);
+        const SubItem& b = right.at(index);
+        if (a.id != b.id || a.remarks != b.remarks || a.enabled != b.enabled) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 QPushButton* ServerTableEmptyStateWidget::importButton() const
@@ -141,6 +177,12 @@ bool ServerTableEmptyStateWidget::canStartBackgroundTask() const
     return !canStartBackgroundTask_ || canStartBackgroundTask_();
 }
 
+void ServerTableEmptyStateWidget::refreshActionState()
+{
+    syncActionVisibility();
+    refreshActionEnablement();
+}
+
 QString ServerTableEmptyStateWidget::subscriptionDisplayName(const QString& subscriptionId) const
 {
     for (const SubItem& item : subscriptions_) {
@@ -199,10 +241,10 @@ void ServerTableEmptyStateWidget::refreshTexts()
         break;
     }
 
-    refreshActionVisibility();
+    refreshActionState();
 }
 
-void ServerTableEmptyStateWidget::refreshActionVisibility()
+void ServerTableEmptyStateWidget::syncActionVisibility()
 {
     // Exactly one set of actions is visible, and it is the set that answers the
     // question this state is asking. A first-run page shows all three ways in; a
@@ -219,6 +261,4 @@ void ServerTableEmptyStateWidget::refreshActionVisibility()
     addButton_->setVisible(firstRun || subscriptionWithoutNodes);
     clipboardButton_->setVisible(firstRun || subscriptionWithoutNodes);
     refreshButton_->setVisible(subscriptionWithoutNodes);
-
-    refreshButton_->setEnabled(canStartBackgroundTask());
 }

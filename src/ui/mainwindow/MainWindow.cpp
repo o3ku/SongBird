@@ -581,6 +581,14 @@ void MainWindow::updateActionState()
         backgroundTaskActionsController_->sync(BackgroundTaskActionsController::State{canStartTask});
     }
 
+    // The refresh button on the empty-state panel is a background task too, and this is
+    // the one place that knows the answer just changed. Without it the button keeps
+    // whatever enablement the last config sync gave it: clickable while an update runs,
+    // grey while the app is idle again.
+    if (serverWorkspace_ != nullptr && serverWorkspace_->emptyState() != nullptr) {
+        serverWorkspace_->emptyState()->refreshActionEnablement();
+    }
+
     syncProxyToolbarController();
 }
 
@@ -1020,8 +1028,14 @@ void MainWindow::setupServerWorkspace()
                 &MainWindow::importFromClipboardRequested);
         // The refresh is a background task, so it obeys the same gate the toolbar's
         // are behind. An empty id means "the tab is Ungrouped", where the target is
-        // every subscription rather than one.
-        emptyState->setCanStartBackgroundTask([this]() { return canStartBackgroundTask(); });
+        // every subscription rather than one. The predicate is handed to the workspace
+        // as well, so a panel repaint re-asks it instead of trusting the enablement of
+        // the last config sync.
+        const std::function<bool()> backgroundTaskAllowed = [this]() {
+            return canStartBackgroundTask();
+        };
+        emptyState->setCanStartBackgroundTask(backgroundTaskAllowed);
+        serverWorkspace_->setEmptyStateCanStartBackgroundTask(backgroundTaskAllowed);
         connect(emptyState,
                 &ServerTableEmptyStateWidget::refreshSubscriptionRequested,
                 this,
@@ -1313,6 +1327,12 @@ void MainWindow::setupSubscriptionViewConnections()
             serverListController_->handleSubscriptionFilterChanged();
         }
         if (serverWorkspace_ != nullptr) {
+            // Every tab change has to re-describe the panel, not just the ones that go
+            // through a config sync. Switching from a tab with nodes to one without
+            // leaves the visible row count at zero, so the proxy emits no row signal to
+            // react to, and the panel would keep naming the previous tab. After the
+            // filter, because the state reads the row set that filter produced.
+            pushEmptyStateContext();
             serverWorkspace_->syncCompactSections();
         }
     });
@@ -1531,6 +1551,26 @@ void MainWindow::preserveServerSelectionPreference()
     }
 }
 
+void MainWindow::pushEmptyStateContext()
+{
+    pushEmptyStateContext(configSnapshot_.subscriptions);
+}
+
+void MainWindow::pushEmptyStateContext(const QList<SubItem>& subscriptions)
+{
+    if (serverWorkspace_ == nullptr || subscriptionViewController_ == nullptr) {
+        return;
+    }
+
+    // The tab is the subject: it decides whether the panel asks for a refresh or merely
+    // points at where the nodes are listed, so it is read fresh every time rather than
+    // carried along from the last config sync.
+    serverWorkspace_->setEmptyStateContext(
+        subscriptions,
+        SubscriptionViewSupport::subscriptionIdFromTabKey(
+            subscriptionViewController_->currentTabKey()));
+}
+
 void MainWindow::syncConfigControllers(const Config& config)
 {
     if (routingModeController_ != nullptr) {
@@ -1545,10 +1585,7 @@ void MainWindow::syncConfigControllers(const Config& config)
             // filter just produced, and the state it picks depends on the tab the table
             // is showing. The tab key is what the panel names when it explains that the
             // nodes are grouped under a subscription.
-            serverWorkspace_->setEmptyStateContext(
-                config.collection().subscriptions,
-                SubscriptionViewSupport::subscriptionIdFromTabKey(
-                    subscriptionViewController_->currentTabKey()));
+            pushEmptyStateContext(config.collection().subscriptions);
             serverWorkspace_->syncCompactSections();
         }
     }

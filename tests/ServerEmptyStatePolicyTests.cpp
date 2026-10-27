@@ -13,6 +13,8 @@ private slots:
     void enabledSubscriptionWithoutNodesAsksForARefresh();
     void disabledSubscriptionDoesNotCountAsImported();
     void nodesHiddenByTheTabAreNotAFirstRun();
+    void emptySubscriptionTabAsksForARefreshWhileOtherSubscriptionsHoldNodes();
+    void ungroupedTabWithNodesOnFilePointsAtTheSubscriptions();
     void visibleNodesAreNeverAFirstRun();
     void textFilterWinsOverEverythingElse();
 };
@@ -75,6 +77,40 @@ void ServerEmptyStatePolicyTests::nodesHiddenByTheTabAreNotAFirstRun()
     QCOMPARE(
         ServerEmptyStatePolicy::decide(false, false, 4, {makeSubscription(QStringLiteral("sub-1"))}),
         ServerEmptyStatePolicy::State::WithheldSubscription);
+}
+
+void ServerEmptyStatePolicyTests::emptySubscriptionTabAsksForARefreshWhileOtherSubscriptionsHoldNodes()
+{
+    using State = ServerEmptyStatePolicy::State;
+    const QList<SubItem> subscriptions{
+        makeSubscription(QStringLiteral("sub-1")),
+        makeSubscription(QStringLiteral("sub-empty"))};
+
+    // The table is not empty overall -- sub-1 holds nodes -- but the tab on screen
+    // belongs to a subscription that downloaded nothing. That is the one situation a
+    // refresh fixes, so the total row count must not decide it.
+    QCOMPARE(
+        ServerEmptyStatePolicy::decide(false, false, 4, subscriptions, QStringLiteral("sub-empty"), 0),
+        State::SubscriptionWithoutNodes);
+
+    // The same table, but the tab on screen belongs to the subscription that does hold
+    // nodes: that is the "look over there" case, and it stays distinct from the one above
+    // even though both show an empty table.
+    QCOMPARE(
+        ServerEmptyStatePolicy::decide(false, false, 4, subscriptions, QStringLiteral("sub-1"), 4),
+        State::WithheldSubscription);
+}
+
+void ServerEmptyStatePolicyTests::ungroupedTabWithNodesOnFilePointsAtTheSubscriptions()
+{
+    using State = ServerEmptyStatePolicy::State;
+    const QList<SubItem> subscriptions{makeSubscription(QStringLiteral("sub-1"))};
+
+    // No subscription id means the "Ungrouped" tab. It lists only nodes that belong to no
+    // subscription, so an empty table with nodes on file can only mean they are grouped.
+    QCOMPARE(
+        ServerEmptyStatePolicy::decide(false, false, 4, subscriptions, QString(), 0),
+        State::WithheldSubscription);
 }
 
 void ServerEmptyStatePolicyTests::visibleNodesAreNeverAFirstRun()

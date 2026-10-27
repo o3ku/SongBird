@@ -193,6 +193,11 @@ private:
     void setServerTableDynamicSortEnabled(bool enabled, bool invalidateModel);
     void preserveServerSelectionPreference();
     void syncConfigControllers(const Config& config);
+    // Re-describes the empty-state panel from the tab that is on screen. Called after
+    // anything that can change either half of that description -- the subscription list,
+    // the tab, or the row set the filter produced.
+    void pushEmptyStateContext();
+    void pushEmptyStateContext(const QList<SubItem>& subscriptions);
     void updateRuntimeUiState();
     void updateStatusPresentation(bool includeWindowTitle = false);
     bool confirmExit();

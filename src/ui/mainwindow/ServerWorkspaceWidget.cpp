@@ -25,6 +25,7 @@
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/SharePanelWidget.h"
 #include "ui/models/ServerFilterProxyModel.h"
+#include "ui/models/ServerTableModel.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
@@ -261,6 +262,9 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     // layout on a wide window.
     serverPanelLayout_->addWidget(serverView_, 1);
     emptyState_ = new ServerTableEmptyStateWidget(serverPanel_);
+    if (emptyStateCanStartBackgroundTask_) {
+        emptyState_->setCanStartBackgroundTask(emptyStateCanStartBackgroundTask_);
+    }
     emptyState_->hide();
     serverPanelLayout_->addWidget(emptyState_, 1);
 
@@ -375,6 +379,27 @@ ServerTableEmptyStateWidget* ServerWorkspaceWidget::emptyState() const
     return emptyState_;
 }
 
+int ServerWorkspaceWidget::countSourceNodesForSubscription(const QAbstractItemModel* sourceModel) const
+{
+    const auto* tableModel = qobject_cast<const ServerTableModel*>(sourceModel);
+    if (tableModel == nullptr || emptyStateListedSubscriptionId_.isEmpty()) {
+        return 0;
+    }
+
+    // Counted straight off the table rows rather than through a model role: the row set
+    // lives in ServerTableModel and asking it is one loop, while the panel only needs the
+    // number for the tab that is on screen.
+    int count = 0;
+    const int rowCount = tableModel->rowCount();
+    for (int row = 0; row < rowCount; ++row) {
+        const ServerTableRow* item = tableModel->itemAt(row);
+        if (item != nullptr && item->subId.trimmed() == emptyStateListedSubscriptionId_) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 void ServerWorkspaceWidget::syncEmptyStateVisibility()
 {
     if (serverView_ == nullptr || emptyState_ == nullptr) {
@@ -395,26 +420,45 @@ void ServerWorkspaceWidget::syncEmptyStateVisibility()
         && !serverFilterEdit_->text().trimmed().isEmpty();
     const QAbstractItemModel* sourceModel = proxyModel == nullptr ? nullptr : proxyModel->sourceModel();
     const int sourceRowCount = sourceModel == nullptr ? 0 : sourceModel->rowCount();
+    // How many nodes the app holds for the tab that is on screen. The model's total
+    // count cannot answer that: a broken subscription sitting next to a healthy one
+    // leaves the total non-zero while the subscription itself downloaded nothing, and
+    // that is precisely the state whose fix is a refresh.
+    const int listedSubscriptionNodeCount = countSourceNodesForSubscription(sourceModel);
 
     const ServerEmptyStatePolicy::State state = ServerEmptyStatePolicy::decide(
         hasRows,
         textFilterActive,
         sourceRowCount,
-        emptyStateSubscriptions_);
+        emptyStateSubscriptions_,
+        emptyStateListedSubscriptionId_,
+        listedSubscriptionNodeCount);
 
-    // The tab can only be named when nodes exist somewhere: on an empty config no
-    // subscription has produced anything, so pointing at one would explain nothing.
-    const QString withheldSubscriptionId =
-        !emptyStateListedSubscriptionId_.isEmpty() && sourceRowCount > 0
-        ? emptyStateListedSubscriptionId_
-        : QString();
+    // The id names the subscription in the wording, and "Ungrouped" has no name to print
+    // -- an empty id already falls back to the generic phrasing there.
     emptyState_->setSubscriptions(emptyStateSubscriptions_, emptyStateListedSubscriptionId_);
-    emptyState_->setState(state, withheldSubscriptionId);
+    emptyState_->setState(state, emptyStateListedSubscriptionId_);
+    // setState() rebuilds the wording only when the state or the named subscription
+    // changed, and setSubscriptions() only when the context did. A repaint that moves
+    // neither -- same tab, same state -- still has to re-ask the button's gate, so the
+    // rebuild path is not the only place this happens.
+    // Both calls above can return early when nothing they compare changed, and the button
+    // is the one thing neither of them owns -- its gate lives in the window. Re-asking it
+    // is what keeps a repaint honest without depending on either early return.
+    emptyState_->refreshActionEnablement();
     // Exactly one of the two is visible. The table is hidden while the empty
     // state shows, so the panel reads as a single placeholder instead of a blank
     // grid above a block of text.
     serverView_->setVisible(hasRows);
     emptyState_->setVisible(!hasRows);
+}
+
+void ServerWorkspaceWidget::setEmptyStateCanStartBackgroundTask(std::function<bool()> predicate)
+{
+    emptyStateCanStartBackgroundTask_ = std::move(predicate);
+    if (emptyState_ != nullptr) {
+        emptyState_->setCanStartBackgroundTask(emptyStateCanStartBackgroundTask_);
+    }
 }
 
 void ServerWorkspaceWidget::setEmptyStateContext(

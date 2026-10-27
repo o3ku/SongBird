@@ -9,6 +9,7 @@
 
 #include "domain/models/SubItem.h"
 
+class QAbstractItemModel;
 class QHBoxLayout;
 class QLineEdit;
 class QSplitter;
@@ -50,6 +51,12 @@ public:
         const QList<SubItem>& subscriptions,
         const QString& listedSubscriptionId);
 
+    // The window's answer to "may a background task start right now". The refresh the
+    // empty-state panel offers is one, so the button has to follow it -- and the answer
+    // changes on paths that touch no model at all (a proxy activation, the startup
+    // checklist), so it is pushed in rather than only read when the panel is rebuilt.
+    void setEmptyStateCanStartBackgroundTask(std::function<bool()> predicate);
+
     void setCompactMode(bool compact);
     bool compactMode() const;
     void syncCompactSections();
@@ -65,6 +72,8 @@ private:
     // Shows the empty-state overlay when the proxy model has no visible rows,
     // hides it otherwise, and picks the wording from ServerEmptyStatePolicy.
     void syncEmptyStateVisibility();
+    // Nodes in the source model that belong to the tab the panel is describing.
+    int countSourceNodesForSubscription(const QAbstractItemModel* sourceModel) const;
 
     ServerTableView* serverView_ = nullptr;
     ServerTableEmptyStateWidget* emptyState_ = nullptr;
@@ -85,6 +94,7 @@ private:
     QHBoxLayout* subscriptionTabBarLayout_ = nullptr;
     QList<SubItem> emptyStateSubscriptions_;
     QString emptyStateListedSubscriptionId_;
+    std::function<bool()> emptyStateCanStartBackgroundTask_;
     bool compactMode_ = false;
     std::function<void(const QString&)> compactSelectionHandler_;
     std::function<void(const QString&, const QPoint&)> compactContextMenuHandler_;

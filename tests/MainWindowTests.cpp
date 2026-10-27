@@ -144,6 +144,7 @@ private slots:
     void restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes();
     void restoreUiStateFallsBackToUngroupedForAnUnknownSubscription();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
+    void serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate();
     void serverTableEmptyStateIsLaidOutInCompactMode();
     void serverTableResultColumnColoursLatencyBands();
 };
@@ -3002,6 +3003,41 @@ void MainWindowTests::serverTableEmptyStateShowsGuidanceAndHidesWithRows()
     QCOMPARE(serverView->parentWidget(), serverPanel);
 }
 
+void MainWindowTests::serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate()
+{
+    MainWindow window;
+    Config config;
+    config.collection().subscriptions = {SubItem{
+        QStringLiteral("sub-1"),
+        QStringLiteral("Group 1"),
+        QStringLiteral("https://example.com/sub-1"),
+        true,
+        QStringLiteral("ua")}};
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+    auto* refreshButton = emptyState->refreshButton();
+    QVERIFY(refreshButton != nullptr);
+    QVERIFY(refreshButton->isVisible());
+    QVERIFY(refreshButton->isEnabled());
+
+    // The refresh is a background task, so the panel's button has to follow the same gate
+    // the toolbar's do. A config sync is not the only thing that moves that gate: an
+    // update starting or finishing changes nothing the panel watches, so reading the
+    // predicate only when the panel is rebuilt leaves a button that is clickable while it
+    // would do nothing, or grey while the app is idle again.
+    window.setBackgroundTaskRunning(true);
+    QCoreApplication::processEvents();
+    QVERIFY(!refreshButton->isEnabled());
+
+    window.setBackgroundTaskRunning(false);
+    QCoreApplication::processEvents();
+    QVERIFY(refreshButton->isEnabled());
+}
+
 void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()
 {
     MainWindow window;
@@ -3202,8 +3238,10 @@ void MainWindowTests::serverTableEmptyStatePointsAtTheTabWithholdingTheNodes()
 
     // A subscription tab whose own list is empty while other subscriptions do hold
     // nodes: the panel explains where the servers went instead of inviting an import,
-    // because the servers are already here. There is nothing to refresh in *this* tab,
-    // so it offers no button at all.
+    // because the servers are already here. This is also the case that pins the state to
+    // the tab rather than to the table -- the row count here is 3, and reading it as
+    // "nodes are withheld" would name the subscription the nodes belong to instead of the
+    // empty one the user is looking at.
     Config config = createGroupedServerSelectionConfig();
     config.collection().subscriptions.append(SubItem{
         QStringLiteral("sub-empty"),
@@ -3214,6 +3252,15 @@ void MainWindowTests::serverTableEmptyStatePointsAtTheTabWithholdingTheNodes()
     window.setConfig(config);
     QCoreApplication::processEvents();
     QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-empty")));
+    QCoreApplication::processEvents();
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
+    QVERIFY(refreshButton->isVisible());
+    QVERIFY(!emptyState->importButton()->isVisible());
+
+    // "Ungrouped" is where the withheld wording belongs: it lists only nodes that belong
+    // to no subscription, so with three nodes on file and none of them here, the panel has
+    // to say where they are -- and offer nothing to press, because nothing is broken.
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("__unsubscribed__")));
     QCoreApplication::processEvents();
     QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::WithheldSubscription);
     QVERIFY(!refreshButton->isVisible());
@@ -3250,9 +3297,15 @@ void MainWindowTests::restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes(
     // The tab bar alone is not enough: the filter decides which rows the table shows, and
     // selecting a tab without re-applying it leaves the previous tab's rows on screen.
     auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
     QVERIFY(emptyState != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QCOMPARE(serverView->model()->rowCount(), 0);
     QVERIFY(emptyState->isVisible());
-    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::WithheldSubscription);
+    // The restored subscription holds nothing, so the panel asks for a refresh -- and the
+    // tab it is describing is that subscription, not whichever one holds the nodes.
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
 }
 
 void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription()
@@ -3264,10 +3317,19 @@ void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription
     // rather than on whichever tab happened to be current.
     config.ui().mainSelectedSubId = QStringLiteral("sub-deleted");
     window.setConfig(config);
-    window.restoreUiState(config);
 
+    // Move the tab bar off "Ungrouped" first. rebuildTabs() always appends it and the
+    // previous test left the current tab on a subscription, so without this the fallback
+    // could be deleted outright and the assertion below would still pass on whatever tab
+    // happened to already be current.
     auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
     QVERIFY(tabBar != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    QVERIFY(tabBar->currentIndex() >= 0);
+    QVERIFY(tabBar->tabData(tabBar->currentIndex()).toString() != QStringLiteral("ungrouped"));
+
+    window.restoreUiState(config);
+
     QVERIFY(tabBar->currentIndex() >= 0);
     QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("ungrouped"));
 }
