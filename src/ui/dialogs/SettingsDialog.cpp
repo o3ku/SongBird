@@ -289,6 +289,9 @@ void SettingsDialog::setupUi()
 
     connect(subscriptionSettingsPage_, &SubscriptionSettingsPageWidget::updateRequested, this, [this]() {
         updateSubRequested_ = true;
+        updateSubRequestedIds_ = subscriptionSettingsPage_ == nullptr
+            ? QStringList()
+            : subscriptionSettingsPage_->selectedSubscriptionIds();
     });
     connect(tunSettingsPage_, &TunSettingsPageWidget::tunEnabledChanged, this, [this](bool enabled) {
         if (coreSettingsPage_ != nullptr) {
@@ -307,6 +310,11 @@ void SettingsDialog::setupUi()
 QList<int> SettingsDialog::selectedSubRows() const
 {
     return subscriptionSettingsPage_ == nullptr ? QList<int>() : subscriptionSettingsPage_->selectedRows();
+}
+
+QStringList SettingsDialog::selectedSubIds() const
+{
+    return updateSubRequestedIds_;
 }
 
 void SettingsDialog::setCoreVersion(CoreType coreType, const QString& version)

@@ -57,7 +57,7 @@ void SettingsWorkflowCoordinator::openSettingsDialog(int initialTab)
 
     if (sessionResult.outcome == SettingsDialogRunner::Outcome::UpdateSubscriptions) {
         if (deps_.saveAndUpdateSubscriptions) {
-            deps_.saveAndUpdateSubscriptions(sessionResult.selectedSubscriptionRows, sessionResult.config);
+            deps_.saveAndUpdateSubscriptions(sessionResult.selectedSubscriptionIds, sessionResult.config);
         }
         return;
     }

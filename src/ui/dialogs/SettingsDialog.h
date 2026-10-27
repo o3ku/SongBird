@@ -32,6 +32,7 @@ public:
     bool wasCoreDownloadRequested() const { return coreDownloadRequested_; }
     CoreType requestedCoreDownload() const { return requestedCoreDownload_; }
     QList<int> selectedSubRows() const;
+    QStringList selectedSubIds() const;
     void selectTab(int index) { requestedTabIndex_ = index; }
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     void setCoreVersion(CoreType coreType, const QString& version);
@@ -56,6 +57,9 @@ private:
     QDialogButtonBox* buttonBox_ = nullptr;
     bool restoreBackupRequested_ = false;
     bool updateSubRequested_ = false;
+    // Captured by the Update button, not read when the dialog closes: the list can be reordered in
+    // between, and the rows that were selected would then name other subscriptions.
+    QStringList updateSubRequestedIds_;
     bool coreDownloadRequested_ = false;
     CoreType requestedCoreDownload_ = CoreType::Unknown;
     QTabBar* settingsTabBar_ = nullptr;

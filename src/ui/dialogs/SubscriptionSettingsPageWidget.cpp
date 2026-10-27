@@ -147,6 +147,13 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     layout->addLayout(buttonLayout);
     layout->addWidget(table_);
 
+    // Add is a row, not a subscription: the dialog is an edit buffer and nothing in it reaches the
+    // config file until it is accepted. Saving here instead would (a) leave an orphaned
+    // subscription behind when the user cancels, (b) persist a URL that is still the placeholder
+    // `https://` every row starts as, and (c) break the "apply on OK" rule the rest of the page --
+    // and evaluateSettingsDialogApplyPlan() -- is built on. The empty id a new row carries is
+    // handled where it shows up: moveSelectedRows() identifies rows by position, so a row with no
+    // id yet still moves.
     connect(addButton_, &QPushButton::clicked, this, [this]() {
         appendRow(SubItem{
             QString(),

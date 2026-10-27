@@ -16,7 +16,6 @@
 #include "ui/mainwindow/MainWindowConfigState.h"
 class QAction;
 class QComboBox;
-class QEvent;
 class QLabel;
 class QLineEdit;
 class QMenu;
@@ -26,7 +25,7 @@ class QResizeEvent;
 class QToolBar;
 class QToolButton;
 class QVBoxLayout;
-
+class QEvent;
 class QShowEvent;
 class QSplitter;
 class QTabBar;
@@ -150,6 +149,10 @@ signals:
     void uwpLoopbackRequested();
     void retryCoreStartupRequested();
     void hiddenToTray();
+    // Emitted when the window regains the user's attention (it is raised, or a child modal such as
+    // the settings dialog closes). A subscription hide is deferred, so this is the window telling
+    // the composition root "the gesture ended, the list in memory is what I want on disk".
+    void pendingEditsCheckpointReached();
 
 private slots:
     void updateActionState();
@@ -161,6 +164,7 @@ private:
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void setupUi();
     void applyConfig(const Config& config);
     void setupToolbar();
@@ -269,6 +273,7 @@ private:
     QAction* setDefaultServerAction_ = nullptr;
     QAction* setDefaultServerWithTunAction_ = nullptr;
     QAction* updateCurrentSubscriptionAction_ = nullptr;
+    QAction* moveSubscriptionAction_ = nullptr;
     QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
     QAction* settingsAction_ = nullptr;
     QAction* aboutAction_ = nullptr;

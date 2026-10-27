@@ -17,7 +17,15 @@ public:
 
     QList<SubItem> list(const Config& config) const;
     OperationResult saveSubscriptions(Config& config, QList<SubItem> items);
-    OperationResult setSubscriptionEnabled(Config& config, const QString& subscriptionId, bool enabled);
+    // `enabled` is read back by the settings dialog as a normal edit, so this usually writes the
+    // file itself. `persistSave` is false for the one caller that hides a subscription as half of a
+    // larger edit the caller is about to save anyway -- writing here too turned one click into two
+    // writes of the same file, the second of them over a stale snapshot of the other fields.
+    OperationResult setSubscriptionEnabled(
+        Config& config,
+        const QString& subscriptionId,
+        bool enabled,
+        bool persistSave = true);
     // Reorders the subscription list, which is also the order of the tabs in the main window: the
     // list is persisted as-is, so no separate order field has to be kept in step with it. An
     // operation that would not move anything reports success without saving.

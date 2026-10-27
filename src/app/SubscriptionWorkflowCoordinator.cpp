@@ -243,16 +243,11 @@ void SubscriptionWorkflowCoordinator::updateAll()
         QCoreApplication::translate("AppBootstrap", "Updating subscriptions in the background..."));
 }
 
-void SubscriptionWorkflowCoordinator::updateSelected(const QList<int>& rowIndexes)
+void SubscriptionWorkflowCoordinator::updateSelected(const QStringList& selectedSubscriptionIds)
 {
-    const Config config = configCallbacks_.currentConfig ? configCallbacks_.currentConfig() : Config();
     QStringList subscriptionIds;
-    for (int rowIndex : rowIndexes) {
-        if (rowIndex < 0 || rowIndex >= config.collection().subscriptions.size()) {
-            continue;
-        }
-
-        const QString subscriptionId = config.collection().subscriptions.at(rowIndex).id.trimmed();
+    for (const QString& id : selectedSubscriptionIds) {
+        const QString subscriptionId = id.trimmed();
         if (!subscriptionId.isEmpty() && !subscriptionIds.contains(subscriptionId)) {
             subscriptionIds.append(subscriptionId);
         }

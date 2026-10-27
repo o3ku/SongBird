@@ -40,6 +40,11 @@ public:
     void reorderServers(const QStringList& orderedIndexIds);
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);
+    // Writes whatever the in-memory config holds now. Hiding a subscription is deferred (see
+    // hideSubscription()), and this is the point where such an edit -- possibly several of them, with
+    // moves in between -- reaches the file: when the window regains focus and when the process is
+    // about to exit. Leaving it until one of those is deliberate; a hide is never the last word.
+    void persistPendingSubscriptionEdits();
 
 private:
     void appendResult(const OperationResult& result) const;

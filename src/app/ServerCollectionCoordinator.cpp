@@ -70,7 +70,13 @@ void ServerCollectionCoordinator::reorderServers(const QStringList& orderedIndex
 
 void ServerCollectionCoordinator::hideSubscription(const QString& subscriptionId)
 {
-    appendResult(deps_.subscriptionService.setSubscriptionEnabled(deps_.config, subscriptionId, false));
+    // Hiding a subscription is the first half of "turn it off, reorder it, turn it on again" -- the
+    // only way a hidden subscription can be moved, since it has no tab to drag. Saving here meant
+    // those two clicks wrote the config file twice, and the intermediate write persisted a list the
+    // user was still rearranging. The edit stays in memory and syncWindow() refreshes the tabs from
+    // it; the save that ends the gesture is the one that decides what is on disk.
+    appendResult(deps_.subscriptionService.setSubscriptionEnabled(
+        deps_.config, subscriptionId, false, false));
     syncWindow();
 }
 
@@ -96,6 +102,11 @@ void ServerCollectionCoordinator::deleteSubscription(const QString& subscription
 
     restartCoreIfRunning(QCoreApplication::translate(
         "AppBootstrap", "Reloading core after deleting the active subscription."));
+}
+
+void ServerCollectionCoordinator::persistPendingSubscriptionEdits()
+{
+    appendResult(deps_.serverService.save(deps_.config));
 }
 
 void ServerCollectionCoordinator::appendResult(const OperationResult& result) const

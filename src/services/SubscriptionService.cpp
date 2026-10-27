@@ -46,7 +46,11 @@ OperationResult SubscriptionService::saveSubscriptions(Config& config, QList<Sub
     return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscriptions saved."));
 }
 
-OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, const QString& subscriptionId, bool enabled)
+OperationResult SubscriptionService::setSubscriptionEnabled(
+    Config& config,
+    const QString& subscriptionId,
+    bool enabled,
+    bool persistSave)
 {
     const QString normalizedId = subscriptionId.trimmed();
     if (normalizedId.isEmpty()) {
@@ -68,7 +72,7 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
         config.ui().mainSelectedSubId.clear();
     }
 
-    if (!repository_.save(config)) {
+    if (persistSave && !repository_.save(config)) {
         return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save subscriptions."));
     }
 

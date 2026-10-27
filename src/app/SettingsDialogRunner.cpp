@@ -114,7 +114,7 @@ SettingsDialogRunner::Result SettingsDialogRunner::exec(
     if (dialog.wasUpdateSubRequested()) {
         result.outcome = Outcome::UpdateSubscriptions;
         result.config = dialog.config();
-        result.selectedSubscriptionRows = dialog.selectedSubRows();
+        result.selectedSubscriptionIds = dialog.selectedSubIds();
         return result;
     }
 

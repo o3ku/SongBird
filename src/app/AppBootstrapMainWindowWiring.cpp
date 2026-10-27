@@ -280,6 +280,19 @@ void AppBootstrap::wireMainWindowCommands()
             objects_->serverCollectionCoordinator->hideSubscription(subscriptionId);
         }
     });
+    // The deferred half of the hide: the window says "the gesture ended", and whatever is in memory
+    // becomes the file. Nothing here decides what to save -- the coordinator writes the config it
+    // already holds, so a hide followed by a move followed by an un-hide is one write of the final
+    // list rather than three writes of intermediate ones.
+    QObject::connect(
+        objects_->mainWindow.get(),
+        &MainWindow::pendingEditsCheckpointReached,
+        objects_->mainWindow.get(),
+        [this]() {
+            if (objects_->serverCollectionCoordinator != nullptr) {
+                objects_->serverCollectionCoordinator->persistPendingSubscriptionEdits();
+            }
+        });
     QObject::connect(objects_->mainWindow.get(), &MainWindow::deleteSubscriptionRequested, objects_->mainWindow.get(), [this](const QString& subscriptionId) {
         if (objects_->serverCollectionCoordinator != nullptr) {
             objects_->serverCollectionCoordinator->deleteSubscription(subscriptionId);

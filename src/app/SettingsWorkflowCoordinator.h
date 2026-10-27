@@ -39,7 +39,7 @@ public:
             const std::function<void(const OperationResult&)>&)> updateCore;
         std::function<void()> restoreConfigFromBackup;
         std::function<void(const Config&)> applySettings;
-        std::function<OperationResult(const QList<int>&, const Config&)> saveAndUpdateSubscriptions;
+        std::function<OperationResult(const QStringList&, const Config&)> saveAndUpdateSubscriptions;
         // Asks the in-flight core update to stop.
         std::function<void()> cancelCoreUpdate;
     };

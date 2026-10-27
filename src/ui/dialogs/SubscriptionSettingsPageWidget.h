@@ -21,6 +21,11 @@ public:
     void setSubscriptions(const QList<SubItem>& items);
     QList<SubItem> subscriptions() const;
     QList<int> selectedRows() const;
+    // What "Update Selected" means, captured when the button is pressed. A row number is not an
+    // identity: the table is reorderable, so by the time the dialog is accepted the same number can
+    // address a different subscription. Ids survive the move, and a row added here has none yet --
+    // which is the correct answer, since it has nothing to update.
+    QStringList selectedSubscriptionIds() const;
 
     static QString resolveUserAgent(const QString& storedValue);
 
@@ -41,9 +46,10 @@ private:
     void updateActionState();
     // Reorders the rows the table owns. The table is the live edit buffer for the dialog, so
     // moving a row here rearranges the persisted order only when the dialog is accepted; a cancel
-    // leaves the saved list untouched.
+    // leaves the saved list untouched. Hidden rows are ordinary rows here -- this page is the only
+    // place a subscription without a tab can be placed, so nothing about the move is conditional on
+    // the Enabled checkbox.
     void moveSelectedRows(SubscriptionOrder::MoveOperation operation);
-    QStringList selectedSubscriptionIds() const;
     void showTableContextMenu(const QPoint& position);
 
     QList<SubItem> items_;

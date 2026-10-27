@@ -97,6 +97,7 @@ private slots:
     void subscriptionRowMoveActionsKeepTheMovedRowsSelected();
     void subscriptionRowMoveActionsMoveRowsWithoutIds();
     void subscriptionRowMoveActionsDisableAtTheEdges();
+    void updateSelectedKeepsTheSubscriptionsThatWereSelectedBeforeAMove();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -1990,6 +1991,54 @@ void SettingsDialogTests::subscriptionRowMoveActionsDisableAtTheEdges()
     auto* singleMoveUp = singleDialog.findChild<QAction*>(QStringLiteral("moveSubscriptionUpAction"));
     QVERIFY(singleMoveUp != nullptr);
     QVERIFY(!singleMoveUp->isEnabled());
+}
+
+void SettingsDialogTests::updateSelectedKeepsTheSubscriptionsThatWereSelectedBeforeAMove()
+{
+    // "Move a row, then Update Selected" is ordinary: the selection follows the row, so the row
+    // number the button saw is not the row number the list has when the dialog closes. The ids
+    // captured at the click are what the update runs against -- resolving rows at that later moment
+    // is what updated a subscription the user never selected.
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveBottomAction != nullptr);
+
+    QPushButton* updateButton = nullptr;
+    for (QPushButton* button : dialog.findChildren<QPushButton*>()) {
+        if (button != nullptr && button->text() == QStringLiteral("Update Selected")) {
+            updateButton = button;
+            break;
+        }
+    }
+    QVERIFY(updateButton != nullptr);
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    updateButton->click();
+    QCoreApplication::processEvents();
+
+    // The click is what is remembered, and at that moment row 0 was sub-1.
+    QCOMPARE(dialog.selectedSubIds(), QStringList{QStringLiteral("sub-1")});
+
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    // The row moved -- and the request did not: it still names the subscription the user selected,
+    // not whatever ended up in the row it used to occupy.
+    QCOMPARE(subTable->item(1, 2)->text(), QStringLiteral("A"));
+    QCOMPARE(dialog.selectedSubIds(), QStringList{QStringLiteral("sub-1")});
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()

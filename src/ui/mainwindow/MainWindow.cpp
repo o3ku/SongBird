@@ -11,6 +11,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QHeaderView>
@@ -867,6 +868,20 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
         triggerCurrentSubscriptionUpdate();
     });
 
+    // The tab bar's context menu can only move a subscription that has a tab, so a hidden one could
+    // not be reordered without turning it back on first. This entry exists for that case: it lists
+    // the current subscription and every hidden one, which is the whole set the bar cannot reach.
+    moveSubscriptionAction_ = new QAction(tr("Reorder Subscriptions..."), this);
+    moveSubscriptionAction_->setObjectName(QStringLiteral("reorderSubscriptionsMenuAction"));
+    connect(moveSubscriptionAction_, &QAction::triggered, this, [this]() {
+        if (subscriptionViewController_ == nullptr) {
+            return;
+        }
+        // Parented to the window so the menu is destroyed with it; the popup position is the
+        // cursor's, which is where the user asked for it by clicking the entry.
+        subscriptionViewController_->showSubscriptionMoveMenu(QCursor::pos(), this);
+    });
+
     helpMenu = new QMenu(tr("Help"), toolBar);
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
     helpMenu->addAction(aboutAction_);
@@ -882,6 +897,7 @@ void MainWindow::createToolbarMenus(QToolBar* toolBar, QMenu*& helpMenu)
     }
     helpMenu->addAction(updateCurrentSubscriptionAction_);
     helpMenu->addAction(updateSubscriptionsAction_);
+    helpMenu->addAction(moveSubscriptionAction_);
     helpMenu->addSeparator();
     helpMenu->addAction(updateGeoResourcesAction_);
     for (QAction* action : updateCoreActions_.values()) {
@@ -1510,6 +1526,19 @@ void MainWindow::closeEvent(QCloseEvent* event)
         QCoreApplication::quit();
     });
     event->accept();
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+
+    // Activation, not every event: what the downstream checkpoint persists is the list the user
+    // left behind, and "left behind" is the moment they look at something else or come back to this
+    // window. A modal dialog closing returns the activation here too, which is what makes a hide
+    // followed by "settings -> OK" reachable without a wait.
+    if (event != nullptr && event->type() == QEvent::ActivationChange && isActiveWindow()) {
+        emit pendingEditsCheckpointReached();
+    }
 }
 
 void MainWindow::resizeEvent(QResizeEvent* event)

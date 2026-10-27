@@ -65,6 +65,7 @@ private slots:
     void testRemoveSubscriptionNotFound();
     void testRemoveSubscriptionEmptyId();
     void testEnableSubscription();
+    void testEnableSubscriptionWithoutPersistSaveLeavesTheFileAlone();
     void testDisableSubscriptionClearsMainSelectedSubId();
     void testEnableSubscriptionNotFound();
     void testEnableSubscriptionEmptyId();
@@ -289,6 +290,31 @@ void SubscriptionServiceTests::testEnableSubscription()
     QVERIFY(result.success);
     QVERIFY(config.collection().subscriptions[0].enabled);
     QVERIFY(result.message.contains(QStringLiteral("enabled")));
+}
+
+// -- A deferred save is a caller's save --
+
+void SubscriptionServiceTests::testEnableSubscriptionWithoutPersistSaveLeavesTheFileAlone()
+{
+    // Hiding a subscription from the main window is half of a larger edit (hide, move, show) whose
+    // last step saves. Writing here as well meant one click wrote the config file twice.
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    SubItem sub = makeSub(QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+                          QStringLiteral("https://a.com"));
+    config.collection().subscriptions.append(sub);
+    config.ui().mainSelectedSubId = QStringLiteral("sub-1");
+
+    auto result = service.setSubscriptionEnabled(
+        config, QStringLiteral("sub-1"), false, /*persistSave=*/false);
+
+    QVERIFY(result.success);
+    QVERIFY(!config.collection().subscriptions[0].enabled);
+    // The in-memory edit is complete; only the write is deferred.
+    QVERIFY(config.ui().mainSelectedSubId.isEmpty());
+    QCOMPARE(repo.saveCount, 0);
 }
 
 // -- Disable subscription clears mainSelectedSubId --

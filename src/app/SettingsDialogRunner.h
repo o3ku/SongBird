@@ -26,7 +26,9 @@ public:
     struct Result {
         Outcome outcome = Outcome::Cancelled;
         Config config;
-        QList<int> selectedSubscriptionRows;
+        // Ids, not rows: "Update Selected" is a request to update the subscriptions the user was
+        // looking at, and the rows that held them can be reordered before the dialog is accepted.
+        QStringList selectedSubscriptionIds;
     };
 
     using TrackThreadFn = std::function<void(QThread*)>;

@@ -188,19 +188,26 @@ void SubscriptionViewController::invokeMove(const QString& subscriptionId, Subsc
     }
 }
 
-bool SubscriptionViewController::canMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation) const
+QStringList SubscriptionViewController::movableSubscriptionIds() const
 {
-    // Disabled subscriptions keep their place in the persisted list but have no tab, so "can this
-    // move" is a question the visible tabs answer: a subscription needs a neighbour after it (or
-    // before it) to swap with, and Ungrouped is never one of those neighbours.
+    // The persisted order is this list, hidden subscriptions included. A move is a position in that
+    // list, so every id in it is movable -- including one with no tab, which is exactly the case the
+    // tab bar and its context menu cannot reach on their own. Ungrouped is not in the list and so is
+    // never a neighbour. Duplicates are skipped for the reason the rest of the reorder code skips
+    // them: the second occurrence of an id is not a second position.
     QStringList movableIds;
     for (const SubItem& item : subscriptions_) {
         const QString id = item.id.trimmed();
-        if (item.enabled && !id.isEmpty() && !movableIds.contains(id)) {
+        if (!id.isEmpty() && !movableIds.contains(id)) {
             movableIds.append(id);
         }
     }
+    return movableIds;
+}
 
+bool SubscriptionViewController::canMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation) const
+{
+    const QStringList movableIds = movableSubscriptionIds();
     const int position = movableIds.indexOf(subscriptionId.trimmed());
     if (position < 0 || movableIds.size() < 2) {
         return false;
@@ -240,6 +247,86 @@ void SubscriptionViewController::showTabContextMenu(const QPoint& position)
 
     const QString tabKey = context_.subscriptionTabBar->tabData(tabIndex).toString();
     showContextMenu(tabKey, context_.subscriptionTabBar->mapToGlobal(position), context_.subscriptionTabBar);
+}
+
+void SubscriptionViewController::showSubscriptionMoveMenu(const QPoint& globalPosition, QWidget* parent)
+{
+    QMenu menu(parent);
+    menu.setObjectName(QStringLiteral("subscriptionMoveMenu"));
+
+    // The current tab first, so the common case ("move what I am looking at") is one click away,
+    // then the hidden ones by name. A hidden subscription's remarks is what the settings page calls
+    // it, so the entry reads the way the user last saw it.
+    const QString currentId = SubscriptionViewSupport::subscriptionIdFromTabKey(currentTabKey());
+    if (!currentId.isEmpty()) {
+        populateSubscriptionMoveMenu(&menu, currentId);
+    }
+    for (const SubItem& item : subscriptions_) {
+        const QString id = item.id.trimmed();
+        if (item.enabled || id.isEmpty() || id == currentId) {
+            continue;
+        }
+        populateSubscriptionMoveMenu(&menu, id);
+    }
+
+    if (menu.isEmpty()) {
+        menu.addAction(QObject::tr("Nothing to reorder"))->setEnabled(false);
+    }
+
+    menu.exec(globalPosition);
+}
+
+void SubscriptionViewController::populateSubscriptionMoveMenu(QMenu* menu, const QString& subscriptionId)
+{
+    if (menu == nullptr || subscriptionId.trimmed().isEmpty()) {
+        return;
+    }
+
+    const auto removed = std::find_if(
+        subscriptions_.begin(),
+        subscriptions_.end(),
+        [&subscriptionId](const SubItem& item) { return item.id.trimmed() == subscriptionId.trimmed(); });
+    if (removed == subscriptions_.end()) {
+        return;
+    }
+
+    const SubItem& item = *removed;
+    QString label = item.remarks.trimmed();
+    if (label.isEmpty()) {
+        label = subscriptionId.trimmed();
+    }
+    if (!item.enabled) {
+        label = QObject::tr("%1 (hidden)").arg(label);
+    }
+
+    if (!menu->isEmpty()) {
+        menu->addSeparator();
+    }
+    // A submenu, not four more entries: this menu lists every subscription the tab bar cannot show,
+    // and four top-level actions per subscription would bury the list.
+    QMenu* subMenu = menu->addMenu(label);
+    subMenu->setObjectName(QStringLiteral("moveSubscriptionEntry_%1").arg(subscriptionId.trimmed()));
+
+    const struct {
+        QString text;
+        SubscriptionOrder::MoveOperation operation;
+    } entries[] = {
+        {QObject::tr("Move Up"), SubscriptionOrder::MoveOperation::Up},
+        {QObject::tr("Move Down"), SubscriptionOrder::MoveOperation::Down},
+        {QObject::tr("Move To Top"), SubscriptionOrder::MoveOperation::Top},
+        {QObject::tr("Move To Bottom"), SubscriptionOrder::MoveOperation::Bottom},
+    };
+
+    for (const auto& entry : entries) {
+        // Greyed out at the edges like the tab context menu, so pressing one on a subscription that
+        // is already last says why it did nothing instead of doing nothing silently.
+        QAction* action = subMenu->addAction(entry.text);
+        action->setEnabled(canMove(subscriptionId, entry.operation));
+        const QString id = subscriptionId;
+        QObject::connect(action, &QAction::triggered, subMenu, [this, id, operation = entry.operation]() {
+            invokeMove(id, operation);
+        });
+    }
 }
 
 void SubscriptionViewController::showContextMenuForTabKey(const QString& tabKey, const QPoint& globalPosition)

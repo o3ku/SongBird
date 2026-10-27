@@ -121,6 +121,7 @@ private slots:
     void tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder();
     void tabDragOntoUngroupedMovesTheSubscriptionLast();
     void subscriptionTabMenuMoveActionsFollowTheCurrentTab();
+    void reorderSubscriptionsMenuReachesAHiddenSubscription();
     void rebuiltTabsAreNotReportedAsAUserReorder();
     void coreStartupChecklistOverlayCoversMainWindowUntilCleared();
     void coreStartupChecklistOverlayUpdatesExistingRows();
@@ -2456,6 +2457,77 @@ void MainWindowTests::rebuiltTabsAreNotReportedAsAUserReorder()
     QCoreApplication::processEvents();
 
     QCOMPARE(reorderSpy.count(), 0);
+}
+
+void MainWindowTests::reorderSubscriptionsMenuReachesAHiddenSubscription()
+{
+    // A hidden subscription has no tab, so the tab bar's context menu -- the only other place the
+    // moves exist -- cannot reach it. The tools menu is the way back: it lists the current tab and
+    // every hidden subscription, and its entries are enabled by the same canMove() the tab menu uses.
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions.append(SubItem{
+        QStringLiteral("sub-hidden"),
+        QStringLiteral("Hidden group"),
+        QStringLiteral("https://example.com/sub-hidden"),
+        false,
+        QStringLiteral("ua")});
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* moveAction = window.findChild<QAction*>(QStringLiteral("reorderSubscriptionsMenuAction"));
+    QVERIFY(moveAction != nullptr);
+
+    QList<SubItem> reordered;
+    bool moveRequested = false;
+    QObject::connect(
+        &window,
+        &MainWindow::moveSubscriptionsRequested,
+        &window,
+        [&reordered, &moveRequested](const QStringList& ids, int operation) {
+            moveRequested = true;
+            Q_UNUSED(operation);
+            for (const QString& id : ids) {
+                SubItem item;
+                item.id = id;
+                reordered.append(item);
+            }
+        });
+
+    bool sawHiddenEntry = false;
+    bool hiddenMoveTopEnabled = false;
+    QTimer::singleShot(0, [&sawHiddenEntry, &hiddenMoveTopEnabled]() {
+        for (QWidget* widget : QApplication::allWidgets()) {
+            auto* menu = qobject_cast<QMenu*>(widget);
+            if (menu == nullptr) {
+                continue;
+            }
+            auto* entry = menu->findChild<QMenu*>(QStringLiteral("moveSubscriptionEntry_sub-hidden"));
+            if (entry == nullptr) {
+                continue;
+            }
+            sawHiddenEntry = true;
+            QVERIFY(!entry->actions().isEmpty());
+            for (QAction* action : entry->actions()) {
+                if (action != nullptr && action->text().contains(QStringLiteral("Top"))) {
+                    hiddenMoveTopEnabled = action->isEnabled();
+                }
+            }
+            menu->close();
+        }
+    });
+
+    moveAction->trigger();
+    QCoreApplication::processEvents();
+
+    // The entry exists for a subscription with no tab -- that is the whole point of the menu.
+    QVERIFY(sawHiddenEntry);
+    // It is the last of four subscriptions, so "Move To Top" has somewhere to go.
+    QVERIFY(hiddenMoveTopEnabled);
+    // Opening the menu is not a move: nothing is reported until an entry is triggered.
+    QVERIFY(!moveRequested);
+    QVERIFY(reordered.isEmpty());
 }
 
 void MainWindowTests::coreStartupChecklistOverlayCoversMainWindowUntilCleared()

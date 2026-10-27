@@ -10,6 +10,7 @@
 #include "domain/models/SubItem.h"
 
 class QLineEdit;
+class QMenu;
 class QTabBar;
 class ServerFilterProxyModel;
 class QWidget;
@@ -53,6 +54,11 @@ public:
 
     void showTabContextMenu(const QPoint& position);
     void showContextMenuForTabKey(const QString& tabKey, const QPoint& globalPosition);
+    // The tab bar only shows enabled subscriptions, so a hidden one has no tab and no context menu
+    // -- and moving it was the one reason to hide it in the first place. The window's tools menu
+    // offers the same four moves for the current tab's subscription plus the hidden ones here.
+    void showSubscriptionMoveMenu(const QPoint& globalPosition, QWidget* parent);
+    void populateSubscriptionMoveMenu(QMenu* menu, const QString& subscriptionId);
 
     // Drag-to-reorder. A tab's data is "sub:<id>", exactly the key the context menu uses, so the
     // two paths share one notion of what a tab addresses. Ungrouped has no id, and handleTabMoved()
@@ -64,6 +70,7 @@ private:
     QString subscriptionIdAtTab(int index) const;
     void invokeMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation);
     bool canMove(const QString& subscriptionId, SubscriptionOrder::MoveOperation operation) const;
+    QStringList movableSubscriptionIds() const;
     QTabBar* tabBarWithDragReorder() const;
 
     Context context_;

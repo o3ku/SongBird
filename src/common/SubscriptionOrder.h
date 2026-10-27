@@ -22,6 +22,13 @@ enum class MoveOperation {
 // Moves the selected subscriptions one step, or to the edge of the list, keeping their relative
 // order. A selection that is already at the edge is left alone, so the operation is idempotent and
 // the caller can report "unchanged" instead of saving for nothing.
+//
+// This is the whole of "reorder", for every subscription, hidden or not. The list count is the
+// order -- there is no `order` field to keep in step -- so the main window's tab drag and the
+// settings page's row move both end here, and a hidden subscription (enabled == false, no tab) can
+// be placed by the settings page exactly like a visible one. Ordering had been described as a
+// tab-only feature; it never was, and a hidden row that cannot be moved is a duplicate problem, not
+// a design.
 bool moveSubscriptions(QList<SubItem>& subscriptions, const QStringList& selectedIds, MoveOperation operation);
 
 // The same rule over bare keys, for the settings page's editing buffer: a row the user just added

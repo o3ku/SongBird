@@ -115,6 +115,8 @@ private slots:
     void reorderServersAppendsUnlistedAtEnd();
     void reorderServersReturnsOkForEmptyList();
     void reorderServersReturnsOkWhenOrderUnchanged();
+    void reorderServersIgnoresRepeatedIds();
+    void reorderServersKeepsServerWithEmptyIndexId();
 
     // updateTestResult
     void setTestResultSetsTrimmedResultWithoutSaving();
@@ -940,6 +942,40 @@ void ServerServiceTests::reorderServersReturnsOkWhenOrderUnchanged()
     QVERIFY(result.success);
     QCOMPARE(config.collection().servers.at(0).indexId, kId1);
     QCOMPARE(config.collection().servers.at(1).indexId, kId2);
+}
+
+void ServerServiceTests::reorderServersIgnoresRepeatedIds()
+{
+    Config config = makeConfigWithServers({
+        makeServer(kId1, kAddr1, 100),
+        makeServer(kId2, kAddr2, 200),
+        makeServer(kId3, kAddr3, 300),
+    });
+
+    // The id list is what the view handed over; a repeat must not duplicate or drop a row. This is
+    // the property the hash-based lookup has to keep from the linear scan it replaced.
+    const OperationResult result = service_->reorderServers(config, {kId2, kId2, kId1});
+    QVERIFY(result.success);
+    QCOMPARE(config.collection().servers.size(), 3);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId2);
+    QCOMPARE(config.collection().servers.at(1).indexId, kId1);
+    QCOMPARE(config.collection().servers.at(2).indexId, kId3);
+}
+
+void ServerServiceTests::reorderServersKeepsServerWithEmptyIndexId()
+{
+    Config config = makeConfigWithServers({
+        makeServer(kId1, kAddr1, 100),
+        makeServer(QString(), kAddr2, 200),
+    });
+
+    // An empty index id is not addressable, so it cannot appear in the order -- but it is still a
+    // server and belongs at the end rather than falling out of the list.
+    const OperationResult result = service_->reorderServers(config, {kId1});
+    QVERIFY(result.success);
+    QCOMPARE(config.collection().servers.size(), 2);
+    QCOMPARE(config.collection().servers.at(0).indexId, kId1);
+    QVERIFY(config.collection().servers.at(1).indexId.isEmpty());
 }
 
 // ---------------------------------------------------------------------------

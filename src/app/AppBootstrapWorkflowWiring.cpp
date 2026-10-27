@@ -98,14 +98,14 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
             },
             [this]() { restoreConfigFromBackup(); },
             [this](const Config& updatedConfig) { applySettingsDialogResult(updatedConfig); },
-            [this](const QList<int>& selectedRows, const Config& sessionConfig) {
+            [this](const QStringList& selectedSubscriptionIds, const Config& sessionConfig) {
                 const OperationResult saveResult =
                     objects_->subscriptionService->saveSubscriptions(config_, sessionConfig.collection().subscriptions);
                 appendResult(saveResult);
                 if (saveResult.success) {
                     syncWindow();
                     if (objects_->subscriptionWorkflowCoordinator != nullptr) {
-                        objects_->subscriptionWorkflowCoordinator->updateSelected(selectedRows);
+                        objects_->subscriptionWorkflowCoordinator->updateSelected(selectedSubscriptionIds);
                     }
                 }
                 return saveResult;

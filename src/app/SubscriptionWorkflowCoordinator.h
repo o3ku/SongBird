@@ -82,7 +82,9 @@ public:
     void importClipboard(const QString& text);
     void importSubscriptionUrls(const QString& text);
     void updateAll();
-    void updateSelected(const QList<int>& rowIndexes);
+    // Takes ids, not rows: the settings dialog's rows are reorderable, so a row number captured
+    // when the button was pressed addresses a different subscription by the time the list is saved.
+    void updateSelected(const QStringList& subscriptionIds);
     void updateByIds(const QStringList& subscriptionIds, bool useProxy, const QString& startupMessage);
 
 private:

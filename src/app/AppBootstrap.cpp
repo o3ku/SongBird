@@ -36,6 +36,8 @@
 #include "common/StartupSequencer.h"
 #include "common/ThreadShutdown.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
@@ -920,14 +922,14 @@ void AppBootstrap::updateCurrentSubscription(const QString& subscriptionId)
         return;
     }
 
-    QList<int> rowIndexes;
-    for (int index = 0; index < config_.collection().subscriptions.size(); ++index) {
-        if (config_.collection().subscriptions.at(index).id.trimmed() == trimmedSubscriptionId) {
-            rowIndexes.append(index);
-        }
-    }
-
-    if (rowIndexes.isEmpty()) {
+    // The id is the subscription's identity here, not the row it happens to sit in: the coordinator
+    // takes ids, and looking the id up only to hand back a position would let a list reordered
+    // underneath address a different subscription.
+    const bool known = std::any_of(
+        config_.collection().subscriptions.cbegin(),
+        config_.collection().subscriptions.cend(),
+        [&trimmedSubscriptionId](const SubItem& item) { return item.id.trimmed() == trimmedSubscriptionId; });
+    if (!known) {
         appendResult(OperationResult::fail(
             QCoreApplication::translate(
                 "AppBootstrap",
@@ -936,7 +938,7 @@ void AppBootstrap::updateCurrentSubscription(const QString& subscriptionId)
     }
 
     if (objects_->subscriptionWorkflowCoordinator != nullptr) {
-        objects_->subscriptionWorkflowCoordinator->updateSelected(rowIndexes);
+        objects_->subscriptionWorkflowCoordinator->updateSelected(QStringList{trimmedSubscriptionId});
     }
 }
 

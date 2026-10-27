@@ -1,5 +1,6 @@
 #include "services/ServerListOperations.h"
 
+#include <QHash>
 #include <QSet>
 
 #include <algorithm>
@@ -104,24 +105,42 @@ ReorderResult reorderServers(QList<VmessItem>& servers, const QStringList& order
         return ReorderResult::Unchanged;
     }
 
-    QList<VmessItem> reordered;
-    reordered.reserve(servers.size());
-
-    for (const QString& indexId : orderedIndexIds) {
-        const auto it = std::find_if(
-            servers.cbegin(),
-            servers.cend(),
-            [&indexId](const VmessItem& item) {
-                return item.indexId == indexId;
-            });
-        if (it != servers.cend()) {
-            reordered.append(*it);
+    // A drop arrives with every index id in the table, so this is the same shape as
+    // SubscriptionService::reorderSubscriptions(): one hash of the current positions instead of a
+    // scan per requested id, which was O(n^2) string comparisons inside an O(n) rebuild. Keep the
+    // two in step -- a second copy of the linear version invites the next reader to copy it back.
+    QHash<QString, int> positionById;
+    positionById.reserve(servers.size());
+    for (int position = 0; position < servers.size(); ++position) {
+        const QString& indexId = servers.at(position).indexId;
+        if (!indexId.isEmpty() && !positionById.contains(indexId)) {
+            positionById.insert(indexId, position);
         }
     }
 
-    const QSet<QString> orderedIds = toIndexIdSet(orderedIndexIds);
+    QList<VmessItem> reordered;
+    reordered.reserve(servers.size());
+
+    QSet<QString> seenIds;
+    for (const QString& indexId : orderedIndexIds) {
+        if (indexId.isEmpty() || seenIds.contains(indexId)) {
+            continue;
+        }
+
+        const auto position = positionById.constFind(indexId);
+        if (position == positionById.constEnd()) {
+            continue;
+        }
+
+        seenIds.insert(indexId);
+        reordered.append(servers.at(position.value()));
+    }
+
+    // Servers the caller never mentioned stay behind the ones it did, in their existing relative
+    // order. Every server is therefore in exactly one of the two passes, so the result is the same
+    // size by construction and the `Invalid` check below only fires on a contradiction.
     for (const VmessItem& item : servers) {
-        if (!orderedIds.contains(item.indexId)) {
+        if (!seenIds.contains(item.indexId)) {
             reordered.append(item);
         }
     }

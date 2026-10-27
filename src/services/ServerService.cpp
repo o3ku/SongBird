@@ -218,6 +218,9 @@ OperationResult ServerService::reorderServers(Config& config, const QList<QStrin
         return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));
     }
 
+    // Same as SubscriptionService::reorderSubscriptions(): the lookups are hashed rather than
+    // linear, because a drop arrives with every index id in the table and a scan per requested id
+    // is that many string comparisons right where the user is watching the row land.
     const QStringList normalizedIds = ServerListOperations::normalizedIndexIds(orderedIndexIds);
     if (normalizedIds.isEmpty()) {
         return OperationResult::ok(QCoreApplication::translate("ServerService", "Server order unchanged."));

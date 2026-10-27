@@ -111,6 +111,8 @@ private slots:
     void stopsTheCoreWhenTheActiveServerIsRemovedCleanly();
     void stopsTheCoreWhenOnlyTheManagedFileCleanupFailed();
     void keepsTheCoreRunningWhenTheRemovalCouldNotBeSaved();
+    void hidingASubscriptionDoesNotSaveOnItsOwn();
+    void persistingPendingEditsWritesTheHiddenStateOnce();
 };
 
 void ServerCollectionCoordinatorTests::stopsTheCoreWhenTheActiveServerIsRemovedCleanly()
@@ -205,6 +207,111 @@ void ServerCollectionCoordinatorTests::keepsTheCoreRunningWhenTheRemovalCouldNot
         QStringLiteral("Failed to save configuration after removing server(s).")));
     QCOMPARE(recorder.stopCoreCalls, 0);
     QCOMPARE(recorder.restartCoreCalls, 0);
+}
+
+void ServerCollectionCoordinatorTests::hidingASubscriptionDoesNotSaveOnItsOwn()
+{
+    // Hiding is the first half of "hide, reorder, show" -- the only route to moving a subscription
+    // that has no tab. Saving on the hide wrote the file once for the hide and again for the move,
+    // so the intermediate write landed a list the user was still rearranging. The edit is applied in
+    // memory here, and the save belongs to whatever ends the gesture.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config;
+    SubItem visible;
+    visible.id = QStringLiteral("sub-visible");
+    visible.remarks = QStringLiteral("Visible");
+    visible.url = QStringLiteral("https://a.example");
+    visible.enabled = true;
+    config.collection().subscriptions.append(visible);
+
+    SubItem hidden;
+    hidden.id = QStringLiteral("sub-hidden");
+    hidden.remarks = QStringLiteral("Hidden");
+    hidden.url = QStringLiteral("https://b.example");
+    hidden.enabled = false;
+    config.collection().subscriptions.append(hidden);
+    config.ui().mainSelectedSubId = visible.id;
+
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.hideSubscription(visible.id);
+
+    QVERIFY(!config.collection().subscriptions.at(0).enabled);
+    QVERIFY(config.ui().mainSelectedSubId.isEmpty());
+    QCOMPARE(repository.saveCalls_, 0);
+    // The tabs are redrawn from the in-memory edit, so the click still looks like it did something.
+    QCOMPARE(recorder.syncWindowCalls, 1);
+    QVERIFY(recorder.log().contains(QStringLiteral("hidden")));
+}
+
+void ServerCollectionCoordinatorTests::persistingPendingEditsWritesTheHiddenStateOnce()
+{
+    // The other half of the deferred save: hiding leaves the file alone, so something has to write it
+    // before the process ends, and that something is this. "Hide, reorder, show" therefore costs one
+    // write of the list the user settled on -- not one per click, and not zero.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config;
+    SubItem first;
+    first.id = QStringLiteral("sub-a");
+    first.remarks = QStringLiteral("A");
+    first.url = QStringLiteral("https://a.example");
+    first.enabled = true;
+    config.collection().subscriptions.append(first);
+
+    SubItem second;
+    second.id = QStringLiteral("sub-b");
+    second.remarks = QStringLiteral("B");
+    second.url = QStringLiteral("https://b.example");
+    second.enabled = true;
+    config.collection().subscriptions.append(second);
+    config.ui().mainSelectedSubId = first.id;
+
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.hideSubscription(first.id);
+    QCOMPARE(repository.saveCalls_, 0);
+
+    coordinator.persistPendingSubscriptionEdits();
+
+    QCOMPARE(repository.saveCalls_, 1);
+    QVERIFY(!config.collection().subscriptions.at(0).enabled);
+    // What reached the file is the hidden state, not the list from before the click.
+    QVERIFY(!repository.config_.collection().subscriptions.at(0).enabled);
+
+    // A failed checkpoint is reported, not swallowed: this is the only write between the click and
+    // the exit, so silence here would be a hide that silently never happened.
+    repository.saveSucceeds_ = false;
+    RemovalRecorder failingRecorder;
+    failingRecorder.config = &config;
+    ServerCollectionCoordinator failingCoordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        failingRecorder.callbacks());
+    failingCoordinator.persistPendingSubscriptionEdits();
+
+    QCOMPARE(repository.saveCalls_, 2);
+    QVERIFY(failingRecorder.log().contains(QStringLiteral("Failed to save")));
 }
 
 QTEST_MAIN(ServerCollectionCoordinatorTests)
