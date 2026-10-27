@@ -71,8 +71,8 @@ public:
     bool isTunEnabled() const;
     // Test seams, same reason as ProxySession's: the TUN-abort path only runs on a machine where
     // TUN cannot start (no elevation, no sing-box, no adapter cleanup), so the coordinator's
-    // rollback was not reachable from a test at all. Both are what the production wiring calls,
-    // nothing is stubbed; the binary never calls them.
+    // rollback was not reachable from a test at all. Both are the production wiring, called by the
+    // test instead of by start(); nothing is stubbed and the binary never calls them.
     void setTunRuntimeEnvironmentForTest(std::unique_ptr<IRuntimeEnvironment> environment);
     void startSessionForTest();
 
@@ -177,7 +177,7 @@ private:
     // The activation coordinator and its lambdas, shared by initialize() and
     // createProxySession()'s standalone path -- one wiring, two entries.
     void wireActivationCoordinator();
-    void wireRuntimeEnvironment();
+    void wireRuntimeEnvironment(FunctionRuntimeEnvironment& runtime);
     void stopProxySession(bool immediate);
     OperationResult startTunRuntime(bool relayToProxy);
     void stopTunRuntime(bool cleanupAdapter);

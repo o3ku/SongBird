@@ -1742,6 +1742,10 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot()
     // did, so the injected check stays empty on purpose: the crash loop is the subject.
     QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
     QSignalSpy stoppedSpy(harness.session.get(), SIGNAL(stopped()));
+    // The spent budget announces itself through `failed` rather than `stopped`: Auto only acts on
+    // `stopped` while it is stopping, so the old emit reached nobody. The counter below is the
+    // proof the plain-stop branch did not run -- a `stopped` here would be that branch.
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
 
     for (int round = 1; round <= 5; ++round) {
         harness.mainCore.running = false;
@@ -1768,7 +1772,10 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot()
                 .isEmpty() == false);
     QVERIFY(findLogLine(lines, QStringLiteral("System proxy restored because the core stopped."))
                 .isEmpty() == false);
-    QCOMPARE(stoppedSpy.count(), 1);
+    // No `stopped`: the spent budget now ends at `failed`, because `stopped` was never delivered to
+    // anyone who could act on it. The stop count and the failure count are the two halves of that.
+    QCOMPARE(stoppedSpy.count(), 0);
+    QCOMPARE(failedSpy.count(), 1);
     // The undo at the top of the handler restored through the capture the startup took; the branch
     // then forgot. One write, one restore, so no earlier round undid anything.
     QCOMPARE(harness.proxyUpdateCount, writesAfterStartup);
@@ -1864,9 +1871,13 @@ void ProxySessionTests::theDeadCoreForgetNeverWritesToADestroyedSession()
     // A capturing connection, not one to the harness: the trigger side is reached from the crash
     // handler on the GUI thread, and a connection to a member that outlives the session is exactly
     // the thing whose absence is being asserted.
+    // Both channels: a crash exit now ends at `failed` instead of `stopped` when the budget is
+    // spent, and either of them carrying a write after the session is gone is the bug.
     auto rounds = std::make_shared<std::atomic_int>(0);
     QObject::connect(harness->session.get(), &ProxySession::stopped, harness->session.get(),
                      [rounds]() { rounds->fetch_add(1); });
+    QObject::connect(harness->session.get(), &ProxySession::failed, harness->session.get(),
+                     [rounds](const QString&) { rounds->fetch_add(1); });
 
     QVERIFY2(driveToProxying(*harness), "session did not reach Proxying");
     QVERIFY(harness->session->isManagedProxyActive());

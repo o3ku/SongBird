@@ -4,7 +4,6 @@
 #include <memory>
 #include <utility>
 
-#include "appcore/ProxyRuntimeInterfaces.h"
 #include "auto/SongBirdAutoCoordinator.h"
 #include "platform/ISystemProxyService.h"
 
@@ -115,6 +114,16 @@ public:
         coordinator_->createProxySession();
     }
 
+    // initialize() for a case that needs to *start* something: the TUN abort runs before
+    // ProxySession::start(), so it needs the core hosts, the runtime resolver and the runtime
+    // environment initialize() builds -- createProxySession() alone leaves them unset.
+    void initializeForStart()
+    {
+        if (!coordinator_->initialize()) {
+            qFatal("SongBirdAutoCoordinator::initialize() failed");
+        }
+    }
+
     SongBirdAutoCoordinator& coordinator() { return *coordinator_; }
     RecordingSystemProxyService& proxy() const { return *recorder_; }
 
@@ -125,22 +134,6 @@ public:
 private:
     std::shared_ptr<RecordingSystemProxyService> recorder_;
     std::unique_ptr<SongBirdAutoCoordinator> coordinator_;
-};
-
-// A TUN runtime that cannot start, for the reason the product has on most machines: no elevation,
-// no sing-box, or an adapter it cannot clear. It reports the admin requirement, which the real
-// startTunRuntime() asks about *before* it touches a process, so nothing is spawned here.
-class FailingRuntimeEnvironment final : public IRuntimeEnvironment
-{
-public:
-    void cleanupPortProcesses() override {}
-    OperationResult removeStaleTunAdapter() override
-    {
-        return OperationResult::ok(QStringLiteral("No stale adapter."));
-    }
-    bool skipCoreChecks() const override { return false; }
-    bool isWindowsPlatform() const override { return true; }
-    bool isProcessElevated() const override { return false; }
 };
 
 } // namespace
@@ -221,8 +214,13 @@ void SongBirdAutoCoordinatorStopTests::exitLeavesAnUnownedProxyAlone()
 // setBusy(), and its listeners read the status line.
 void SongBirdAutoCoordinatorStopTests::aFailedTunStartGivesEveryFlagBack()
 {
+    // initialize() rather than createProxySession(): the abort is decided before
+    // ProxySession::start() is ever called, so the core hosts, the runtime resolver and the
+    // runtime environment all have to exist. Nothing is scripted -- the environment is the
+    // production one, and on a machine where TUN cannot start (no elevation, no sing-box, no
+    // adapter to clean) it reports exactly the failure this case is about.
     Harness harness;
-    harness.coordinator().setTunRuntimeEnvironmentForTest(std::make_unique<FailingRuntimeEnvironment>());
+    harness.initializeForStart();
     harness.coordinator().setTunEnabled(true);
     QVERIFY(harness.coordinator().isTunEnabled());
 
@@ -257,9 +255,9 @@ void SongBirdAutoCoordinatorStopTests::aFailedTunStartGivesEveryFlagBack()
     // Ordering: the busy flag has to be released *after* the status is final. Emitted before it,
     // the listener reacting to "not busy any more" renders the line from before the failure --
     // the inversion the live UI only hid because Qt coalesces event-loop turns.
-    // The session this harness builds never comes up, so the flag is only ever announced once,
-    // and it is announced released.
-    QCOMPARE(observed->busyEvents, 1);
+    // Two announcements: the start claims the flag, the rollback releases it. Only the release is
+    // observed here; the claim precedes the status that describes the failure.
+    QCOMPARE(observed->busyEvents, 2);
     QVERIFY(!observed->busyDuringLastEvent);
     QVERIFY(!observed->runningDuringLastEvent);
     QCOMPARE(observed->statusDuringLastBusyEvent, observed->status);

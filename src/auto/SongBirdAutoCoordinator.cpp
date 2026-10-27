@@ -15,6 +15,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "auto/AutoCoordinatorLogic.h"
@@ -134,7 +135,7 @@ bool SongBirdAutoCoordinator::initialize()
     // entry dereferencing a null -- invisible until something drove initialize(), and the
     // recovery tests are the first that do.
     runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
-    wireRuntimeEnvironment();
+    wireRuntimeEnvironment(*runtimeEnvironment_);
 
     wireActivationCoordinator();
 
@@ -158,9 +159,9 @@ void SongBirdAutoCoordinator::completeStartup()
 
 // One wiring, two entries: initialize() and createProxySession()'s standalone path share
 // these lambdas, so a test-built session decides with exactly the production wiring.
-void SongBirdAutoCoordinator::wireRuntimeEnvironment()
+void SongBirdAutoCoordinator::wireRuntimeEnvironment(FunctionRuntimeEnvironment& runtime)
 {
-    runtimeEnvironment_->cleanupPortProcessesFn = [this]() {
+    runtime.cleanupPortProcessesFn = [this]() {
         if (coreCleanupService_ == nullptr) {
             return;
         }
@@ -169,14 +170,14 @@ void SongBirdAutoCoordinator::wireRuntimeEnvironment()
             log(QStringLiteral("Cleaned core processes: %1").arg(cleaned.join(QStringLiteral(", "))));
         }
     };
-    runtimeEnvironment_->removeStaleTunAdapterFn = [this]() {
+    runtime.removeStaleTunAdapterFn = [this]() {
         return tunRuntimeService_ == nullptr
             ? OperationResult::ok(QStringLiteral("TUN cleanup unavailable."))
             : tunRuntimeService_->removeStaleAdapterIfPresent();
     };
-    runtimeEnvironment_->skipCoreChecksFn = []() { return false; };
-    runtimeEnvironment_->isWindowsPlatformFn = []() { return isWindowsPlatform(); };
-    runtimeEnvironment_->isProcessElevatedFn = []() { return isProcessElevated(); };
+    runtime.skipCoreChecksFn = []() { return false; };
+    runtime.isWindowsPlatformFn = []() { return isWindowsPlatform(); };
+    runtime.isProcessElevatedFn = []() { return isProcessElevated(); };
 }
 
 void SongBirdAutoCoordinator::wireActivationCoordinator()
@@ -264,7 +265,7 @@ void SongBirdAutoCoordinator::createProxySession()
             existingCoreTypes_,
             coreDiscoveryService_.get());
         runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
-        wireRuntimeEnvironment();
+        wireRuntimeEnvironment(*runtimeEnvironment_);
         wireActivationCoordinator();
     }
     proxySession_ = std::make_unique<ProxySession>(ProxySession::Dependencies{
@@ -312,8 +313,26 @@ void SongBirdAutoCoordinator::createProxySession()
     });
     QObject::connect(proxySession_.get(), &ProxySession::failed, this, [this](const QString& reason) {
         log(QStringLiteral("Proxy start failed: %1").arg(reason));
+        // startProxySession()'s own listener owns the flags of a start it drove: it either retries
+        // with another node or writes the terminal state itself, and a busy_ released here first
+        // would let a queued subscription refresh slip into a session that has not settled.
+        if (stopRequested_) {
+            // The user has stopped: this failure is the teardown's, and the exit that follows it
+            // now arrives as `failed` too. A stop with a restart pending has to resume from one of
+            // the two, so it is armed here as well.
+            if (pendingStartAfterStop_) {
+                pendingStartAfterStop_ = false;
+                startProxySession();
+                return;
+            }
+            finishStopped();
+            return;
+        }
+        if (pendingStartAfterStop_) {
+            return;
+        }
         setBusy(false);
-        if (running_ && !stopRequested_) {
+        if (running_) {
             handleUnavailableActiveServer(reason);
         } else {
             setRunning(false);
@@ -633,11 +652,25 @@ void SongBirdAutoCoordinator::setTunRuntimeEnvironmentForTest(std::unique_ptr<IR
     if (environment == nullptr) {
         return;
     }
-    runtimeEnvironment_ = std::move(environment);
+    // The wiring writes through FunctionRuntimeEnvironment's members, and the session holds that
+    // object by reference, so the seam rewrites the ones it already points at instead of swapping
+    // in a new object the session would not see.
+    runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
+    wireRuntimeEnvironment(*runtimeEnvironment_);
+    const std::shared_ptr<IRuntimeEnvironment> injected = std::move(environment);
+    runtimeEnvironment_->cleanupPortProcessesFn = [injected]() { injected->cleanupPortProcesses(); };
+    runtimeEnvironment_->removeStaleTunAdapterFn = [injected]() { return injected->removeStaleTunAdapter(); };
+    runtimeEnvironment_->skipCoreChecksFn = [injected]() { return injected->skipCoreChecks(); };
+    runtimeEnvironment_->isWindowsPlatformFn = [injected]() { return injected->isWindowsPlatform(); };
+    runtimeEnvironment_->isProcessElevatedFn = [injected]() { return injected->isProcessElevated(); };
 }
 
 void SongBirdAutoCoordinator::startSessionForTest()
 {
+    // startProxySession() alone does not claim busy_: the flags a start holds are claimed by the
+    // half above it, which is where the failure then has them to give back.
+    setRunning(true);
+    setBusy(true);
     startProxySession();
 }
 
