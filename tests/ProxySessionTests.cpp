@@ -1794,24 +1794,35 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails()
     QVERIFY(!harness.session->isManagedProxyActive());
 }
 
-// The TSAN half of the two cases above, and the reason the crash loop gives up ownership between
-// rounds instead of holding it.
+// The half of the two cases above that is about a write arriving after the session is gone.
 //
-// The forget the cases above pin is a *write* to managedSystemProxyActive_, and this member is
-// already written from a worker thread: the result handlers of the activation this session posted
-// (activationFinished, runOutboundCheck, the location probe) land on the worker's thread through a
-// queued invoke that asks no question about the session's lifetime, so a crash and a destruction
-// racing that result write attempt the member from two threads where only the GUI one is supposed
-// to. ThreadSanitizer reports that race, and it is the shape to look for. It is *not* a
-// use-after-free: every one of those handlers opens by re-reading `deps_` under `stateMutex_` and
-// returns when `stopping` is set, and stopInternal sets it before clearing anything -- so the
-// member is always reached through a session whose destruction has not started.
+// The forget the cases above pin is a *write* to managedSystemProxyActive_, so the question this
+// case has to answer is whether such a write can land on a destroyed session. It cannot, and the
+// contract has two halves. First, every result handler the session posts (activationFinished,
+// runOutboundCheck, the location probe) is a QMetaObject::invokeMethod(this, ..., QueuedConnection)
+// -- queued to `this`, so it runs on the GUI thread, the *receiver's* thread, not the posting
+// worker's; ~QObject then drops whatever is still queued to it. Second, the handlers that matter
+// open with the session's lifetime gate: `if (guard.expired() || shuttingDown_.load()) return;`
+// (`ProxySession.cpp:962`, `:1013`, `:1345`, `:1459`), where `guard` is the weak view of
+// `lifetimeGuard_` captured by each posted task. Both gates are set by the destructor and only
+// there: `~ProxySession()` writes `shuttingDown_ = true` and then `lifetimeGuard_.reset()`
+// (`:198-199`), which is what expires every outstanding `guard`. stopInternal does not set either
+// one; it requests cancellation, and the destructor is what closes the gate.
+//
+// An earlier version of this comment claimed those handlers land on the worker's thread and that
+// ThreadSanitizer reports managedSystemProxyActive_ being raced from two threads. Running the
+// suite under -fsanitize=thread does not produce that report: with the binary built against
+// Debian's ship-without-TSAN Qt5, every reported race is inside libQt5Core's internals (see
+// `tests/README-tsan.md`). The thread claim was wrong, so it is not written down here as fact.
+// The mechanism written in its place was wrong too -- it named a `stateMutex_` and a `stopping`
+// flag that do not exist in ProxySession, and credited the set to stopInternal -- so it is spelled
+// out above against the real identifiers rather than left as a plausible-sounding story.
 //
 // The two cases above steer around the race by asserting ownership after the sixth crash, when the
 // crash cooldown has already stopped a restarted core and dropped the claim. This one keeps the
 // crash loop producing orphaned writes on purpose -- a capturing connection to an atomic worker
 // count, no ownership read until the end -- and insists nothing lands after the session is gone.
-// Run the suite under -fsanitize=thread to see the requirement it states.
+// `tests/README-tsan.md` has the recipe for running the suite under -fsanitize=thread.
 void ProxySessionTests::theDeadCoreForgetNeverWritesToADestroyedSession()
 {
     auto harness = std::make_unique<ProxySessionHarness>();
