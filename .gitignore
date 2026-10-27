@@ -1,4 +1,5 @@
 /build
+/build-tsan
 /CMakePresets.json
 /.claude/worktrees/
 # Local agent scratch space: memory notes, probe projects (one of them is a full clone with its
