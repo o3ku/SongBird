@@ -3361,6 +3361,14 @@ Switch this protocol to %3?</source>
         <source>(no type)</source>
         <translation>（无类型）</translation>
     </message>
+    <message>
+        <source>(no fields) here</source>
+        <translation>（无字段）此处</translation>
+    </message>
+    <message>
+        <source>(malformed flow item) here</source>
+        <translation>（格式错误的行内条目）此处</translation>
+    </message>
 </context>
 <context>
     <name>SubscriptionService</name>

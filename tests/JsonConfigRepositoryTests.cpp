@@ -1196,8 +1196,9 @@ void JsonConfigRepositoryTests::subscriptionFetchFailureNamesTheProtocolsItCould
     // "returned no supported servers" alone describes a document with no nodes.
     const QString failLine = result.message.section(QChar('\n'), 1, 1);
     QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers.")), qPrintable(result.message));
-    QVERIFY2(failLine.contains(QStringLiteral("(skipped 2 node(s): hysteria, snell)")), qPrintable(result.message));
-    QVERIFY2(failLine.contains(QStringLiteral("hysteria")) && failLine.contains(QStringLiteral("snell")),
+    // Each skipped node is named, not just typed: "hysteria" tells the user their
+    // node is unsupported, 'hysteria "h1"' tells them which one it is.
+    QVERIFY2(failLine.contains(QStringLiteral("(skipped 2 node(s): hysteria \"h1\", snell \"s1\")")),
              qPrintable(result.message));
 }
 

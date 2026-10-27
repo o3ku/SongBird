@@ -44,6 +44,10 @@ private slots:
     void subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported();
     void subscriptionKeepsClashShapedSkippedTypesWhenNothingParses();
     void subscriptionClashQuotedNameKeepsHash();
+    void subscriptionClashNodeDoesNotInheritPreviousNodeFields();
+    void subscriptionClashMalformedFlowItemDoesNotAbsorbFollowingFields();
+    void subscriptionClashNodeWithoutNameDoesNotClaimPreviousName();
+    void subscriptionClashNamesTheNodeItCouldNotUseWithoutType();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -634,7 +638,9 @@ void SubscriptionParserTests::subscriptionReportsSkippedUnknownClashType()
     QCOMPARE(report.items.size(), 1);
     QVERIFY(report.hasSkippedNodes());
     QCOMPARE(report.skippedTypes.size(), 1);
-    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("someproto"));
+    // The type is what went wrong; the name is which node it happened to, and
+    // without it the user cannot find the node in a 2000-node subscription.
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("someproto \"future-proto\""));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("someproto")));
 
     // parseMany keeps its existing contract: items only, no diagnostics.
@@ -701,8 +707,8 @@ void SubscriptionParserTests::subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupp
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
     QCOMPARE(report.items.size(), 0);
     QVERIFY(report.hasSkippedNodes());
-    QVERIFY(report.skippedTypes.contains(QStringLiteral("hysteria")));
-    QVERIFY(report.skippedTypes.contains(QStringLiteral("snell")));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("hysteria \"h1\"")));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("snell \"s1\"")));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
 }
 
@@ -721,7 +727,7 @@ void SubscriptionParserTests::subscriptionKeepsClashShapedSkippedTypesWhenNothin
 
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
     QCOMPARE(report.items.size(), 0);
-    QVERIFY(report.skippedTypes.contains(QStringLiteral("ssh")));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("ssh \"only\"")));
 }
 
 void SubscriptionParserTests::subscriptionClashQuotedNameKeepsHash()
@@ -755,6 +761,102 @@ void SubscriptionParserTests::subscriptionClashQuotedNameKeepsHash()
     const QList<VmessItem> commented = SubscriptionContentParser::parseMany(withTrailingComment);
     QCOMPARE(commented.size(), 1);
     QCOMPARE(commented[0].remarks, QStringLiteral("Quoted"));
+}
+
+void SubscriptionParserTests::subscriptionClashNodeDoesNotInheritPreviousNodeFields()
+{
+    // Every "- " opens a node, so a node that leaves fields out must not be filled
+    // in from the one before it. Inheriting is the worse failure of the two: the
+    // node still parses, still has a name, and carries somebody else's address.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: good\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: no-server\n"
+        "    type: trojan\n"
+        "    password: other\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("good"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("1.1.1.1"));
+    // The second node has no address of its own; it must be reported, not dressed
+    // up in the first node's.
+    QCOMPARE(report.items.constFirst().id, QStringLiteral("pw"));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("trojan \"no-server\"")));
+}
+
+void SubscriptionParserTests::subscriptionClashMalformedFlowItemDoesNotAbsorbFollowingFields()
+{
+    // A flow-style item that is not a well-formed object is a fragment, not a node.
+    // Adding the block-style fields that follow it to that fragment produces a
+    // node stitched from two different entries.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - { name: broken, type: trojan\n"
+        "  - name: second\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("second"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("2.2.2.2"));
+    // The broken item is a node the document offered and this parser could not
+    // read, so it is counted -- as itself, not as the node it failed to become.
+    QVERIFY(report.hasSkippedNodes());
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("(malformed flow item) here"));
+}
+
+void SubscriptionParserTests::subscriptionClashNodeWithoutNameDoesNotClaimPreviousName()
+{
+    // The mirror case: a node with no name of its own. Taking the previous name is
+    // how one node ends up listed twice under two addresses.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: named\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.at(0).remarks, QStringLiteral("named"));
+    QCOMPARE(report.items.at(0).address, QStringLiteral("1.1.1.1"));
+    QVERIFY(report.items.at(1).remarks.isEmpty());
+    QCOMPARE(report.items.at(1).address, QStringLiteral("2.2.2.2"));
+    QVERIFY(!report.hasSkippedNodes());
+}
+
+void SubscriptionParserTests::subscriptionClashNamesTheNodeItCouldNotUseWithoutType()
+{
+    // "(no type)" names the symptom and nothing else. The name is the only handle
+    // a user has on the node that produced it.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: i-have-no-type\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QCOMPARE(report.skippedTypes.size(), 1);
+    QVERIFY2(report.skippedTypes.constFirst().contains(QStringLiteral("i-have-no-type")),
+             qPrintable(report.skippedTypes.constFirst()));
 }
 
 // ---------------------------------------------------------------------------

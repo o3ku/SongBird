@@ -10,6 +10,30 @@
 #include "subscription/ClashProxyItemParser.h"
 #include "subscription/SubscriptionYamlParser.h"
 
+namespace {
+
+// A node that lands in the array but yields no item is still a node we saw and
+// could not use, so its type belongs in the same skipped report as an
+// unsupported one. Nothing else records it: by the time the caller looks, the
+// node is indistinguishable from one that was never in the document. A type
+// alone cannot be acted on -- "skipped 1 node(s): (no type)" names no node the
+// user could go and fix -- so the name travels with it whenever the document
+// gave one.
+QString skippedEntryLabel(const QJsonObject& node)
+{
+    const QString type = node.value(QStringLiteral("type")).toString().trimmed();
+    const QString name = node.value(QStringLiteral("name")).toString().trimmed();
+    const QString typeLabel = type.isEmpty()
+        ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
+        : type;
+    if (name.isEmpty()) {
+        return typeLabel;
+    }
+    return QStringLiteral("%1 \"%2\"").arg(typeLabel, name);
+}
+
+} // namespace
+
 namespace ClashYamlProxyParser {
 
 QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTypes)
@@ -20,12 +44,35 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     bool inProxies = false;
     int proxiesIndent = -1;
     QJsonObject current;
+    // A node the document opened with "- " but whose fields never arrived. It has
+    // no type to report, so it needs its own entry rather than falling through
+    // the "unsupported node" path.
+    bool nodeWithoutFields = false;
+    // A flow-style item that is not a well-formed object. It is reported where it
+    // is read, because the block-style fields that follow do not belong to it and
+    // must not be added to a fragment of it.
+    QString brokenFlowItemLabel;
 
-    // A node that lands in the array but yields no item is still a node we saw and
-    // could not use, so its type belongs in the same skipped report as an
-    // unsupported one. Nothing else records it: by the time the caller looks, the
-    // node is indistinguishable from one that was never in the document.
-    const auto flushCurrent = [&items, &current, skippedTypes]() {
+    const auto reportNodeWithoutFields = [&nodeWithoutFields, skippedTypes]() {
+        if (!nodeWithoutFields) {
+            return;
+        }
+        nodeWithoutFields = false;
+        if (skippedTypes != nullptr) {
+            skippedTypes->append(QCoreApplication::translate(
+                "SubscriptionContentParser", "(no fields) here"));
+        }
+    };
+
+    const auto flushCurrent = [&items, &current, &nodeWithoutFields, &brokenFlowItemLabel,
+                               &reportNodeWithoutFields, skippedTypes]() {
+        reportNodeWithoutFields();
+        if (!brokenFlowItemLabel.isEmpty()) {
+            if (skippedTypes != nullptr) {
+                skippedTypes->append(brokenFlowItemLabel);
+            }
+            brokenFlowItemLabel.clear();
+        }
         if (current.isEmpty()) {
             return;
         }
@@ -34,19 +81,26 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
         proxyArray.append(current);
         QStringList nodeSkipped;
         const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray, &nodeSkipped);
-        if (skippedTypes != nullptr) {
+        if (parsed.isEmpty() && skippedTypes != nullptr) {
+            // parseProxyArray records the type it recognised but could not use. When
+            // it recorded nothing the node was dropped for a reason it does not
+            // report, which is precisely the silent loss worth naming -- and the
+            // name is the only way to find that node in the document again.
+            if (nodeSkipped.isEmpty()) {
+                skippedTypes->append(skippedEntryLabel(current));
+            } else {
+                // Keep the label the parser produced, but make it locatable: the
+                // per-node report is where the user looks for the node, not the type.
+                const QString name = current.value(QStringLiteral("name")).toString().trimmed();
+                if (!name.isEmpty()) {
+                    for (QString& entry : nodeSkipped) {
+                        entry = QStringLiteral("%1 \"%2\"").arg(entry, name);
+                    }
+                }
+                skippedTypes->append(nodeSkipped);
+            }
+        } else if (skippedTypes != nullptr) {
             skippedTypes->append(nodeSkipped);
-        }
-        // parseProxyArray only records a type it recognises but cannot use (a bad
-        // port, an empty address). A node it did not say anything about was dropped
-        // for a reason it does not report -- a line the comment split or the key/value
-        // split could not follow -- and that is precisely the silent loss worth naming.
-        if (parsed.isEmpty() && nodeSkipped.isEmpty() && skippedTypes != nullptr) {
-            const QString type = current.value(QStringLiteral("type")).toString().trimmed();
-            skippedTypes->append(
-                type.isEmpty()
-                    ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
-                    : type);
         }
         for (const VmessItem& item : parsed) {
             items.append(item);
@@ -77,12 +131,28 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
 
         if (SubscriptionYamlParser::isListItem(line)) {
             flushCurrent();
+            // Every "- " starts a node, so the fields of the previous one must not
+            // be visible from here on. Clearing before reading rather than at the
+            // end of the previous node is what keeps a field that could not be
+            // parsed from attaching itself to the next node.
+            current = QJsonObject{};
+            nodeWithoutFields = false;
+            brokenFlowItemLabel.clear();
+
             const QString itemBody = trimmed.mid(2).trimmed();
             if (itemBody.startsWith(QChar('{'))) {
                 const QJsonValue flowItem = SubscriptionYamlParser::parseValue(itemBody);
                 if (flowItem.isObject()) {
                     current = flowItem.toObject();
+                } else {
+                    brokenFlowItemLabel = QCoreApplication::translate(
+                        "SubscriptionContentParser", "(malformed flow item) here");
                 }
+                continue;
+            }
+
+            if (itemBody.isEmpty()) {
+                nodeWithoutFields = true;
                 continue;
             }
 
@@ -90,6 +160,8 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
             QString value;
             if (SubscriptionYamlParser::splitKeyValue(itemBody, &key, &value)) {
                 current.insert(key, SubscriptionYamlParser::parseValue(value));
+            } else {
+                nodeWithoutFields = true;
             }
             continue;
         }
