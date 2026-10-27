@@ -48,6 +48,8 @@ private slots:
     void subscriptionClashMalformedFlowItemDoesNotAbsorbFollowingFields();
     void subscriptionClashNodeWithoutNameDoesNotClaimPreviousName();
     void subscriptionClashNamesTheNodeItCouldNotUseWithoutType();
+    void subscriptionClashKeepsEveryNodeThatFollowsOneItCannotUse();
+    void subscriptionClashEmptyNodeWithoutPortDoesNotStopTheRest();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -857,6 +859,62 @@ void SubscriptionParserTests::subscriptionClashNamesTheNodeItCouldNotUseWithoutT
     QCOMPARE(report.skippedTypes.size(), 1);
     QVERIFY2(report.skippedTypes.constFirst().contains(QStringLiteral("i-have-no-type")),
              qPrintable(report.skippedTypes.constFirst()));
+}
+
+void SubscriptionParserTests::subscriptionClashKeepsEveryNodeThatFollowsOneItCannotUse()
+{
+    // A node that is missing a required field used to take the rest of the document
+    // with it. The list walk cleared the node's fields before handing the node on, so
+    // the node that just ended was never parsed -- and the one after it inherited
+    // nothing but landed in a parser already off by one. Every node following a bad one
+    // vanished, in the one case the report was written for: naming what was skipped.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: first\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: no-port\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    password: pw2\n"
+        "  - name: last\n"
+        "    type: trojan\n"
+        "    server: 3.3.3.3\n"
+        "    port: 443\n"
+        "    password: pw3\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.at(0).remarks, QStringLiteral("first"));
+    QCOMPARE(report.items.at(1).remarks, QStringLiteral("last"));
+    QCOMPARE(report.items.at(1).address, QStringLiteral("3.3.3.3"));
+    QCOMPARE(report.skippedTypes, QStringList{QStringLiteral("trojan \"no-port\"")});
+}
+
+void SubscriptionParserTests::subscriptionClashEmptyNodeWithoutPortDoesNotStopTheRest()
+{
+    // The same loss with nothing to report at all: a document whose nodes are all
+    // missing a field. It has to fail as "no supported servers", and it has to say
+    // which nodes it saw rather than returning an empty report that reads like a
+    // payload the parsers did not recognise.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: one\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "  - name: two\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QCOMPARE(report.skippedTypes.size(), 2);
+    QCOMPARE(report.skippedTypes.at(0), QStringLiteral("trojan \"one\""));
+    QCOMPARE(report.skippedTypes.at(1), QStringLiteral("trojan \"two\""));
 }
 
 // ---------------------------------------------------------------------------
