@@ -3377,6 +3377,14 @@ Switch this protocol to %3?</source>
         <source>(no type)</source>
         <translation>（无类型）</translation>
     </message>
+    <message>
+        <source>(no fields) here</source>
+        <translation>（无字段）此处</translation>
+    </message>
+    <message>
+        <source>(malformed flow item) here</source>
+        <translation>（格式错误的行内条目）此处</translation>
+    </message>
 </context>
 <context>
     <name>SubscriptionService</name>
@@ -3873,6 +3881,16 @@ Switch this protocol to %3?</source>
         <translation>订阅地址已保存，但还没有下载到任何节点。可以刷新该订阅，或手动添加服务器。</translation>
     </message>
     <message>
+        <source>Import failed</source>
+        <translation>导入失败</translation>
+    </message>
+    <message>
+        <source>%1
+Fix the reason above, then import again. The log panel below has the full report.</source>
+        <translation>%1
+请按上面的原因处理后重新导入，完整报告见下方日志面板。</translation>
+    </message>
+    <message>
         <source>No servers in this view</source>
         <translation>此视图内没有服务器</translation>
     </message>
@@ -3899,6 +3917,10 @@ Switch this protocol to %3?</source>
     <message>
         <source>This subscription has no servers yet</source>
         <translation>该订阅还没有服务器</translation>
+    </message>
+    <message>
+        <source>These servers belong to another view. Select its tab above to list them.</source>
+        <translation>这些服务器属于另一个视图，在上方选中它的标签页即可查看。</translation>
     </message>
 </context>
 <context>

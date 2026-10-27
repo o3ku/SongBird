@@ -88,6 +88,12 @@ public:
     // touches the filesystem.
     void setLogFileWriter(LogFileWriter* writer);
     void appendLog(const QString& message, LogSeverity severity = LogSeverity::Info);
+    // Why the last import produced nothing, or an empty string to clear it. The
+    // server table's empty panel is what the user is looking at when an import
+    // fails, so the reason has to be reachable from the window and not only from
+    // the log stream.
+    void setImportFailure(const QString& reason);
+    QString importFailure() const;
     void setHideToTrayEnabled(bool enabled);
     void setAllowClose(bool allowClose);
     bool requestExit();

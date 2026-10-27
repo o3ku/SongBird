@@ -144,6 +144,8 @@ private slots:
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
     void compactUiZonesDoNotExceedServerTableFont();
     void serverTableEmptyStateShowsGuidanceAndHidesWithRows();
+    void serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCopy();
+    void serverTableEmptyStateKeepsTheWholeImportFailureAsTooltip();
     void serverTableEmptyStateDistinguishesFilterFromEmptyList();
     void serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab();
     void serverTableEmptyStateDistinguishesNoSubscriptionFromNoNodes();
@@ -3253,6 +3255,88 @@ void MainWindowTests::serverTableEmptyStateRefreshButtonFollowsTheBackgroundTask
     window.setBackgroundTaskRunning(false);
     QCoreApplication::processEvents();
     QVERIFY(refreshButton->isEnabled());
+}
+
+void MainWindowTests::serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCopy()
+{
+    // An import that downloaded fine and produced no node lands the user on the
+    // same empty table as a fresh install. The panel is what replaced the table,
+    // so it is the only place the two states can differ -- "import something to
+    // get started" there tells a user who just imported to do the thing they
+    // already did.
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+
+    auto* title = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateTitle"));
+    auto* hint = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateHint"));
+    QVERIFY(title != nullptr);
+    QVERIFY(hint != nullptr);
+    const QString firstRunHint = hint->text();
+    QVERIFY(!firstRunHint.isEmpty());
+
+    window.setImportFailure(QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    QCoreApplication::processEvents();
+    QCOMPARE(window.importFailure(), QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    QCOMPARE(title->text(), QStringLiteral("Import failed"));
+    // The reason is shown, but only its first line: the parser report behind it
+    // would grow the panel past the table it stands in for.
+    QVERIFY(hint->text().contains(QStringLiteral("cnb.cool returned no supported servers.")));
+    QVERIFY(!hint->text().contains(QStringLiteral("hysteria")));
+    QVERIFY(hint->text() != firstRunHint);
+
+    // The panel is still there -- the import failing did not put the table back --
+    // and a later success clears the reason, which is a clearing signal, not a
+    // third state.
+    QVERIFY(emptyState->isVisible());
+    window.setImportFailure(QString());
+    QCoreApplication::processEvents();
+    QCOMPARE(hint->text(), firstRunHint);
+
+    // A filter that matched nothing still outranks the failure: the visible rows
+    // are what the wording has to explain, and the filter is the user's own.
+    window.setImportFailure(QStringLiteral("cnb.cool returned no supported servers."));
+    emptyState->setState(ServerEmptyStatePolicy::State::NodesElsewhere, QString(), true);
+    QCoreApplication::processEvents();
+    QCOMPARE(title->text(), QStringLiteral("No servers match the filter"));
+    // ...and the tooltip behind the one visible line goes with it, because the line
+    // it described is no longer on screen.
+    QVERIFY(title->toolTip().isEmpty());
+    QVERIFY(hint->toolTip().isEmpty());
+}
+
+void MainWindowTests::serverTableEmptyStateKeepsTheWholeImportFailureAsTooltip()
+{
+    // The panel has the height of one line for the reason, so the rest of it has to
+    // survive somewhere reachable without opening the log: the parser report is what
+    // says which nodes were dropped. Truncating it out of existence would leave the
+    // user with "no supported servers" and no idea which protocols those were.
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* title = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateTitle"));
+    auto* hint = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateHint"));
+    QVERIFY(title != nullptr);
+    QVERIFY(hint != nullptr);
+
+    const QString reason = QStringLiteral(
+        "cnb.cool returned no supported servers. (skipped 3 node(s): hysteria, ssh)\n"
+        "Subscription parse: pass 0 clash count=0");
+    window.setImportFailure(reason);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(title->toolTip(), reason);
+    QCOMPARE(hint->toolTip(), reason);
+    // Still one line of body text: the report does not grow the panel. The first
+    // line already carries the skipped summary here, which is exactly why it is the
+    // line that gets shown.
+    QVERIFY(!hint->text().contains(QStringLiteral("Subscription parse")));
 }
 
 void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()

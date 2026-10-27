@@ -158,6 +158,11 @@ void AppBootstrap::wireWorkflowCoordinators(const std::function<void(QThread*)>&
     };
     subscriptionCallbacks.ui.appendResult = [this](const OperationResult& result) { appendResult(result); };
     subscriptionCallbacks.ui.syncWindow = [this]() { syncWindow(); };
+    subscriptionCallbacks.ui.reportImportFailure = [this](const QString& reason) {
+        if (objects_->mainWindow != nullptr) {
+            objects_->mainWindow->setImportFailure(reason);
+        }
+    };
     subscriptionCallbacks.ui.selectSubscriptionTab = [this](const QString& subscriptionId) {
         if (objects_->mainWindow != nullptr) {
             objects_->mainWindow->selectSubscriptionTab(subscriptionId);

@@ -45,6 +45,13 @@ public:
         std::function<void()> clearServerTestResultsAndSync;
         std::function<void(const OperationResult&)> appendResult;
         std::function<void()> syncWindow;
+        // The last import/update left nothing to list, and why. That reason is the
+        // only thing that distinguishes "you have not imported anything yet" from
+        // "your import failed", and the empty server panel is where the user is
+        // looking. An empty reason clears it, which is what an import that put
+        // servers back on the table does; a failure keeps the previous reason
+        // until one of those happens.
+        std::function<void(const QString&)> reportImportFailure;
         std::function<void(const QString&)> selectSubscriptionTab;
     };
 
