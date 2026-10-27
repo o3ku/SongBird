@@ -19,6 +19,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSignalSpy>
 #include <QScrollBar>
 #include <QSet>
@@ -143,6 +144,7 @@ private slots:
     void serverTableEmptyStatePointsAtTheTabWithholdingTheNodes();
     void restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes();
     void restoreUiStateFallsBackToUngroupedForAnUnknownSubscription();
+    void restoreUiStateReappliesTheSubscriptionFilterForTheSelectedTab();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
     void serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate();
     void serverTableEmptyStateIsLaidOutInCompactMode();
@@ -3284,28 +3286,88 @@ void MainWindowTests::restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes(
     config.ui().mainSelectedSubId = QStringLiteral("sub-empty");
 
     window.setConfig(config);
-    window.restoreUiState(config);
     window.show();
     QCoreApplication::processEvents();
 
+    // Start from a different tab than the one the assertion below is about, and from a
+    // table that visibly holds rows, so the restore has something to undo. Starting from
+    // wherever the window happens to land makes the test drift with anything that moves
+    // the initial tab, and silently pass on whatever tab was already current.
+    //
+    // Note that this still does not pin restoreUiState()'s own applyCurrentTabFilter():
+    // setCurrentIndex() emits currentChanged, whose slot re-applies the filter too, so
+    // deleting that line keeps this green. The guard test below is the one that pins it.
     auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
     QVERIFY(tabBar != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->tabData(tabBar->currentIndex()).toString() == QStringLiteral("sub:sub-1"));
+    QVERIFY(serverView->model()->rowCount() > 0);
+
+    window.restoreUiState(config);
+
     const int restoredIndex = tabBar->currentIndex();
     QVERIFY(restoredIndex >= 0);
     QCOMPARE(tabBar->tabData(restoredIndex).toString(), QStringLiteral("sub:sub-empty"));
 
     // The tab bar alone is not enough: the filter decides which rows the table shows, and
     // selecting a tab without re-applying it leaves the previous tab's rows on screen.
-    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
-    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
-    QVERIFY(emptyState != nullptr);
-    QVERIFY(serverView != nullptr);
-    QVERIFY(serverView->model() != nullptr);
     QCOMPARE(serverView->model()->rowCount(), 0);
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
     QVERIFY(emptyState->isVisible());
     // The restored subscription holds nothing, so the panel asks for a refresh -- and the
     // tab it is describing is that subscription, not whichever one holds the nodes.
     QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
+}
+
+void MainWindowTests::restoreUiStateReappliesTheSubscriptionFilterForTheSelectedTab()
+{
+    // restoreUiState() re-applies the subscription filter after it moves the tab, and today
+    // that line is defensive rather than load-bearing: setCurrentIndex() emits
+    // currentChanged, whose slot already re-applies it. So the only way to hold the line in
+    // place is to cut that slot off, which is what this case does. The alternative is a test
+    // that passes with the line deleted and therefore asserts nothing.
+    //
+    // The state being restored is a subscription that holds nodes of its own. Nothing about
+    // the row count changes when the filter moves from one non-empty subscription to
+    // another, so no model signal can stand in for the re-apply -- only the tab key can.
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.ui().mainSelectedSubId = QStringLiteral("sub-2");
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+
+    // Start on the other subscription, so the restore has a filter to change.
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCoreApplication::processEvents();
+    const int rowsOnFirstSubscription = serverView->model()->rowCount();
+    QVERIFY(rowsOnFirstSubscription > 0);
+
+    {
+        // Simulate the signal path not existing. The tab still moves -- that is the whole
+        // point -- the window just does not hear about it.
+        const QSignalBlocker blocker(tabBar);
+        window.restoreUiState(config);
+    }
+
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->currentIndex() >= 0);
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    // The restored tab holds one server, the previous tab held two, so a filter left
+    // pointing at the previous tab is visible as the wrong row count under the new tab.
+    QCOMPARE(serverView->model()->rowCount(), 1);
+    QVERIFY(serverView->model()->rowCount() != rowsOnFirstSubscription);
 }
 
 void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription()
