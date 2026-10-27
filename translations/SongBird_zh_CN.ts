@@ -3825,12 +3825,36 @@ Switch this protocol to %3?</source>
         <translation>从文件或网址导入</translation>
     </message>
     <message>
+        <source>Its address is saved but no node has been downloaded from it. Refresh it, or add a server by hand.</source>
+        <translation>订阅地址已保存，但还没有下载到任何节点。可以刷新该订阅，或手动添加服务器。</translation>
+    </message>
+    <message>
+        <source>No servers in this view</source>
+        <translation>此视图内没有服务器</translation>
+    </message>
+    <message>
         <source>No servers match the filter</source>
         <translation>没有符合筛选条件的服务器</translation>
     </message>
     <message>
         <source>No servers yet</source>
         <translation>暂无服务器</translation>
+    </message>
+    <message>
+        <source>Refresh Subscription</source>
+        <translation>刷新订阅</translation>
+    </message>
+    <message>
+        <source>These servers are grouped under "%1". Select its tab above to list them.</source>
+        <translation>这些服务器归属于订阅「%1」，在上方选中它的标签页即可查看。</translation>
+    </message>
+    <message>
+        <source>These servers are grouped under a subscription. Select its tab above to list them.</source>
+        <translation>这些服务器归属于某个订阅，在上方选中它的标签页即可查看。</translation>
+    </message>
+    <message>
+        <source>This subscription has no servers yet</source>
+        <translation>该订阅还没有服务器</translation>
     </message>
 </context>
 <context>

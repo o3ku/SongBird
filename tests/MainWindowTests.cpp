@@ -19,6 +19,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSignalSpy>
 #include <QScrollBar>
 #include <QSet>
@@ -43,6 +44,7 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/MainWindowServerSelectionSupport.h"
 #include "ui/mainwindow/MainWindowTitleSupport.h"
+#include "ui/mainwindow/ServerEmptyStatePolicy.h"
 #include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/StatusBarSupport.h"
@@ -138,7 +140,13 @@ private slots:
     void serverTableEmptyStateShowsGuidanceAndHidesWithRows();
     void serverTableEmptyStateDistinguishesFilterFromEmptyList();
     void serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab();
+    void serverTableEmptyStateDistinguishesNoSubscriptionFromNoNodes();
+    void serverTableEmptyStatePointsAtTheTabWithholdingTheNodes();
+    void restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes();
+    void restoreUiStateFallsBackToUngroupedForAnUnknownSubscription();
+    void restoreUiStateReappliesTheSubscriptionFilterForTheSelectedTab();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
+    void serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate();
     void serverTableEmptyStateIsLaidOutInCompactMode();
     void serverTableResultColumnColoursLatencyBands();
 };
@@ -2959,13 +2967,18 @@ void MainWindowTests::serverTableEmptyStateShowsGuidanceAndHidesWithRows()
     QVERIFY(serverView != nullptr);
     QVERIFY(emptyState != nullptr);
 
-    // No servers: the table gives way to the guidance panel instead of showing a
-    // blank grid, and the panel offers all three ways in.
+    // No servers and no subscription: the table gives way to the guidance panel
+    // instead of showing a blank grid, and the panel offers all three ways in.
     QVERIFY(emptyState->isVisible());
     QVERIFY(serverView->isHidden());
     QVERIFY(emptyState->importButton() != nullptr);
     QVERIFY(emptyState->addButton() != nullptr);
     QVERIFY(emptyState->clipboardButton() != nullptr);
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::FirstRun);
+    QVERIFY(emptyState->importButton()->isVisible());
+    QVERIFY(emptyState->addButton()->isVisible());
+    QVERIFY(emptyState->clipboardButton()->isVisible());
+    QVERIFY(!emptyState->refreshButton()->isVisible());
 
     // Both are mounted in the desktop panel layout from construction, before any
     // resize: the table must not be a layout-less floating child, which is what
@@ -2990,6 +3003,41 @@ void MainWindowTests::serverTableEmptyStateShowsGuidanceAndHidesWithRows()
     // The visible table is the one being laid out and sized, not a stray child.
     QVERIFY(serverView->width() > 0);
     QCOMPARE(serverView->parentWidget(), serverPanel);
+}
+
+void MainWindowTests::serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate()
+{
+    MainWindow window;
+    Config config;
+    config.collection().subscriptions = {SubItem{
+        QStringLiteral("sub-1"),
+        QStringLiteral("Group 1"),
+        QStringLiteral("https://example.com/sub-1"),
+        true,
+        QStringLiteral("ua")}};
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+    auto* refreshButton = emptyState->refreshButton();
+    QVERIFY(refreshButton != nullptr);
+    QVERIFY(refreshButton->isVisible());
+    QVERIFY(refreshButton->isEnabled());
+
+    // The refresh is a background task, so the panel's button has to follow the same gate
+    // the toolbar's do. A config sync is not the only thing that moves that gate: an
+    // update starting or finishing changes nothing the panel watches, so reading the
+    // predicate only when the panel is rebuilt leaves a button that is clickable while it
+    // would do nothing, or grey while the app is idle again.
+    window.setBackgroundTaskRunning(true);
+    QCoreApplication::processEvents();
+    QVERIFY(!refreshButton->isEnabled());
+
+    window.setBackgroundTaskRunning(false);
+    QCoreApplication::processEvents();
+    QVERIFY(refreshButton->isEnabled());
 }
 
 void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()
@@ -3056,11 +3104,14 @@ void MainWindowTests::serverTableEmptyStateDistinguishesFilterFromEmptyList()
     QCoreApplication::processEvents();
     QVERIFY(emptyState->isVisible());
     QVERIFY(emptyState->filterActive());
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::NodesElsewhere);
 
     serverFilterEdit->clear();
     QCoreApplication::processEvents();
     QVERIFY(!emptyState->isVisible());
-    QVERIFY(!emptyState->filterActive());
+    // The panel is hidden now, so the stale state it was last given is deliberately
+    // left alone: setEmptyStateContext() only runs from a config sync, and rewriting
+    // a hidden panel on every keystroke would be work nobody sees.
 }
 
 void MainWindowTests::serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab()
@@ -3086,6 +3137,14 @@ void MainWindowTests::serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscr
     QVERIFY(emptyState->isVisible());
     QVERIFY(serverFilterEdit->text().isEmpty());
     QVERIFY(!emptyState->filterActive());
+
+    // The servers are grouped under a subscription, and importing is exactly what the
+    // user already did -- so the panel must not offer the first-run entry points.
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::WithheldSubscription);
+    QVERIFY(!emptyState->importButton()->isVisible());
+    QVERIFY(!emptyState->addButton()->isVisible());
+    QVERIFY(!emptyState->clipboardButton()->isVisible());
+    QVERIFY(!emptyState->refreshButton()->isVisible());
 
     // With text typed in as well, the filter really is a contributing cause and the
     // panel goes back to blaming it.
@@ -3122,6 +3181,219 @@ void MainWindowTests::serverTableEmptyStateButtonsDriveTheWindowActions()
     // where a share link or subscription URL is entered.
     emptyState->importButton()->click();
     QCOMPARE(subscriptionsSpy.count(), 1);
+}
+
+void MainWindowTests::serverTableEmptyStateDistinguishesNoSubscriptionFromNoNodes()
+{
+    MainWindow window;
+
+    // An enabled subscription with nothing downloaded from it. The list is empty in
+    // both this case and a genuine first run, so the row count alone cannot tell them
+    // apart -- and the first-run guide would tell the user to import the subscription
+    // they already imported.
+    Config config;
+    config.collection().subscriptions = {SubItem{
+        QStringLiteral("sub-1"),
+        QStringLiteral("Group 1"),
+        QStringLiteral("https://example.com/sub-1"),
+        true,
+        QStringLiteral("ua")}};
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+    QVERIFY(emptyState->isVisible());
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
+
+    // The fix is a refresh, so that is the lead action; adding one by hand stays
+    // available because the subscription may simply be dead. What must not be offered
+    // is "import something", which is what the user just did.
+    QVERIFY(!emptyState->importButton()->isVisible());
+    QVERIFY(emptyState->refreshButton()->isVisible());
+    QVERIFY(emptyState->addButton()->isVisible());
+    QVERIFY(emptyState->clipboardButton()->isVisible());
+
+    // A disabled subscription is not imported into any view, so its empty node list is
+    // not a fault: with no enabled subscription left this is a first run again.
+    Config disabled = config;
+    disabled.collection().subscriptions[0].enabled = false;
+    window.setConfig(disabled);
+    QCoreApplication::processEvents();
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::FirstRun);
+    QVERIFY(emptyState->importButton()->isVisible());
+    QVERIFY(!emptyState->refreshButton()->isVisible());
+}
+
+void MainWindowTests::serverTableEmptyStatePointsAtTheTabWithholdingTheNodes()
+{
+    MainWindow window;
+    window.setConfig(createGroupedServerSelectionConfig());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    auto* refreshButton = emptyState == nullptr ? nullptr : emptyState->refreshButton();
+    QVERIFY(emptyState != nullptr);
+    QVERIFY(refreshButton != nullptr);
+
+    // A subscription tab whose own list is empty while other subscriptions do hold
+    // nodes: the panel explains where the servers went instead of inviting an import,
+    // because the servers are already here. This is also the case that pins the state to
+    // the tab rather than to the table -- the row count here is 3, and reading it as
+    // "nodes are withheld" would name the subscription the nodes belong to instead of the
+    // empty one the user is looking at.
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions.append(SubItem{
+        QStringLiteral("sub-empty"),
+        QStringLiteral("Empty"),
+        QStringLiteral("https://example.com/empty"),
+        true,
+        QStringLiteral("ua")});
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-empty")));
+    QCoreApplication::processEvents();
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
+    QVERIFY(refreshButton->isVisible());
+    QVERIFY(!emptyState->importButton()->isVisible());
+
+    // "Ungrouped" is where the withheld wording belongs: it lists only nodes that belong
+    // to no subscription, so with three nodes on file and none of them here, the panel has
+    // to say where they are -- and offer nothing to press, because nothing is broken.
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("__unsubscribed__")));
+    QCoreApplication::processEvents();
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::WithheldSubscription);
+    QVERIFY(!refreshButton->isVisible());
+}
+
+void MainWindowTests::restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    // A subscription the saved state points at, which holds no server at all. Before
+    // this was pinned, restoreUiState() only moved the tab bar when it found the saved
+    // key, so a key it could not find silently left whatever tab was current: relaunching
+    // on such a subscription opened "Ungrouped" and the empty panel described a view the
+    // user never asked for.
+    config.collection().subscriptions.append(SubItem{
+        QStringLiteral("sub-empty"),
+        QStringLiteral("Empty"),
+        QStringLiteral("https://example.com/empty"),
+        true,
+        QStringLiteral("ua")});
+    config.ui().mainSelectedSubId = QStringLiteral("sub-empty");
+
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    // Start from a different tab than the one the assertion below is about, and from a
+    // table that visibly holds rows, so the restore has something to undo. Starting from
+    // wherever the window happens to land makes the test drift with anything that moves
+    // the initial tab, and silently pass on whatever tab was already current.
+    //
+    // Note that this still does not pin restoreUiState()'s own applyCurrentTabFilter():
+    // setCurrentIndex() emits currentChanged, whose slot re-applies the filter too, so
+    // deleting that line keeps this green. The guard test below is the one that pins it.
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->tabData(tabBar->currentIndex()).toString() == QStringLiteral("sub:sub-1"));
+    QVERIFY(serverView->model()->rowCount() > 0);
+
+    window.restoreUiState(config);
+
+    const int restoredIndex = tabBar->currentIndex();
+    QVERIFY(restoredIndex >= 0);
+    QCOMPARE(tabBar->tabData(restoredIndex).toString(), QStringLiteral("sub:sub-empty"));
+
+    // The tab bar alone is not enough: the filter decides which rows the table shows, and
+    // selecting a tab without re-applying it leaves the previous tab's rows on screen.
+    QCOMPARE(serverView->model()->rowCount(), 0);
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+    QVERIFY(emptyState->isVisible());
+    // The restored subscription holds nothing, so the panel asks for a refresh -- and the
+    // tab it is describing is that subscription, not whichever one holds the nodes.
+    QCOMPARE(emptyState->state(), ServerEmptyStatePolicy::State::SubscriptionWithoutNodes);
+}
+
+void MainWindowTests::restoreUiStateReappliesTheSubscriptionFilterForTheSelectedTab()
+{
+    // restoreUiState() re-applies the subscription filter after it moves the tab, and today
+    // that line is defensive rather than load-bearing: setCurrentIndex() emits
+    // currentChanged, whose slot already re-applies it. So the only way to hold the line in
+    // place is to cut that slot off, which is what this case does. The alternative is a test
+    // that passes with the line deleted and therefore asserts nothing.
+    //
+    // The state being restored is a subscription that holds nodes of its own. Nothing about
+    // the row count changes when the filter moves from one non-empty subscription to
+    // another, so no model signal can stand in for the re-apply -- only the tab key can.
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.ui().mainSelectedSubId = QStringLiteral("sub-2");
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(serverView != nullptr);
+    QVERIFY(serverView->model() != nullptr);
+
+    // Start on the other subscription, so the restore has a filter to change.
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-1")));
+    QCoreApplication::processEvents();
+    const int rowsOnFirstSubscription = serverView->model()->rowCount();
+    QVERIFY(rowsOnFirstSubscription > 0);
+
+    {
+        // Simulate the signal path not existing. The tab still moves -- that is the whole
+        // point -- the window just does not hear about it.
+        const QSignalBlocker blocker(tabBar);
+        window.restoreUiState(config);
+    }
+
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->currentIndex() >= 0);
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    // The restored tab holds one server, the previous tab held two, so a filter left
+    // pointing at the previous tab is visible as the wrong row count under the new tab.
+    QCOMPARE(serverView->model()->rowCount(), 1);
+    QVERIFY(serverView->model()->rowCount() != rowsOnFirstSubscription);
+}
+
+void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    // The saved subscription is gone (deleted, or the state file outlived the config).
+    // "Ungrouped" is the only tab guaranteed to exist, so that is where the window lands
+    // rather than on whichever tab happened to be current.
+    config.ui().mainSelectedSubId = QStringLiteral("sub-deleted");
+    window.setConfig(config);
+
+    // Move the tab bar off "Ungrouped" first. rebuildTabs() always appends it and the
+    // previous test left the current tab on a subscription, so without this the fallback
+    // could be deleted outright and the assertion below would still pass on whatever tab
+    // happened to already be current.
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    QVERIFY(tabBar->currentIndex() >= 0);
+    QVERIFY(tabBar->tabData(tabBar->currentIndex()).toString() != QStringLiteral("ungrouped"));
+
+    window.restoreUiState(config);
+
+    QVERIFY(tabBar->currentIndex() >= 0);
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("ungrouped"));
 }
 
 void MainWindowTests::serverTableResultColumnColoursLatencyBands()

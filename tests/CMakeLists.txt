@@ -730,6 +730,7 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/SubscriptionViewController.cpp
     ../src/ui/mainwindow/ServerWorkspaceWidget.h
     ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
+    ../src/ui/mainwindow/ServerEmptyStatePolicy.h
     ../src/ui/mainwindow/ServerTableEmptyStateWidget.h
     ../src/ui/mainwindow/ServerTableEmptyStateWidget.cpp
     ../src/ui/mainwindow/MainWindowShortcutController.h
@@ -1007,6 +1008,21 @@ set(SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES
 songbird_add_qt_test(songbird_health_strip_policy_tests health-strip-policy
     SOURCES
         ${SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# The empty-state decision is pure: it turns "is there a subscription on record" plus the row
+# counts into the one state the panel renders. Split out from MainWindowTests because the bug
+# it pins (an enabled subscription with no nodes looked like a fresh install) is a decision, not
+# a widget, and every branch is cheaper to assert here than through a shown window.
+set(SONGBIRD_EMPTY_STATE_POLICY_TEST_SOURCES
+    ServerEmptyStatePolicyTests.cpp
+)
+
+songbird_add_qt_test(songbird_server_empty_state_policy_tests server-empty-state-policy
+    SOURCES
+        ${SONGBIRD_EMPTY_STATE_POLICY_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
 )

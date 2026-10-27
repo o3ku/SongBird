@@ -466,6 +466,7 @@ set(SONGBIRD_SOURCES
     ui/mainwindow/SubscriptionViewController.cpp
     ui/mainwindow/ServerWorkspaceWidget.h
     ui/mainwindow/ServerWorkspaceWidget.cpp
+    ui/mainwindow/ServerEmptyStatePolicy.h
     ui/mainwindow/ServerTableEmptyStateWidget.h
     ui/mainwindow/ServerTableEmptyStateWidget.cpp
     ui/mainwindow/MainWindowShortcutController.h
