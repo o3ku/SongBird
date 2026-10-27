@@ -371,6 +371,13 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
     if (completion.syncWindow && uiCallbacks_.syncWindow) {
         uiCallbacks_.syncWindow();
     }
+    if (uiCallbacks_.reportImportFailure) {
+        // After syncWindow, so the panel already knows whether the list is empty;
+        // a failed import is exactly the case where it is. A failure that still
+        // left servers behind must not claim the panel, so only a failure that
+        // imported nothing is reported as one.
+        uiCallbacks_.reportImportFailure(completion.result.success ? QString() : completion.result.message);
+    }
     if (completion.selectLastSubscription && uiCallbacks_.selectSubscriptionTab) {
         uiCallbacks_.selectSubscriptionTab(completion.lastSubscriptionId);
     }

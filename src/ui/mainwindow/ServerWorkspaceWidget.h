@@ -40,6 +40,12 @@ public:
     // empty. Exposed so the empty-state actions can be wired to the window.
     ServerTableEmptyStateWidget* emptyState() const;
 
+    // Why the last import produced nothing, or an empty string when none failed.
+    // The panel is what the table is replaced by, so the reason has to live there
+    // rather than only in the log; see ServerTableEmptyStateWidget::setImportFailure().
+    void setImportFailure(const QString& reason);
+    QString importFailure() const;
+
     void setCompactMode(bool compact);
     bool compactMode() const;
     void syncCompactSections();

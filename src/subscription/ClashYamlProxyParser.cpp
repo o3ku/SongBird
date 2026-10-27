@@ -1,5 +1,6 @@
 #include "subscription/ClashYamlProxyParser.h"
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -20,6 +21,10 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     int proxiesIndent = -1;
     QJsonObject current;
 
+    // A node that lands in the array but yields no item is still a node we saw and
+    // could not use, so its type belongs in the same skipped report as an
+    // unsupported one. Nothing else records it: by the time the caller looks, the
+    // node is indistinguishable from one that was never in the document.
     const auto flushCurrent = [&items, &current, skippedTypes]() {
         if (current.isEmpty()) {
             return;
@@ -27,7 +32,22 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
 
         QJsonArray proxyArray;
         proxyArray.append(current);
-        const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray, skippedTypes);
+        QStringList nodeSkipped;
+        const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray, &nodeSkipped);
+        if (skippedTypes != nullptr) {
+            skippedTypes->append(nodeSkipped);
+        }
+        // parseProxyArray only records a type it recognises but cannot use (a bad
+        // port, an empty address). A node it did not say anything about was dropped
+        // for a reason it does not report -- a line the comment split or the key/value
+        // split could not follow -- and that is precisely the silent loss worth naming.
+        if (parsed.isEmpty() && nodeSkipped.isEmpty() && skippedTypes != nullptr) {
+            const QString type = current.value(QStringLiteral("type")).toString().trimmed();
+            skippedTypes->append(
+                type.isEmpty()
+                    ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
+                    : type);
+        }
         for (const VmessItem& item : parsed) {
             items.append(item);
         }
@@ -35,11 +55,7 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     };
 
     for (const QString& rawLine : lines) {
-        QString line = rawLine;
-        const int commentIndex = line.indexOf(QStringLiteral(" #"));
-        if (commentIndex >= 0) {
-            line = line.left(commentIndex);
-        }
+        const QString line = SubscriptionYamlParser::stripComment(rawLine);
 
         const QString trimmed = line.trimmed();
         if (trimmed.isEmpty()) {

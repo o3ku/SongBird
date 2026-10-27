@@ -3825,6 +3825,14 @@ Switch this protocol to %3?</source>
         <translation>从文件或网址导入</translation>
     </message>
     <message>
+        <source>Import failed</source>
+        <translation>导入失败</translation>
+    </message>
+    <message>
+        <source>%1\nFix the reason above, then import again. The log panel below has the full report.</source>
+        <translation>%1\n请按上面的原因处理后重新导入，完整报告见下方日志面板。</translation>
+    </message>
+    <message>
         <source>No servers match the filter</source>
         <translation>没有符合筛选条件的服务器</translation>
     </message>

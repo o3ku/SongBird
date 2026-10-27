@@ -31,6 +31,22 @@ bool ServerTableEmptyStateWidget::filterActive() const
     return filterActive_;
 }
 
+void ServerTableEmptyStateWidget::setImportFailure(const QString& reason)
+{
+    const QString trimmed = reason.trimmed();
+    if (importFailure_ == trimmed) {
+        return;
+    }
+
+    importFailure_ = trimmed;
+    refreshTexts();
+}
+
+QString ServerTableEmptyStateWidget::importFailure() const
+{
+    return importFailure_;
+}
+
 QPushButton* ServerTableEmptyStateWidget::importButton() const
 {
     return importButton_;
@@ -109,6 +125,16 @@ void ServerTableEmptyStateWidget::refreshTexts()
         // here would be wrong and would hide the actual fix (clear the filter).
         titleLabel_->setText(tr("No servers match the filter"));
         hintLabel_->setText(tr("Clear the filter box above to see all servers again."));
+    } else if (!importFailure_.isEmpty()) {
+        // The last import failed, so this is not a first run. The reason is the
+        // whole point: it is what tells the user whether to retry, change the
+        // subscription's user agent, or give up on that protocol. Only the first
+        // line goes here -- the parser report follows it and would push the panel
+        // past the height of the table it is standing in for.
+        titleLabel_->setText(tr("Import failed"));
+        hintLabel_->setText(
+            tr("%1\nFix the reason above, then import again. The log panel below has the full report.")
+                .arg(importFailure_.section(QChar('\n'), 0, 0)));
     } else {
         titleLabel_->setText(tr("No servers yet"));
         hintLabel_->setText(tr("Import a subscription or share link to get started."));

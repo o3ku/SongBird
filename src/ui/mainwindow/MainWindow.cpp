@@ -382,6 +382,20 @@ void MainWindow::appendLog(const QString& message, LogSeverity severity)
     }
 }
 
+void MainWindow::setImportFailure(const QString& reason)
+{
+    if (serverWorkspace_ == nullptr) {
+        return;
+    }
+
+    serverWorkspace_->setImportFailure(reason);
+}
+
+QString MainWindow::importFailure() const
+{
+    return serverWorkspace_ == nullptr ? QString() : serverWorkspace_->importFailure();
+}
+
 void MainWindow::setHideToTrayEnabled(bool enabled)
 {
     hideToTrayEnabled_ = enabled;

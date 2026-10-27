@@ -373,6 +373,20 @@ ServerTableEmptyStateWidget* ServerWorkspaceWidget::emptyState() const
     return emptyState_;
 }
 
+void ServerWorkspaceWidget::setImportFailure(const QString& reason)
+{
+    if (emptyState_ == nullptr) {
+        return;
+    }
+
+    emptyState_->setImportFailure(reason);
+}
+
+QString ServerWorkspaceWidget::importFailure() const
+{
+    return emptyState_ == nullptr ? QString() : emptyState_->importFailure();
+}
+
 void ServerWorkspaceWidget::syncEmptyStateVisibility()
 {
     if (serverView_ == nullptr || emptyState_ == nullptr) {

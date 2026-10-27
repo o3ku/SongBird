@@ -134,6 +134,7 @@ private slots:
     void statusLabelsUseThemePropertiesInsteadOfInlineStyleSheets();
     void compactUiZonesDoNotExceedServerTableFont();
     void serverTableEmptyStateShowsGuidanceAndHidesWithRows();
+    void serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCopy();
     void serverTableEmptyStateDistinguishesFilterFromEmptyList();
     void serverTableEmptyStateDoesNotBlameTheFilterForAnEmptySubscriptionTab();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
@@ -2943,6 +2944,54 @@ void MainWindowTests::serverTableEmptyStateShowsGuidanceAndHidesWithRows()
     // The visible table is the one being laid out and sized, not a stray child.
     QVERIFY(serverView->width() > 0);
     QCOMPARE(serverView->parentWidget(), serverPanel);
+}
+
+void MainWindowTests::serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCopy()
+{
+    // An import that downloaded fine and produced no node lands the user on the
+    // same empty table as a fresh install. The panel is what replaced the table,
+    // so it is the only place the two states can differ -- "import something to
+    // get started" there tells a user who just imported to do the thing they
+    // already did.
+    MainWindow window;
+    window.setConfig(Config());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* emptyState = window.findChild<ServerTableEmptyStateWidget*>(QStringLiteral("serverTableEmptyState"));
+    QVERIFY(emptyState != nullptr);
+
+    auto* title = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateTitle"));
+    auto* hint = window.findChild<QLabel*>(QStringLiteral("serverEmptyStateHint"));
+    QVERIFY(title != nullptr);
+    QVERIFY(hint != nullptr);
+    const QString firstRunHint = hint->text();
+    QVERIFY(!firstRunHint.isEmpty());
+
+    window.setImportFailure(QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    QCoreApplication::processEvents();
+    QCOMPARE(window.importFailure(), QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    QCOMPARE(title->text(), QStringLiteral("Import failed"));
+    // The reason is shown, but only its first line: the parser report behind it
+    // would grow the panel past the table it stands in for.
+    QVERIFY(hint->text().contains(QStringLiteral("cnb.cool returned no supported servers.")));
+    QVERIFY(!hint->text().contains(QStringLiteral("hysteria")));
+    QVERIFY(hint->text() != firstRunHint);
+
+    // The panel is still there -- the import failing did not put the table back --
+    // and a later success clears the reason, which is a clearing signal, not a
+    // third state.
+    QVERIFY(emptyState->isVisible());
+    window.setImportFailure(QString());
+    QCoreApplication::processEvents();
+    QCOMPARE(hint->text(), firstRunHint);
+
+    // A filter that matched nothing still outranks the failure: the visible rows
+    // are what the wording has to explain, and the filter is the user's own.
+    window.setImportFailure(QStringLiteral("cnb.cool returned no supported servers."));
+    emptyState->setFilterActive(true);
+    QCoreApplication::processEvents();
+    QCOMPARE(title->text(), QStringLiteral("No servers match the filter"));
 }
 
 void MainWindowTests::serverTableEmptyStateIsLaidOutInCompactMode()

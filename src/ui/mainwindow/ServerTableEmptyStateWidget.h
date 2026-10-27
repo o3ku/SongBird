@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QString>
 #include <QWidget>
 
 class QLabel;
@@ -25,6 +26,15 @@ public:
     void setFilterActive(bool filterActive);
     bool filterActive() const;
 
+    // An empty table is not always a first run. An import that downloaded fine and
+    // produced no node -- every node an unsupported protocol, a payload the parsers
+    // do not know -- leaves the same empty table behind, and "import something to
+    // get started" then describes a state the user is no longer in: they did import
+    // something, and it failed. The reason belongs in this panel, because the panel
+    // is what the table is hiding.
+    void setImportFailure(const QString& reason);
+    QString importFailure() const;
+
     QPushButton* importButton() const;
     QPushButton* addButton() const;
     QPushButton* clipboardButton() const;
@@ -44,4 +54,5 @@ private:
     QPushButton* addButton_ = nullptr;
     QPushButton* clipboardButton_ = nullptr;
     bool filterActive_ = false;
+    QString importFailure_;
 };

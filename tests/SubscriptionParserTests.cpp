@@ -41,6 +41,9 @@ private slots:
     void subscriptionReportsSkippedUnknownClashType();
     void subscriptionReportsNoSkipsForFullySupportedContent();
     void subscriptionDoesNotReportSingBoxNonProxyOutbounds();
+    void subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported();
+    void subscriptionKeepsClashShapedSkippedTypesWhenNothingParses();
+    void subscriptionClashQuotedNameKeepsHash();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -674,6 +677,84 @@ void SubscriptionParserTests::subscriptionDoesNotReportSingBoxNonProxyOutbounds(
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
     QCOMPARE(report.items.size(), 1);
     QVERIFY(!report.hasSkippedNodes());
+}
+
+void SubscriptionParserTests::subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported()
+{
+    // The reason a subscription imported nothing is usually that none of its node
+    // types are supported. That reason lives in skippedTypes, and when nothing
+    // parses it must still reach the report -- otherwise the only thing the user
+    // sees is "no supported servers" and four count=0 lines, with the actual
+    // protocol missing from both.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "  - name: s1\n"
+        "    type: snell\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QVERIFY(report.hasSkippedNodes());
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("hysteria")));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("snell")));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
+}
+
+void SubscriptionParserTests::subscriptionKeepsClashShapedSkippedTypesWhenNothingParses()
+{
+    // "proxies:" is the only marker a Clash document needs to be one. When every
+    // node under it is unsupported the items are empty but the types are not, and
+    // that is exactly the case where they matter most.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: only\n"
+        "    type: ssh\n"
+        "    server: 1.2.3.4\n"
+        "    port: 22\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("ssh")));
+}
+
+void SubscriptionParserTests::subscriptionClashQuotedNameKeepsHash()
+{
+    // A quoted YAML scalar may contain " #" -- that is data, not a comment. A bare
+    // indexOf(" #") truncates the line there, the value becomes useless and the
+    // node is dropped without even a skipped record.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"Gemini #1\"\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: \"pa # ss\"\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QStringLiteral("Gemini #1"));
+    QCOMPARE(items[0].id, QStringLiteral("pa # ss"));
+
+    // A real comment is still a comment: the trailing part is not data.
+    const QString withTrailingComment = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"Quoted\" # note\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+    const QList<VmessItem> commented = SubscriptionContentParser::parseMany(withTrailingComment);
+    QCOMPARE(commented.size(), 1);
+    QCOMPARE(commented[0].remarks, QStringLiteral("Quoted"));
 }
 
 // ---------------------------------------------------------------------------
