@@ -19,14 +19,17 @@ ServerTableEmptyStateWidget::ServerTableEmptyStateWidget(QWidget* parent)
 
 void ServerTableEmptyStateWidget::setState(
     ServerEmptyStatePolicy::State state,
-    const QString& withheldSubscriptionId)
+    const QString& withheldSubscriptionId,
+    bool textFilterActive)
 {
-    if (state_ == state && withheldSubscriptionId_ == withheldSubscriptionId) {
+    if (state_ == state && withheldSubscriptionId_ == withheldSubscriptionId
+        && textFilterActive_ == textFilterActive) {
         return;
     }
 
     state_ = state;
     withheldSubscriptionId_ = withheldSubscriptionId;
+    textFilterActive_ = textFilterActive;
     refreshTexts();
 }
 
@@ -89,6 +92,22 @@ bool ServerTableEmptyStateWidget::sameSubscriptionIdentity(
     }
 
     return true;
+}
+
+void ServerTableEmptyStateWidget::setImportFailure(const QString& reason)
+{
+    const QString trimmed = reason.trimmed();
+    if (importFailure_ == trimmed) {
+        return;
+    }
+
+    importFailure_ = trimmed;
+    refreshTexts();
+}
+
+QString ServerTableEmptyStateWidget::importFailure() const
+{
+    return importFailure_;
 }
 
 QPushButton* ServerTableEmptyStateWidget::importButton() const
@@ -233,12 +252,39 @@ void ServerTableEmptyStateWidget::refreshTexts()
     }
 
     case ServerEmptyStatePolicy::State::NodesElsewhere:
-        // A filter that matched nothing is not the same situation as an empty
-        // list: the servers exist, they are just hidden. Saying "no servers"
-        // here would be wrong and would hide the actual fix (clear the filter).
-        titleLabel_->setText(tr("No servers match the filter"));
-        hintLabel_->setText(tr("Clear the filter box above to see all servers again."));
+        // Two situations share this state: the user's own filter emptied the table, or
+        // the tab on screen is not where these nodes live. Only the first has a fix the
+        // panel can name, and the filter box is where that is visible.
+        if (textFilterActive_) {
+            titleLabel_->setText(tr("No servers match the filter"));
+            hintLabel_->setText(tr("Clear the filter box above to see all servers again."));
+        } else {
+            titleLabel_->setText(tr("No servers in this view"));
+            hintLabel_->setText(tr("These servers belong to another view. "
+                                   "Select its tab above to list them."));
+        }
         break;
+    }
+
+    // An import that downloaded fine and produced no node lands the user on the same
+    // empty table a fresh install shows, so the reason has to outrank the state that
+    // stands for "nothing to list": otherwise the panel tells someone who just
+    // imported to go import something. Only the first line goes here -- the parser
+    // report follows it and would push the panel past the height of the table it
+    // stands in for -- and the whole reason goes on the tooltip.
+    if (!importFailure_.isEmpty() && state_ != ServerEmptyStatePolicy::State::NodesElsewhere) {
+        const QString firstLine = importFailure_.section(QChar('\n'), 0, 0);
+        titleLabel_->setText(tr("Import failed"));
+        hintLabel_->setText(
+            tr("%1\nFix the reason above, then import again. The log panel below has the full report.")
+                .arg(firstLine));
+        titleLabel_->setToolTip(importFailure_);
+        hintLabel_->setToolTip(importFailure_);
+    } else {
+        // Both labels are rewritten wholesale above, so a tooltip left over from an
+        // earlier failure would describe text that is no longer there.
+        titleLabel_->setToolTip(QString());
+        hintLabel_->setToolTip(QString());
     }
 
     refreshActionState();

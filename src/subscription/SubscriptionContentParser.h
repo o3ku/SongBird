@@ -19,6 +19,7 @@ struct SubscriptionParseReport {
 
     // Human readable one-liner, e.g. "skipped 2 node(s): anytls, wireguard".
     // Empty when nothing was skipped.
+    static QString skippedSummary(const QStringList& types);
     QString skippedSummary() const;
 };
 

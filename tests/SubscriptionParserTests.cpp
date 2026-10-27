@@ -41,6 +41,15 @@ private slots:
     void subscriptionReportsSkippedUnknownClashType();
     void subscriptionReportsNoSkipsForFullySupportedContent();
     void subscriptionDoesNotReportSingBoxNonProxyOutbounds();
+    void subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported();
+    void subscriptionKeepsClashShapedSkippedTypesWhenNothingParses();
+    void subscriptionClashQuotedNameKeepsHash();
+    void subscriptionClashNodeDoesNotInheritPreviousNodeFields();
+    void subscriptionClashMalformedFlowItemDoesNotAbsorbFollowingFields();
+    void subscriptionClashNodeWithoutNameDoesNotClaimPreviousName();
+    void subscriptionClashNamesTheNodeItCouldNotUseWithoutType();
+    void subscriptionClashKeepsEveryNodeThatFollowsOneItCannotUse();
+    void subscriptionClashEmptyNodeWithoutPortDoesNotStopTheRest();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -631,7 +640,9 @@ void SubscriptionParserTests::subscriptionReportsSkippedUnknownClashType()
     QCOMPARE(report.items.size(), 1);
     QVERIFY(report.hasSkippedNodes());
     QCOMPARE(report.skippedTypes.size(), 1);
-    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("someproto"));
+    // The type is what went wrong; the name is which node it happened to, and
+    // without it the user cannot find the node in a 2000-node subscription.
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("someproto \"future-proto\""));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("someproto")));
 
     // parseMany keeps its existing contract: items only, no diagnostics.
@@ -674,6 +685,236 @@ void SubscriptionParserTests::subscriptionDoesNotReportSingBoxNonProxyOutbounds(
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
     QCOMPARE(report.items.size(), 1);
     QVERIFY(!report.hasSkippedNodes());
+}
+
+void SubscriptionParserTests::subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported()
+{
+    // The reason a subscription imported nothing is usually that none of its node
+    // types are supported. That reason lives in skippedTypes, and when nothing
+    // parses it must still reach the report -- otherwise the only thing the user
+    // sees is "no supported servers" and four count=0 lines, with the actual
+    // protocol missing from both.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "  - name: s1\n"
+        "    type: snell\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QVERIFY(report.hasSkippedNodes());
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("hysteria \"h1\"")));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("snell \"s1\"")));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
+}
+
+void SubscriptionParserTests::subscriptionKeepsClashShapedSkippedTypesWhenNothingParses()
+{
+    // "proxies:" is the only marker a Clash document needs to be one. When every
+    // node under it is unsupported the items are empty but the types are not, and
+    // that is exactly the case where they matter most.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: only\n"
+        "    type: ssh\n"
+        "    server: 1.2.3.4\n"
+        "    port: 22\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("ssh \"only\"")));
+}
+
+void SubscriptionParserTests::subscriptionClashQuotedNameKeepsHash()
+{
+    // A quoted YAML scalar may contain " #" -- that is data, not a comment. A bare
+    // indexOf(" #") truncates the line there, the value becomes useless and the
+    // node is dropped without even a skipped record.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"Gemini #1\"\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: \"pa # ss\"\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QStringLiteral("Gemini #1"));
+    QCOMPARE(items[0].id, QStringLiteral("pa # ss"));
+
+    // A real comment is still a comment: the trailing part is not data.
+    const QString withTrailingComment = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"Quoted\" # note\n"
+        "    type: trojan\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+    const QList<VmessItem> commented = SubscriptionContentParser::parseMany(withTrailingComment);
+    QCOMPARE(commented.size(), 1);
+    QCOMPARE(commented[0].remarks, QStringLiteral("Quoted"));
+}
+
+void SubscriptionParserTests::subscriptionClashNodeDoesNotInheritPreviousNodeFields()
+{
+    // Every "- " opens a node, so a node that leaves fields out must not be filled
+    // in from the one before it. Inheriting is the worse failure of the two: the
+    // node still parses, still has a name, and carries somebody else's address.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: good\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: no-server\n"
+        "    type: trojan\n"
+        "    password: other\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("good"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("1.1.1.1"));
+    // The second node has no address of its own; it must be reported, not dressed
+    // up in the first node's.
+    QCOMPARE(report.items.constFirst().id, QStringLiteral("pw"));
+    QVERIFY(report.skippedTypes.contains(QStringLiteral("trojan \"no-server\"")));
+}
+
+void SubscriptionParserTests::subscriptionClashMalformedFlowItemDoesNotAbsorbFollowingFields()
+{
+    // A flow-style item that is not a well-formed object is a fragment, not a node.
+    // Adding the block-style fields that follow it to that fragment produces a
+    // node stitched from two different entries.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - { name: broken, type: trojan\n"
+        "  - name: second\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("second"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("2.2.2.2"));
+    // The broken item is a node the document offered and this parser could not
+    // read, so it is counted -- as itself, not as the node it failed to become.
+    QVERIFY(report.hasSkippedNodes());
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("(malformed flow item) here"));
+}
+
+void SubscriptionParserTests::subscriptionClashNodeWithoutNameDoesNotClaimPreviousName()
+{
+    // The mirror case: a node with no name of its own. Taking the previous name is
+    // how one node ends up listed twice under two addresses.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: named\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.at(0).remarks, QStringLiteral("named"));
+    QCOMPARE(report.items.at(0).address, QStringLiteral("1.1.1.1"));
+    QVERIFY(report.items.at(1).remarks.isEmpty());
+    QCOMPARE(report.items.at(1).address, QStringLiteral("2.2.2.2"));
+    QVERIFY(!report.hasSkippedNodes());
+}
+
+void SubscriptionParserTests::subscriptionClashNamesTheNodeItCouldNotUseWithoutType()
+{
+    // "(no type)" names the symptom and nothing else. The name is the only handle
+    // a user has on the node that produced it.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: i-have-no-type\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 0);
+    QCOMPARE(report.skippedTypes.size(), 1);
+    QVERIFY2(report.skippedTypes.constFirst().contains(QStringLiteral("i-have-no-type")),
+             qPrintable(report.skippedTypes.constFirst()));
+}
+
+void SubscriptionParserTests::subscriptionClashKeepsEveryNodeThatFollowsOneItCannotUse()
+{
+    // A node that is missing a required field used to take the rest of the document
+    // with it. The list walk cleared the node's fields before handing the node on, so
+    // the node that just ended was never parsed -- and the one after it inherited
+    // nothing but landed in a parser already off by one. Every node following a bad one
+    // vanished, in the one case the report was written for: naming what was skipped.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: first\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: no-port\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    password: pw2\n"
+        "  - name: last\n"
+        "    type: trojan\n"
+        "    server: 3.3.3.3\n"
+        "    port: 443\n"
+        "    password: pw3\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.at(0).remarks, QStringLiteral("first"));
+    QCOMPARE(report.items.at(1).remarks, QStringLiteral("last"));
+    QCOMPARE(report.items.at(1).address, QStringLiteral("3.3.3.3"));
+    QCOMPARE(report.skippedTypes, QStringList{QStringLiteral("trojan \"no-port\"")});
+}
+
+void SubscriptionParserTests::subscriptionClashEmptyNodeWithoutPortDoesNotStopTheRest()
+{
+    // The same loss with nothing to report at all: a document whose nodes are all
+    // missing a field. It has to fail as "no supported servers", and it has to say
+    // which nodes it saw rather than returning an empty report that reads like a
+    // payload the parsers did not recognise.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: one\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "  - name: two\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QCOMPARE(report.skippedTypes.size(), 2);
+    QCOMPARE(report.skippedTypes.at(0), QStringLiteral("trojan \"one\""));
+    QCOMPARE(report.skippedTypes.at(1), QStringLiteral("trojan \"two\""));
 }
 
 // ---------------------------------------------------------------------------
