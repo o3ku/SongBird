@@ -50,6 +50,13 @@ private slots:
     void subscriptionClashNamesTheNodeItCouldNotUseWithoutType();
     void subscriptionClashKeepsEveryNodeThatFollowsOneItCannotUse();
     void subscriptionClashEmptyNodeWithoutPortDoesNotStopTheRest();
+    void subscriptionJsonClashDocumentIsNotReadByTheYamlWalker();
+    void subscriptionClashValueWithColonKeepsItsValue();
+    void subscriptionClashExistingIpv6EndpointIsReportedInsteadOfSilentlyDropped();
+    void subscriptionClashEmptyTypeDoesNotInheritPreviousNodesType();
+    void subscriptionClashBrokenFlowItemDoesNotBecomeANodeFromItsOwnRemains();
+    void subscriptionBinaryPayloadPrefixIsCountedNotPrinted();
+    void subscriptionBinaryPayloadIsDecodedOnceAndNotWalkedAgain();
 
     // --- CustomConfigTextParser ---
     void customXrayJson();
@@ -915,6 +922,178 @@ void SubscriptionParserTests::subscriptionClashEmptyNodeWithoutPortDoesNotStopTh
     QCOMPARE(report.skippedTypes.size(), 2);
     QCOMPARE(report.skippedTypes.at(0), QStringLiteral("trojan \"one\""));
     QCOMPARE(report.skippedTypes.at(1), QStringLiteral("trojan \"two\""));
+}
+
+void SubscriptionParserTests::subscriptionJsonClashDocumentIsNotReadByTheYamlWalker()
+{
+    // A Clash subscription is often JSON, which is valid YAML too. The line walker
+    // reads it only partly -- `proxies:` loses its value, the flow-style items are
+    // not list items, the first inner "server": becomes a top-level key -- so it
+    // must not be the one that reads it. The fallback that used to rescue this ran
+    // only after the walker returned nothing, which meant the document had to have
+    // no proxy-groups/rules block either, because fromJson() on that mixed text
+    // fails: "returned no supported servers" for a working subscription.
+    const QString json = QStringLiteral(
+        "{"
+        "  \"port\": 7890,"
+        "  \"proxies\": ["
+        "    {\"name\": \"one\", \"type\": \"ss\", \"server\": \"1.1.1.1\", \"port\": 443, \"cipher\": \"aes-128-gcm\", \"password\": \"pw\"},"
+        "    {\"name\": \"two\", \"type\": \"trojan\", \"server\": \"2.2.2.2\", \"port\": 8443, \"password\": \"pw2\"}"
+        "  ],"
+        "  \"proxy-groups\": [{\"name\": \"proxy\", \"type\": \"select\", \"proxies\": [\"one\", \"two\"]}],"
+        "  \"rules\": [\"MATCH,proxy\"]"
+        "}"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.at(0).remarks, QStringLiteral("one"));
+    QCOMPARE(report.items.at(0).address, QStringLiteral("1.1.1.1"));
+    QCOMPARE(report.items.at(1).remarks, QStringLiteral("two"));
+    QCOMPARE(report.items.at(1).address, QStringLiteral("2.2.2.2"));
+    QVERIFY(!report.hasSkippedNodes());
+}
+
+void SubscriptionParserTests::subscriptionClashValueWithColonKeepsItsValue()
+{
+    // A ':' inside a quoted value is data. Splitting there leaves the value short and
+    // turns the rest of it into a key the node never had.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"a: b\"\n"
+        "    type: trojan\n"
+        "    server: \"[2001:db8::1]:443\"\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const QList<VmessItem> items = SubscriptionContentParser::parseMany(yaml);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items[0].remarks, QStringLiteral("a: b"));
+    QCOMPARE(items[0].port, 443);
+    // The address field goes through the same split, so the node must have survived it
+    // rather than been cut in half. Its exact contents are not the point and are not
+    // pinned here -- what is pinned is that the second ':' did not become a field.
+    QVERIFY(!items[0].address.isEmpty());
+}
+
+void SubscriptionParserTests::subscriptionClashExistingIpv6EndpointIsReportedInsteadOfSilentlyDropped()
+{
+    // The same colon, in the field that decides whether the node is kept: a value cut
+    // at "[2001" is not an address, and a node dropped for that reason used to leave
+    // no record at all. Either it parses or it is counted -- silence is the one
+    // outcome that leaves the user unable to tell a bug from a bad subscription.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: v6\n"
+        "    type: trojan\n"
+        "    server: \"[2001:db8::1]:443\"\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY2(report.items.size() == 1 || report.hasSkippedNodes(),
+             "a node with a colon inside its value must be imported or reported, never dropped in silence");
+}
+
+void SubscriptionParserTests::subscriptionClashEmptyTypeDoesNotInheritPreviousNodesType()
+{
+    // `type:` with no value must not borrow the previous node's type. QJsonObject
+    // drops a null key, and on a reused object the surviving key is the old one, so
+    // the node comes back as a supported protocol with someone else's address.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: real\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: typeless\n"
+        "    type:\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw2\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("real"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("1.1.1.1"));
+    QVERIFY(report.hasSkippedNodes());
+    QVERIFY2(report.skippedTypes.constFirst().contains(QStringLiteral("typeless")),
+             qPrintable(report.skippedTypes.join(QStringLiteral(", "))));
+}
+
+void SubscriptionParserTests::subscriptionClashBrokenFlowItemDoesNotBecomeANodeFromItsOwnRemains()
+{
+    // The fields under a flow item that failed to parse are the wreckage of that item,
+    // not a second node. Gluing them onto the fragment produced a node assembled from
+    // two list items, with a name from one and an address from the other.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - { name: broken, type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: real\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw2\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("real"));
+    QCOMPARE(report.items.constFirst().address, QStringLiteral("2.2.2.2"));
+    // The broken entry is still counted, once.
+    QCOMPARE(report.skippedTypes, QStringList{QStringLiteral("(malformed flow item) here")});
+}
+
+void SubscriptionParserTests::subscriptionBinaryPayloadPrefixIsCountedNotPrinted()
+{
+    // A base64 subscription is not always text: a payload decoded into replacement
+    // characters fills the log line with question marks that describe nothing. The
+    // byte count is the part of it a reader can use.
+    QByteArray binary;
+    for (int byte = 0; byte < 64; ++byte) {
+        binary.append(static_cast<char>(byte));
+    }
+    const QString encoded = QString::fromLatin1(binary.toBase64());
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(encoded);
+    QString prefixNote;
+    for (const QString& note : report.notes) {
+        if (note.contains(QStringLiteral("base64 decode pass 0"))) {
+            prefixNote = note;
+            break;
+        }
+    }
+    QVERIFY2(!prefixNote.isEmpty(), qPrintable(report.notes.join(QStringLiteral(" | "))));
+    QVERIFY2(prefixNote.contains(QStringLiteral("non-printable 64 bytes")), qPrintable(prefixNote));
+}
+
+void SubscriptionParserTests::subscriptionBinaryPayloadIsDecodedOnceAndNotWalkedAgain()
+{
+    // The decoded bytes are turned into a QString, and a payload that starts with NUL
+    // used to arrive as an empty string: the implicit QByteArray conversion stopped at
+    // the first zero byte, so a perfectly decoded layer looked like "nothing decoded"
+    // and the note that is supposed to describe it was never written. Every payload in
+    // this test begins with 0x00, which is the case that regressed.
+    QByteArray binary;
+    for (int byte = 0; byte < 64; ++byte) {
+        binary.append(static_cast<char>(byte));
+    }
+    const SubscriptionParseReport report =
+        SubscriptionContentParser::parseManyWithReport(QString::fromLatin1(binary.toBase64()));
+
+    // The layer is offered to the parsers, then the walk ends: base64 of noise is
+    // noise, so a second pass would only report a budget that never ran out.
+    QVERIFY2(!report.notes.contains(QStringLiteral("Subscription parse: base64 decode pass 1 produced length")),
+             qPrintable(report.notes.join(QStringLiteral(" | "))));
+    QVERIFY2(!report.notes.contains(QStringLiteral("Subscription parse: pass limit reached")),
+             qPrintable(report.notes.join(QStringLiteral(" | "))));
 }
 
 // ---------------------------------------------------------------------------

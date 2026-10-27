@@ -16,6 +16,53 @@
 
 using SubscriptionJsonSupport::parsePortValue;
 
+namespace {
+
+// How much of a decoded payload is looked at when deciding whether it is text at
+// all. Only the head carries a format hint anyway.
+constexpr int kPrefixCharacters = 80;
+
+// Whether a decoded payload is text at all, judged on its head: that is the only
+// part that carries a format hint anyway, and a layer that decoded into binary has
+// no further layer to unwrap. Deciding this is what stops the walk from decoding
+// noise -- and from spending its budget on it.
+bool isDecodableText(const QString& decoded)
+{
+    const QString head = decoded.left(kPrefixCharacters);
+    if (head.isEmpty()) {
+        return false;
+    }
+
+    int printable = 0;
+    for (const QChar ch : head) {
+        // Newline counts as structure: it is the one hint that separates a share-link
+        // list from a YAML document.
+        if (ch.isPrint() || ch == QChar('\n') || ch == QChar('\r') || ch == QChar('\t')) {
+            ++printable;
+        }
+    }
+
+    // A stray high byte is fine; a payload that is mostly not text is not text.
+    return printable * 4 >= head.size() * 3;
+}
+
+// What the decoded payload looks like, for the operator reading the note. A binary
+// payload decoded into a run of replacement characters says nothing; the byte count
+// is the only fact it carries, so it says that instead.
+QString readablePrefix(const QString& decoded)
+{
+    if (!isDecodableText(decoded)) {
+        return QStringLiteral("non-printable %1 bytes").arg(decoded.size());
+    }
+
+    QString prefix = decoded.left(kPrefixCharacters);
+    prefix.replace(QChar('\r'), QChar(' '));
+    prefix.replace(QChar('\n'), QChar('|'));
+    return prefix;
+}
+
+} // namespace
+
 QString SubscriptionParseReport::skippedSummary() const
 {
     return skippedSummary(skippedTypes);
@@ -65,6 +112,7 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
             skipped = candidate;
         }
     };
+    bool exhaustedPasses = false;
 
     for (int iteration = 0; iteration < 8 && !current.isEmpty(); ++iteration) {
         const QList<VmessItem> shareItems = ShareUrlParser::parseMany(current);
@@ -111,26 +159,39 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
             break;
         }
 
+        // The pass counter is bounded, so the walk can stop while a decoded layer is
+        // still unread: "no parser matched" alone would blame the content when what
+        // ran out was the budget.
+        if (iteration + 1 == 8) {
+            exhaustedPasses = true;
+        }
+
         // The prefix is shown decoded, not as the base64 of a prefix: four characters
         // of base64 are three bytes, so what was printed was the encoding of a slice
         // of the text, which is not what the user pasted and cannot be read as a
         // format. A newline marker is inserted for the same reason -- it is the one
         // structural hint that separates a share-link list from a YAML document.
-        QString prefix = decoded.left(80);
-        prefix.replace(QChar('\r'), QChar(' '));
-        prefix.replace(QChar('\n'), QChar('|'));
+        //
+        // A layer that decoded into binary is the end of the walk. It is offered to
+        // the parsers once -- that is the one attempt the note describes -- and then
+        // the walk stops: base64 of noise is noise, so the next pass would decode the
+        // same bytes again, the report would fill with identical lines, and the note
+        // would claim a pass limit was reached on a payload with no layers left in it.
         report.notes.append(
             QStringLiteral("Subscription parse: base64 decode pass %1 produced length=%2 prefix=%3")
                 .arg(iteration)
                 .arg(decoded.size())
-                .arg(prefix));
-        current = decoded;
+                .arg(readablePrefix(decoded)));
+        current = isDecodableText(decoded) ? decoded : QString();
     }
 
     // A skipped node is reachable through skippedTypes, so the notes do not repeat
     // it: a diagnostic belongs in the list that is only read when something goes
     // wrong, and the per-pass counts stay readable.
     report.skippedTypes = skipped;
+    if (exhaustedPasses) {
+        report.notes.append(QStringLiteral("Subscription parse: pass limit reached"));
+    }
     report.notes.append(QStringLiteral("Subscription parse: no parser matched"));
     return report;
 }
@@ -270,5 +331,11 @@ QString SubscriptionContentParser::tryDecodeBase64(const QString& content)
         normalized.append(QByteArray(4 - padding, '='));
     }
 
-    return QByteArray::fromBase64(normalized);
+    // The length is passed explicitly, and it has to be: a payload that decodes to
+    // binary starts with a NUL byte as often as not, and the implicit QByteArray ->
+    // QString conversion stops there, so the decode reported success and handed back
+    // an empty string. Every caller then saw "no parser matched" for a payload that
+    // had been decoded perfectly.
+    const QByteArray decoded = QByteArray::fromBase64(normalized);
+    return QString::fromLatin1(decoded.constData(), decoded.size());
 }

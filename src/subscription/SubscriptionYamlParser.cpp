@@ -25,9 +25,49 @@ int indent(const QString& line)
     return count;
 }
 
+int keyValueSeparator(const QString& text)
+{
+    // The first ':' outside a quoted scalar. `name: "a: b"` and
+    // `server: "[2001:db8::1]:443"` split at the field, not inside the value, and a
+    // split inside the value turns the node's data into a key it never had -- or,
+    // when the cut lands before the fields that make the node usable, drops it.
+    //
+    // Only ':' followed by whitespace (or the end of the line) separates a key from
+    // its value in block style; a bare `a:b` is the whole scalar, which is also what
+    // keeps an IPv6 literal on the value side. Backslash escaping is honoured inside
+    // double quotes for the same reason stripComment() honours it: the flow-style
+    // parser this feeds does.
+    QChar quote;
+    bool escaped = false;
+    for (int index = 0; index < text.size(); ++index) {
+        const QChar ch = text.at(index);
+        if (!quote.isNull()) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == QChar('\\') && quote == QChar('"')) {
+                escaped = true;
+            } else if (ch == quote) {
+                quote = QChar();
+            }
+            continue;
+        }
+
+        if (ch == QChar('"') || ch == QChar('\'')) {
+            quote = ch;
+            continue;
+        }
+
+        if (ch == QChar(':') && (index + 1 >= text.size() || text.at(index + 1).isSpace())) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
 bool splitKeyValue(const QString& text, QString* key, QString* value)
 {
-    const int separator = text.indexOf(QChar(':'));
+    const int separator = keyValueSeparator(text);
     if (separator <= 0) {
         return false;
     }

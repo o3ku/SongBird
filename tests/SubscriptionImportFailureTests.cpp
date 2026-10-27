@@ -19,7 +19,8 @@ void SubscriptionImportFailureTests::explainsASingleImportThatImportedNothing()
     // A share-link or clipboard import fails in one sentence. The empty table is
     // now this import's doing, so the panel is the right place for the sentence.
     const OperationResult result = OperationResult::fail(
-        QStringLiteral("cnb.cool returned no supported servers. (skipped 3 node(s): hysteria, ssh)"));
+        QStringLiteral("cnb.cool returned no supported servers. skipped 3 node(s): hysteria, ssh\n"
+                       "Subscription parse: pass 0 clash count=0"));
     QVERIFY(SubscriptionImportFailure::shouldExplainInEmptyServerPanel(result));
 }
 
@@ -29,7 +30,8 @@ void SubscriptionImportFailureTests::explainsABatchThatImportedNothing()
     // table -- which is exactly the state the panel exists to explain.
     const OperationResult result = OperationResult::fail(
         QStringLiteral("Updated 0 of 2 subscription(s), imported 0 server(s).\n"
-                       "[FAIL] feed returned no supported servers. (skipped 2 node(s): hysteria, snell)\n"
+                       "[FAIL] feed returned no supported servers. skipped 2 node(s): hysteria, snell\n"
+                       "Subscription parse: pass 0 clash count=0\n"
                        "[FAIL] dead download failed: Connection refused"));
     QVERIFY(SubscriptionImportFailure::shouldExplainInEmptyServerPanel(result));
 }

@@ -1194,11 +1194,16 @@ void JsonConfigRepositoryTests::subscriptionFetchFailureNamesTheProtocolsItCould
     // The reason, which is the line after it. Every node in the payload was a
     // protocol this build cannot run, and that has to be the first thing said --
     // "returned no supported servers" alone describes a document with no nodes.
-    const QString failLine = result.message.section(QChar('\n'), 1, 1);
-    QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers.")), qPrintable(result.message));
     // Each skipped node is named, not just typed: "hysteria" tells the user their
     // node is unsupported, 'hysteria "h1"' tells them which one it is.
-    QVERIFY2(failLine.contains(QStringLiteral("(skipped 2 node(s): hysteria \"h1\", snell \"s1\")")),
+    const QString failLine = result.message.section(QChar('\n'), 1, 1);
+    QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers. "
+                                                "skipped 2 node(s): hysteria \"h1\", snell \"s1\"")),
+             qPrintable(result.message));
+
+    // The per-pass trail is behind it, on its own line: the panel above the empty
+    // table shows the first line, and the diagnostic is read in the log.
+    QVERIFY2(result.message.section(QChar('\n'), 2, 2).contains(QStringLiteral("Subscription parse: pass 0 clash count=0")),
              qPrintable(result.message));
 }
 

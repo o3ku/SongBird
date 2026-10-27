@@ -43,18 +43,52 @@ QString appendSkippedSummary(const QString& message, const SubscriptionParseRepo
         : message;
 }
 
-// When nothing could be parsed at all, the per-pass notes are the only clue as
-// to why, so attach them to the failure instead of discarding them.
+// When nothing could be parsed at all, the skipped summary and the per-pass notes
+// are the only clue as to why, so attach them to the failure instead of discarding
+// them. The summary leads, because it is the answer to the question the user actually
+// asks ("the airport is broken" and "these protocols are unsupported" need different
+// next steps); the notes are the trail behind it.
 //
-// The reason comes first, and the notes follow in brackets: the line before the
-// bracket is what the empty server panel shows, because the parser report behind
-// it would grow that panel past the height of the table it stands in for.
+// The trail goes on its own line. The server panel shows the first line of this
+// message and the log panel shows all of it, so a run of `pass N clash count=0` --
+// a paragraph on a large subscription -- no longer sits between the user and the
+// sentence he has to act on.
 QString appendParseNotes(const QString& message, const SubscriptionParseReport& report)
 {
+    QString detail = message;
+    if (report.hasSkippedNodes()) {
+        detail = QStringLiteral("%1 %2").arg(detail, report.skippedSummary());
+    }
     return report.notes.isEmpty()
-        ? message
-        : QStringLiteral("%1 [%2]").arg(message, report.notes.join(QStringLiteral(" | ")));
+        ? detail
+        : QStringLiteral("%1\n%2").arg(detail, report.notes.join(QStringLiteral(" | ")));
 }
+
+// The fail-streak answers one question: has this URL been unreachable? Only a
+// transport failure is evidence for it. A subscription that downloads fine and then
+// fails to parse is reachable and permanently unparseable -- retrying returns the
+// same bytes -- so counting it would mark a working subscription unstable.
+void recordDownloadFailure(Config& config, const SubItem& item)
+{
+    for (SubItem& sub : config.collection().subscriptions) {
+        if (sub.id == item.id) {
+            sub.failStreak = item.failStreak + 1;
+            break;
+        }
+    }
+}
+
+void clearFailureStreak(Config& config, const SubItem& item)
+{
+    if (item.failStreak == 0) {
+        return;
+    }
+    for (SubItem& sub : config.collection().subscriptions) {
+        if (sub.id == item.id) {
+            sub.failStreak = 0;
+            break;
+        }
+    }
 }
 
 // Back-off intervals between retry attempts (index 0 = after first failure).
@@ -78,6 +112,7 @@ bool interruptibleSleep(int ms)
     return !currentThreadInterruptionRequested();
 }
 
+} // namespace
 
 SubscriptionUpdateService::SubscriptionUpdateService(
     IConfigRepository& repository,
@@ -164,13 +199,9 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
 
     if (servers.isEmpty()) {
         // The skipped types are why, when every node was a protocol this build does
-        // not support; they used to be dropped on exactly this path, leaving
-        // "no supported payload was detected" as the whole explanation for a
-        // document that plainly had nodes in it.
+        // not support; appendParseNotes() leads with them, on the line above the trail.
         return OperationResult::fail(appendParseNotes(
-            appendSkippedSummary(
-                QCoreApplication::translate("SubscriptionUpdateService", "No supported share URL or subscription payload was detected."),
-                report),
+            QCoreApplication::translate("SubscriptionUpdateService", "No supported share URL or subscription payload was detected."),
             report));
     }
 
@@ -320,12 +351,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         // eventually give up. Persist after last attempt to avoid redundant saves.
         const bool lastAttempt = (attempt + 1 >= kMaxDownloadAttempts);
         if (lastAttempt) {
-            for (SubItem& sub : config.collection().subscriptions) {
-                if (sub.id == item.id) {
-                    sub.failStreak = item.failStreak + 1;
-                    break;
-                }
-            }
+            recordDownloadFailure(config, item);
             repository_.save(config);
             break;
         }
@@ -346,13 +372,18 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
     const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
+        // The content arrived whole and was not a document this build can read, so the
+        // failure is permanent: retrying the same URL returns the same bytes, and
+        // counting it as a download failure marked a perfectly reachable subscription
+        // unstable after three updates. The streak measures the transport, not the
+        // parse, so it is reset -- this subscription answered.
+        clearFailureStreak(config, item);
+
         // Same reason as the text-import path: a document full of unsupported
-        // protocols fails here, and "returned no supported servers" without the
-        // protocols it did contain is a message the user cannot act on.
+        // protocols fails here, and "returned no supported servers" without naming
+        // the protocols it did contain is a message the user cannot act on.
         return OperationResult::fail(appendParseNotes(
-            appendSkippedSummary(
-                QCoreApplication::translate("SubscriptionUpdateService", "%1 returned no supported servers.").arg(displayName),
-                report),
+            QCoreApplication::translate("SubscriptionUpdateService", "%1 returned no supported servers.").arg(displayName),
             report));
     }
     if (currentThreadInterruptionRequested()) {

@@ -172,6 +172,7 @@ private slots:
     void notModifiedSavesRefreshedEtag();
     void retriesOnTransientFailureThenSucceeds();
     void exhaustedRetriesIncrementFailStreak();
+    void unparseablePayloadDoesNotCountAsAnUnreachableSubscription();
     void failStreakResetOnSuccess();
     void etagSentOnSubsequentRequest();
     void lastModifiedSentOnSubsequentRequest();
@@ -360,6 +361,33 @@ void SubscriptionUpdateServiceTests::exhaustedRetriesIncrementFailStreak()
         }
     }
     QVERIFY(h.server.requestCount() >= 3);
+}
+
+void SubscriptionUpdateServiceTests::unparseablePayloadDoesNotCountAsAnUnreachableSubscription()
+{
+    // The subscription answered in full and the document is simply not one this build
+    // can read: retrying the same URL returns the same bytes, so this is not evidence
+    // that the URL is unstable. Counting it marked a reachable subscription as
+    // failing after three updates, which is a different claim from "no supported
+    // servers" and hides the real one.
+    Harness h;
+    for (SubItem& s : h.repo.config_.collection().subscriptions) {
+        if (s.id == h.subId) s.failStreak = 2;
+    }
+
+    // A document the parsers reject, not a transport error: the URL answered 200.
+    const QByteArray body = QByteArrayLiteral("{\"unrelated\": true}");
+    h.server.setNextResponse(makeHttpResponse(200, body));
+    const OperationResult result = h.update();
+    QVERIFY2(!result.success, qPrintable(result.message));
+
+    for (const SubItem& s : h.repo.config_.collection().subscriptions) {
+        if (s.id == h.subId) {
+            QCOMPARE(s.failStreak, 0);
+        }
+    }
+    // One download, not a retry storm: the transport said 200 the first time.
+    QCOMPARE(h.server.requestCount(), 1);
 }
 
 void SubscriptionUpdateServiceTests::failStreakResetOnSuccess()
