@@ -95,6 +95,7 @@ private slots:
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
     void subscriptionRowMoveActionsReorderRowsAndPersistOrder();
     void subscriptionRowMoveActionsKeepTheMovedRowsSelected();
+    void subscriptionRowMoveActionsMoveRowsWithoutIds();
     void subscriptionRowMoveActionsDisableAtTheEdges();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
@@ -1898,6 +1899,50 @@ void SettingsDialogTests::subscriptionRowMoveActionsKeepTheMovedRowsSelected()
     QCoreApplication::processEvents();
     QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
     QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 2);
+}
+
+// A row added from this page has no subscription id until the dialog is confirmed, so a move that
+// used ids as row identity could not move it -- the note in moveSelectedRows() says the opposite.
+// The rows are identified by position for that reason; this pins the case that made it necessary.
+void SettingsDialogTests::subscriptionRowMoveActionsMoveRowsWithoutIds()
+{
+    SettingsDialog dialog;
+    dialog.setConfig(Config());
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    QPushButton* addButton = nullptr;
+    for (QPushButton* button : dialog.findChildren<QPushButton*>()) {
+        if (button != nullptr && button->text() == QStringLiteral("Add")) {
+            addButton = button;
+            break;
+        }
+    }
+    QVERIFY(addButton != nullptr);
+
+    addButton->click();
+    addButton->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(subTable->rowCount(), 2);
+    QCOMPARE(subTable->item(0, 2)->data(Qt::UserRole).toString(), QString());
+
+    // The first row is typed in so the two rows can be told apart after the move.
+    subTable->item(0, 2)->setText(QStringLiteral("first"));
+
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveBottomAction != nullptr);
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    QVERIFY(moveBottomAction->isEnabled());
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(subTable->item(1, 2)->text(), QStringLiteral("first"));
+    QCOMPARE(subTable->selectionModel()->selectedRows().size(), 1);
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 1);
 }
 
 void SettingsDialogTests::subscriptionRowMoveActionsDisableAtTheEdges()

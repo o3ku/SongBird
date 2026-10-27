@@ -68,6 +68,9 @@ private slots:
     void moveTopAndBottomKeepRelativeOrderOfSelection();
     void moveEverySelectionIsNotAReorder();
     void moveWithUnknownIdChangesNothing();
+    void moveKeysPermutesRowKeys();
+    void moveKeysRefusesDuplicateKeys();
+    void moveKeysRefusesUnknownKeys();
 
     // Service: persistence and no-op handling.
     void serviceMovePersistsOrder();
@@ -78,6 +81,42 @@ private slots:
     void serviceReorderIgnoresUnknownIds();
     void serviceReorderWithSameOrderDoesNotSave();
 };
+
+// The settings page permutes its rows by slot, because a row added from that page has no
+// subscription id yet. This is the same rule over those slot keys, and it has to answer exactly
+// what the id-based entry point answers.
+void SubscriptionOrderTests::moveKeysPermutesRowKeys()
+{
+    QStringList rows{QStringLiteral("0"), QStringLiteral("1"), QStringLiteral("2")};
+    QVERIFY(SubscriptionOrder::moveKeys(rows, {QStringLiteral("0")}, SubscriptionOrder::MoveOperation::Bottom));
+    QCOMPARE(rows, (QStringList{QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("0")}));
+
+    QVERIFY(SubscriptionOrder::moveKeys(rows, {QStringLiteral("0")}, SubscriptionOrder::MoveOperation::Up));
+    QCOMPARE(rows, (QStringList{QStringLiteral("1"), QStringLiteral("0"), QStringLiteral("2")}));
+
+    QVERIFY(SubscriptionOrder::moveKeys(rows, {QStringLiteral("2")}, SubscriptionOrder::MoveOperation::Top));
+    QCOMPARE(rows, (QStringList{QStringLiteral("2"), QStringLiteral("1"), QStringLiteral("0")}));
+
+    // At the edge is not a reorder, so the caller can skip the write.
+    QVERIFY(!SubscriptionOrder::moveKeys(rows, {QStringLiteral("2")}, SubscriptionOrder::MoveOperation::Top));
+    QVERIFY(!SubscriptionOrder::moveKeys(rows, {QStringLiteral("0")}, SubscriptionOrder::MoveOperation::Bottom));
+    QVERIFY(!SubscriptionOrder::moveKeys(rows, {QStringLiteral("2")}, SubscriptionOrder::MoveOperation::Up));
+}
+
+// A repeated key would name two rows at once, and the permutation is read position by position.
+void SubscriptionOrderTests::moveKeysRefusesDuplicateKeys()
+{
+    QStringList rows{QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("2")};
+    QVERIFY(!SubscriptionOrder::moveKeys(rows, {QStringLiteral("2")}, SubscriptionOrder::MoveOperation::Top));
+    QCOMPARE(rows, (QStringList{QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("2")}));
+}
+
+void SubscriptionOrderTests::moveKeysRefusesUnknownKeys()
+{
+    QStringList rows{QStringLiteral("0"), QStringLiteral("1")};
+    QVERIFY(!SubscriptionOrder::moveKeys(rows, {QStringLiteral("7")}, SubscriptionOrder::MoveOperation::Top));
+    QCOMPARE(rows, (QStringList{QStringLiteral("0"), QStringLiteral("1")}));
+}
 
 // -- Pure reorder rules --
 

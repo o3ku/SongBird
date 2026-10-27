@@ -259,20 +259,6 @@ void SubscriptionViewController::showContextMenuForTabKey(const QString& tabKey,
     }
 }
 
-QString SubscriptionViewController::draggableTabData(int index) const
-{
-    // Ungrouped is not a subscription, has no place in the order, and stays pinned last, so it is
-    // not a drag source. Returning empty lets QTabBar/StartDragDistance refuse that tab alone
-    // instead of disabling dragging for the whole bar.
-    if (context_.subscriptionTabBar == nullptr
-        || SubscriptionViewSupport::subscriptionIdFromTabKey(
-               context_.subscriptionTabBar->tabData(index).toString()).isEmpty()) {
-        return {};
-    }
-
-    return context_.subscriptionTabBar->tabData(index).toString();
-}
-
 void SubscriptionViewController::handleTabMoved(int from, int to)
 {
     if (rebuildingTabs_ || context_.subscriptionTabBar == nullptr) {

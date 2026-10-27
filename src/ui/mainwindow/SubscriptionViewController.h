@@ -54,10 +54,9 @@ public:
     void showTabContextMenu(const QPoint& position);
     void showContextMenuForTabKey(const QString& tabKey, const QPoint& globalPosition);
 
-    // Drag-to-reorder. The dragged tab's data is handed back as "sub:<id>", exactly the key the
-    // context menu uses, so the two paths share one notion of what a tab addresses.
-    // The tab data for a tab that may be dragged: empty for Ungrouped, which is not a subscription.
-    QString draggableTabData(int index) const;
+    // Drag-to-reorder. A tab's data is "sub:<id>", exactly the key the context menu uses, so the
+    // two paths share one notion of what a tab addresses. Ungrouped has no id, and handleTabMoved()
+    // refuses a drop that lands on it as a rank -- it is pinned last and is not part of the order.
     void handleTabMoved(int from, int to);
 
 private:

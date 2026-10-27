@@ -357,50 +357,41 @@ void SubscriptionSettingsPageWidget::moveSelectedRows(SubscriptionOrder::MoveOpe
     // The persisted order lives in the table, and a move is a reordering of its rows -- including
     // rows the user added a moment ago and whose URL is still being typed. Rebuilding the
     // SubItems first would drop those, so the move is expressed as a row permutation.
-    const int currentRow = table_->currentRow();
-    const QStringList selectedIds = selectedSubscriptionIds();
-    if (selectedIds.isEmpty()) {
-        return;
-    }
-
-    const QString currentId = currentRow < 0 ? QString() : subscriptionIdAtRow(currentRow);
-
-    QList<SubItem> rowIdentities;
+    //
+    // A row's identity here is its slot in the list, not its subscription id: a freshly added row
+    // carries no id until it is saved, and a run of blank ids can move nothing. The permutation
+    // returns old row numbers in their new order, so every lookup below starts from a row number.
     const int rowCount = table_->rowCount();
-    rowIdentities.reserve(rowCount);
-    for (int row = 0; row < rowCount; ++row) {
-        SubItem identity;
-        identity.id = subscriptionIdAtRow(row);
-        rowIdentities.append(identity);
-    }
-
-    if (!SubscriptionOrder::moveSubscriptions(rowIdentities, selectedIds, operation)) {
+    QList<int> selectedRowNumbers = selectedRows();
+    if (selectedRowNumbers.isEmpty()) {
         return;
     }
 
-    // The identity list now holds the ids in their new order; map that back onto the rows.
+    QStringList orderedRows;
+    orderedRows.reserve(rowCount);
+    for (int row = 0; row < rowCount; ++row) {
+        orderedRows.append(QString::number(row));
+    }
+
+    QStringList selectedIdentities;
+    selectedIdentities.reserve(selectedRowNumbers.size());
+    for (int row : selectedRowNumbers) {
+        selectedIdentities.append(QString::number(row));
+    }
+
+    if (!SubscriptionOrder::moveKeys(orderedRows, selectedIdentities, operation)) {
+        return;
+    }
+
     QList<int> newOrder;
-    newOrder.reserve(rowIdentities.size());
-    for (const SubItem& identity : rowIdentities) {
-        for (int row = 0; row < rowCount; ++row) {
-            if (subscriptionIdAtRow(row) == identity.id && !newOrder.contains(row)) {
-                newOrder.append(row);
-                break;
-            }
-        }
+    newOrder.reserve(orderedRows.size());
+    for (const QString& identity : orderedRows) {
+        newOrder.append(identity.toInt());
     }
 
-    if (newOrder.size() != rowCount) {
-        return;
-    }
-
-    int newCurrentRow = currentRow;
-    for (int row = 0; row < rowCount; ++row) {
-        if (subscriptionIdAtRow(row) == currentId) {
-            newCurrentRow = row;
-            break;
-        }
-    }
+    const int previousCurrentRow = table_->currentRow();
+    const int currentRowAfterMove = newOrder.indexOf(previousCurrentRow);
+    const QStringList selectedIds = selectedSubscriptionIds();
     const int currentColumn = table_->currentColumn();
 
     {
@@ -414,20 +405,42 @@ void SubscriptionSettingsPageWidget::moveSelectedRows(SubscriptionOrder::MoveOpe
     // first: selecting a cell also selects it, and doing that afterwards would leave one extra
     // cell selected next to the rows.
     table_->clearSelection();
-    if (newCurrentRow >= 0 && newCurrentRow < table_->rowCount()) {
-        table_->setCurrentCell(newCurrentRow, currentColumn < 0 ? 0 : currentColumn);
+    if (currentRowAfterMove >= 0 && currentRowAfterMove < table_->rowCount()) {
+        const int column = currentColumn < 0 ? 0 : currentColumn;
+        table_->setCurrentCell(currentRowAfterMove, column);
         table_->selectionModel()->select(
-            table_->model()->index(newCurrentRow, currentColumn < 0 ? 0 : currentColumn),
+            table_->model()->index(currentRowAfterMove, column),
             QItemSelectionModel::Deselect);
     }
-    for (const QString& id : selectedIds) {
+    // The rows the move was made from are named the way they were read. A row that already had a
+    // subscription id still has the same one, so the id finds it; a row added a moment ago has none,
+    // and only its position can say where it went.
+    const auto selectRowForId = [this](const QString& id) {
         for (int row = 0; row < table_->rowCount(); ++row) {
             if (subscriptionIdAtRow(row) == id) {
                 table_->selectionModel()->select(
                     table_->model()->index(row, 0),
                     QItemSelectionModel::Select | QItemSelectionModel::Rows);
-                break;
+                return;
             }
+        }
+    };
+
+    const auto selectRowAt = [this](int row) {
+        if (row >= 0 && row < table_->rowCount()) {
+            table_->selectionModel()->select(
+                table_->model()->index(row, 0),
+                QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        }
+    };
+
+    if (selectedIds.size() == selectedRowNumbers.size()) {
+        for (const QString& id : selectedIds) {
+            selectRowForId(id);
+        }
+    } else {
+        for (int previousRow : selectedRowNumbers) {
+            selectRowAt(newOrder.indexOf(previousRow));
         }
     }
     updateActionState();
@@ -460,7 +473,10 @@ void SubscriptionSettingsPageWidget::showTableContextMenu(const QPoint& position
     }
 
     updateActionState();
-    if (selectedSubscriptionIds().isEmpty()) {
+    // A row added from this page has no id until it is saved, so its "is anything selected" answer
+    // has to be about rows, not about ids. Asking about ids refused to open the menu for exactly
+    // the rows the move was rewritten to handle.
+    if (selectedRows().isEmpty()) {
         return;
     }
 
