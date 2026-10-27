@@ -1184,26 +1184,26 @@ void JsonConfigRepositoryTests::subscriptionFetchFailureNamesTheProtocolsItCould
     QVERIFY2(!result.success, qPrintable(result.message));
     QVERIFY(config.collection().servers.isEmpty());
 
-    // The batch line: one subscription, nothing imported. This is the verdict the
-    // empty server panel reads, and it is what makes "import failed" the right
-    // thing to say about a table that has no rows.
-    const QString batchLine = result.message.section(QChar('\n'), 0, 0);
-    QVERIFY2(batchLine.contains(QStringLiteral("Updated 0 of 1 subscription(s), imported 0 server(s).")),
-             qPrintable(result.message));
-
-    // The reason, which is the line after it. Every node in the payload was a
-    // protocol this build cannot run, and that has to be the first thing said --
-    // "returned no supported servers" alone describes a document with no nodes.
-    // Each skipped node is named, not just typed: "hysteria" tells the user their
-    // node is unsupported, 'hysteria "h1"' tells them which one it is.
-    const QString failLine = result.message.section(QChar('\n'), 1, 1);
+    // The reason, first. One subscription, nothing imported, so the batch totals
+    // carry nothing the reason does not, and the empty server panel shows the first
+    // line only -- leading with "Updated 0 of 1 subscription(s), imported 0
+    // server(s)." put a restatement of "there are no servers" where the protocols
+    // this build cannot run belonged. Each skipped node is named, not just typed:
+    // "hysteria" tells the user their node is unsupported, 'hysteria "h1"' tells
+    // them which one it is.
+    const QString failLine = result.message.section(QChar('\n'), 0, 0);
     QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers. "
                                                 "skipped 2 node(s): hysteria \"h1\", snell \"s1\"")),
              qPrintable(result.message));
 
-    // The per-pass trail is behind it, on its own line: the panel above the empty
-    // table shows the first line, and the diagnostic is read in the log.
-    QVERIFY2(result.message.section(QChar('\n'), 2, 2).contains(QStringLiteral("Subscription parse: pass 0 clash count=0")),
+    // The per-pass trail stays behind it: the diagnostic is read in the log panel,
+    // which has room for all of it.
+    QVERIFY2(result.message.section(QChar('\n'), 1, 1).contains(QStringLiteral("Subscription parse: pass 0 clash count=0")),
+             qPrintable(result.message));
+
+    // The totals still land -- behind the reason rather than in front of it.
+    QVERIFY2(result.message.section(QChar('\n'), 2, 2).contains(
+                 QStringLiteral("Updated 0 of 1 subscription(s), imported 0 server(s).")),
              qPrintable(result.message));
 }
 

@@ -10,9 +10,11 @@
 struct SubscriptionParseReport {
     QList<VmessItem> items;
     QStringList notes;
-    // One entry per node the selected parser could not turn into a server,
-    // holding that node's declared type. Entries repeat when several nodes
-    // share a type, so size() is the skipped node count.
+    // One entry per node the parser could not turn into a server, holding that
+    // node's declared type (and its name where the parser had one). Covers every
+    // pass, not only the one that produced items, so a run where nothing at all
+    // was imported still explains itself. Identical entries are collapsed, so
+    // size() is the skipped node count rather than the parse-attempt count.
     QStringList skippedTypes;
 
     bool hasSkippedNodes() const { return !skippedTypes.isEmpty(); }

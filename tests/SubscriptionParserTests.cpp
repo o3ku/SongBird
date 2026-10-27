@@ -4,6 +4,7 @@
 
 #include "subscription/SubscriptionContentParser.h"
 #include "subscription/CustomConfigTextParser.h"
+#include "subscription/SubscriptionYamlParser.h"
 
 class SubscriptionParserTests : public QObject {
     Q_OBJECT
@@ -39,6 +40,12 @@ private slots:
     void subscriptionClashYamlKeepsUnknownEscapesVerbatim();
     void subscriptionClashYamlFlowStyleDecodesEscapedName();
     void subscriptionReportsSkippedUnknownClashType();
+    void subscriptionReportsSkipsWhenEveryNodeWasSkipped();
+    void subscriptionReportsSkipsOnceAcrossBase64Passes();
+    void subscriptionReportsSkipsFromJsonProxiesWhenNothingParsed();
+    void subscriptionReportsSkipsFromJsonShareLinkArray();
+    void subscriptionClashYamlCommentTreatsEscapedQuoteAsData();
+    void subscriptionClashYamlCommentIgnoresHashInsideQuotes();
     void subscriptionReportsNoSkipsForFullySupportedContent();
     void subscriptionDoesNotReportSingBoxNonProxyOutbounds();
     void subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupported();
@@ -656,6 +663,140 @@ void SubscriptionParserTests::subscriptionReportsSkippedUnknownClashType()
     QCOMPARE(SubscriptionContentParser::parseMany(yaml).size(), 1);
 }
 
+void SubscriptionParserTests::subscriptionReportsSkipsWhenEveryNodeWasSkipped()
+{
+    // The whole subscription is a protocol this build cannot read. Nothing was
+    // imported, so the failure is the only place the reason can surface, and it
+    // must survive the "no items" return path that used to drop it.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "  - name: h2\n"
+        "    type: hysteria\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QCOMPARE(report.skippedTypes.size(), 2);
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
+    // The notes say how many were skipped rather than repeating the list: the list
+    // is what skippedTypes is, and the note is only read when something is wrong.
+    QVERIFY(report.notes.join(QStringLiteral(" | ")).contains(QStringLiteral("skipped 2 node(s)")));
+}
+
+void SubscriptionParserTests::subscriptionReportsSkipsOnceAcrossBase64Passes()
+{
+    // A base64 body is looked at twice: once as base64, once as the decoded
+    // text. The same unsupported node is therefore skipped twice, but the count
+    // the user reads must be the node count, not the parse-attempt count.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+    );
+    const QString encoded = QString::fromUtf8(yaml.toUtf8().toBase64());
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(encoded);
+    QVERIFY(report.items.isEmpty());
+    QCOMPARE(report.skippedTypes.size(), 1);
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("hysteria \"h1\""));
+}
+
+void SubscriptionParserTests::subscriptionReportsSkipsFromJsonProxiesWhenNothingParsed()
+{
+    // The same document shape as the YAML case, written as JSON. The JSON branch used
+    // to hand its skip list on only when it produced items, so "all of these are
+    // unsupported" was the one answer it kept to itself -- and sing-box is tried before
+    // clash, so a JSON Clash document reaches it first.
+    const QString json = QStringLiteral(
+        "{\"proxies\": ["
+        "{\"name\": \"h1\", \"type\": \"hysteria\", \"server\": \"1.2.3.4\", \"port\": 443},"
+        "{\"name\": \"s1\", \"type\": \"snell\", \"server\": \"5.6.7.8\", \"port\": 443}"
+        "]}"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QVERIFY(report.items.isEmpty());
+    // The type is what the JSON reader can name; the nodes stay two entries because
+    // the two types differ, so "skipped 2 node(s)" is still the node count.
+    QCOMPARE(report.skippedTypes,
+             (QStringList{QStringLiteral("hysteria"), QStringLiteral("snell")}));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("skipped 2 node(s)")));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
+}
+
+void SubscriptionParserTests::subscriptionReportsSkipsFromJsonShareLinkArray()
+{
+    // A sip008-shaped document: a JSON array of strings. When none of the links is one
+    // this build can read, the array is still not "a payload nobody recognised" -- it
+    // is a list of nodes that each failed, and the reason has to survive the nested
+    // parse that saw them.
+    const QString json = QStringLiteral(
+        "[\"vmess-not-base64-and-not-json\", \"hysteria://1.2.3.4:443?obfs=none\"]"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QVERIFY(report.items.isEmpty());
+    // Every node the nested parse skipped is here, and without a type of its own it is
+    // named by the parser that read it -- (no type) for a string that never became a node.
+    QVERIFY(!report.skippedTypes.isEmpty());
+}
+
+void SubscriptionParserTests::subscriptionClashYamlCommentIgnoresHashInsideQuotes()
+{
+    // " #" inside a quoted scalar is not a comment. Cutting there truncated the
+    // flow map before "type", so the node was dropped without even a skipped
+    // type -- a name like "Gemini #1" silently cost the entry.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  # a real comment, still stripped\n"
+        "  - {name: \"Gemini #1\", type: trojan, server: a.b, port: 443, password: \"p#ss #word\"}  # trailing\n"
+        "  - name: 'single #quoted'\n"
+        "    type: trojan\n"
+        "    server: c.d\n"
+        "    port: 443\n"
+        "    password: secret\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QCOMPARE(report.items.size(), 2);
+    QVERIFY(!report.hasSkippedNodes());
+
+    QCOMPARE(report.items[0].remarks, QStringLiteral("Gemini #1"));
+    QCOMPARE(report.items[0].address, QStringLiteral("a.b"));
+    QCOMPARE(report.items[0].id, QStringLiteral("p#ss #word"));
+    QCOMPARE(report.items[1].remarks, QStringLiteral("single #quoted"));
+}
+
+void SubscriptionParserTests::subscriptionClashYamlCommentTreatsEscapedQuoteAsData()
+{
+    // The other half of the same scan: a backslash-escaped quote does not end the
+    // double-quoted scalar, so the " #" that follows it is still data. Honouring the
+    // escape in one branch and not the other is how a scan like this goes wrong
+    // silently -- it only ever shows up on the line that carries both.
+    const QString line =
+        QStringLiteral("  - {name: \"esc \\\" hash\", type: trojan, server: a.b, port: 443}");
+    QCOMPARE(SubscriptionYamlParser::commentIndex(line), -1);
+    QCOMPARE(SubscriptionYamlParser::stripComment(line), line);
+
+    // ...and a real trailing comment is still found once that scalar closes. It is the
+    // hash that is the boundary, not the whitespace before it: searching for the whole
+    // "  # trailing" would land on the leading spaces and assert the wrong offset.
+    const QString withComment =
+        QStringLiteral("  - {name: \"esc \\\" hash\", type: trojan}  # trailing");
+    QCOMPARE(SubscriptionYamlParser::commentIndex(withComment),
+             withComment.indexOf(QChar('#')));
+    QCOMPARE(SubscriptionYamlParser::stripComment(withComment),
+             withComment.left(withComment.indexOf(QChar('#'))));
+}
+
 void SubscriptionParserTests::subscriptionReportsNoSkipsForFullySupportedContent()
 {
     const QString yaml = QStringLiteral(
@@ -716,8 +857,12 @@ void SubscriptionParserTests::subscriptionKeepsSkippedTypesWhenEveryNodeIsUnsupp
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
     QCOMPARE(report.items.size(), 0);
     QVERIFY(report.hasSkippedNodes());
-    QVERIFY(report.skippedTypes.contains(QStringLiteral("hysteria \"h1\"")));
-    QVERIFY(report.skippedTypes.contains(QStringLiteral("snell \"s1\"")));
+    // Named, and named once: a base64 body is looked at twice, so the union of the
+    // passes holds the same node twice unless it is deduplicated -- and then
+    // "skipped N node(s)" counts parse attempts, not nodes.
+    QCOMPARE(report.skippedTypes,
+             (QStringList{QStringLiteral("hysteria \"h1\""), QStringLiteral("snell \"s1\"")}));
+    QVERIFY(report.skippedSummary().contains(QStringLiteral("skipped 2 node(s)")));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
 }
 

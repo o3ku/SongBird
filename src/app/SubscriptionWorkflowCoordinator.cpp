@@ -383,7 +383,8 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
         if (completion.result.success) {
             uiCallbacks_.reportImportFailure(QString());
         } else if (SubscriptionImportFailure::shouldExplainInEmptyServerPanel(completion.result)) {
-            uiCallbacks_.reportImportFailure(completion.result.message);
+            uiCallbacks_.reportImportFailure(
+                SubscriptionImportFailure::reasonForEmptyServerPanel(completion.result.message));
         }
     }
     if (completion.selectLastSubscription && uiCallbacks_.selectSubscriptionTab) {

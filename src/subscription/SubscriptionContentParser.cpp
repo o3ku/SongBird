@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QSet>
 #include <QStringList>
 
 #include "common/PortValidator.h"
@@ -88,6 +89,50 @@ QString SubscriptionParseReport::skippedSummary(const QStringList& types)
         .arg(distinctTypes.join(QStringLiteral(", ")));
 }
 
+namespace {
+
+// Reports what the parser had to drop, in one place.
+//
+// The skip list covers every pass, not just the selected one, so a node the
+// parser could not read is still counted when nothing at all was imported: base64
+// decoding makes the second pass reparse the same nodes as text. The entries are
+// deduplicated first, so the count the user reads is the node count.
+void appendSkippedSummaryNote(SubscriptionParseReport& report)
+{
+    if (!report.hasSkippedNodes()) {
+        return;
+    }
+
+    report.notes.append(QStringLiteral("Subscription parse: skipped %1 node(s)").arg(report.skippedTypes.size()));
+}
+
+// Two skips are the same skip when they describe the same node: ClashYamlProxyParser
+// names the node ("hysteria \"h1\"") so a 2000-node subscription stays navigable,
+// while the other parsers only have the protocol. NodeFingerprint does not help
+// here -- it keys endpoints, not the nodes that had none.
+//
+// First appearance wins, so the list reads in document order. The seen-set is not a
+// micro-optimisation: base64 bodies are walked several times, so the entry list is a
+// multiple of the node count, and a linear scan of the output turns this quadratic in
+// exactly the case the skip list exists for -- an airport whose nodes are all
+// unsupported. A QSet does it in one pass.
+QStringList uniqueSkippedNodes(const QStringList& entries)
+{
+    QSet<QString> seen;
+    seen.reserve(entries.size());
+    QStringList distinct;
+    for (const QString& entry : entries) {
+        if (seen.contains(entry)) {
+            continue;
+        }
+        seen.insert(entry);
+        distinct.append(entry);
+    }
+    return distinct;
+}
+
+} // namespace
+
 QList<VmessItem> SubscriptionContentParser::parseMany(const QString& content)
 {
     return parseManyWithReport(content).items;
@@ -103,15 +148,14 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
     // it saw was a type it does not support. That is the answer to "why did my
     // subscription import nothing", and returning early with an empty report threw
     // it away -- the failure message then read "no supported servers" beside a run
-    // of count=0 lines, none of which named the protocol. Keep the first non-empty
-    // set, because the passes walk from the outer encoding inwards and the innermost
-    // one that recognised the document is the one that saw the nodes.
+    // of count=0 lines, none of which named the protocol. Kept as the union of
+    // every pass for that reason, and deduplicated when it is rendered.
+    //
+    // It also covers nodes dropped from a document that did import: a node missing
+    // its port shrinks the server count, and only the skip list can say which one
+    // it was. The two cases are the same question at different sizes, so there is
+    // one list rather than two.
     QStringList skipped;
-    const auto rememberSkipped = [&skipped](const QStringList& candidate) {
-        if (skipped.isEmpty()) {
-            skipped = candidate;
-        }
-    };
     bool exhaustedPasses = false;
 
     for (int iteration = 0; iteration < 8 && !current.isEmpty(); ++iteration) {
@@ -134,22 +178,24 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
         QStringList singBoxSkipped;
         const QList<VmessItem> singBoxItems = tryParseSingBox(current, &singBoxSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 sing-box count=%2").arg(iteration).arg(singBoxItems.size()));
-        rememberSkipped(singBoxSkipped);
+        // Collected before the emptiness check on purpose: a pass that produced
+        // nothing is exactly the case whose skips the user needs to see.
+        skipped.append(singBoxSkipped);
         if (!singBoxItems.isEmpty()) {
             report.items = singBoxItems;
-            report.skippedTypes = singBoxSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=sing-box"));
+            report.skippedTypes = uniqueSkippedNodes(skipped);
             return report;
         }
 
         QStringList clashSkipped;
         const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 clash count=%2").arg(iteration).arg(clashItems.size()));
-        rememberSkipped(clashSkipped);
+        skipped.append(clashSkipped);
         if (!clashItems.isEmpty()) {
             report.items = clashItems;
-            report.skippedTypes = clashSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=clash"));
+            report.skippedTypes = uniqueSkippedNodes(skipped);
             return report;
         }
 
@@ -185,14 +231,18 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
         current = isDecodableText(decoded) ? decoded : QString();
     }
 
-    // A skipped node is reachable through skippedTypes, so the notes do not repeat
-    // it: a diagnostic belongs in the list that is only read when something goes
-    // wrong, and the per-pass counts stay readable.
-    report.skippedTypes = skipped;
+    // Every pass is represented, deduplicated, because the report answers "why is
+    // this subscription short of nodes" and an entry repeated once per pass makes
+    // the count it prints wrong. A skipped node is then reachable through
+    // skippedTypes, so the note says "Subscription parse: skipped N node(s): ..."
+    // without repeating the list itself -- a diagnostic belongs in the text that is
+    // only read when something goes wrong.
+    report.skippedTypes = uniqueSkippedNodes(skipped);
     if (exhaustedPasses) {
         report.notes.append(QStringLiteral("Subscription parse: pass limit reached"));
     }
     report.notes.append(QStringLiteral("Subscription parse: no parser matched"));
+    appendSkippedSummaryNote(report);
     return report;
 }
 
@@ -245,6 +295,10 @@ QList<VmessItem> SubscriptionContentParser::tryParseJsonArray(const QJsonArray& 
         }
     }
 
+    // A branch that produces no item still saw nodes, and returning before the caller
+    // hears about them is how a JSON array of share links that all failed to parse
+    // reported no reason at all -- the same loss the JSON "proxies" branch below had.
+    // The nested parse keeps its own report, so its skips are handed on as they are.
     if (allStrings) {
         QStringList lines;
         lines.reserve(array.size());
@@ -254,9 +308,13 @@ QList<VmessItem> SubscriptionContentParser::tryParseJsonArray(const QJsonArray& 
                 lines.append(text);
             }
         }
-        items = parseMany(lines.join(QChar('\n')));
+        const SubscriptionParseReport nested = parseManyWithReport(lines.join(QChar('\n')));
+        items = nested.items;
         if (!items.isEmpty()) {
             return items;
+        }
+        if (skippedTypes != nullptr) {
+            skippedTypes->append(nested.skippedTypes);
         }
     }
 
@@ -279,10 +337,13 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& conte
         QStringList proxiesSkipped;
         QList<VmessItem> clashItems =
             ClashSubscriptionParser::parseProxyArray(root.value(QStringLiteral("proxies")).toArray(), &proxiesSkipped);
+        // Reported before the emptiness check, like the YAML reader does: a Clash
+        // document written as JSON whose nodes are all unsupported is the same answer
+        // to the same question, and it used to be the one shape that answered nothing.
+        if (skippedTypes != nullptr) {
+            skippedTypes->append(proxiesSkipped);
+        }
         if (!clashItems.isEmpty()) {
-            if (skippedTypes != nullptr) {
-                skippedTypes->append(proxiesSkipped);
-            }
             return clashItems;
         }
     }

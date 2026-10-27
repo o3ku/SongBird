@@ -167,6 +167,8 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     };
 
     for (const QString& rawLine : lines) {
+        // The cut has to know where a quoted scalar ends: a " #" inside one is
+        // data, and losing it costs the node that carried it.
         const QString line = SubscriptionYamlParser::stripComment(rawLine);
 
         const QString trimmed = line.trimmed();

@@ -49,10 +49,11 @@ QString appendSkippedSummary(const QString& message, const SubscriptionParseRepo
 // asks ("the airport is broken" and "these protocols are unsupported" need different
 // next steps); the notes are the trail behind it.
 //
-// The trail goes on its own line. The server panel shows the first line of this
-// message and the log panel shows all of it, so a run of `pass N clash count=0` --
-// a paragraph on a large subscription -- no longer sits between the user and the
-// sentence he has to act on.
+// The trail goes on its own line, and the skip list stays in front of it. Two
+// callers put the summary on the reason line themselves -- appendSkippedSummary()
+// on success, and this function on failure -- so the split is what keeps the
+// server panel, which shows only the first line, reading the reason and the
+// protocols rather than a paragraph of `pass N clash count=0`.
 QString appendParseNotes(const QString& message, const SubscriptionParseReport& report)
 {
     QString detail = message;
@@ -269,18 +270,32 @@ OperationResult SubscriptionUpdateService::updateInternal(
         }
     }
 
-    QStringList lines;
-    lines.append(QStringLiteral("Updated %1 of %2 subscription(s), imported %3 server(s).")
-                     .arg(updatedCount)
-                     .arg(items.size())
-                     .arg(importedCount));
+    const QString totalsLine = QStringLiteral("Updated %1 of %2 subscription(s), imported %3 server(s).")
+                                   .arg(updatedCount)
+                                   .arg(items.size())
+                                   .arg(importedCount);
+    // One subscription, nothing imported: the totals say nothing the reason does not,
+    // and the empty server panel shows the first line of this message only. With the
+    // totals in front, that panel read "Updated 0 of 1 subscription(s), imported 0
+    // server(s)." -- a restatement of "there are no servers" -- while the protocols it
+    // could not read sat on the line behind it. So the reason takes the front line and
+    // the totals move behind it. A batch keeps the totals in front: there the counts
+    // are how the user finds which subscription failed, and there is more than one
+    // line to read anyway.
+    const bool leadWithReason = items.size() == 1 && failureLines.size() == 1;
 
+    QStringList lines;
+    if (!leadWithReason) {
+        lines.append(totalsLine);
+    }
     for (const QString& line : successLines) {
         lines.append(QStringLiteral("[OK] %1").arg(line));
     }
-
     for (const QString& line : failureLines) {
         lines.append(QStringLiteral("[FAIL] %1").arg(line));
+    }
+    if (leadWithReason) {
+        lines.append(totalsLine);
     }
 
     return failureLines.isEmpty()

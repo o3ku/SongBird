@@ -177,6 +177,8 @@ private slots:
     void etagSentOnSubsequentRequest();
     void lastModifiedSentOnSubsequentRequest();
     void invalidUrlFailsImmediately();
+    void unsupportedProtocolsAreNamedInTheFailure();
+    void unsupportedProtocolsStayOnTheFirstLineOfTheFailure();
 };
 
 // ---- helpers shared across slots ----------------------------------------
@@ -457,6 +459,51 @@ void SubscriptionUpdateServiceTests::invalidUrlFailsImmediately()
     QVERIFY(!result.success);
     QVERIFY(result.message.contains(QStringLiteral("invalid"), Qt::CaseInsensitive)
             || result.message.contains(QStringLiteral("failed"), Qt::CaseInsensitive));
+}
+
+void SubscriptionUpdateServiceTests::unsupportedProtocolsAreNamedInTheFailure()
+{
+    // The download succeeded and the body parsed to zero servers because every
+    // node uses a protocol this build cannot read. "returned no supported
+    // servers" alone reads as "the airport is broken"; the skip summary is the
+    // difference between two very different next steps.
+    Harness h;
+    const QByteArray body =
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n";
+    h.server.setNextResponse(makeHttpResponse(200, body));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    QVERIFY2(result.message.contains(QStringLiteral("skipped 1 node(s): hysteria")),
+             qPrintable(result.message));
+}
+
+void SubscriptionUpdateServiceTests::unsupportedProtocolsStayOnTheFirstLineOfTheFailure()
+{
+    // The panel that shows the failure has room for one line, and the line it shows
+    // is the first one. Both things the user needs -- what failed and what it could
+    // not read -- therefore have to be in front of the first newline; the per-pass
+    // trail goes behind it, where the log panel still has all of it.
+    Harness h;
+    const QByteArray body =
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n";
+    h.server.setNextResponse(makeHttpResponse(200, body));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    const QString firstLine = result.message.section(QChar('\n'), 0, 0);
+    QVERIFY2(firstLine.contains(QStringLiteral("no supported servers")), qPrintable(firstLine));
+    QVERIFY2(firstLine.contains(QStringLiteral("skipped 1 node(s): hysteria")), qPrintable(firstLine));
+    // ...and the trail is still there, on the lines behind it.
+    QVERIFY2(result.message.contains(QChar('\n')), qPrintable(result.message));
 }
 
 QTEST_MAIN(SubscriptionUpdateServiceTests)

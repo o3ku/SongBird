@@ -12,6 +12,8 @@ private slots:
     void ignoresAFailureWithNothingToSay();
     void ignoresACancellation();
     void ignoresABatchThatKeptServersOnTheTable();
+    void reasonStepsOverTheBatchSummaryToTheFailureLine();
+    void reasonOfASingleFailureIsTheMessageItself();
 };
 
 void SubscriptionImportFailureTests::explainsASingleImportThatImportedNothing()
@@ -67,6 +69,30 @@ void SubscriptionImportFailureTests::ignoresABatchThatKeptServersOnTheTable()
         QStringLiteral("Updated 1 of 2 subscription(s), imported 12 server(s).\n"
                        "[FAIL] dead download failed: Connection refused"));
     QVERIFY(!SubscriptionImportFailure::shouldExplainInEmptyServerPanel(result));
+}
+
+void SubscriptionImportFailureTests::reasonStepsOverTheBatchSummaryToTheFailureLine()
+{
+    // The panel shows one line, and a batch starts with "Updated 0 of 2
+    // subscription(s), imported 0 server(s)." -- the state, not the reason. Showing
+    // that left the user with an empty table and a sentence that restated it.
+    const QString reason = SubscriptionImportFailure::reasonForEmptyServerPanel(
+        QStringLiteral("Updated 0 of 2 subscription(s), imported 0 server(s).\n"
+                       "[FAIL] feed returned no supported servers. skipped 2 node(s): hysteria, snell\n"
+                       "Subscription parse: pass 0 clash count=0\n"
+                       "[FAIL] dead download failed: Connection refused"));
+    QCOMPARE(reason, QStringLiteral("feed returned no supported servers. "
+                                    "skipped 2 node(s): hysteria, snell"));
+}
+
+void SubscriptionImportFailureTests::reasonOfASingleFailureIsTheMessageItself()
+{
+    // Nothing to step over: the sentence and the trail are all there is, so the panel
+    // gets the whole thing and keeps the trail behind its first line in the tooltip.
+    const QString message = QStringLiteral(
+        "cnb.cool returned no supported servers. skipped 3 node(s): hysteria, ssh\n"
+        "Subscription parse: pass 0 clash count=0");
+    QCOMPARE(SubscriptionImportFailure::reasonForEmptyServerPanel(message), message);
 }
 
 QTEST_MAIN(SubscriptionImportFailureTests)

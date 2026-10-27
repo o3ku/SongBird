@@ -86,39 +86,51 @@ QJsonValue parseValue(const QString& text)
     return SubscriptionYamlFlowValueParser::parseValue(text);
 }
 
-QString stripComment(const QString& line)
+int commentIndex(const QString& line)
 {
-    // A comment starts at " #" and only outside a quoted scalar: `name: "Gemini #1"`
-    // is a value, and cutting it at the hash turns it into a different value -- or,
-    // when the cut lands before the fields that decide the node is usable, into a
-    // silently dropped node. Backslash escaping is honoured inside double quotes
-    // because the flow-style parser this feeds also honours it.
     QChar quote;
-    bool escaped = false;
-    for (int index = 0; index < line.size(); ++index) {
-        const QChar ch = line.at(index);
+    for (int position = 0; position < line.size(); ++position) {
+        const QChar current = line.at(position);
         if (!quote.isNull()) {
-            if (escaped) {
-                escaped = false;
-            } else if (ch == QChar('\\') && quote == QChar('"')) {
-                escaped = true;
-            } else if (ch == quote) {
+            // Only double-quoted text carries backslash escapes, the same
+            // asymmetry parseFlowQuotedString() and the scalar parser keep.
+            if (quote == QChar('"') && current == QChar('\\')) {
+                ++position;
+                continue;
+            }
+            if (current == quote) {
+                // YAML folds a doubled quote into one literal quote, so it does
+                // not end the scalar; parseFlowQuotedString() agrees.
+                if (position + 1 < line.size() && line.at(position + 1) == quote) {
+                    ++position;
+                    continue;
+                }
                 quote = QChar();
             }
             continue;
         }
 
-        if (ch == QChar('"') || ch == QChar('\'')) {
-            quote = ch;
+        if (current == QChar('"') || current == QChar('\'')) {
+            quote = current;
             continue;
         }
 
-        if (ch == QChar('#') && index > 0 && line.at(index - 1).isSpace()) {
-            return line.left(index);
+        if (current == QChar('#')) {
+            // A comment starts at "#" only at line start or after whitespace;
+            // "a#b" is one scalar and the "#" belongs to it.
+            if (position == 0 || line.at(position - 1).isSpace()) {
+                return position;
+            }
         }
     }
 
-    return line;
+    return -1;
+}
+
+QString stripComment(const QString& line)
+{
+    const int position = commentIndex(line);
+    return position >= 0 ? line.left(position) : line;
 }
 
 } // namespace SubscriptionYamlParser

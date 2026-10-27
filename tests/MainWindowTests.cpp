@@ -3279,14 +3279,23 @@ void MainWindowTests::serverTableEmptyStateShowsImportFailureInsteadOfFirstRunCo
     const QString firstRunHint = hint->text();
     QVERIFY(!firstRunHint.isEmpty());
 
-    window.setImportFailure(QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    // The shape SubscriptionUpdateService produces: the sentence and the skip list
+    // on one line, then the parser report on the next.
+    const QString reason = QStringLiteral(
+        "cnb.cool returned no supported servers. skipped 3 node(s): hysteria, ssh\n"
+        "Subscription parse: pass 0 clash count=0");
+    window.setImportFailure(reason);
     QCoreApplication::processEvents();
-    QCOMPARE(window.importFailure(), QStringLiteral("cnb.cool returned no supported servers.\nSubscription parse: skipped 3 node(s): hysteria, ssh"));
+    QCOMPARE(window.importFailure(), reason);
     QCOMPARE(title->text(), QStringLiteral("Import failed"));
-    // The reason is shown, but only its first line: the parser report behind it
-    // would grow the panel past the table it stands in for.
+    // The reason is shown, but only its first line -- and that line carries the
+    // skipped protocols here, which is the point: the question the panel answers
+    // is "did the airport break or is this node type unsupported".
     QVERIFY(hint->text().contains(QStringLiteral("cnb.cool returned no supported servers.")));
-    QVERIFY(!hint->text().contains(QStringLiteral("hysteria")));
+    QVERIFY(hint->text().contains(QStringLiteral("skipped 3 node(s): hysteria, ssh")));
+    // The parser report behind it would grow the panel past the table it stands in
+    // for, so it stays out of the body text and survives in the tooltip instead.
+    QVERIFY(!hint->text().contains(QStringLiteral("Subscription parse")));
     QVERIFY(hint->text() != firstRunHint);
 
     // The panel is still there -- the import failing did not put the table back --
@@ -3326,7 +3335,7 @@ void MainWindowTests::serverTableEmptyStateKeepsTheWholeImportFailureAsTooltip()
     QVERIFY(hint != nullptr);
 
     const QString reason = QStringLiteral(
-        "cnb.cool returned no supported servers. (skipped 3 node(s): hysteria, ssh)\n"
+        "cnb.cool returned no supported servers. skipped 3 node(s): hysteria, ssh\n"
         "Subscription parse: pass 0 clash count=0");
     window.setImportFailure(reason);
     QCoreApplication::processEvents();

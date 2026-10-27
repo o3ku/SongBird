@@ -16,4 +16,12 @@ namespace SubscriptionImportFailure {
 // import or update never mentions a count, and its failure is always total.
 bool shouldExplainInEmptyServerPanel(const OperationResult& result);
 
+// What to put in front of the user for a failure that qualifies above, without a
+// `[FAIL] ` prefix: the panel's first line, because it shows one. A batch reports a
+// summary line and then one line per subscription, so the summary describes the
+// state and the line behind it says why -- that reason is the one to show. A single
+// failure has no summary to step over and is returned whole, line breaks and all;
+// the panel takes its first line and keeps the rest in the tooltip.
+QString reasonForEmptyServerPanel(const QString& message);
+
 } // namespace SubscriptionImportFailure
