@@ -43,6 +43,11 @@ public:
 
     void setSubscriptions(const QList<SubItem>& subscriptions);
     void rebuildTabs(const QString& previousTabKey);
+    // Sets the tab's hover text from the stored refresh time. Separate from rebuildTabs()
+    // because a refresh that only touched the timestamp must not rebuild the bar: the bar's
+    // rebuild re-selects a tab and resets its drag state, which is not something the user's
+    // background update should do to the window they are looking at.
+    void applyTabToolTips(qint64 nowMs, std::function<QString(const QString&)> networkErrorFor);
     void applyFilter(const QString& filterText);
     void applyCurrentTabFilter();
 

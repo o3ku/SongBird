@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QDateTime>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -92,6 +93,7 @@ private slots:
     void applicationThemeLoadsResourceStyleSheet();
     void subscriptionPageRoundTripsSelectedRowsAndItems();
     void subscriptionPageKeepsServerStateTheTableNeverShows();
+    void subscriptionPageRecalculatesLastUpdatedWhenShownAgain();
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
     void subscriptionRowMoveActionsReorderRowsAndPersistOrder();
     void subscriptionRowMoveActionsKeepTheMovedRowsSelected();
@@ -1767,6 +1769,7 @@ void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
     stored.etag = QStringLiteral("\"abc123\"");
     stored.lastModified = QStringLiteral("Wed, 21 Oct 2026 07:28:00 GMT");
     stored.failStreak = 2;
+    stored.lastUpdatedAtMs = 1767225600000LL;
 
     Config config;
     config.collection().subscriptions = {stored};
@@ -1782,6 +1785,9 @@ void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
     QCOMPARE(unchanged.collection().subscriptions.at(0).etag, stored.etag);
     QCOMPARE(unchanged.collection().subscriptions.at(0).lastModified, stored.lastModified);
     QCOMPARE(unchanged.collection().subscriptions.at(0).failStreak, 2);
+    // The table's fifth column shows this value, so the round trip has to carry it too: dropping
+    // it would make the column read "Never updated" the moment the dialog was accepted.
+    QCOMPARE(unchanged.collection().subscriptions.at(0).lastUpdatedAtMs, stored.lastUpdatedAtMs);
 
     // An edited row keeps the server state too; only the columns the table owns change.
     auto* subTable = dialog.findChild<QTableWidget*>();
@@ -1795,6 +1801,61 @@ void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
     QCOMPARE(edited.collection().subscriptions.at(0).etag, stored.etag);
     QCOMPARE(edited.collection().subscriptions.at(0).lastModified, stored.lastModified);
     QCOMPARE(edited.collection().subscriptions.at(0).failStreak, 2);
+    QCOMPARE(edited.collection().subscriptions.at(0).lastUpdatedAtMs, stored.lastUpdatedAtMs);
+}
+
+// "3 h ago" is true only for the clock that computed it. The settings dialog can stay open across
+// a background subscription update, and a value baked in when appendRow() ran reports the dialog's
+// own age as the subscription's -- so the cell is recomputed whenever the page is shown again or
+// handed new data, instead of being frozen at the moment the dialog was built.
+void SettingsDialogTests::subscriptionPageRecalculatesLastUpdatedWhenShownAgain()
+{
+    const qint64 threeHoursAgo = QDateTime::currentMSecsSinceEpoch() - 3LL * 60LL * 60LL * 1000LL;
+    SubItem stored{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()};
+    stored.lastUpdatedAtMs = threeHoursAgo;
+
+    Config config;
+    config.collection().subscriptions = {stored};
+
+    SubscriptionSettingsPageWidget page;
+    page.setSubscriptions(config.collection().subscriptions);
+    page.show();
+    QCoreApplication::processEvents();
+
+    auto* table = page.findChild<QTableWidget*>();
+    QVERIFY(table != nullptr);
+    QCOMPARE(table->columnCount(), 5);
+    QTableWidgetItem* cell = table->item(0, 4);
+    QVERIFY(cell != nullptr);
+    QCOMPARE(cell->text(), QStringLiteral("3 h ago"));
+    QVERIFY(!cell->flags().testFlag(Qt::ItemIsEditable));
+
+    // A background update lands while the dialog is open: the page is handed the new list, and the
+    // one number in the table that moves on its own has to move.
+    SubItem refreshed = stored;
+    refreshed.lastUpdatedAtMs = QDateTime::currentMSecsSinceEpoch();
+    page.setSubscriptions({refreshed});
+    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("Just now"));
+    // The tooltip carries the exact moment, which is what a table of relative labels cannot.
+    QVERIFY2(!table->item(0, 4)->toolTip().isEmpty(), "A stamped row must name its exact moment.");
+
+    // Hide and show is the other path: nothing is re-sent, so the text has to be re-derived from
+    // the stored timestamp rather than left as the value the hidden page was built with. The
+    // observable part is that showing again does not lose or re-add the cell, and that a value
+    // hand-edited in the meantime is overwritten by the stored one -- which is what proves the
+    // recomputation reads the model instead of the table.
+    page.hide();
+    table->item(0, 4)->setText(QStringLiteral("stale"));
+    page.show();
+    QCoreApplication::processEvents();
+    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("Just now"));
+
+    // A subscription that has never been refreshed reads "-", not a date derived from zero.
+    SubItem never = stored;
+    never.lastUpdatedAtMs = 0;
+    page.setSubscriptions({never});
+    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("-"));
+    QVERIFY(table->item(0, 4)->toolTip().isEmpty());
 }
 
 // The subscription list order is the tab order in the main window and the order servers are

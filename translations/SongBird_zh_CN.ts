@@ -3479,6 +3479,10 @@ Switch this protocol to %3?</source>
         <source>Move To Bottom</source>
         <translation>移到底部</translation>
     </message>
+    <message>
+        <source>Last Updated</source>
+        <translation>最近更新</translation>
+    </message>
 </context>
 <context>
     <name>SubscriptionUpdateService</name>
@@ -3573,6 +3577,33 @@ Switch this protocol to %3?</source>
     <message>
         <source>No supported share URL or subscription payload was detected.</source>
         <translation>未检测到受支持的分享链接或订阅内容。</translation>
+    </message>
+</context>
+<context>
+    <name>SubscriptionUpdateTime</name>
+    <message>
+        <source>Never updated</source>
+        <translation>尚未更新</translation>
+    </message>
+    <message>
+        <source>Just now</source>
+        <translation>刚刚</translation>
+    </message>
+    <message>
+        <source>%1 min ago</source>
+        <translation>%1 分钟前</translation>
+    </message>
+    <message>
+        <source>%1 h ago</source>
+        <translation>%1 小时前</translation>
+    </message>
+    <message>
+        <source>%1 d ago</source>
+        <translation>%1 天前</translation>
+    </message>
+    <message>
+        <source>Updated %1 (%2)</source>
+        <translation>更新于 %1（%2）</translation>
     </message>
 </context>
 <context>

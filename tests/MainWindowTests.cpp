@@ -5,6 +5,7 @@
 #include <QBoxLayout>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFontMetrics>
@@ -117,6 +118,8 @@ private slots:
     void serverContextMenuOnUngroupedBlankAreaShowsAddServerOnly();
     void setConfigReappliesFallbackSubscriptionFilterWhenSelectedTabDisappears();
     void subscriptionTabsFollowTheSubscriptionListOrderAndPinUngroupedLast();
+    void subscriptionTabToolTipReportsTheLastRefresh();
+    void subscriptionTabToolTipNamesTheFailureAndClearsOnSuccess();
     void tabDragPersistsTheDroppedOrder();
     void tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder();
     void tabDragOntoUngroupedMovesTheSubscriptionLast();
@@ -2275,6 +2278,60 @@ QStringList tabKeys(QTabBar* bar)
 // The saved subscription order is the tab order. The bar used to insert each tab at index 0, which
 // reversed the list on every refresh -- so a persisted order could never be shown back to the user,
 // and dragging a tab would have been undone by the next config sync.
+// The hover text answers "how stale is this tab?" without opening anything. Both halves matter:
+// the time comes from the config, the failure comes from the last update's result, and the two
+// live in different places, so a wiring mistake shows up as a tooltip with only one of them.
+void MainWindowTests::subscriptionTabToolTipReportsTheLastRefresh()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    // Refreshed an hour ago, expressed against the window's own clock so the label stays "1 h".
+    config.collection().subscriptions[0].lastUpdatedAtMs =
+        QDateTime::currentMSecsSinceEpoch() - 60LL * 60LL * 1000LL;
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabKeys(tabBar), (QStringList{
+        QStringLiteral("sub:sub-1"), QStringLiteral("sub:sub-2"), QStringLiteral("ungrouped")}));
+
+    const QString tooltip = tabBar->tabToolTip(0);
+    QVERIFY2(tooltip.contains(QStringLiteral("Group 1")), qPrintable(tooltip));
+    QVERIFY2(tooltip.contains(QStringLiteral("1 h ago")), qPrintable(tooltip));
+
+    // The never-refreshed subscription and Ungrouped both answer with nothing rather than with
+    // an alarm about a refresh that has not happened yet.
+    QVERIFY(tabBar->tabToolTip(1).isEmpty());
+    QVERIFY(tabBar->tabToolTip(2).isEmpty());
+}
+
+void MainWindowTests::subscriptionTabToolTipNamesTheFailureAndClearsOnSuccess()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions[0].lastUpdatedAtMs = QDateTime::currentMSecsSinceEpoch();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+
+    window.setSubscriptionUpdateFailures(
+        {{QStringLiteral("sub-1"), QStringLiteral("Group 1 download failed: timeout")}});
+    QCoreApplication::processEvents();
+    QVERIFY2(tabBar->tabToolTip(0).contains(QStringLiteral("download failed: timeout")),
+             qPrintable(tabBar->tabToolTip(0)));
+    QVERIFY(tabBar->tabToolTip(1).isEmpty());
+
+    // A run that succeeded replaces the whole map, so the reason cannot outlive the attempt that
+    // produced it.
+    window.setSubscriptionUpdateFailures({});
+    QCoreApplication::processEvents();
+    QVERIFY(!tabBar->tabToolTip(0).contains(QStringLiteral("download failed")));
+    QVERIFY(tabBar->tabToolTip(0).contains(QStringLiteral("Just now")));
+}
+
 void MainWindowTests::subscriptionTabsFollowTheSubscriptionListOrderAndPinUngroupedLast()
 {
     MainWindow window;

@@ -11,6 +11,8 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QComboBox>
+#include <QDateTime>
+#include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStringList>
 #include <QKeySequence>
@@ -20,6 +22,7 @@
 #include <QVBoxLayout>
 
 #include "common/UserAgent.h"
+#include "services/SubscriptionUpdateTime.h"
 #include "ui/theme/AppTheme.h"
 
 namespace {
@@ -28,6 +31,7 @@ constexpr int kEnabledColumn = 0;
 constexpr int kUrlColumn = 1;
 constexpr int kRemarksColumn = 2;
 constexpr int kUserAgentColumn = 3;
+constexpr int kUpdatedColumn = 4;
 const QString kLegacyUaNekobox = QStringLiteral("Nekobox");
 const QString kLegacyUaClashVerge = QStringLiteral("ClashVerge");
 
@@ -108,12 +112,13 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
 
     table_ = new QTableWidget(this);
-    table_->setColumnCount(4);
+    table_->setColumnCount(5);
     table_->setHorizontalHeaderLabels({
         tr("Enabled"),
         QStringLiteral("URL"),
         tr("Remarks"),
-        tr("User Agent")
+        tr("User Agent"),
+        tr("Last Updated")
     });
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -128,6 +133,7 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_->horizontalHeader()->setSectionResizeMode(kUrlColumn, QHeaderView::Stretch);
     table_->horizontalHeader()->setSectionResizeMode(kRemarksColumn, QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setSectionResizeMode(kUserAgentColumn, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(kUpdatedColumn, QHeaderView::ResizeToContents);
     const int headerHeight = table_->horizontalHeader()->fontMetrics().height() + 8;
     table_->horizontalHeader()->setDefaultSectionSize(headerHeight);
     table_->horizontalHeader()->setMinimumSectionSize(headerHeight);
@@ -226,6 +232,7 @@ void SubscriptionSettingsPageWidget::setSubscriptions(const QList<SubItem>& item
 {
     items_ = items;
     reloadTable();
+    refreshLastUpdatedColumn();
 }
 
 QList<SubItem> SubscriptionSettingsPageWidget::subscriptions() const
@@ -306,11 +313,21 @@ void SubscriptionSettingsPageWidget::appendRow(const SubItem& item)
 
     auto* urlItem = new QTableWidgetItem(item.url);
     auto* userAgentItem = new QTableWidgetItem();
+    // Read-only on purpose: this is a fact about the last refresh, not a field to be typed. The
+    // relative wording ("3 h ago") is what the user is asking for; the exact moment lives in the
+    // tooltip, which is where an absolute time belongs in a table that is scanned, not read.
+    auto* updatedItem = new QTableWidgetItem(
+        SubscriptionUpdateTime::cellText(item.lastUpdatedAtMs, QDateTime::currentMSecsSinceEpoch()));
+    updatedItem->setFlags(updatedItem->flags() & ~Qt::ItemIsEditable);
+    if (item.lastUpdatedAtMs > 0) {
+        updatedItem->setToolTip(SubscriptionUpdateTime::absoluteLabel(item.lastUpdatedAtMs));
+    }
 
     table_->setItem(row, kEnabledColumn, enabledItem);
     table_->setItem(row, kUrlColumn, urlItem);
     table_->setItem(row, kRemarksColumn, remarksItem);
     table_->setItem(row, kUserAgentColumn, userAgentItem);
+    table_->setItem(row, kUpdatedColumn, updatedItem);
     table_->setCellWidget(row, kUserAgentColumn, createUserAgentCombo(table_, item.userAgent));
 }
 
@@ -334,6 +351,52 @@ void SubscriptionSettingsPageWidget::carryServerState(const QString& id, SubItem
     item.etag = stored->etag;
     item.lastModified = stored->lastModified;
     item.failStreak = stored->failStreak;
+    item.lastUpdatedAtMs = stored->lastUpdatedAtMs;
+}
+
+void SubscriptionSettingsPageWidget::refreshLastUpdatedColumn()
+{
+    if (table_ == nullptr) {
+        return;
+    }
+
+    // Re-derived from the clock on every show rather than cached with the row. A settings dialog
+    // can sit open across a background update, and a cell computed once in appendRow() then
+    // reports the moment the dialog was built as if it were the moment of the refresh -- the one
+    // number in the table that goes stale on its own.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const int rowCount = table_->rowCount();
+    for (int row = 0; row < rowCount; ++row) {
+        QString id;
+        if (QTableWidgetItem* remarksItem = table_->item(row, kRemarksColumn)) {
+            id = remarksItem->data(Qt::UserRole).toString().trimmed();
+        }
+
+        qint64 updatedAtMs = 0;
+        for (const SubItem& item : items_) {
+            if (item.id.trimmed() == id) {
+                updatedAtMs = item.lastUpdatedAtMs;
+                break;
+            }
+        }
+
+        QTableWidgetItem* updatedItem = table_->item(row, kUpdatedColumn);
+        if (updatedItem == nullptr) {
+            // A row added through the Add button has no SubItem behind it yet, so the cell did not
+            // exist; it reads "-" (never updated) like any other new subscription.
+            updatedItem = new QTableWidgetItem();
+            updatedItem->setFlags(updatedItem->flags() & ~Qt::ItemIsEditable);
+            table_->setItem(row, kUpdatedColumn, updatedItem);
+        }
+        updatedItem->setText(SubscriptionUpdateTime::cellText(updatedAtMs, nowMs));
+        updatedItem->setToolTip(updatedAtMs > 0 ? SubscriptionUpdateTime::absoluteLabel(updatedAtMs) : QString());
+    }
+}
+
+void SubscriptionSettingsPageWidget::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    refreshLastUpdatedColumn();
 }
 
 QString SubscriptionSettingsPageWidget::userAgentAtRow(int row) const

@@ -1059,6 +1059,22 @@ songbird_add_qt_test(songbird_server_empty_state_policy_tests server-empty-state
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# The refresh time is shown in two places (a tab tooltip and a subscriptions-table column) and is
+# derived from two numbers, so both derivations live in one pure unit that can be asserted at the
+# boundaries: minutes vs "just now", and a timestamp in the future from a config written by a clock
+# that is ahead. The failure attribution is here too, because it is the same question asked of a
+# batch message -- which subscription does this line belong to.
+set(SONGBIRD_SUBSCRIPTION_UPDATE_TIME_TEST_SOURCES
+    SubscriptionUpdateTimeTests.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_update_time_tests subscription-update-time
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_UPDATE_TIME_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 # Drives SubscriptionUpdateService through a local TCP stub server to cover the
 # conditional-GET (ETag/Last-Modified), 304 short-circuit, retry back-off, and
 # fail-streak paths without making real network requests.

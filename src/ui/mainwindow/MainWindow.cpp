@@ -13,6 +13,7 @@
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEvent>
 #include <QHeaderView>
 #include <QHash>
@@ -1615,6 +1616,31 @@ void MainWindow::preserveServerSelectionPreference()
     }
 }
 
+void MainWindow::setSubscriptionUpdateFailures(const QHash<QString, QString>& failures)
+{
+    subscriptionUpdateFailures_ = failures;
+    refreshSubscriptionTabToolTips();
+}
+
+QString MainWindow::subscriptionNetworkError(const QString& subscriptionId) const
+{
+    const QString id = subscriptionId.trimmed();
+    return id.isEmpty() ? QString() : subscriptionUpdateFailures_.value(id);
+}
+
+void MainWindow::refreshSubscriptionTabToolTips()
+{
+    if (subscriptionViewController_ == nullptr) {
+        return;
+    }
+
+    // The labels are relative ("5 min ago"), so they are re-derived from the current clock on
+    // every refresh rather than cached with the tab.
+    subscriptionViewController_->applyTabToolTips(
+        QDateTime::currentMSecsSinceEpoch(),
+        [this](const QString& subscriptionId) { return subscriptionNetworkError(subscriptionId); });
+}
+
 void MainWindow::pushEmptyStateContext()
 {
     pushEmptyStateContext(configSnapshot_.subscriptions);
@@ -1643,6 +1669,9 @@ void MainWindow::syncConfigControllers(const Config& config)
     if (subscriptionViewController_ != nullptr) {
         subscriptionViewController_->setSubscriptions(config.collection().subscriptions);
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
+        // After rebuildTabs(): a rebuild recreates the tabs, and a tooltip set before it would be
+        // attached to tabs that no longer exist.
+        refreshSubscriptionTabToolTips();
         subscriptionViewController_->applyCurrentTabFilter();
         if (serverWorkspace_ != nullptr) {
             // After applyCurrentTabFilter(): the overlay reads the visible row count the

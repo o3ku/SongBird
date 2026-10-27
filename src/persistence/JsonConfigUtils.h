@@ -18,6 +18,16 @@ inline int readInt(const QJsonObject& object, const QString& key, int fallback =
     return object.value(key).toInt(fallback);
 }
 
+// A JSON number is a double, and a millisecond timestamp is ~1.7e12 -- inside the 2^53 range
+// where every integer is exactly representable, so the round trip through QJsonValue loses
+// nothing. An absent or non-numeric value falls back, which is what makes a config written
+// before this field existed read as "never updated" rather than as an arbitrary instant.
+inline qint64 readInt64(const QJsonObject& object, const QString& key, qint64 fallback = 0)
+{
+    const QJsonValue value = object.value(key);
+    return value.isDouble() ? static_cast<qint64>(value.toDouble()) : fallback;
+}
+
 inline bool readBool(const QJsonObject& object, const QString& key, bool fallback = false)
 {
     return object.value(key).toBool(fallback);
@@ -85,6 +95,15 @@ inline void writeIfNotDefault(QJsonObject& object, const QString& key, int value
 {
     if (value != defaultValue) {
         object.insert(key, value);
+    }
+}
+
+inline void writeIfNotDefault(QJsonObject& object, const QString& key, qint64 value, qint64 defaultValue)
+{
+    // Written as a double because that is what QJsonValue stores; the value is an integer in
+    // the exactly-representable range, so it reads back unchanged.
+    if (value != defaultValue) {
+        object.insert(key, static_cast<double>(value));
     }
 }
 

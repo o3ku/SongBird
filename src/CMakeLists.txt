@@ -236,6 +236,10 @@ set(SONGBIRD_SHARED_SOURCES
     services/SubscriptionUpdateService.cpp
     services/SubscriptionUpdateOrder.h
     services/SubscriptionUpdateOrder.cpp
+    services/SubscriptionUpdateFailureSummary.h
+    services/SubscriptionUpdateFailureSummary.cpp
+    services/SubscriptionUpdateTime.h
+    services/SubscriptionUpdateTime.cpp
     subscription/CustomConfigTextParser.h
     subscription/CustomConfigTextParser.cpp
     subscription/ClashSubscriptionParser.h

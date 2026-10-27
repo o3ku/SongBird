@@ -26,6 +26,7 @@ QList<SubItem> readSubscriptions(const QJsonArray& array)
         item.etag = JsonConfigUtils::readString(object, QStringLiteral("etag"));
         item.lastModified = JsonConfigUtils::readString(object, QStringLiteral("lastModified"));
         item.failStreak = JsonConfigUtils::readInt(object, QStringLiteral("failStreak"), 0);
+        item.lastUpdatedAtMs = JsonConfigUtils::readInt64(object, QStringLiteral("lastUpdatedAtMs"), 0);
         items.append(item);
     }
 
@@ -45,6 +46,7 @@ QJsonArray writeSubscriptions(const QList<SubItem>& items)
         JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("etag"), item.etag);
         JsonConfigUtils::writeIfNotEmpty(object, QStringLiteral("lastModified"), item.lastModified);
         JsonConfigUtils::writeIfNotDefault(object, QStringLiteral("failStreak"), item.failStreak, 0);
+        JsonConfigUtils::writeIfNotDefault(object, QStringLiteral("lastUpdatedAtMs"), item.lastUpdatedAtMs, qint64(0));
         array.append(object);
     }
 

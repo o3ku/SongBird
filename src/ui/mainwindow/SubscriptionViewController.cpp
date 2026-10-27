@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "services/SubscriptionUpdateTime.h"
 #include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/models/ServerFilterProxyModel.h"
 
@@ -82,6 +83,42 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
             context_.subscriptionTabBar->setCurrentIndex(restoreIndex >= 0 ? restoreIndex : 0);
         }
         rebuildingTabs_ = false;
+    }
+}
+
+void SubscriptionViewController::applyTabToolTips(
+    qint64 nowMs,
+    std::function<QString(const QString&)> networkErrorFor)
+{
+    if (context_.subscriptionTabBar == nullptr) {
+        return;
+    }
+
+    for (int index = 0; index < context_.subscriptionTabBar->count(); ++index) {
+        const QString subscriptionId = subscriptionIdAtTab(index);
+        if (subscriptionId.isEmpty()) {
+            // Ungrouped is not a subscription and has no refresh time of its own.
+            context_.subscriptionTabBar->setTabToolTip(index, QString());
+            continue;
+        }
+
+        const auto stored = std::find_if(
+            subscriptions_.cbegin(),
+            subscriptions_.cend(),
+            [&subscriptionId](const SubItem& item) { return item.id.trimmed() == subscriptionId; });
+        if (stored == subscriptions_.cend()) {
+            context_.subscriptionTabBar->setTabToolTip(index, QString());
+            continue;
+        }
+
+        const QString networkError = networkErrorFor ? networkErrorFor(subscriptionId) : QString();
+        context_.subscriptionTabBar->setTabToolTip(
+            index,
+            SubscriptionUpdateTime::tooltipText(
+                SubscriptionViewSupport::subscriptionDisplayName(*stored),
+                stored->lastUpdatedAtMs,
+                nowMs,
+                networkError));
     }
 }
 

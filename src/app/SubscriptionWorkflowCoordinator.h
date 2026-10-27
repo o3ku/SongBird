@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -23,6 +24,11 @@ public:
         QStringList subscriptionIds;
         QString activeSubscriptionId;
         QString lastSubscriptionId;
+        // One reason per subscription id that failed in this batch, empty when the run
+        // succeeded. Carried in the completion rather than recomputed on the UI thread,
+        // because the message it is derived from describes the worker's config, not the copy
+        // the window is about to reload.
+        QHash<QString, QString> subscriptionFailures;
         bool reloadConfig = false;
         bool syncWindow = false;
         bool restartActiveSubscription = false;
@@ -53,6 +59,9 @@ public:
         // until one of those happens.
         std::function<void(const QString&)> reportImportFailure;
         std::function<void(const QString&)> selectSubscriptionTab;
+        // Replaces the per-subscription failure reasons the tab hover text shows. Called with the
+        // whole map on every batch, so a subscription that succeeded stops naming an old reason.
+        std::function<void(const QHash<QString, QString>&)> setSubscriptionUpdateFailures;
     };
 
     struct ThreadCallbacks {

@@ -212,6 +212,19 @@ private:
     // the tab, or the row set the filter produced.
     void pushEmptyStateContext();
     void pushEmptyStateContext(const QList<SubItem>& subscriptions);
+
+public:
+    // Re-derives the subscription tabs' hover text. Called by the config sync and by whoever
+    // learns that a subscription's last attempt failed, because the failure is not part of the
+    // config: it would have to be persisted to survive a restart, and it describes one attempt
+    // rather than the user's setup.
+    void refreshSubscriptionTabToolTips();
+    // The in-progress failure for one subscription, or an empty string. Replaced wholesale on
+    // every subscription update, so a stale reason cannot outlive the attempt that produced it.
+    void setSubscriptionUpdateFailures(const QHash<QString, QString>& failures);
+
+private:
+    QString subscriptionNetworkError(const QString& subscriptionId) const;
     void updateRuntimeUiState();
     void updateStatusPresentation(bool includeWindowTitle = false);
     bool confirmExit();
@@ -309,6 +322,7 @@ private:
     QList<QWidget*> desktopOnlyToolbarWidgets_;
     QList<QAction*> desktopOnlyToolbarWidgetActions_;
     MainWindowConfigSnapshot configSnapshot_;
+    QHash<QString, QString> subscriptionUpdateFailures_;
     std::function<QString(const QString&)> shareUrlResolver_;
     std::function<QString(const QStringList&)> shareLinksExportProvider_;
     std::function<QString(const QStringList&)> clashYamlExportProvider_;

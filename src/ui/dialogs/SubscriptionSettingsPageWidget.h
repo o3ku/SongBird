@@ -9,6 +9,7 @@
 class QAction;
 class QPoint;
 class QPushButton;
+class QShowEvent;
 class QTableWidget;
 
 class SubscriptionSettingsPageWidget final : public QWidget
@@ -32,11 +33,19 @@ public:
 signals:
     void updateRequested();
 
+protected:
+    // The "Last Updated" cells are relative ("3 h ago"), so they are recomputed whenever the page
+    // is shown. A settings dialog can be left open across a background update, and a value baked
+    // in at build time reports the dialog's own age as the subscription's.
+    void showEvent(QShowEvent* event) override;
+
 private:
     void reloadTable();
     void appendRow(const SubItem& item);
-    // Copies the fields the table does not show (HTTP cache validators and the failure streak) from
-    // the subscription this row was loaded from.
+    // Rewrites every row's "Last Updated" text against the current clock.
+    void refreshLastUpdatedColumn();
+    // Copies the fields the table does not show (HTTP cache validators, the failure streak and the
+    // last refresh time) from the subscription this row was loaded from.
     void carryServerState(const QString& id, SubItem& item) const;
     QString userAgentAtRow(int row) const;
     QString subscriptionIdAtRow(int row) const;

@@ -1,6 +1,7 @@
 #include "services/SubscriptionUpdateService.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -14,16 +15,12 @@
 #include "common/LocalInboundPorts.h"
 #include "common/UserAgent.h"
 #include "services/ServiceTimeouts.h"
+#include "services/SubscriptionUpdateFailureSummary.h"
 #include "services/SubscriptionUpdateOrder.h"
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionContentParser.h"
 
 namespace {
-QString subscriptionDisplayName(const SubItem& item)
-{
-    return item.remarks.trimmed().isEmpty() ? item.url.trimmed() : item.remarks.trimmed();
-}
-
 constexpr int kSubscriptionDownloadTimeoutMs = ServiceTimeouts::kDefaultNetworkTimeoutMs;
 constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
@@ -233,6 +230,10 @@ OperationResult SubscriptionUpdateService::updateInternal(
     int importedCount = 0;
     QStringList successLines;
     QStringList failureLines;
+    // Which subscription each failure line belongs to. The line itself is prose for the log
+    // panel -- it leads with the display name, which two subscriptions can share -- so the UI
+    // that needs "why did *this* one fail" is handed the id instead of parsing it back out.
+    QList<OperationResult::SubjectFailure> subjectFailures;
     int completedCount = 0;
 
     // Walk the batch in an order that spreads subscriptions sharing a host apart and defers the ones
@@ -265,6 +266,7 @@ OperationResult SubscriptionUpdateService::updateInternal(
         }
 
         failureLines.append(result.message);
+        subjectFailures.append({item.id, result.message});
         if (progressCallback) {
             progressCallback(completedCount, items.size(), result.message);
         }
@@ -298,9 +300,13 @@ OperationResult SubscriptionUpdateService::updateInternal(
         lines.append(totalsLine);
     }
 
-    return failureLines.isEmpty()
-        ? OperationResult::ok(lines.join(QStringLiteral("\n")))
-        : OperationResult::fail(lines.join(QStringLiteral("\n")));
+    if (failureLines.isEmpty()) {
+        return OperationResult::ok(lines.join(QStringLiteral("\n")));
+    }
+
+    OperationResult result = OperationResult::fail(lines.join(QStringLiteral("\n")));
+    result.subjectFailures = subjectFailures;
+    return result;
 }
 
 OperationResult SubscriptionUpdateService::updateSingle(Config& config, const SubItem& item, int* importedCount, bool useProxy)
@@ -309,7 +315,7 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         *importedCount = 0;
     }
 
-    const QString displayName = subscriptionDisplayName(item);
+    const QString displayName = SubscriptionUpdateFailureSummary::displayName(item);
     if (!item.enabled) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 is disabled.").arg(displayName));
     }
@@ -344,11 +350,17 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
             // The server confirmed the cached copy is still current. Update the
             // fail-streak to 0 and persist the (possibly refreshed) headers, but
             // do not replace the server list: nothing changed.
+            const qint64 confirmedAtMs = QDateTime::currentMSecsSinceEpoch();
             for (SubItem& sub : config.collection().subscriptions) {
                 if (sub.id == item.id) {
                     sub.etag = newEtag.isEmpty() ? item.etag : newEtag;
                     sub.lastModified = newLastModified.isEmpty() ? item.lastModified : newLastModified;
                     sub.failStreak = 0;
+                    // A 304 is a successful check, and the timestamp answers "how stale is what
+                    // I am showing". Leaving it alone would make an hourly-refreshed
+                    // subscription look untouched since the last time the document actually
+                    // changed, which is precisely the question this field exists for.
+                    sub.lastUpdatedAtMs = confirmedAtMs;
                     break;
                 }
             }
@@ -410,12 +422,14 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 save failed: %2").arg(displayName, replaceResult.message));
     }
 
-    // Persist the new caching headers and reset the fail-streak.
+    // Persist the new caching headers, the refresh time and reset the fail-streak.
+    const qint64 downloadedAtMs = QDateTime::currentMSecsSinceEpoch();
     for (SubItem& sub : config.collection().subscriptions) {
         if (sub.id == item.id) {
             sub.etag = newEtag;
             sub.lastModified = newLastModified;
             sub.failStreak = 0;
+            sub.lastUpdatedAtMs = downloadedAtMs;
             break;
         }
     }

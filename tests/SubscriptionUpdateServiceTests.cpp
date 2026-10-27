@@ -1,5 +1,6 @@
 #include <QtTest>
 
+#include <QDateTime>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QTcpServer>
@@ -179,6 +180,10 @@ private slots:
     void invalidUrlFailsImmediately();
     void unsupportedProtocolsAreNamedInTheFailure();
     void unsupportedProtocolsStayOnTheFirstLineOfTheFailure();
+    void successfulDownloadStampsLastUpdated();
+    void notModified304StampsLastUpdated();
+    void failedDownloadLeavesLastUpdatedAlone();
+    void failuresAreAttributedToTheSubscriptionTheyBelongTo();
 };
 
 // ---- helpers shared across slots ----------------------------------------
@@ -504,6 +509,140 @@ void SubscriptionUpdateServiceTests::unsupportedProtocolsStayOnTheFirstLineOfThe
     QVERIFY2(firstLine.contains(QStringLiteral("skipped 1 node(s): hysteria")), qPrintable(firstLine));
     // ...and the trail is still there, on the lines behind it.
     QVERIFY2(result.message.contains(QChar('\n')), qPrintable(result.message));
+}
+
+// "How stale is what I am showing?" is the question the tab hover text and the subscriptions
+// table answer with this timestamp, so both moments that successfully circulate the bytes have to
+// fill it in.
+void SubscriptionUpdateServiceTests::successfulDownloadStampsLastUpdated()
+{
+    Harness h;
+    const qint64 before = QDateTime::currentMSecsSinceEpoch();
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+    const OperationResult result = h.update();
+    QVERIFY2(result.success, qPrintable(result.message));
+
+    // `found` matters as much as the comparison: a subscription missing from the result would
+    // make this loop run zero times and report a pass without asserting anything.
+    bool found = false;
+    for (const SubItem& s : h.repo.config_.collection().subscriptions) {
+        if (s.id == h.subId) {
+            QVERIFY2(s.lastUpdatedAtMs >= before, "A successful download must stamp the refresh time.");
+            QVERIFY(s.lastUpdatedAtMs <= QDateTime::currentMSecsSinceEpoch());
+            found = true;
+        }
+    }
+    QVERIFY(found);
+}
+
+void SubscriptionUpdateServiceTests::notModified304StampsLastUpdated()
+{
+    // A 304 is a successful check. Leaving the timestamp alone would make an hourly-refreshed
+    // subscription look untouched since the day its node list last changed, which is exactly the
+    // reading the field exists to prevent.
+    Harness h;
+    const qint64 before = QDateTime::currentMSecsSinceEpoch();
+    h.server.setNextResponse(makeHttpResponse(304, {}));
+    const OperationResult result = h.update();
+    QVERIFY2(result.success, qPrintable(result.message));
+
+    bool found = false;
+    for (const SubItem& s : h.repo.config_.collection().subscriptions) {
+        if (s.id == h.subId) {
+            QVERIFY(s.lastUpdatedAtMs >= before);
+            found = true;
+        }
+    }
+    QVERIFY(found);
+}
+
+void SubscriptionUpdateServiceTests::failedDownloadLeavesLastUpdatedAlone()
+{
+    // The number must never be the time of a failure dressed up as a refresh: a user who sees
+    // "just now" is entitled to assume the node list is current.
+    //
+    // The seed goes through the repository, not into repo.config_ directly: updateByIds() starts
+    // from repository.load(), so a value only written to the mock's current config never reaches
+    // the config the service edits, and the assertion below would compare two different zeros and
+    // pass while asserting nothing.
+    Harness h;
+    const qint64 seeded = 1700000000000LL;
+    Config seededConfig = h.repo.config_;
+    for (SubItem& s : seededConfig.collection().subscriptions) {
+        if (s.id == h.subId) s.lastUpdatedAtMs = seeded;
+    }
+    h.repo.save(seededConfig);
+    QCOMPARE(h.repo.load().collection().subscriptions.constFirst().lastUpdatedAtMs, seeded);
+
+    QObject::connect(&h.server, &StubHttpServer::requestReceived, &h.server, [&]() {
+        h.server.setNextResponse(makeHttpResponse(503, "down"));
+    });
+    h.server.setNextResponse(makeHttpResponse(503, "down"));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+
+    // Read back from the repository as well as from the object the service edited: the failure
+    // path calls save(), so a timestamp cleared before that save would only be visible here.
+    bool found = false;
+    for (const SubItem& s : h.repo.load().collection().subscriptions) {
+        if (s.id == h.subId) {
+            QCOMPARE(s.lastUpdatedAtMs, seeded);
+            found = true;
+        }
+    }
+    QVERIFY(found);
+}
+
+// The tab hover text needs "why did *this* subscription fail", and the batch message cannot answer
+// that on its own: its lines lead with the display name, which two subscriptions can share, and
+// they are written in the reordered walk order rather than in config order. So the service records
+// the attribution as it goes -- id plus reason -- and this is the test that says it does.
+void SubscriptionUpdateServiceTests::failuresAreAttributedToTheSubscriptionTheyBelongTo()
+{
+    // Two subscriptions with the same remarks on purpose: a name-based recovery of the attribution
+    // cannot tell them apart, so a passing result here is the structural one talking.
+    StubHttpServer server;
+    QVERIFY(server.listen());
+    MockRepo repo;
+    QNetworkAccessManager nam;
+    SubscriptionService subService(repo);
+    SubscriptionUpdateService updateService(repo, subService, nam);
+
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1/sub").arg(server.port());
+    SubItem first = makeSub(QStringLiteral("sub-1"), baseUrl + QStringLiteral("-1"));
+    first.remarks = QStringLiteral("Airport");
+    SubItem second = makeSub(QStringLiteral("sub-2"), baseUrl + QStringLiteral("-2"));
+    second.remarks = QStringLiteral("Airport");
+    repo.config_.collection().subscriptions = {first, second};
+    repo.save(repo.config_);
+
+    QObject::connect(&server, &StubHttpServer::requestReceived, &server, [&]() {
+        // Both requests fail, so both subjects are recorded and both reasons have to survive.
+        server.setNextResponse(makeHttpResponse(503, "down"));
+    });
+    server.setNextResponse(makeHttpResponse(503, "down"));
+
+    const OperationResult result =
+        updateService.updateByIds(repo.config_, {QStringLiteral("sub-1"), QStringLiteral("sub-2")});
+
+    QVERIFY(!result.success);
+    QCOMPARE(result.subjectFailures.size(), 2);
+    QStringList ids;
+    for (const OperationResult::SubjectFailure& failure : result.subjectFailures) {
+        ids.append(failure.id);
+        QVERIFY2(!failure.reason.trimmed().isEmpty(), qPrintable(failure.id));
+        QVERIFY2(failure.reason.contains(QStringLiteral("download failed")), qPrintable(failure.reason));
+    }
+    ids.sort();
+    QCOMPARE(ids, (QStringList{QStringLiteral("sub-1"), QStringLiteral("sub-2")}));
+
+    // A run that succeeds carries no attribution, which is what clears the previous reason on
+    // the tab: the consumer replaces the whole map, so an empty map is the clearing.
+    server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+    const OperationResult success = updateService.updateByIds(repo.config_, {QStringLiteral("sub-1")});
+    QVERIFY2(success.success, qPrintable(success.message));
+    QVERIFY(success.subjectFailures.isEmpty());
 }
 
 QTEST_MAIN(SubscriptionUpdateServiceTests)

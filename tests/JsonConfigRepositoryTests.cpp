@@ -307,6 +307,7 @@ private slots:
     void textImportFailureNamesTheProtocolsItCouldNotUse();
     void subscriptionFetchFailureNamesTheProtocolsItCouldNotUse();
     void healthStripRoundTripsThroughTheStateFile();
+    void subscriptionLastUpdatedRoundTripsAndDefaultsToNever();
     void loadDropsAHealthStripThePolicyCannotRead();
     void saveReportsPrimaryConfigWriteFailure();
     void saveReportsStateWriteFailure();
@@ -743,6 +744,42 @@ void JsonConfigRepositoryTests::loadDropsPortOverridesThatDisagreeWithTheLocalPo
     QCOMPARE(written.value(QStringLiteral("localPort")).toInt(), 20808);
     QVERIFY(!written.contains(QStringLiteral("localHttpPort")));
     QVERIFY(!written.contains(QStringLiteral("localLocationProbePort")));
+}
+
+void JsonConfigRepositoryTests::subscriptionLastUpdatedRoundTripsAndDefaultsToNever()
+{
+    // The refresh time is what the tab hover text and the subscriptions table report, so it has to
+    // survive a save/load cycle -- and a config written before this field existed has to read as
+    // "never" rather than as an arbitrary instant (an absent JSON value is 0, which is the
+    // sentinel, but only because the reader says so explicitly).
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const qint64 stamped = 1767225600123LL;
+    SubItem item = makeSubscription();
+    item.lastUpdatedAtMs = stamped;
+
+    Config config;
+    config.collection().subscriptions = {item};
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    QVERIFY(repository.save(config));
+
+    const Config reloaded = repository.load();
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(reloaded.collection().subscriptions.size(), 1);
+    QCOMPARE(reloaded.collection().subscriptions.at(0).lastUpdatedAtMs, stamped);
+
+    // A subscription nobody has refreshed writes no key at all, rather than a literal 0.
+    Config untouched;
+    untouched.collection().subscriptions = {makeSubscription()};
+    QVERIFY(repository.save(untouched));
+    QFile file(makeConfigPath(tempDir));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray raw = file.readAll();
+    file.close();
+    QVERIFY2(!raw.contains("lastUpdatedAtMs"), raw.constData());
+    QCOMPARE(repository.load().collection().subscriptions.at(0).lastUpdatedAtMs, qint64(0));
 }
 
 void JsonConfigRepositoryTests::healthStripRoundTripsThroughTheStateFile()

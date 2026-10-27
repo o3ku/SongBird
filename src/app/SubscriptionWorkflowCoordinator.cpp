@@ -1,5 +1,7 @@
 #include "app/SubscriptionWorkflowCoordinator.h"
 
+#include "services/SubscriptionUpdateFailureSummary.h"
+
 #include <utility>
 
 #include <QCoreApplication>
@@ -312,6 +314,14 @@ void SubscriptionWorkflowCoordinator::updateByIds(
         completion.result = result;
         completion.subscriptionIds = subscriptionIds;
         completion.activeSubscriptionId = activeSubscriptionId;
+        // The attribution the service built while it walked the batch, not a re-parse of the
+        // message: the message is prose for the log panel, and two subscriptions can share the
+        // display name its lines lead with. A subscription that succeeded has no entry, which is
+        // what clears the previous reason.
+        completion.subscriptionFailures = SubscriptionUpdateFailureSummary::perSubscriptionFromMessage(
+            workerConfig,
+            subscriptionIds,
+            result);
         completion.reloadConfig = true;
         completion.syncWindow = true;
         completion.restartActiveSubscription = result.success
@@ -360,6 +370,11 @@ void SubscriptionWorkflowCoordinator::finishOnUiThread(
     }
     if (completion.reloadConfig && configCallbacks_.reloadConfig) {
         configCallbacks_.reloadConfig();
+    }
+    if (uiCallbacks_.setSubscriptionUpdateFailures) {
+        // After reloadConfig(), so the tooltip that names the reason is written onto tabs the
+        // refreshed config just rebuilt.
+        uiCallbacks_.setSubscriptionUpdateFailures(completion.subscriptionFailures);
     }
     if (uiCallbacks_.appendResult) {
         uiCallbacks_.appendResult(completion.result);
