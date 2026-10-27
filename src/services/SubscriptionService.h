@@ -5,6 +5,7 @@
 #include <QString>
 
 #include "common/OperationResult.h"
+#include "common/SubscriptionOrder.h"
 #include "domain/models/Config.h"
 #include "domain/models/SubItem.h"
 #include "domain/models/VmessItem.h"
@@ -17,6 +18,18 @@ public:
     QList<SubItem> list(const Config& config) const;
     OperationResult saveSubscriptions(Config& config, QList<SubItem> items);
     OperationResult setSubscriptionEnabled(Config& config, const QString& subscriptionId, bool enabled);
+    // Reorders the subscription list, which is also the order of the tabs in the main window: the
+    // list is persisted as-is, so no separate order field has to be kept in step with it. An
+    // operation that would not move anything reports success without saving.
+    OperationResult moveSubscriptions(
+        Config& config,
+        const QList<QString>& subscriptionIds,
+        SubscriptionOrder::MoveOperation operation);
+    // Applies a complete order, which is what a tab drag produces: the bar already knows where the
+    // tab was dropped, so there is no step to take. Ids the order does not mention keep their
+    // relative position after the ones it does, because a hidden subscription has no tab and so
+    // cannot be dragged -- dropping it would lose the subscription on the next save.
+    OperationResult reorderSubscriptions(Config& config, const QList<QString>& orderedSubscriptionIds);
     OperationResult removeSubscription(Config& config, const QString& subscriptionId);
     OperationResult replaceSubscriptionServers(Config& config, const QString& subscriptionId, QList<VmessItem> items);
 

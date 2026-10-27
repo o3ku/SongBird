@@ -55,6 +55,9 @@ inline QStringList normalizedSettingsStringList(QStringList values)
     return values;
 }
 
+// Identity, not content. The list comparison walks both lists in order, so a reorder is caught by
+// the id mismatch at some index; without the id in this comparison an edit that only swaps two rows
+// would look like "nothing changed" and be dropped, leaving the dialog closing as if saved.
 inline bool areSettingsSubItemsEqual(const SubItem& lhs, const SubItem& rhs)
 {
     return lhs.id.trimmed() == rhs.id.trimmed()

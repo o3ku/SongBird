@@ -2873,6 +2873,22 @@ Switch this protocol to %3?</source>
         <source>Subscription</source>
         <translation>订阅</translation>
     </message>
+    <message>
+        <source>Move Up</source>
+        <translation>上移</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>下移</translation>
+    </message>
+    <message>
+        <source>Move To Top</source>
+        <translation>移到顶部</translation>
+    </message>
+    <message>
+        <source>Move To Bottom</source>
+        <translation>移到底部</translation>
+    </message>
 </context>
 <context>
     <name>QtCoreProcessHost</name>
@@ -3400,6 +3416,22 @@ Switch this protocol to %3?</source>
         <source>Subscription hidden.</source>
         <translation>订阅已隐藏。</translation>
     </message>
+    <message>
+        <source>Subscription order unchanged.</source>
+        <translation>订阅顺序未变化。</translation>
+    </message>
+    <message>
+        <source>Subscription order updated.</source>
+        <translation>订阅顺序已更新。</translation>
+    </message>
+    <message>
+        <source>Failed to save the subscription order.</source>
+        <translation>保存订阅顺序失败。</translation>
+    </message>
+    <message>
+        <source>Failed to rebuild the requested subscription order.</source>
+        <translation>无法按请求重建订阅顺序。</translation>
+    </message>
 </context>
 <context>
     <name>SubscriptionSettingsPageWidget</name>
@@ -3426,6 +3458,22 @@ Switch this protocol to %3?</source>
     <message>
         <source>Update Selected</source>
         <translation>更新所选</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>上移</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>下移</translation>
+    </message>
+    <message>
+        <source>Move To Top</source>
+        <translation>移到顶部</translation>
+    </message>
+    <message>
+        <source>Move To Bottom</source>
+        <translation>移到底部</translation>
     </message>
 </context>
 <context>

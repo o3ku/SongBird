@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <QAction>
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
@@ -92,6 +93,8 @@ private slots:
     void subscriptionPageRoundTripsSelectedRowsAndItems();
     void subscriptionPageKeepsServerStateTheTableNeverShows();
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
+    void subscriptionRowMoveActionsReorderRowsAndPersistOrder();
+    void subscriptionRowMoveActionsDisableAtTheEdges();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
     void settingsDialogHasMinimumWidth720();
@@ -1789,6 +1792,118 @@ void SettingsDialogTests::subscriptionPageKeepsServerStateTheTableNeverShows()
     QCOMPARE(edited.collection().subscriptions.at(0).etag, stored.etag);
     QCOMPARE(edited.collection().subscriptions.at(0).lastModified, stored.lastModified);
     QCOMPARE(edited.collection().subscriptions.at(0).failStreak, 2);
+}
+
+// The subscription list order is the tab order in the main window and the order servers are
+// listed in, so the table's up/down/top/bottom menu is a config edit, not a view-only sort. It has
+// to come out of dialog.config() in the new order for the save step to persist it at all.
+void SettingsDialogTests::subscriptionRowMoveActionsReorderRowsAndPersistOrder()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("C"), QStringLiteral("https://c.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    QCOMPARE(subTable->rowCount(), 3);
+
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    auto* moveUpAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionUpAction"));
+    QVERIFY(moveBottomAction != nullptr);
+    QVERIFY(moveUpAction != nullptr);
+    // A shortcut reachable from the table but not added to it would never fire.
+    QVERIFY(subTable->actions().contains(moveBottomAction));
+    QVERIFY(subTable->actions().contains(moveUpAction));
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    // Bound to a named Config first: dialog.config() returns by value, and ranging over a member of
+    // a temporary leaves the loop walking freed memory.
+    const Config afterMoveToBottom = dialog.config();
+    QStringList order;
+    for (const SubItem& item : afterMoveToBottom.collection().subscriptions) {
+        order.append(item.id);
+    }
+    QCOMPARE(order, (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-3"), QStringLiteral("sub-1")}));
+
+    // The table and the config must agree, otherwise the next accept writes the old order back.
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+
+    subTable->selectRow(2);
+    QCoreApplication::processEvents();
+    moveUpAction->trigger();
+    QCoreApplication::processEvents();
+
+    const Config afterMoveUp = dialog.config();
+    order.clear();
+    for (const SubItem& item : afterMoveUp.collection().subscriptions) {
+        order.append(item.id);
+    }
+    QCOMPARE(order, (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1"), QStringLiteral("sub-3")}));
+
+    // The cell widgets have to survive the row permutation: a lost user agent combo would ship a
+    // subscription with no User-Agent, silently changed from what the user typed.
+    for (int row = 0; row < subTable->rowCount(); ++row) {
+        QVERIFY(qobject_cast<QComboBox*>(subTable->cellWidget(row, 3)) != nullptr);
+    }
+}
+
+void SettingsDialogTests::subscriptionRowMoveActionsDisableAtTheEdges()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* moveTopAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionTopAction"));
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveTopAction != nullptr);
+    QVERIFY(moveBottomAction != nullptr);
+
+    // Nothing selected: there is nothing to move.
+    subTable->clearSelection();
+    QCoreApplication::processEvents();
+    QVERIFY(!moveTopAction->isEnabled());
+
+    // One row selected: between the two extremes the operation at the edge is pointless.
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    QVERIFY(moveTopAction->isEnabled());
+    QVERIFY(moveBottomAction->isEnabled());
+
+    // With one subscription in the list there is nowhere to move it to.
+    Config single;
+    single.collection().subscriptions = {config.collection().subscriptions.first()};
+    SettingsDialog singleDialog;
+    singleDialog.setConfig(single);
+    singleDialog.show();
+    QCoreApplication::processEvents();
+    auto* singleTable = singleDialog.findChild<QTableWidget*>();
+    QVERIFY(singleTable != nullptr);
+    singleTable->selectRow(0);
+    QCoreApplication::processEvents();
+    auto* singleMoveUp = singleDialog.findChild<QAction*>(QStringLiteral("moveSubscriptionUpAction"));
+    QVERIFY(singleMoveUp != nullptr);
+    QVERIFY(!singleMoveUp->isEnabled());
 }
 
 void SettingsDialogTests::subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput()

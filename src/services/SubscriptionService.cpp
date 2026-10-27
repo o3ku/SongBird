@@ -77,6 +77,81 @@ OperationResult SubscriptionService::setSubscriptionEnabled(Config& config, cons
             : QCoreApplication::translate("SubscriptionService", "Subscription hidden."));
 }
 
+OperationResult SubscriptionService::moveSubscriptions(
+    Config& config,
+    const QList<QString>& subscriptionIds,
+    SubscriptionOrder::MoveOperation operation)
+{
+    if (!SubscriptionOrder::moveSubscriptions(config.collection().subscriptions, subscriptionIds, operation)) {
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order unchanged."));
+    }
+
+    if (!repository_.save(config)) {
+        return repository_.saveFailureResult(QCoreApplication::translate("SubscriptionService", "Failed to save the subscription order."));
+    }
+
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order updated."));
+}
+
+OperationResult SubscriptionService::reorderSubscriptions(
+    Config& config,
+    const QList<QString>& orderedSubscriptionIds)
+{
+    QList<SubItem> reordered;
+    reordered.reserve(config.collection().subscriptions.size());
+
+    QStringList seenIds;
+    for (const QString& rawId : orderedSubscriptionIds) {
+        const QString id = rawId.trimmed();
+        if (id.isEmpty() || seenIds.contains(id)) {
+            continue;
+        }
+
+        const auto it = std::find_if(
+            config.collection().subscriptions.cbegin(),
+            config.collection().subscriptions.cend(),
+            [&id](const SubItem& item) { return item.id.trimmed() == id; });
+        if (it == config.collection().subscriptions.cend()) {
+            continue;
+        }
+
+        seenIds.append(id);
+        reordered.append(*it);
+    }
+
+    // Subscriptions the caller never mentioned -- a hidden one, which has no tab to drag -- are
+    // appended in their existing relative order rather than dropped.
+    for (const SubItem& item : config.collection().subscriptions) {
+        if (!seenIds.contains(item.id.trimmed())) {
+            reordered.append(item);
+        }
+    }
+
+    if (reordered.size() != config.collection().subscriptions.size()) {
+        return OperationResult::fail(
+            QCoreApplication::translate("SubscriptionService", "Failed to rebuild the requested subscription order."));
+    }
+
+    bool unchanged = true;
+    for (int index = 0; index < reordered.size(); ++index) {
+        if (reordered.at(index).id.trimmed() != config.collection().subscriptions.at(index).id.trimmed()) {
+            unchanged = false;
+            break;
+        }
+    }
+    if (unchanged) {
+        return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order unchanged."));
+    }
+
+    config.collection().subscriptions = reordered;
+    if (!repository_.save(config)) {
+        return repository_.saveFailureResult(
+            QCoreApplication::translate("SubscriptionService", "Failed to save the subscription order."));
+    }
+
+    return OperationResult::ok(QCoreApplication::translate("SubscriptionService", "Subscription order updated."));
+}
+
 OperationResult SubscriptionService::removeSubscription(Config& config, const QString& subscriptionId)
 {
     const QString normalizedId = subscriptionId.trimmed();

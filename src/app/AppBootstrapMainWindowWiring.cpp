@@ -18,6 +18,7 @@
 #include "common/DialogUtils.h"
 #include "common/LogSeverity.h"
 #include "common/OperationResult.h"
+#include "common/SubscriptionOrder.h"
 #include "domain/models/Config.h"
 #include "domain/models/CoreTypeItem.h"
 #include "domain/models/RuntimeState.h"
@@ -368,6 +369,20 @@ void AppBootstrap::wireMainWindowCommands()
     QObject::connect(objects_->mainWindow.get(), &MainWindow::reorderServersRequested, objects_->mainWindow.get(), [this](const QStringList& orderedIndexIds) {
         if (objects_->serverCollectionCoordinator != nullptr) {
             objects_->serverCollectionCoordinator->reorderServers(orderedIndexIds);
+        }
+    });
+
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::moveSubscriptionsRequested, objects_->mainWindow.get(), [this](const QStringList& subscriptionIds, int operation) {
+        if (objects_->serverCollectionCoordinator != nullptr) {
+            objects_->serverCollectionCoordinator->moveSubscriptions(
+                subscriptionIds,
+                static_cast<SubscriptionOrder::MoveOperation>(operation));
+        }
+    });
+
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::reorderSubscriptionsRequested, objects_->mainWindow.get(), [this](const QStringList& orderedSubscriptionIds) {
+        if (objects_->serverCollectionCoordinator != nullptr) {
+            objects_->serverCollectionCoordinator->reorderSubscriptions(orderedSubscriptionIds);
         }
     });
 
