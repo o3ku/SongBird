@@ -1192,8 +1192,12 @@ void JsonConfigRepositoryTests::subscriptionFetchFailureNamesTheProtocolsItCould
     // "hysteria" tells the user their node is unsupported, 'hysteria "h1"' tells
     // them which one it is.
     const QString failLine = result.message.section(QChar('\n'), 0, 0);
+    // The count is the node count and the list beside it is the types, not the
+    // nodes: two nodes were skipped and they are one "hysteria" and one "snell". A
+    // summary that named each node separately would repeat a type per node, which on
+    // a real airport is forty identical lines.
     QVERIFY2(failLine.startsWith(QStringLiteral("[FAIL] feed returned no supported servers. "
-                                                "skipped 2 node(s): hysteria \"h1\", snell \"s1\"")),
+                                                "skipped 2 node(s): hysteria, snell")),
              qPrintable(result.message));
 
     // The per-pass trail stays behind it: the diagnostic is read in the log panel,

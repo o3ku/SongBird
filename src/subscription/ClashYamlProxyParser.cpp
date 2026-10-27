@@ -8,6 +8,7 @@
 #include <QStringList>
 
 #include "subscription/ClashProxyItemParser.h"
+#include "subscription/SubscriptionSkippedNode.h"
 #include "subscription/SubscriptionYamlParser.h"
 
 namespace {
@@ -17,7 +18,8 @@ namespace {
 // records it: by the time the caller looks, the node is indistinguishable from
 // one that was never in the document. A type alone cannot be acted on --
 // "skipped 1 node(s): (no type)" names no node the user could go and fix -- so
-// the name travels with it whenever the document gave one.
+// SubscriptionSkippedNode::label() puts the name beside it whenever the document
+// gave one.
 
 QString fieldText(const QList<QPair<QString, QJsonValue>>& fields, const QString& key)
 {
@@ -31,15 +33,8 @@ QString fieldText(const QList<QPair<QString, QJsonValue>>& fields, const QString
 
 QString skippedEntryLabel(const QList<QPair<QString, QJsonValue>>& node)
 {
-    const QString type = fieldText(node, QStringLiteral("type"));
-    const QString name = fieldText(node, QStringLiteral("name"));
-    const QString typeLabel = type.isEmpty()
-        ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
-        : type;
-    if (name.isEmpty()) {
-        return typeLabel;
-    }
-    return QStringLiteral("%1 \"%2\"").arg(typeLabel, name);
+    return SubscriptionSkippedNode::label(fieldText(node, QStringLiteral("type")),
+                                          fieldText(node, QStringLiteral("name")));
 }
 
 // Read one flow-style list item into the node being built. Returns false when the
@@ -139,26 +134,17 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
         proxyArray.append(nodeObject());
         QStringList nodeSkipped;
         const QList<VmessItem> parsed = ClashProxyItemParser::parseProxyArray(proxyArray, &nodeSkipped);
-        if (parsed.isEmpty() && skippedTypes != nullptr) {
-            // parseProxyArray records the type it recognised but could not use. When
-            // it recorded nothing the node was dropped for a reason it does not
-            // report, which is precisely the silent loss worth naming -- and the
-            // name is the only way to find that node in the document again.
-            if (nodeSkipped.isEmpty()) {
+        if (skippedTypes != nullptr) {
+            // parseProxyArray records the type it recognised but could not use, with
+            // the node's name beside it. Recording nothing means the node was dropped
+            // for a reason it does not report, which is precisely the silent loss
+            // worth naming -- and the name is the only way to find that node in the
+            // document again.
+            if (nodeSkipped.isEmpty() && parsed.isEmpty()) {
                 skippedTypes->append(skippedEntryLabel(currentFields));
             } else {
-                // Keep the label the parser produced, but make it locatable: the
-                // per-node report is where the user looks for the node, not the type.
-                const QString name = fieldText(currentFields, QStringLiteral("name"));
-                if (!name.isEmpty()) {
-                    for (QString& entry : nodeSkipped) {
-                        entry = QStringLiteral("%1 \"%2\"").arg(entry, name);
-                    }
-                }
                 skippedTypes->append(nodeSkipped);
             }
-        } else if (skippedTypes != nullptr) {
-            skippedTypes->append(nodeSkipped);
         }
         for (const VmessItem& item : parsed) {
             items.append(item);
@@ -167,8 +153,6 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     };
 
     for (const QString& rawLine : lines) {
-        // The cut has to know where a quoted scalar ends: a " #" inside one is
-        // data, and losing it costs the node that carried it.
         const QString line = SubscriptionYamlParser::stripComment(rawLine);
 
         const QString trimmed = line.trimmed();

@@ -42,6 +42,9 @@ private slots:
     void subscriptionReportsSkippedUnknownClashType();
     void subscriptionReportsSkipsWhenEveryNodeWasSkipped();
     void subscriptionReportsSkipsOnceAcrossBase64Passes();
+    void subscriptionKeepsEveryNodeWhenSkippedNodesShareAName();
+    void subscriptionKeepsSkippedCountWhenTheSameJsonIsReadTwice();
+    void subscriptionNamesSkippedSingBoxNodesByTheirTag();
     void subscriptionReportsSkipsFromJsonProxiesWhenNothingParsed();
     void subscriptionReportsSkipsFromJsonShareLinkArray();
     void subscriptionClashYamlCommentTreatsEscapedQuoteAsData();
@@ -724,10 +727,10 @@ void SubscriptionParserTests::subscriptionReportsSkipsFromJsonProxiesWhenNothing
 
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
     QVERIFY(report.items.isEmpty());
-    // The type is what the JSON reader can name; the nodes stay two entries because
-    // the two types differ, so "skipped 2 node(s)" is still the node count.
+    // One entry per node, named: the JSON reader has the name in hand, so a document
+    // served as JSON reports what the same document served as YAML reports.
     QCOMPARE(report.skippedTypes,
-             (QStringList{QStringLiteral("hysteria"), QStringLiteral("snell")}));
+             (QStringList{QStringLiteral("hysteria \"h1\""), QStringLiteral("snell \"s1\"")}));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("skipped 2 node(s)")));
     QVERIFY(report.skippedSummary().contains(QStringLiteral("hysteria")));
 }
@@ -795,6 +798,80 @@ void SubscriptionParserTests::subscriptionClashYamlCommentTreatsEscapedQuoteAsDa
              withComment.indexOf(QChar('#')));
     QCOMPARE(SubscriptionYamlParser::stripComment(withComment),
              withComment.left(withComment.indexOf(QChar('#'))));
+}
+
+void SubscriptionParserTests::subscriptionKeepsEveryNodeWhenSkippedNodesShareAName()
+{
+    // Names are the norm, not an identity. A numbered airport serves "h1", "h1",
+    // "h1" with three different addresses, and each one is a node that failed on
+    // its own. Deduplicating the report by its rendered text collapsed them into
+    // one entry, so the user was told 1 node was skipped when 3 were -- the count
+    // that exists precisely to explain a short import was the part that lied.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+        "  - name: h1\n"
+        "    type: hysteria\n"
+        "    server: 9.10.11.12\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    // Three nodes, three entries, each named. The count is the list's size, so an
+    // entry can never be collapsed into one that reads the same.
+    QCOMPARE(report.skippedTypes.size(), 3);
+    QCOMPARE(report.skippedTypes.constFirst(), QStringLiteral("hysteria \"h1\""));
+    // The list beside the count is the types, named once: repeating "hysteria" once
+    // per node would answer "why did nothing import" with forty identical lines.
+    QCOMPARE(report.skippedSummary(), QStringLiteral("skipped 3 node(s): hysteria"));
+}
+
+void SubscriptionParserTests::subscriptionKeepsSkippedCountWhenTheSameJsonIsReadTwice()
+{
+    // A Clash document written as JSON is read by two readers in one pass: sing-box
+    // sees the "proxies" array first, clash sees it second. Both name the same
+    // nodes, so appending both readings counted every node twice and the user was
+    // told 4 were skipped when 2 were.
+    const QString json = QStringLiteral(
+        "{\"proxies\": ["
+        "{\"name\": \"h1\", \"type\": \"hysteria\", \"server\": \"1.2.3.4\", \"port\": 443},"
+        "{\"name\": \"h2\", \"type\": \"hysteria\", \"server\": \"5.6.7.8\", \"port\": 443}"
+        "]}"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QVERIFY(report.items.isEmpty());
+    // Two nodes, two entries: the second reader of this document does not add a
+    // second copy of the first reader's list.
+    QCOMPARE(report.skippedTypes,
+             (QStringList{QStringLiteral("hysteria \"h1\""), QStringLiteral("hysteria \"h2\"")}));
+    QVERIFY(report.skippedSummary().startsWith(QStringLiteral("skipped 2 node(s):")));
+}
+
+void SubscriptionParserTests::subscriptionNamesSkippedSingBoxNodesByTheirTag()
+{
+    // sing-box calls the node's name "tag", and it is right there in the object
+    // being dropped. Reporting the type alone meant the same airport was locatable
+    // when Clash served it and anonymous when sing-box did.
+    const QString json = QStringLiteral(
+        "{\"outbounds\": ["
+        "  {\"type\": \"hysteria\", \"tag\": \"h1\", \"server\": \"1.2.3.4\", \"server_port\": 443},"
+        "  {\"type\": \"snell\", \"tag\": \"s1\", \"server\": \"5.6.7.8\", \"server_port\": 443}"
+        "]}"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(json);
+    QVERIFY(report.items.isEmpty());
+    QCOMPARE(report.skippedTypes,
+             (QStringList{QStringLiteral("hysteria \"h1\""), QStringLiteral("snell \"s1\"")}));
 }
 
 void SubscriptionParserTests::subscriptionReportsNoSkipsForFullySupportedContent()

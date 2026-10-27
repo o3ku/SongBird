@@ -14,6 +14,7 @@
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionJsonSupport.h"
 #include "subscription/SubscriptionSingBoxParser.h"
+#include "subscription/SubscriptionSkippedNode.h"
 
 using SubscriptionJsonSupport::parsePortValue;
 
@@ -75,10 +76,19 @@ QString SubscriptionParseReport::skippedSummary(const QStringList& types)
         return {};
     }
 
+    // The count is the list's size, and that is the node count: entries are never
+    // collapsed into one another, because two entries reading "hysteria \"h1\"" are two
+    // nodes that share a name -- the norm on a numbered airport -- and merging them
+    // is how a 2000-node subscription came to report "skipped 1 node(s)".
+    //
+    // The list beside the count is therefore not the entries. It is the types among
+    // them, each named once and in the order the nodes appeared, because that is
+    // what answers "why did nothing import" without repeating itself forty times.
     QStringList distinctTypes;
     for (const QString& type : types) {
-        if (!distinctTypes.contains(type)) {
-            distinctTypes.append(type);
+        const QString typeName = SubscriptionSkippedNode::typeName(type);
+        if (!distinctTypes.contains(typeName)) {
+            distinctTypes.append(typeName);
         }
     }
 
@@ -91,12 +101,9 @@ QString SubscriptionParseReport::skippedSummary(const QStringList& types)
 
 namespace {
 
-// Reports what the parser had to drop, in one place.
-//
-// The skip list covers every pass, not just the selected one, so a node the
-// parser could not read is still counted when nothing at all was imported: base64
-// decoding makes the second pass reparse the same nodes as text. The entries are
-// deduplicated first, so the count the user reads is the node count.
+// Reports how many nodes the parser had to drop, in one place. The list itself is
+// not repeated here: it is what skippedTypes is, and this note is only read when
+// something went wrong.
 void appendSkippedSummaryNote(SubscriptionParseReport& report)
 {
     if (!report.hasSkippedNodes()) {
@@ -106,29 +113,29 @@ void appendSkippedSummaryNote(SubscriptionParseReport& report)
     report.notes.append(QStringLiteral("Subscription parse: skipped %1 node(s)").arg(report.skippedTypes.size()));
 }
 
-// Two skips are the same skip when they describe the same node: ClashYamlProxyParser
-// names the node ("hysteria \"h1\"") so a 2000-node subscription stays navigable,
-// while the other parsers only have the protocol. NodeFingerprint does not help
-// here -- it keys endpoints, not the nodes that had none.
+// The skip list of the pass a reader is reporting from, added to what the passes
+// before it saw.
 //
-// First appearance wins, so the list reads in document order. The seen-set is not a
-// micro-optimisation: base64 bodies are walked several times, so the entry list is a
-// multiple of the node count, and a linear scan of the output turns this quadratic in
-// exactly the case the skip list exists for -- an airport whose nodes are all
-// unsupported. A QSet does it in one pass.
-QStringList uniqueSkippedNodes(const QStringList& entries)
+// Nothing here is filtered by its own contents. An entry names a node, so two
+// entries reading "hysteria \"h1\"" are two nodes that share a name -- the norm on a
+// numbered airport -- and an address-less list cannot tell them apart from one node
+// seen twice. Collapsing them is how a 2000-node subscription came to report
+// "skipped 1 node(s)".
+//
+// What keeps the count honest is the shape of the walk rather than a filter: a
+// document is handed to the readers once per layer, and the layers are either empty
+// (the base64 encoding of a payload, which no reader can read) or the nodes
+// themselves. The one real repeat is inside a pass -- a Clash document written as
+// JSON is read by sing-box and again by clash -- and that is handled by taking one
+// reading per pass.
+void recordSkips(SubscriptionParseReport& report,
+                 const QStringList& skippedBeforePass,
+                 const QStringList& passSkipped)
 {
-    QSet<QString> seen;
-    seen.reserve(entries.size());
-    QStringList distinct;
-    for (const QString& entry : entries) {
-        if (seen.contains(entry)) {
-            continue;
-        }
-        seen.insert(entry);
-        distinct.append(entry);
-    }
-    return distinct;
+    // Skipped whether or not anything was imported: a document that imported two
+    // nodes and dropped a third is the case this list exists for (the server count
+    // shrank and only the skip list can say why), and it is the same list.
+    report.skippedTypes = skippedBeforePass + passSkipped;
 }
 
 } // namespace
@@ -156,6 +163,9 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
     // it was. The two cases are the same question at different sizes, so there is
     // one list rather than two.
     QStringList skipped;
+    // The reading of the pass that is currently running; declared outside the loop
+    // because the "no parser matched" exit reports it too.
+    QStringList passSkipped;
     bool exhaustedPasses = false;
 
     for (int iteration = 0; iteration < 8 && !current.isEmpty(); ++iteration) {
@@ -175,29 +185,44 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
             return report;
         }
 
+        // One reading per pass, not one per reader. Both readers below see the same
+        // JSON document and both name the same nodes, so the second reading replaces
+        // the first rather than being added to it. A reader that saw nothing (the
+        // line walker on a body it cannot read) is no evidence against one that saw
+        // nodes, so an empty list never replaces a full one.
+        passSkipped.clear();
+
         QStringList singBoxSkipped;
         const QList<VmessItem> singBoxItems = tryParseSingBox(current, &singBoxSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 sing-box count=%2").arg(iteration).arg(singBoxItems.size()));
         // Collected before the emptiness check on purpose: a pass that produced
         // nothing is exactly the case whose skips the user needs to see.
-        skipped.append(singBoxSkipped);
+        passSkipped = singBoxSkipped;
         if (!singBoxItems.isEmpty()) {
             report.items = singBoxItems;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=sing-box"));
-            report.skippedTypes = uniqueSkippedNodes(skipped);
+            recordSkips(report, skipped, passSkipped);
             return report;
         }
 
         QStringList clashSkipped;
         const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 clash count=%2").arg(iteration).arg(clashItems.size()));
-        skipped.append(clashSkipped);
+        if (!clashSkipped.isEmpty()) {
+            passSkipped = clashSkipped;
+        }
         if (!clashItems.isEmpty()) {
             report.items = clashItems;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=clash"));
-            report.skippedTypes = uniqueSkippedNodes(skipped);
+            recordSkips(report, skipped, passSkipped);
             return report;
         }
+
+        // Nobody read this document, so the pass is over: what it saw is added to the
+        // accumulation and the walk moves on to the next layer, which is the decoded
+        // copy of the same payload.
+        skipped.append(passSkipped);
+        passSkipped.clear();
 
         const QString decoded = tryDecodeBase64(current).trimmed();
         if (decoded.isEmpty() || decoded == current) {
@@ -231,13 +256,9 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
         current = isDecodableText(decoded) ? decoded : QString();
     }
 
-    // Every pass is represented, deduplicated, because the report answers "why is
-    // this subscription short of nodes" and an entry repeated once per pass makes
-    // the count it prints wrong. A skipped node is then reachable through
-    // skippedTypes, so the note says "Subscription parse: skipped N node(s): ..."
-    // without repeating the list itself -- a diagnostic belongs in the text that is
-    // only read when something goes wrong.
-    report.skippedTypes = uniqueSkippedNodes(skipped);
+    // No reader matched, so the passes are all there is: what the last pass saw is
+    // added to what the passes before it saw.
+    report.skippedTypes = skipped + passSkipped;
     if (exhaustedPasses) {
         report.notes.append(QStringLiteral("Subscription parse: pass limit reached"));
     }

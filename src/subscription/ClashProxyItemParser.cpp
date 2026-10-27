@@ -1,12 +1,12 @@
 #include "subscription/ClashProxyItemParser.h"
 
-#include <QCoreApplication>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QStringList>
 
 #include "common/PortValidator.h"
 #include "subscription/SubscriptionJsonSupport.h"
+#include "subscription/SubscriptionSkippedNode.h"
 
 using SubscriptionJsonSupport::firstNonEmpty;
 using SubscriptionJsonSupport::joinStringList;
@@ -256,17 +256,14 @@ VmessItem baseItemFromProxy(const QJsonObject& proxy)
     return item;
 }
 
-QString skippedTypeLabel(const QString& type)
-{
-    return type.trimmed().isEmpty()
-        ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
-        : type;
-}
-
-void recordSkipped(QStringList* skippedTypes, const QString& type)
+// The name travels with the type: it is the only handle a user has on the node he
+// is being told was dropped, and this parser has it in hand -- the entry is right
+// there. Leaving it out here was what made a Clash subscription read as `hysteria`
+// when served as JSON and as `hysteria "h1"` when served as YAML.
+void recordSkipped(QStringList* skippedTypes, const QString& type, const QString& name)
 {
     if (skippedTypes != nullptr) {
-        skippedTypes->append(skippedTypeLabel(type));
+        skippedTypes->append(SubscriptionSkippedNode::label(type, name));
     }
 }
 
@@ -279,15 +276,16 @@ QList<VmessItem> parseProxyArray(const QJsonArray& proxies, QStringList* skipped
     QList<VmessItem> items;
     for (const QJsonValue& value : proxies) {
         if (!value.isObject()) {
-            recordSkipped(skippedTypes, {});
+            recordSkipped(skippedTypes, {}, {});
             continue;
         }
 
         const QJsonObject proxy = value.toObject();
         VmessItem item = baseItemFromProxy(proxy);
         const QString type = firstNonEmpty(proxy, {"type"}).toLower();
+        const QString name = firstNonEmpty(proxy, {"name"});
         if (!applyProtocolOptions(proxy, type, &item)) {
-            recordSkipped(skippedTypes, type);
+            recordSkipped(skippedTypes, type, name);
             continue;
         }
 
@@ -298,7 +296,7 @@ QList<VmessItem> parseProxyArray(const QJsonArray& proxies, QStringList* skipped
         if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
             items.append(item);
         } else {
-            recordSkipped(skippedTypes, type);
+            recordSkipped(skippedTypes, type, name);
         }
     }
 

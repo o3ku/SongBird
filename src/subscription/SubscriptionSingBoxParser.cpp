@@ -5,6 +5,7 @@
 
 #include "common/PortValidator.h"
 #include "subscription/SubscriptionJsonSupport.h"
+#include "subscription/SubscriptionSkippedNode.h"
 
 using SubscriptionJsonSupport::compactJson;
 using SubscriptionJsonSupport::firstNonEmpty;
@@ -27,12 +28,14 @@ bool isNonProxyOutboundType(const QString& type)
     return nonProxyTypes.contains(type);
 }
 
-void recordSkipped(QStringList* skippedTypes, const QString& type)
+// The tag is this format's name for the node, and it is right there in the object
+// being dropped. Reporting the type alone made the same airport read with a name
+// when Clash served it and without one when sing-box did.
+void recordSkipped(QStringList* skippedTypes, const QString& type, const QJsonObject& object)
 {
     if (skippedTypes != nullptr && !isNonProxyOutboundType(type)) {
-        skippedTypes->append(type.trimmed().isEmpty()
-                                  ? QCoreApplication::translate("SubscriptionContentParser", "(no type)")
-                                  : type);
+        skippedTypes->append(SubscriptionSkippedNode::label(
+            type, SubscriptionJsonSupport::firstNonEmpty(object, {"tag", "name"})));
     }
 }
 
@@ -45,7 +48,7 @@ QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(
     QList<VmessItem> items;
     const QString type = object.value(QStringLiteral("type")).toString().trimmed().toLower();
     if (type.isEmpty()) {
-        recordSkipped(skippedTypes, type);
+        recordSkipped(skippedTypes, type, object);
         return items;
     }
 
@@ -129,7 +132,7 @@ QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(
         item.id = firstNonEmpty(object, {"password"});
         item.streamSecurity = QStringLiteral("tls");
     } else {
-        recordSkipped(skippedTypes, type);
+        recordSkipped(skippedTypes, type, object);
         return items;
     }
 
@@ -159,7 +162,7 @@ QList<VmessItem> SubscriptionSingBoxParser::parseOutboundObject(
     if (!item.address.isEmpty() && isValidTcpPort(item.port)) {
         items.append(item);
     } else {
-        recordSkipped(skippedTypes, type);
+        recordSkipped(skippedTypes, type, object);
     }
     return items;
 }

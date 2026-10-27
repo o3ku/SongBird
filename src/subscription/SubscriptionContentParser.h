@@ -10,11 +10,15 @@
 struct SubscriptionParseReport {
     QList<VmessItem> items;
     QStringList notes;
-    // One entry per node the parser could not turn into a server, holding that
-    // node's declared type (and its name where the parser had one). Covers every
-    // pass, not only the one that produced items, so a run where nothing at all
-    // was imported still explains itself. Identical entries are collapsed, so
-    // size() is the skipped node count rather than the parse-attempt count.
+    // One entry per node the parser could not turn into a server: the declared
+    // type, plus the node's name, which is the only way to find it again in a
+    // document with thousands of them.
+    //
+    // Covers every pass, not only the one that produced items, so a run where
+    // nothing at all was imported still explains itself. Entries are never
+    // collapsed into one another, so size() is the skipped node count: two nodes
+    // that share a name are two nodes. What is not counted twice is a document
+    // read by two readers in one pass -- that is one reading, not two.
     QStringList skippedTypes;
 
     bool hasSkippedNodes() const { return !skippedTypes.isEmpty(); }
