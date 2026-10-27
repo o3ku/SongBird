@@ -279,21 +279,16 @@ void SubscriptionViewController::handleTabMoved(int from, int to)
         return;
     }
 
-    const QString movedId = subscriptionIdAtTab(to);
-    if (movedId.isEmpty() || from == to) {
+    if (from == to || to < 0) {
         return;
     }
 
-    // The drop position in the bar is the position in the subscription list, one for one: the bar
-    // holds exactly the enabled subscriptions, in list order, with Ungrouped appended. So the new
-    // rank is read off the bar rather than reconstructed by replaying step operations -- dragging
-    // tab 3 to slot 0 is three "move up"s, and a step operation cannot express a drop.
-    int targetRank = 0;
-    for (int index = 0; index < to; ++index) {
-        if (!SubscriptionViewSupport::subscriptionIdFromTabKey(
-                 context_.subscriptionTabBar->tabData(index).toString()).isEmpty()) {
-            ++targetRank;
-        }
+    // tabMoved() arrives after the bar has already performed the move, so `to` addresses the
+    // dragged tab and `from` addresses whatever now sits where it left from. The dragged tab is
+    // therefore read at `to`.
+    const QString movedId = subscriptionIdAtTab(to);
+    if (movedId.isEmpty()) {
+        return;
     }
 
     QList<SubItem> reordered = subscriptions_;
@@ -305,11 +300,33 @@ void SubscriptionViewController::handleTabMoved(int from, int to)
         return;
     }
 
-    // Remove-then-insert is exact here: with the dragged item out of the list, `targetRank` is the
-    // slot it belongs in, whether it travelled up or down.
     const int currentRank = static_cast<int>(std::distance(reordered.begin(), draggedPosition));
     const SubItem draggedItem = *draggedPosition;
     reordered.removeAt(currentRank);
+
+    // The new rank is read off the bar: `to` counts the tabs the moved one now sits after, and
+    // those tabs are the list's own order minus the hidden subscriptions -- one for one. Counting
+    // the bar instead of replaying step operations is what makes a drop an endpoint rather than
+    // "up three times".
+    //
+    // Ungrouped is pinned last and is not part of the order, so a drop onto the final tab means
+    // "after the last subscription". It is not read as a rank, because Ungrouped has none.
+    int targetRank = 0;
+    const int lastTab = context_.subscriptionTabBar->count() - 1;
+    for (int index = 0; index < to && index < lastTab; ++index) {
+        const QString anchorId = subscriptionIdAtTab(index);
+        if (anchorId.isEmpty()) {
+            continue;
+        }
+        const auto anchorPosition = std::find_if(
+            reordered.begin(),
+            reordered.end(),
+            [&anchorId](const SubItem& item) { return item.id.trimmed() == anchorId; });
+        if (anchorPosition != reordered.end()) {
+            targetRank = static_cast<int>(std::distance(reordered.begin(), anchorPosition)) + 1;
+        }
+    }
+
     reordered.insert(qBound(0, targetRank, reordered.size()), draggedItem);
 
     if (callbacks_.reorderSubscriptions) {
@@ -360,20 +377,28 @@ void SubscriptionViewController::showContextMenu(const QString& tabKey, const QP
         menu.addSeparator();
 
         // Order entries live next to the other per-subscription commands and are greyed out at the
-        // edges, so pressing "Move Up" on the first tab says why it did nothing.
+        // edges, so pressing "Move Up" on the first tab says why it did nothing. The state is read
+        // here, while the menu is being built, rather than kept from an earlier selection: the
+        // current tab can change without anything telling this controller to recompute.
         auto addMoveAction = [this, &menu, subscriptionId](
                                  const QString& text,
+                                 const QString& objectName,
                                  SubscriptionOrder::MoveOperation operation) {
             auto* action = menu.addAction(text);
+            action->setObjectName(objectName);
             action->setEnabled(canMove(subscriptionId, operation));
             QObject::connect(action, &QAction::triggered, &menu, [this, subscriptionId, operation]() {
                 invokeMove(subscriptionId, operation);
             });
         };
-        addMoveAction(QObject::tr("Move Up"), SubscriptionOrder::MoveOperation::Up);
-        addMoveAction(QObject::tr("Move Down"), SubscriptionOrder::MoveOperation::Down);
-        addMoveAction(QObject::tr("Move To Top"), SubscriptionOrder::MoveOperation::Top);
-        addMoveAction(QObject::tr("Move To Bottom"), SubscriptionOrder::MoveOperation::Bottom);
+        addMoveAction(QObject::tr("Move Up"), QStringLiteral("moveSubscriptionTabUpAction"),
+                      SubscriptionOrder::MoveOperation::Up);
+        addMoveAction(QObject::tr("Move Down"), QStringLiteral("moveSubscriptionTabDownAction"),
+                      SubscriptionOrder::MoveOperation::Down);
+        addMoveAction(QObject::tr("Move To Top"), QStringLiteral("moveSubscriptionTabTopAction"),
+                      SubscriptionOrder::MoveOperation::Top);
+        addMoveAction(QObject::tr("Move To Bottom"), QStringLiteral("moveSubscriptionTabBottomAction"),
+                      SubscriptionOrder::MoveOperation::Bottom);
 
         menu.addSeparator();
 

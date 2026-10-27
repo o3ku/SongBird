@@ -97,40 +97,49 @@ OperationResult SubscriptionService::reorderSubscriptions(
     Config& config,
     const QList<QString>& orderedSubscriptionIds)
 {
-    QList<SubItem> reordered;
-    reordered.reserve(config.collection().subscriptions.size());
+    // A drop runs on the drag-release path, so the lookups are hashed rather than linear: with a
+    // hundred subscriptions a nested scan turns one drop into a hundred-thousand string
+    // comparisons, right where the user is watching for the tab to land.
+    const QList<SubItem>& subscriptions = config.collection().subscriptions;
+    QHash<QString, const SubItem*> byId;
+    byId.reserve(subscriptions.size());
+    for (const SubItem& item : subscriptions) {
+        const QString id = item.id.trimmed();
+        if (!id.isEmpty() && !byId.contains(id)) {
+            byId.insert(id, &item);
+        }
+    }
 
-    QStringList seenIds;
+    QList<SubItem> reordered;
+    reordered.reserve(subscriptions.size());
+
+    QSet<QString> seenIds;
     for (const QString& rawId : orderedSubscriptionIds) {
         const QString id = rawId.trimmed();
         if (id.isEmpty() || seenIds.contains(id)) {
             continue;
         }
 
-        const auto it = std::find_if(
-            config.collection().subscriptions.cbegin(),
-            config.collection().subscriptions.cend(),
-            [&id](const SubItem& item) { return item.id.trimmed() == id; });
-        if (it == config.collection().subscriptions.cend()) {
+        const auto it = byId.constFind(id);
+        if (it == byId.constEnd()) {
             continue;
         }
 
-        seenIds.append(id);
-        reordered.append(*it);
+        seenIds.insert(id);
+        reordered.append(*it.value());
     }
 
     // Subscriptions the caller never mentioned -- a hidden one, which has no tab to drag -- are
-    // appended in their existing relative order rather than dropped.
-    for (const SubItem& item : config.collection().subscriptions) {
+    // appended in their existing relative order rather than dropped. Every entry in `subscriptions`
+    // is therefore either in `reordered` or in this tail, so the result is the same size by
+    // construction; the order is still rebuilt from scratch, which is what the comparison below
+    // needs.
+    for (const SubItem& item : subscriptions) {
         if (!seenIds.contains(item.id.trimmed())) {
             reordered.append(item);
         }
     }
-
-    if (reordered.size() != config.collection().subscriptions.size()) {
-        return OperationResult::fail(
-            QCoreApplication::translate("SubscriptionService", "Failed to rebuild the requested subscription order."));
-    }
+    Q_ASSERT(reordered.size() == subscriptions.size());
 
     bool unchanged = true;
     for (int index = 0; index < reordered.size(); ++index) {

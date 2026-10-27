@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <QAction>
+#include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
@@ -356,10 +357,13 @@ void SubscriptionSettingsPageWidget::moveSelectedRows(SubscriptionOrder::MoveOpe
     // The persisted order lives in the table, and a move is a reordering of its rows -- including
     // rows the user added a moment ago and whose URL is still being typed. Rebuilding the
     // SubItems first would drop those, so the move is expressed as a row permutation.
+    const int currentRow = table_->currentRow();
     const QStringList selectedIds = selectedSubscriptionIds();
     if (selectedIds.isEmpty()) {
         return;
     }
+
+    const QString currentId = currentRow < 0 ? QString() : subscriptionIdAtRow(currentRow);
 
     QList<SubItem> rowIdentities;
     const int rowCount = table_->rowCount();
@@ -390,8 +394,42 @@ void SubscriptionSettingsPageWidget::moveSelectedRows(SubscriptionOrder::MoveOpe
         return;
     }
 
-    const QSignalBlocker blocker(table_);
-    moveRowsToOrder(newOrder);
+    int newCurrentRow = currentRow;
+    for (int row = 0; row < rowCount; ++row) {
+        if (subscriptionIdAtRow(row) == currentId) {
+            newCurrentRow = row;
+            break;
+        }
+    }
+    const int currentColumn = table_->currentColumn();
+
+    {
+        const QSignalBlocker blocker(table_);
+        moveRowsToOrder(newOrder);
+    }
+
+    // The permutation rebuilds the rows it moved, so the selection the move was made from is gone.
+    // Restoring it is what makes a second press of U/D (a shortcut, not a menu item -- the menu
+    // re-selects on right-click) act on the same rows instead of on row 0. The current cell comes
+    // first: selecting a cell also selects it, and doing that afterwards would leave one extra
+    // cell selected next to the rows.
+    table_->clearSelection();
+    if (newCurrentRow >= 0 && newCurrentRow < table_->rowCount()) {
+        table_->setCurrentCell(newCurrentRow, currentColumn < 0 ? 0 : currentColumn);
+        table_->selectionModel()->select(
+            table_->model()->index(newCurrentRow, currentColumn < 0 ? 0 : currentColumn),
+            QItemSelectionModel::Deselect);
+    }
+    for (const QString& id : selectedIds) {
+        for (int row = 0; row < table_->rowCount(); ++row) {
+            if (subscriptionIdAtRow(row) == id) {
+                table_->selectionModel()->select(
+                    table_->model()->index(row, 0),
+                    QItemSelectionModel::Select | QItemSelectionModel::Rows);
+                break;
+            }
+        }
+    }
     updateActionState();
 }
 
@@ -450,16 +488,31 @@ void SubscriptionSettingsPageWidget::moveRowsToOrder(const QList<int>& newOrder)
 {
     // QTableWidget cannot permute rows, and removeRow() deletes the row's cell widget -- the user
     // agent combo. The rows therefore travel through this container: each is taken out as a bundle
-    // of items plus its cell widget, and the bundles go back in the new order.
+    // of items plus its cell widget, and the bundles are put back at the positions `newOrder`
+    // names. `newOrder.at(destination)` is the row that belongs at `destination`.
+    //
+    // Only rows that actually move travel. A middle-row move otherwise takes the whole table
+    // apart -- every item re-parented and every combo re-created -- for a result that is mostly
+    // the same table.
+    QList<int> movedRows;
+    movedRows.reserve(newOrder.size());
+    for (int destination = 0; destination < newOrder.size(); ++destination) {
+        if (newOrder.at(destination) != destination) {
+            movedRows.append(newOrder.at(destination));
+        }
+    }
+    if (movedRows.isEmpty()) {
+        return;
+    }
+
     struct RowBundle {
         QList<QTableWidgetItem*> items;
         QWidget* cellWidget = nullptr;
     };
 
     const int columnCount = table_->columnCount();
-    QList<RowBundle> bundles;
-    bundles.reserve(newOrder.size());
-    for (int row : newOrder) {
+    QHash<int, RowBundle> bundles;
+    for (int row : movedRows) {
         RowBundle bundle;
         bundle.items.reserve(columnCount);
         for (int column = 0; column < columnCount; ++column) {
@@ -469,29 +522,33 @@ void SubscriptionSettingsPageWidget::moveRowsToOrder(const QList<int>& newOrder)
         bundle.cellWidget = table_->cellWidget(row, kUserAgentColumn);
         if (bundle.cellWidget != nullptr) {
             // Detached so the bundle owns it: removeRow() destroys whatever the row still points
-            // at, and rows shift up as others are removed, so a later row can share the index of a
-            // row whose widget is already in a bundle.
+            // at, and rows shift up as others are removed, so a later row can share the index of
+            // a row whose widget is already in a bundle.
             bundle.cellWidget->setParent(nullptr);
         }
-        bundles.append(bundle);
+        bundles.insert(row, bundle);
     }
 
-    QList<int> rowsToRemove = newOrder;
+    QList<int> rowsToRemove = movedRows;
     std::sort(rowsToRemove.begin(), rowsToRemove.end(), [](int left, int right) { return left > right; });
     for (int row : rowsToRemove) {
         table_->removeRow(row);
     }
 
-    for (int index = 0; index < bundles.size(); ++index) {
-        RowBundle& bundle = bundles[index];
-        table_->insertRow(index);
+    for (int destination = 0; destination < newOrder.size(); ++destination) {
+        const auto bundle = bundles.find(newOrder.at(destination));
+        if (bundle == bundles.end()) {
+            continue;
+        }
+
+        table_->insertRow(destination);
         for (int column = 0; column < columnCount; ++column) {
-            if (QTableWidgetItem* item = bundle.items.at(column)) {
-                table_->setItem(index, column, item);
+            if (QTableWidgetItem* item = bundle->items.at(column)) {
+                table_->setItem(destination, column, item);
             }
         }
-        if (bundle.cellWidget != nullptr) {
-            table_->setCellWidget(index, kUserAgentColumn, bundle.cellWidget);
+        if (bundle->cellWidget != nullptr) {
+            table_->setCellWidget(destination, kUserAgentColumn, bundle->cellWidget);
         }
     }
 }

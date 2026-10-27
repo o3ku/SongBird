@@ -94,6 +94,7 @@ private slots:
     void subscriptionPageKeepsServerStateTheTableNeverShows();
     void subscriptionPageNewRowDefaultsEmptyUserAgentAndAllowsCustomInput();
     void subscriptionRowMoveActionsReorderRowsAndPersistOrder();
+    void subscriptionRowMoveActionsKeepTheMovedRowsSelected();
     void subscriptionRowMoveActionsDisableAtTheEdges();
     void settingsDialogTabBarUsesImageReferenceStyleHooks();
     void settingsDialogSelectedTabReservesBoldTextWidth();
@@ -1857,6 +1858,46 @@ void SettingsDialogTests::subscriptionRowMoveActionsReorderRowsAndPersistOrder()
     for (int row = 0; row < subTable->rowCount(); ++row) {
         QVERIFY(qobject_cast<QComboBox*>(subTable->cellWidget(row, 3)) != nullptr);
     }
+}
+
+// The order actions are also keyboard shortcuts pressed in sequence, so each one has to leave the
+// moved rows selected. Losing the selection sends the second press to row 0, which reads as "the
+// first press worked and then it stopped responding".
+void SettingsDialogTests::subscriptionRowMoveActionsKeepTheMovedRowsSelected()
+{
+    Config config;
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("A"), QStringLiteral("https://a.example"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("B"), QStringLiteral("https://b.example"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("C"), QStringLiteral("https://c.example"), true, QString()}
+    };
+
+    SettingsDialog dialog;
+    dialog.setConfig(config);
+    dialog.show();
+    QCoreApplication::processEvents();
+
+    auto* subTable = dialog.findChild<QTableWidget*>();
+    QVERIFY(subTable != nullptr);
+    auto* moveBottomAction = dialog.findChild<QAction*>(QStringLiteral("moveSubscriptionBottomAction"));
+    QVERIFY(moveBottomAction != nullptr);
+
+    subTable->selectRow(0);
+    QCoreApplication::processEvents();
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+
+    // The row still selected is the one that moved, so the second press moves it further.
+    QCOMPARE(subTable->selectionModel()->selectedRows().size(), 1);
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 2);
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+
+    // Moving down again is the edge: sub-1 is already last, so triggering the action leaves the
+    // table alone instead of moving whatever row the selection fell back to.
+    moveBottomAction->trigger();
+    QCoreApplication::processEvents();
+    QCOMPARE(subTable->item(2, 2)->data(Qt::UserRole).toString(), QStringLiteral("sub-1"));
+    QCOMPARE(subTable->selectionModel()->selectedRows().first().row(), 2);
 }
 
 void SettingsDialogTests::subscriptionRowMoveActionsDisableAtTheEdges()
