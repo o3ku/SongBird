@@ -1,6 +1,7 @@
 #include "subscription/SubscriptionYamlParser.h"
 
 #include "subscription/SubscriptionYamlFlowValueParser.h"
+#include "subscription/SubscriptionYamlQuoteStateMachine.h"
 #include "subscription/SubscriptionYamlScalarValueParser.h"
 
 namespace SubscriptionYamlParser {
@@ -34,49 +35,62 @@ int keyValueSeparator(const QString& text)
     //
     // Only ':' followed by whitespace (or the end of the line) separates a key from
     // its value in block style; a bare `a:b` is the whole scalar, which is also what
-    // keeps an IPv6 literal on the value side. Backslash escaping is honoured inside
-    // double quotes for the same reason stripComment() honours it: the flow-style
-    // parser this feeds does.
-    QChar quote;
-    bool escaped = false;
-    for (int index = 0; index < text.size(); ++index) {
-        const QChar ch = text.at(index);
-        if (!quote.isNull()) {
-            if (escaped) {
-                escaped = false;
-            } else if (ch == QChar('\\') && quote == QChar('"')) {
-                escaped = true;
-            } else if (ch == quote) {
-                quote = QChar();
+    // keeps an IPv6 literal on the value side.
+    int position = 0;
+    while (position < text.size()) {
+        const int separator = text.indexOf(QChar(':'), position);
+        if (separator < 0) {
+            return -1;
+        }
+
+        const QChar opening = text.at(position);
+        if (opening == QChar('"') || opening == QChar('\'')) {
+            // Skip the whole quoted scalar instead of stepping into it: a ':' inside
+            // `"a: b"` never separates, and a scalar that never closes leaves no
+            // separator outside it to find.
+            const SubscriptionYamlQuoteStateMachine::Scan scan =
+                SubscriptionYamlQuoteStateMachine::scanQuotedScalar(text, position);
+            if (!scan.ok) {
+                return -1;
             }
+            position = scan.quoteEndedAt + 1;
             continue;
         }
 
-        if (ch == QChar('"') || ch == QChar('\'')) {
-            quote = ch;
-            continue;
+        if (separator + 1 >= text.size() || text.at(separator + 1).isSpace()) {
+            return separator;
         }
-
-        if (ch == QChar(':') && (index + 1 >= text.size() || text.at(index + 1).isSpace())) {
-            return index;
-        }
+        position = separator + 1;
     }
 
     return -1;
 }
 
-bool splitKeyValue(const QString& text, QString* key, QString* value)
+bool splitKeyValue(const QString& text, QString* key, QString* value, bool* malformedValue)
 {
+    if (malformedValue != nullptr) {
+        *malformedValue = false;
+    }
+
     const int separator = keyValueSeparator(text);
     if (separator <= 0) {
         return false;
+    }
+
+    const QString rawValue = text.mid(separator + 1).trimmed();
+    if (malformedValue != nullptr && !rawValue.isEmpty()
+        && (rawValue.at(0) == QChar('"') || rawValue.at(0) == QChar('\''))) {
+        // The quote never closes, so everything after it -- which may be the rest of the
+        // node's fields -- is inside the value. The caller keeps the pair (there is no
+        // better reading of it) and reports the node as one it could not use.
+        *malformedValue = !SubscriptionYamlQuoteStateMachine::scanQuotedScalar(rawValue, 0).ok;
     }
 
     if (key != nullptr) {
         *key = text.left(separator).trimmed();
     }
     if (value != nullptr) {
-        *value = scalar(text.mid(separator + 1));
+        *value = scalar(rawValue);
     }
     return true;
 }
@@ -88,30 +102,18 @@ QJsonValue parseValue(const QString& text)
 
 int commentIndex(const QString& line)
 {
-    QChar quote;
-    for (int position = 0; position < line.size(); ++position) {
+    int position = 0;
+    while (position < line.size()) {
         const QChar current = line.at(position);
-        if (!quote.isNull()) {
-            // Only double-quoted text carries backslash escapes, the same
-            // asymmetry parseFlowQuotedString() and the scalar parser keep.
-            if (quote == QChar('"') && current == QChar('\\')) {
-                ++position;
-                continue;
-            }
-            if (current == quote) {
-                // YAML folds a doubled quote into one literal quote, so it does
-                // not end the scalar; parseFlowQuotedString() agrees.
-                if (position + 1 < line.size() && line.at(position + 1) == quote) {
-                    ++position;
-                    continue;
-                }
-                quote = QChar();
-            }
-            continue;
-        }
-
         if (current == QChar('"') || current == QChar('\'')) {
-            quote = current;
+            const SubscriptionYamlQuoteStateMachine::Scan scan =
+                SubscriptionYamlQuoteStateMachine::scanQuotedScalar(line, position);
+            // An unclosed scalar swallows the rest of the line, so there is no comment
+            // boundary in it: reporting one would cut a value in half.
+            if (!scan.ok) {
+                return -1;
+            }
+            position = scan.quoteEndedAt + 1;
             continue;
         }
 
@@ -122,6 +124,7 @@ int commentIndex(const QString& line)
                 return position;
             }
         }
+        ++position;
     }
 
     return -1;

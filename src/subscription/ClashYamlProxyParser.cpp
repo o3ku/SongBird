@@ -83,6 +83,11 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     // is read, because the block-style fields that follow do not belong to it and
     // must not be added to a fragment of it.
     QString brokenFlowItemLabel;
+    // A block-style value whose quote never closes. The value swallowed the rest of
+    // the line, so whatever fields were meant to follow it are inside it now: the
+    // node is unusable, and saying so is the only way it is not a silent loss. Set
+    // both for the item form (`- name: "abc`) and for the field form (`name: "abc`).
+    bool hasUnclosedValue = false;
     // The list item that opened this node was a malformed flow entry. Everything
     // after it is the wreckage of that entry, so it is read and discarded instead
     // of being added to a node stitched from two different list items.
@@ -118,7 +123,8 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
     };
 
     const auto flushCurrent = [&items, &currentFields, &nodeWithoutFields, &brokenFlowItemLabel,
-                               &reportNodeWithoutFields, &nodeObject, skippedTypes]() {
+                               &hasUnclosedValue, &reportNodeWithoutFields, &nodeObject,
+                               skippedTypes]() {
         reportNodeWithoutFields();
         if (!brokenFlowItemLabel.isEmpty()) {
             if (skippedTypes != nullptr) {
@@ -126,7 +132,15 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
             }
             brokenFlowItemLabel.clear();
         }
+        const bool unclosedValue = hasUnclosedValue;
+        hasUnclosedValue = false;
         if (currentFields.isEmpty()) {
+            // An unclosed value that never reached a field still names a node the user
+            // wrote, and it is the only record that line exists at all.
+            if (unclosedValue && skippedTypes != nullptr) {
+                skippedTypes->append(QCoreApplication::translate(
+                    "SubscriptionContentParser", "(unclosed quoted value) here"));
+            }
             return;
         }
 
@@ -140,7 +154,14 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
             // for a reason it does not report, which is precisely the silent loss
             // worth naming -- and the name is the only way to find that node in the
             // document again.
-            if (nodeSkipped.isEmpty() && parsed.isEmpty()) {
+            //
+            // An unclosed value outranks the generic label: "this field's quote never
+            // closed" is actionable, "(no type) name" is not, and reporting both would
+            // count one node twice.
+            if (unclosedValue) {
+                skippedTypes->append(QCoreApplication::translate(
+                    "SubscriptionContentParser", "(unclosed quoted value) here"));
+            } else if (nodeSkipped.isEmpty() && parsed.isEmpty()) {
                 skippedTypes->append(skippedEntryLabel(currentFields));
             } else {
                 skippedTypes->append(nodeSkipped);
@@ -190,6 +211,11 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
                 // are the remains of the entry that broke -- so they are dropped
                 // rather than stitched onto the fragment.
                 if (!appendFlowFields(itemBody, &currentFields)) {
+                    // `- { name: broken, type: trojan` with no closing brace is not an
+                    // object at all. It is reported as itself, not as the node it failed
+                    // to become: the fields inside it are an unfinished reading of an
+                    // entry, and naming it after one of them points at a field the
+                    // document never completed.
                     inBrokenFlowItem = true;
                     brokenFlowItemLabel = QCoreApplication::translate(
                         "SubscriptionContentParser", "(malformed flow item) here");
@@ -205,7 +231,9 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
 
             QString key;
             QString value;
-            if (SubscriptionYamlParser::splitKeyValue(itemBody, &key, &value)) {
+            bool malformedValue = false;
+            if (SubscriptionYamlParser::splitKeyValue(itemBody, &key, &value, &malformedValue)) {
+                hasUnclosedValue = hasUnclosedValue || malformedValue;
                 currentFields.append({key, SubscriptionYamlParser::parseValue(value)});
             } else {
                 nodeWithoutFields = true;
@@ -215,12 +243,17 @@ QList<VmessItem> parseProxyItems(const QString& content, QStringList* skippedTyp
 
         QString key;
         QString value;
+        bool malformedValue = false;
         if (inBrokenFlowItem) {
             continue;
         }
-        if (!SubscriptionYamlParser::splitKeyValue(trimmed, &key, &value)) {
+        if (!SubscriptionYamlParser::splitKeyValue(trimmed, &key, &value, &malformedValue)) {
             continue;
         }
+        // The pair is kept (there is no better reading of the line) and the node is
+        // reported: the value swallowed the rest of the line, so the fields meant to
+        // follow it are inside it and the node cannot be usable.
+        hasUnclosedValue = hasUnclosedValue || malformedValue;
         currentFields.append({key, SubscriptionYamlParser::parseValue(value)});
     }
 

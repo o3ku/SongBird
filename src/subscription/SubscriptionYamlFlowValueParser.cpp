@@ -4,6 +4,7 @@
 #include <QJsonObject>
 
 #include "subscription/SubscriptionYamlEscape.h"
+#include "subscription/SubscriptionYamlQuoteStateMachine.h"
 #include "subscription/SubscriptionYamlScalarValueParser.h"
 
 namespace {
@@ -18,59 +19,59 @@ void skipFlowWhitespace(const QString& text, int* position)
     }
 }
 
+// Where the quoted scalar at `position` ends. The quote rules themselves live in
+// SubscriptionYamlQuoteStateMachine, shared with comment splitting and the scalar parser,
+// so a node name is read by the same rule that decides where a comment begins.
+bool findFlowQuotedScalarEnd(const QString& text, int position, int* quoteEndedAt)
+{
+    SubscriptionYamlQuoteStateMachine::Options options;
+    // In flow style a scalar ends where the entry continues -- `,` `}` `]` -- or where
+    // the text does. `{name: "a" b: c}` stops at neither, and reading `"a"` as the name
+    // anyway is how the `b:` behind it disappeared.
+    //
+    // `requireDelimiterAfter` decides which quote closes the scalar; it does not object
+    // to one that is the last thing in the text. So `{name: "a" b: c` -- the same entry
+    // with its closing brace missing -- ends at the text, passes that rule, and hands
+    // back the name `"a"` with `b: c` swallowed. The flow read therefore asks for both:
+    // the value has to be everything that is left, unless a delimiter ends it.
+    options.requireDelimiterAfter = true;
+    options.requireEnd = true;
+    const SubscriptionYamlQuoteStateMachine::Scan scan =
+        SubscriptionYamlQuoteStateMachine::scanQuotedScalar(text, position, options);
+    if (!scan.ok) {
+        return false;
+    }
+    if (quoteEndedAt != nullptr) {
+        *quoteEndedAt = scan.quoteEndedAt;
+    }
+    return true;
+}
+
 QString parseFlowQuotedString(const QString& text, int* position, bool* ok)
 {
     if (ok != nullptr) {
         *ok = false;
     }
-    if (position == nullptr || *position >= text.size()) {
+    if (position == nullptr) {
         return {};
     }
 
-    const QChar quote = text.at(*position);
-    if (quote != QChar('"') && quote != QChar('\'')) {
+    int quoteEndedAt = -1;
+    if (!findFlowQuotedScalarEnd(text, *position, &quoteEndedAt)) {
         return {};
     }
 
-    const bool doubleQuoted = quote == QChar('"');
-
-    ++(*position);
-    QString result;
-    while (*position < text.size()) {
-        const QChar current = text.at(*position);
-        if (current == quote) {
-            // YAML folds a doubled quote into a single literal quote; a doubled
-            // double quote is never an escape continuation, so check the next
-            // character before closing.
-            if (*position + 1 < text.size() && text.at(*position + 1) == quote) {
-                result.append(quote);
-                *position += 2;
-                continue;
-            }
-            ++(*position);
-            if (ok != nullptr) {
-                *ok = true;
-            }
-            // Only double-quoted scalars honor YAML escapes so flow-style
-            // entries resolve "\U0001F1EF" and friends the same way block-style
-            // ones do; single-quoted text keeps backslashes verbatim.
-            return doubleQuoted ? SubscriptionYamlEscape::unescape(result) : result;
-        }
-
-        // Keep the full escape sequence, backslash included, so the shared
-        // decoder can resolve it afterwards.
-        if (doubleQuoted && current == QChar('\\') && *position + 1 < text.size()) {
-            result.append(current);
-            result.append(text.at(*position + 1));
-            *position += 2;
-            continue;
-        }
-
-        result.append(current);
-        ++(*position);
+    const bool doubleQuoted = text.at(*position) == QChar('"');
+    const QString body = text.mid(*position + 1, quoteEndedAt - *position - 1);
+    *position = quoteEndedAt + 1;
+    if (ok != nullptr) {
+        *ok = true;
     }
-
-    return {};
+    // Only double-quoted scalars honor YAML escapes so flow-style entries resolve
+    // "\U0001F1EF" and friends the same way block-style ones do; single-quoted text keeps
+    // backslashes verbatim. A doubled quote reaches the decoder as two quotes, which is
+    // the literal quote it stands for; an escape the decoder does not know is kept as is.
+    return doubleQuoted ? SubscriptionYamlEscape::unescape(body) : body;
 }
 
 QJsonValue parseFlowValue(const QString& text, int* position, bool* ok);

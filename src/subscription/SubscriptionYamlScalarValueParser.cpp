@@ -1,6 +1,7 @@
 #include "subscription/SubscriptionYamlScalarValueParser.h"
 
 #include "subscription/SubscriptionYamlEscape.h"
+#include "subscription/SubscriptionYamlQuoteStateMachine.h"
 
 namespace {
 
@@ -24,19 +25,33 @@ QString unescapeSingleQuotedScalar(const QString& value)
 
 QString SubscriptionYamlScalarValueParser::scalar(const QString& text)
 {
-    QString value = text.trimmed();
-    const bool doubleQuoted = value.startsWith(QChar('"')) && value.endsWith(QChar('"')) && value.size() >= 2;
-    const bool singleQuoted = value.startsWith(QChar('\'')) && value.endsWith(QChar('\'')) && value.size() >= 2;
-    if (!doubleQuoted && !singleQuoted) {
+    const QString value = text.trimmed();
+    if (value.isEmpty() || (value.at(0) != QChar('"') && value.at(0) != QChar('\''))) {
         return value;
     }
 
-    value = value.mid(1, value.size() - 2);
+    // Where the scalar ends is the shared question, not this function's: the same rule
+    // decides where a comment starts and where a flow entry closes, and a value and a
+    // comment cut by two different rules is how a name loses its tail. The trim left the
+    // closing quote at the end, so the scan has to land on the last character -- a value
+    // like `"abc` is unterminated and stays exactly as written. Asked of the state
+    // machine, not of the endsWith() pair this used to be: `"a""` ends with a quote and
+    // is not a completed scalar.
+    const bool doubleQuoted = value.at(0) == QChar('"');
+    SubscriptionYamlQuoteStateMachine::Options options;
+    options.requireEnd = true;
+    const SubscriptionYamlQuoteStateMachine::Scan scan =
+        SubscriptionYamlQuoteStateMachine::scanQuotedScalar(value, 0, options);
+    if (!scan.ok) {
+        return value;
+    }
+
+    const QString body = value.mid(1, scan.quoteEndedAt - 1);
     // Per YAML, only double-quoted scalars process backslash escapes; applying
     // the decoder to single-quoted text would corrupt names such as 'C:\folder'.
     return doubleQuoted
-        ? SubscriptionYamlEscape::unescape(value).trimmed()
-        : unescapeSingleQuotedScalar(value).trimmed();
+        ? SubscriptionYamlEscape::unescape(body).trimmed()
+        : unescapeSingleQuotedScalar(body).trimmed();
 }
 
 QJsonValue SubscriptionYamlScalarValueParser::parse(const QString& text)

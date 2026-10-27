@@ -5,6 +5,7 @@
 #include "subscription/SubscriptionContentParser.h"
 #include "subscription/CustomConfigTextParser.h"
 #include "subscription/SubscriptionYamlParser.h"
+#include "subscription/SubscriptionYamlQuoteStateMachine.h"
 
 class SubscriptionParserTests : public QObject {
     Q_OBJECT
@@ -65,6 +66,9 @@ private slots:
     void subscriptionClashExistingIpv6EndpointIsReportedInsteadOfSilentlyDropped();
     void subscriptionClashEmptyTypeDoesNotInheritPreviousNodesType();
     void subscriptionClashBrokenFlowItemDoesNotBecomeANodeFromItsOwnRemains();
+    void subscriptionClashUnclosedQuoteNeverBecomesAComment();
+    void subscriptionClashUnclosedFlowQuoteAtTextEndIsReported();
+    void subscriptionClashUnclosedBlockValueIsReported();
     void subscriptionBinaryPayloadPrefixIsCountedNotPrinted();
     void subscriptionBinaryPayloadIsDecodedOnceAndNotWalkedAgain();
 
@@ -1271,6 +1275,141 @@ void SubscriptionParserTests::subscriptionClashBrokenFlowItemDoesNotBecomeANodeF
     QCOMPARE(report.items.constFirst().address, QStringLiteral("2.2.2.2"));
     // The broken entry is still counted, once.
     QCOMPARE(report.skippedTypes, QStringList{QStringLiteral("(malformed flow item) here")});
+}
+
+void SubscriptionParserTests::subscriptionClashUnclosedQuoteNeverBecomesAComment()
+{
+    // One rule decides where a quoted scalar ends, and the three readers share it. The
+    // line below is the case that proves a shared rule was worth having: the quote is
+    // closed by a backslash-escaped quote, so the scalar never closes, so the "#" behind
+    // it is data. A scanner that decided the scalar "must have closed by now" would cut
+    // there, lose `port`, and the node would be gone with nothing said about it.
+    const QString line = QStringLiteral("  - {name: \"Esc \\\" #1\", type: trojan, port: 443}");
+    QCOMPARE(SubscriptionYamlParser::commentIndex(line), -1);
+    QCOMPARE(SubscriptionYamlParser::stripComment(line), line);
+
+    // Where the scalar ends, asked of the one implementation the three readers call. The
+    // escaped quote is data, so the scalar closes at the quote behind "#1".
+    const SubscriptionYamlQuoteStateMachine::Scan closed =
+        SubscriptionYamlQuoteStateMachine::scanQuotedScalar(line, line.indexOf(QChar('"')), {});
+    QVERIFY(closed.ok);
+    QCOMPARE(closed.quoteEndedAt, line.lastIndexOf(QChar('"')));
+
+    // ...and the failure direction is stated rather than inferred: an unclosed scalar has
+    // no end, so callers must treat "no boundary" as "nothing to cut", never as "the
+    // scalar ends at the end of the line".
+    const QString unclosed = QStringLiteral("  - {name: \"Esc \\\" #1");
+    const SubscriptionYamlQuoteStateMachine::Scan broken =
+        SubscriptionYamlQuoteStateMachine::scanQuotedScalar(unclosed, unclosed.indexOf(QChar('"')), {});
+    QVERIFY(!broken.ok);
+    QCOMPARE(broken.quoteEndedAt, -1);
+    QCOMPARE(SubscriptionYamlParser::commentIndex(unclosed), -1);
+    // The value keeps what the document wrote: dropping the tail would be a guess about
+    // where it ended, and this is the one case where guessing is unrecoverable.
+    QString key;
+    QString value;
+    bool malformedValue = false;
+    QVERIFY(SubscriptionYamlParser::splitKeyValue(unclosed.mid(unclosed.indexOf(QStringLiteral("name:"))),
+                                                  &key, &value, &malformedValue));
+    QCOMPARE(key, QStringLiteral("name"));
+    QVERIFY(malformedValue);
+    QCOMPARE(value, QStringLiteral("\"Esc \\\" #1"));
+
+    // A real comment behind a closed scalar is still a comment.
+    const QString commented = QStringLiteral("  - {name: \"Quoted\"  # real");
+    QCOMPARE(SubscriptionYamlParser::commentIndex(commented),
+             commented.indexOf(QChar('#')));
+    QCOMPARE(SubscriptionYamlParser::stripComment(commented),
+             commented.left(commented.indexOf(QChar('#'))));
+}
+
+void SubscriptionParserTests::subscriptionClashUnclosedFlowQuoteAtTextEndIsReported()
+{
+    // The failure direction the state machine's `requireDelimiterAfter` alone does not
+    // cover: a quote that is the last thing in the text passes the delimiter rule
+    // (there is nothing behind it to fail), so `{name: "a" b: c` read `"a"` as the name
+    // and dropped `b: c`. It is one character away from
+    // subscriptionClashBrokenFlowItemDoesNotBecomeANodeFromItsOwnRemains, and the loss
+    // was the same: a node assembled from a fragment of an entry.
+    const QString unclosed = QStringLiteral(
+        "proxies:\n"
+        "  - {name: \"a\" b: c\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+        "  - name: real\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw2\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(unclosed);
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("real"));
+    QVERIFY2(report.skippedTypes.contains(QStringLiteral("(malformed flow item) here")),
+             qPrintable(report.skippedTypes.join(QStringLiteral(", "))));
+
+    // The parsed value itself is the assertion that matters: an object here means the
+    // name survived with the rest of the entry gone, which is the loss being prevented.
+    const QJsonValue flowValue = SubscriptionYamlParser::parseValue(QStringLiteral("{name: \"a\" b: c"));
+    QVERIFY(!flowValue.isObject());
+
+    // A quoted value that ends the text without a delimiter is the same rule applied to
+    // a single scalar, and it still passes: the value there really is the whole text.
+    const QJsonValue scalarValue = SubscriptionYamlParser::parseValue(QStringLiteral("\"a\""));
+    QCOMPARE(scalarValue.toString(), QStringLiteral("a"));
+}
+
+void SubscriptionParserTests::subscriptionClashUnclosedBlockValueIsReported()
+{
+    // The block-style half of the same failure. `name: "abc` never closes, so the value
+    // runs to the end of the line -- a value that "works" as long as nothing follows it,
+    // which is why it was silent: the node parsed with the name `"abc` and was counted
+    // as imported. The quote being unbalanced is the user's error, and it is the only
+    // thing that explains why the name looks the way it does.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: real\n"
+        "    type: trojan\n"
+        "    server: 2.2.2.2\n"
+        "    port: 443\n"
+        "    password: pw2\n"
+        "  - name: \"Unclosed\n"
+        "    type: trojan\n"
+        "    server: 1.1.1.1\n"
+        "    port: 443\n"
+        "    password: pw\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY2(report.skippedTypes.contains(QStringLiteral("(unclosed quoted value) here")),
+             qPrintable(report.skippedTypes.join(QStringLiteral(", "))));
+    // Reported once, not once per line the value swallowed: the fields behind the
+    // unclosed value are inside it, so they never reach the node to be counted again.
+    QCOMPARE(report.skippedTypes.count(QStringLiteral("(unclosed quoted value) here")), 1);
+    // The node is still read -- the pair is kept, because dropping the tail would be a
+    // guess about where the value ended -- and the report is what tells the user the
+    // name looks wrong for a reason. Reporting instead of discarding is the point: the
+    // node exists either way, and counting it silently imported hid the unbalanced quote.
+    QCOMPARE(report.items.size(), 2);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("real"));
+
+    // The pair is still filled in -- there is no better reading of the line -- and the
+    // flag is what the parser reports instead of guessing where the value stopped.
+    QString key;
+    QString value;
+    bool malformedValue = false;
+    QVERIFY(SubscriptionYamlParser::splitKeyValue(QStringLiteral("name: \"Unclosed"),
+                                                  &key, &value, &malformedValue));
+    QVERIFY(malformedValue);
+
+    // A well-formed quoted value is not reported, so the flag is the opening quote's
+    // balance and not "this value happens to be quoted".
+    QVERIFY(SubscriptionYamlParser::splitKeyValue(QStringLiteral("name: \"Closed\""),
+                                                  &key, &value, &malformedValue));
+    QVERIFY(!malformedValue);
+    QCOMPARE(value, QStringLiteral("Closed"));
 }
 
 void SubscriptionParserTests::subscriptionBinaryPayloadPrefixIsCountedNotPrinted()

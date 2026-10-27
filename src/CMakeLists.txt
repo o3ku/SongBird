@@ -268,6 +268,8 @@ set(SONGBIRD_SHARED_SOURCES
     subscription/SubscriptionJsonSupport.cpp
     subscription/SubscriptionYamlParser.h
     subscription/SubscriptionYamlParser.cpp
+    subscription/SubscriptionYamlQuoteStateMachine.h
+    subscription/SubscriptionYamlQuoteStateMachine.cpp
     subscription/SubscriptionYamlScalarValueParser.h
     subscription/SubscriptionYamlScalarValueParser.cpp
     subscription/SubscriptionYamlFlowValueParser.h
