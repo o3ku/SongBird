@@ -7,6 +7,8 @@
 
 #include <functional>
 
+#include "domain/models/SubItem.h"
+
 class QHBoxLayout;
 class QLineEdit;
 class QSplitter;
@@ -40,6 +42,14 @@ public:
     // empty. Exposed so the empty-state actions can be wired to the window.
     ServerTableEmptyStateWidget* emptyState() const;
 
+    // What the empty-state panel should say, and which tab's subscription it is
+    // talking about. Pushed in from the window because the panel cannot work either
+    // out from the proxy model: the whole point of the withheld state is that the
+    // nodes are in the source model but not in the visible row set.
+    void setEmptyStateContext(
+        const QList<SubItem>& subscriptions,
+        const QString& listedSubscriptionId);
+
     void setCompactMode(bool compact);
     bool compactMode() const;
     void syncCompactSections();
@@ -53,7 +63,7 @@ private:
     void moveServerViewToDesktop();
     void moveServerViewToCompact();
     // Shows the empty-state overlay when the proxy model has no visible rows,
-    // hides it otherwise.
+    // hides it otherwise, and picks the wording from ServerEmptyStatePolicy.
     void syncEmptyStateVisibility();
 
     ServerTableView* serverView_ = nullptr;
@@ -73,6 +83,8 @@ private:
     QVBoxLayout* serverPanelLayout_ = nullptr;
     QWidget* serverHeaderRow_ = nullptr;
     QHBoxLayout* subscriptionTabBarLayout_ = nullptr;
+    QList<SubItem> emptyStateSubscriptions_;
+    QString emptyStateListedSubscriptionId_;
     bool compactMode_ = false;
     std::function<void(const QString&)> compactSelectionHandler_;
     std::function<void(const QString&, const QPoint&)> compactContextMenuHandler_;

@@ -8,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QVariant>
 
+#include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/theme/AppTheme.h"
 
 ServerTableEmptyStateWidget::ServerTableEmptyStateWidget(QWidget* parent)
@@ -16,19 +17,42 @@ ServerTableEmptyStateWidget::ServerTableEmptyStateWidget(QWidget* parent)
     setupUi();
 }
 
-void ServerTableEmptyStateWidget::setFilterActive(bool filterActive)
+void ServerTableEmptyStateWidget::setState(
+    ServerEmptyStatePolicy::State state,
+    const QString& withheldSubscriptionId)
 {
-    if (filterActive_ == filterActive) {
+    if (state_ == state && withheldSubscriptionId_ == withheldSubscriptionId) {
         return;
     }
 
-    filterActive_ = filterActive;
+    state_ = state;
+    withheldSubscriptionId_ = withheldSubscriptionId;
     refreshTexts();
+}
+
+ServerEmptyStatePolicy::State ServerTableEmptyStateWidget::state() const
+{
+    return state_;
 }
 
 bool ServerTableEmptyStateWidget::filterActive() const
 {
-    return filterActive_;
+    return state_ == ServerEmptyStatePolicy::State::NodesElsewhere;
+}
+
+void ServerTableEmptyStateWidget::setCanStartBackgroundTask(std::function<bool()> predicate)
+{
+    canStartBackgroundTask_ = std::move(predicate);
+    refreshActionVisibility();
+}
+
+void ServerTableEmptyStateWidget::setSubscriptions(
+    const QList<SubItem>& subscriptions,
+    const QString& listedSubscriptionId)
+{
+    subscriptions_ = subscriptions;
+    listedSubscriptionId_ = listedSubscriptionId.trimmed();
+    refreshTexts();
 }
 
 QPushButton* ServerTableEmptyStateWidget::importButton() const
@@ -44,6 +68,11 @@ QPushButton* ServerTableEmptyStateWidget::addButton() const
 QPushButton* ServerTableEmptyStateWidget::clipboardButton() const
 {
     return clipboardButton_;
+}
+
+QPushButton* ServerTableEmptyStateWidget::refreshButton() const
+{
+    return refreshButton_;
 }
 
 void ServerTableEmptyStateWidget::setupUi()
@@ -74,7 +103,9 @@ void ServerTableEmptyStateWidget::setupUi()
     addButton_->setObjectName(QStringLiteral("serverEmptyStateAddButton"));
     clipboardButton_ = new QPushButton(this);
     clipboardButton_->setObjectName(QStringLiteral("serverEmptyStateClipboardButton"));
-    AppTheme::applyCompactFont({importButton_, addButton_, clipboardButton_});
+    refreshButton_ = new QPushButton(this);
+    refreshButton_->setObjectName(QStringLiteral("serverEmptyStateRefreshButton"));
+    AppTheme::applyCompactFont({importButton_, addButton_, clipboardButton_, refreshButton_});
 
     auto* buttonRow = new QHBoxLayout();
     buttonRow->setContentsMargins(0, 0, 0, 0);
@@ -83,6 +114,7 @@ void ServerTableEmptyStateWidget::setupUi()
     buttonRow->addWidget(importButton_);
     buttonRow->addWidget(addButton_);
     buttonRow->addWidget(clipboardButton_);
+    buttonRow->addWidget(refreshButton_);
     buttonRow->addStretch(1);
 
     auto* rootLayout = new QVBoxLayout(this);
@@ -97,24 +129,96 @@ void ServerTableEmptyStateWidget::setupUi()
     connect(importButton_, &QPushButton::clicked, this, &ServerTableEmptyStateWidget::importRequested);
     connect(addButton_, &QPushButton::clicked, this, &ServerTableEmptyStateWidget::addRequested);
     connect(clipboardButton_, &QPushButton::clicked, this, &ServerTableEmptyStateWidget::importFromClipboardRequested);
+    connect(refreshButton_, &QPushButton::clicked, this, [this]() {
+        emit refreshSubscriptionRequested(listedSubscriptionId_);
+    });
 
     refreshTexts();
 }
 
+bool ServerTableEmptyStateWidget::canStartBackgroundTask() const
+{
+    return !canStartBackgroundTask_ || canStartBackgroundTask_();
+}
+
+QString ServerTableEmptyStateWidget::subscriptionDisplayName(const QString& subscriptionId) const
+{
+    for (const SubItem& item : subscriptions_) {
+        if (item.id.trimmed() == subscriptionId) {
+            return SubscriptionViewSupport::subscriptionDisplayName(item);
+        }
+    }
+
+    return {};
+}
+
 void ServerTableEmptyStateWidget::refreshTexts()
 {
-    if (filterActive_) {
+    switch (state_) {
+    case ServerEmptyStatePolicy::State::FirstRun:
+        titleLabel_->setText(tr("No servers yet"));
+        hintLabel_->setText(tr("Import a subscription or share link to get started."));
+        importButton_->setText(tr("Import from File or URL"));
+        addButton_->setText(tr("Add Server"));
+        clipboardButton_->setText(tr("From Clipboard"));
+        break;
+
+    case ServerEmptyStatePolicy::State::SubscriptionWithoutNodes: {
+        // The subscription is on file but produced nothing. Retrying the download is
+        // the fix, so the panel leads with it instead of repeating the first-run guide.
+        titleLabel_->setText(tr("This subscription has no servers yet"));
+        hintLabel_->setText(
+            tr("Its address is saved but no node has been downloaded from it. "
+               "Refresh it, or add a server by hand."));
+        refreshButton_->setText(tr("Refresh Subscription"));
+        addButton_->setText(tr("Add Server"));
+        clipboardButton_->setText(tr("From Clipboard"));
+        break;
+    }
+
+    case ServerEmptyStatePolicy::State::WithheldSubscription: {
+        // The nodes exist but this tab does not list them. The name of the
+        // subscription is what makes the sentence actionable, so fall back to a
+        // generic phrasing rather than an empty pair of quotes.
+        const QString name = subscriptionDisplayName(withheldSubscriptionId_);
+        titleLabel_->setText(tr("No servers in this view"));
+        hintLabel_->setText(name.isEmpty()
+                ? tr("These servers are grouped under a subscription. "
+                     "Select its tab above to list them.")
+                : tr("These servers are grouped under \"%1\". "
+                     "Select its tab above to list them.").arg(name));
+        break;
+    }
+
+    case ServerEmptyStatePolicy::State::NodesElsewhere:
         // A filter that matched nothing is not the same situation as an empty
         // list: the servers exist, they are just hidden. Saying "no servers"
         // here would be wrong and would hide the actual fix (clear the filter).
         titleLabel_->setText(tr("No servers match the filter"));
         hintLabel_->setText(tr("Clear the filter box above to see all servers again."));
-    } else {
-        titleLabel_->setText(tr("No servers yet"));
-        hintLabel_->setText(tr("Import a subscription or share link to get started."));
+        break;
     }
 
-    importButton_->setText(tr("Import from File or URL"));
-    addButton_->setText(tr("Add Server"));
-    clipboardButton_->setText(tr("From Clipboard"));
+    refreshActionVisibility();
+}
+
+void ServerTableEmptyStateWidget::refreshActionVisibility()
+{
+    // Exactly one set of actions is visible, and it is the set that answers the
+    // question this state is asking. A first-run page shows all three ways in; a
+    // broken subscription shows the refresh plus a manual way out; a filter shows
+    // nothing at all, because the fix is in the box above.
+    const bool firstRun = state_ == ServerEmptyStatePolicy::State::FirstRun;
+    const bool subscriptionWithoutNodes =
+        state_ == ServerEmptyStatePolicy::State::SubscriptionWithoutNodes;
+
+    // WithheldSubscription and NodesElsewhere fall through to "nothing visible":
+    // the message alone says where the servers went, and offering an import there
+    // would only invite a duplicate the user does not need.
+    importButton_->setVisible(firstRun);
+    addButton_->setVisible(firstRun || subscriptionWithoutNodes);
+    clipboardButton_->setVisible(firstRun || subscriptionWithoutNodes);
+    refreshButton_->setVisible(subscriptionWithoutNodes);
+
+    refreshButton_->setEnabled(canStartBackgroundTask());
 }

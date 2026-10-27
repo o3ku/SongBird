@@ -67,6 +67,7 @@
 #include "ui/mainwindow/MainWindowToolbarActions.h"
 #include "ui/mainwindow/MainWindowServerSelectionSupport.h"
 #include "ui/mainwindow/SubscriptionViewController.h"
+#include "ui/mainwindow/SubscriptionViewSupport.h"
 #include "ui/mainwindow/ServerListController.h"
 #include "ui/mainwindow/WindowLayoutStateController.h"
 #include "ui/mainwindow/ServerActionsController.h"
@@ -503,15 +504,41 @@ void MainWindow::restoreUiState(const Config& config)
     }
 
     if (subscriptionTabBar_ != nullptr && serverModel_ != nullptr) {
-        const QString preferredTabKey = ServerSelection::restoredSubscriptionTabKey(
-            config.ui().mainSelectedSubId,
-            config.currentIndexId,
-            serverModel_);
-        for (int index = 0; index < subscriptionTabBar_->count(); ++index) {
-            if (subscriptionTabBar_->tabData(index).toString() == preferredTabKey) {
-                subscriptionTabBar_->setCurrentIndex(index);
-                break;
+        // The saved subscription is the user's explicit choice and it outranks the active
+        // server. Letting the current server win is what used to drag the window back onto
+        // its own tab -- and therefore off a subscription that holds no server yet, which is
+        // the state the empty panel exists to explain. The current server still wins for a
+        // state file that saved no subscription at all, because then there is no choice to
+        // respect.
+        QString preferredTabKey = SubscriptionViewSupport::tabKeyFromSelectionId(
+            config.ui().mainSelectedSubId);
+        if (config.ui().mainSelectedSubId.trimmed().isEmpty()) {
+            preferredTabKey = ServerSelection::restoredSubscriptionTabKey(
+                config.ui().mainSelectedSubId,
+                config.currentIndexId,
+                serverModel_);
+        }
+        // The preferred tab may not exist (its subscription was deleted, or it holds no
+        // server yet). Selecting whatever tab happened to be current would then leave the
+        // window on a view the saved state never asked for, so fall back to "Ungrouped",
+        // which always exists.
+        const auto selectTabKey = [this](const QString& tabKey) {
+            for (int index = 0; index < subscriptionTabBar_->count(); ++index) {
+                if (subscriptionTabBar_->tabData(index).toString() == tabKey) {
+                    subscriptionTabBar_->setCurrentIndex(index);
+                    return true;
+                }
             }
+            return false;
+        };
+        if (!selectTabKey(preferredTabKey)) {
+            selectTabKey(QStringLiteral("ungrouped"));
+        }
+        // The tab changed, and setCurrentIndex() is not the only way the table empties, so
+        // the subscription filter has to be re-applied here instead of waiting for the next
+        // config sync. It reads the tab key, not the table, so no loop.
+        if (subscriptionViewController_ != nullptr) {
+            subscriptionViewController_->applyCurrentTabFilter();
         }
     }
 
@@ -991,6 +1018,20 @@ void MainWindow::setupServerWorkspace()
                 &ServerTableEmptyStateWidget::importFromClipboardRequested,
                 this,
                 &MainWindow::importFromClipboardRequested);
+        // The refresh is a background task, so it obeys the same gate the toolbar's
+        // are behind. An empty id means "the tab is Ungrouped", where the target is
+        // every subscription rather than one.
+        emptyState->setCanStartBackgroundTask([this]() { return canStartBackgroundTask(); });
+        connect(emptyState,
+                &ServerTableEmptyStateWidget::refreshSubscriptionRequested,
+                this,
+                [this](const QString& subscriptionId) {
+                    if (subscriptionId.trimmed().isEmpty()) {
+                        emit updateSubscriptionsRequested();
+                        return;
+                    }
+                    emit updateCurrentSubscriptionRequested(subscriptionId);
+                });
     }
 }
 
@@ -1500,6 +1541,14 @@ void MainWindow::syncConfigControllers(const Config& config)
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
         subscriptionViewController_->applyCurrentTabFilter();
         if (serverWorkspace_ != nullptr) {
+            // After applyCurrentTabFilter(): the overlay reads the visible row count the
+            // filter just produced, and the state it picks depends on the tab the table
+            // is showing. The tab key is what the panel names when it explains that the
+            // nodes are grouped under a subscription.
+            serverWorkspace_->setEmptyStateContext(
+                config.collection().subscriptions,
+                SubscriptionViewSupport::subscriptionIdFromTabKey(
+                    subscriptionViewController_->currentTabKey()));
             serverWorkspace_->syncCompactSections();
         }
     }

@@ -10,6 +10,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QSizePolicy>
+#include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStyle>
 #include <QStyleOptionToolButton>
@@ -19,6 +20,7 @@
 
 #include "common/TextElision.h"
 #include "ui/mainwindow/LogPanelWidget.h"
+#include "ui/mainwindow/ServerEmptyStatePolicy.h"
 #include "ui/mainwindow/ServerTableEmptyStateWidget.h"
 #include "ui/mainwindow/ServerTableView.h"
 #include "ui/mainwindow/SharePanelWidget.h"
@@ -379,21 +381,49 @@ void ServerWorkspaceWidget::syncEmptyStateVisibility()
         return;
     }
 
-    const QAbstractItemModel* model = serverView_->model();
-    const bool hasRows = model != nullptr && model->rowCount() > 0;
+    // The view is given the proxy model, so its own rowCount() is the visible row set
+    // and the proxy's source is what the app actually holds. The source count is the
+    // one signal that separates "nothing imported" from "imported but produced
+    // nothing" -- both leave the visible count at zero.
+    const auto* proxyModel = qobject_cast<const QSortFilterProxyModel*>(serverView_->model());
+    const bool hasRows = proxyModel != nullptr && proxyModel->rowCount() > 0;
     // The panel's "no match" wording is only right when the user's own text filter is
     // what emptied the table. Read it from the box rather than from the proxy: the
     // subscription-tab filter also empties the table, and when both are active the
     // visible row set does not change, so the proxy emits no signal to react to.
     const bool textFilterActive = serverFilterEdit_ != nullptr
         && !serverFilterEdit_->text().trimmed().isEmpty();
+    const QAbstractItemModel* sourceModel = proxyModel == nullptr ? nullptr : proxyModel->sourceModel();
+    const int sourceRowCount = sourceModel == nullptr ? 0 : sourceModel->rowCount();
 
-    emptyState_->setFilterActive(!hasRows && textFilterActive);
+    const ServerEmptyStatePolicy::State state = ServerEmptyStatePolicy::decide(
+        hasRows,
+        textFilterActive,
+        sourceRowCount,
+        emptyStateSubscriptions_);
+
+    // The tab can only be named when nodes exist somewhere: on an empty config no
+    // subscription has produced anything, so pointing at one would explain nothing.
+    const QString withheldSubscriptionId =
+        !emptyStateListedSubscriptionId_.isEmpty() && sourceRowCount > 0
+        ? emptyStateListedSubscriptionId_
+        : QString();
+    emptyState_->setSubscriptions(emptyStateSubscriptions_, emptyStateListedSubscriptionId_);
+    emptyState_->setState(state, withheldSubscriptionId);
     // Exactly one of the two is visible. The table is hidden while the empty
     // state shows, so the panel reads as a single placeholder instead of a blank
     // grid above a block of text.
     serverView_->setVisible(hasRows);
     emptyState_->setVisible(!hasRows);
+}
+
+void ServerWorkspaceWidget::setEmptyStateContext(
+    const QList<SubItem>& subscriptions,
+    const QString& listedSubscriptionId)
+{
+    emptyStateSubscriptions_ = subscriptions;
+    emptyStateListedSubscriptionId_ = listedSubscriptionId.trimmed();
+    syncEmptyStateVisibility();
 }
 
 void ServerWorkspaceWidget::setCompactMode(bool compact)
