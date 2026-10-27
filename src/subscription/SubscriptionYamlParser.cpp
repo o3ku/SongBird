@@ -46,4 +46,39 @@ QJsonValue parseValue(const QString& text)
     return SubscriptionYamlFlowValueParser::parseValue(text);
 }
 
+QString stripComment(const QString& line)
+{
+    // A comment starts at " #" and only outside a quoted scalar: `name: "Gemini #1"`
+    // is a value, and cutting it at the hash turns it into a different value -- or,
+    // when the cut lands before the fields that decide the node is usable, into a
+    // silently dropped node. Backslash escaping is honoured inside double quotes
+    // because the flow-style parser this feeds also honours it.
+    QChar quote;
+    bool escaped = false;
+    for (int index = 0; index < line.size(); ++index) {
+        const QChar ch = line.at(index);
+        if (!quote.isNull()) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == QChar('\\') && quote == QChar('"')) {
+                escaped = true;
+            } else if (ch == quote) {
+                quote = QChar();
+            }
+            continue;
+        }
+
+        if (ch == QChar('"') || ch == QChar('\'')) {
+            quote = ch;
+            continue;
+        }
+
+        if (ch == QChar('#') && index > 0 && line.at(index - 1).isSpace()) {
+            return line.left(index);
+        }
+    }
+
+    return line;
+}
+
 } // namespace SubscriptionYamlParser

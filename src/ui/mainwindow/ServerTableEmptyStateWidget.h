@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QString>
 #include <QWidget>
 
 #include <functional>
@@ -27,9 +28,13 @@ public:
     // Chooses the wording and the visible actions. `withheldSubscriptionId` names the
     // subscription whose tab the withheld nodes live under, so the message can point at
     // it; empty falls back to the generic phrasing.
+    // `textFilterActive` distinguishes the two situations the policy reports as
+    // NodesElsewhere: the user's own filter emptied the table, or the tab on screen is not
+    // where these nodes live. Only the first has a fix the panel can name.
     void setState(
         ServerEmptyStatePolicy::State state,
-        const QString& withheldSubscriptionId = {});
+        const QString& withheldSubscriptionId = {},
+        bool textFilterActive = false);
     ServerEmptyStatePolicy::State state() const;
     bool filterActive() const;
 
@@ -48,6 +53,15 @@ public:
     // changes on paths that touch nothing this widget watches -- a proxy activation, the
     // startup checklist -- and the last config sync's answer is stale by then.
     void refreshActionEnablement();
+
+    // An empty table is not always a first run. An import that downloaded fine and
+    // produced no node -- every node an unsupported protocol, a payload the parsers
+    // do not know -- leaves the same empty table behind, and "import something to
+    // get started" then describes a state the user is no longer in: they did import
+    // something, and it failed. The reason belongs in this panel, because the panel
+    // is what the table is hiding.
+    void setImportFailure(const QString& reason);
+    QString importFailure() const;
 
     QPushButton* importButton() const;
     QPushButton* addButton() const;
@@ -84,4 +98,6 @@ private:
     // used to aim the refresh at the same subscription the panel is talking about.
     QString listedSubscriptionId_;
     QList<SubItem> subscriptions_;
+    QString importFailure_;
+    bool textFilterActive_ = false;
 };

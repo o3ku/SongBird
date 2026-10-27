@@ -400,6 +400,20 @@ int ServerWorkspaceWidget::countSourceNodesForSubscription(const QAbstractItemMo
     return count;
 }
 
+void ServerWorkspaceWidget::setImportFailure(const QString& reason)
+{
+    if (emptyState_ == nullptr) {
+        return;
+    }
+
+    emptyState_->setImportFailure(reason);
+}
+
+QString ServerWorkspaceWidget::importFailure() const
+{
+    return emptyState_ == nullptr ? QString() : emptyState_->importFailure();
+}
+
 void ServerWorkspaceWidget::syncEmptyStateVisibility()
 {
     if (serverView_ == nullptr || emptyState_ == nullptr) {
@@ -437,7 +451,7 @@ void ServerWorkspaceWidget::syncEmptyStateVisibility()
     // The id names the subscription in the wording, and "Ungrouped" has no name to print
     // -- an empty id already falls back to the generic phrasing there.
     emptyState_->setSubscriptions(emptyStateSubscriptions_, emptyStateListedSubscriptionId_);
-    emptyState_->setState(state, emptyStateListedSubscriptionId_);
+    emptyState_->setState(state, emptyStateListedSubscriptionId_, textFilterActive);
     // setState() rebuilds the wording only when the state or the named subscription
     // changed, and setSubscriptions() only when the context did. A repaint that moves
     // neither -- same tab, same state -- still has to re-ask the button's gate, so the

@@ -45,6 +45,10 @@ QString appendSkippedSummary(const QString& message, const SubscriptionParseRepo
 
 // When nothing could be parsed at all, the per-pass notes are the only clue as
 // to why, so attach them to the failure instead of discarding them.
+//
+// The reason comes first, and the notes follow in brackets: the line before the
+// bracket is what the empty server panel shows, because the parser report behind
+// it would grow that panel past the height of the table it stands in for.
 QString appendParseNotes(const QString& message, const SubscriptionParseReport& report)
 {
     return report.notes.isEmpty()
@@ -159,8 +163,15 @@ OperationResult SubscriptionUpdateService::importFromText(Config& config, const 
     }
 
     if (servers.isEmpty()) {
+        // The skipped types are why, when every node was a protocol this build does
+        // not support; they used to be dropped on exactly this path, leaving
+        // "no supported payload was detected" as the whole explanation for a
+        // document that plainly had nodes in it.
         return OperationResult::fail(appendParseNotes(
-            QCoreApplication::translate("SubscriptionUpdateService", "No supported share URL or subscription payload was detected."), report));
+            appendSkippedSummary(
+                QCoreApplication::translate("SubscriptionUpdateService", "No supported share URL or subscription payload was detected."),
+                report),
+            report));
     }
 
     for (VmessItem& item : servers) {
@@ -335,8 +346,14 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
     const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
+        // Same reason as the text-import path: a document full of unsupported
+        // protocols fails here, and "returned no supported servers" without the
+        // protocols it did contain is a message the user cannot act on.
         return OperationResult::fail(appendParseNotes(
-            QCoreApplication::translate("SubscriptionUpdateService", "%1 returned no supported servers.").arg(displayName), report));
+            appendSkippedSummary(
+                QCoreApplication::translate("SubscriptionUpdateService", "%1 returned no supported servers.").arg(displayName),
+                report),
+            report));
     }
     if (currentThreadInterruptionRequested()) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));

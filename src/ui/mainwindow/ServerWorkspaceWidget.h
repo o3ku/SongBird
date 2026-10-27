@@ -57,6 +57,12 @@ public:
     // checklist), so it is pushed in rather than only read when the panel is rebuilt.
     void setEmptyStateCanStartBackgroundTask(std::function<bool()> predicate);
 
+    // Why the last import produced nothing, or an empty string when none failed.
+    // The panel is what the table is replaced by, so the reason has to live there
+    // rather than only in the log; see ServerTableEmptyStateWidget::setImportFailure().
+    void setImportFailure(const QString& reason);
+    QString importFailure() const;
+
     void setCompactMode(bool compact);
     bool compactMode() const;
     void syncCompactSections();

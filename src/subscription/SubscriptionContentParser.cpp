@@ -18,12 +18,17 @@ using SubscriptionJsonSupport::parsePortValue;
 
 QString SubscriptionParseReport::skippedSummary() const
 {
-    if (skippedTypes.isEmpty()) {
+    return skippedSummary(skippedTypes);
+}
+
+QString SubscriptionParseReport::skippedSummary(const QStringList& types)
+{
+    if (types.isEmpty()) {
         return {};
     }
 
     QStringList distinctTypes;
-    for (const QString& type : skippedTypes) {
+    for (const QString& type : types) {
         if (!distinctTypes.contains(type)) {
             distinctTypes.append(type);
         }
@@ -32,7 +37,7 @@ QString SubscriptionParseReport::skippedSummary() const
     // Reaches the user: SubscriptionUpdateService appends this to the "Imported N server(s)"
     // message via appendSkippedSummary(), so it is prose in the log panel, not a diagnostic.
     return QCoreApplication::translate("SubscriptionContentParser", "skipped %1 node(s): %2")
-        .arg(skippedTypes.size())
+        .arg(types.size())
         .arg(distinctTypes.join(QStringLiteral(", ")));
 }
 
@@ -46,6 +51,20 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
     SubscriptionParseReport report;
     QString current = content.trimmed();
     report.notes.append(QStringLiteral("Subscription parse: input length=%1").arg(current.size()));
+
+    // A parser that produced no item can still say why it produced none: every node
+    // it saw was a type it does not support. That is the answer to "why did my
+    // subscription import nothing", and returning early with an empty report threw
+    // it away -- the failure message then read "no supported servers" beside a run
+    // of count=0 lines, none of which named the protocol. Keep the first non-empty
+    // set, because the passes walk from the outer encoding inwards and the innermost
+    // one that recognised the document is the one that saw the nodes.
+    QStringList skipped;
+    const auto rememberSkipped = [&skipped](const QStringList& candidate) {
+        if (skipped.isEmpty()) {
+            skipped = candidate;
+        }
+    };
 
     for (int iteration = 0; iteration < 8 && !current.isEmpty(); ++iteration) {
         const QList<VmessItem> shareItems = ShareUrlParser::parseMany(current);
@@ -67,26 +86,22 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
         QStringList singBoxSkipped;
         const QList<VmessItem> singBoxItems = tryParseSingBox(current, &singBoxSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 sing-box count=%2").arg(iteration).arg(singBoxItems.size()));
+        rememberSkipped(singBoxSkipped);
         if (!singBoxItems.isEmpty()) {
             report.items = singBoxItems;
             report.skippedTypes = singBoxSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=sing-box"));
-            if (report.hasSkippedNodes()) {
-                report.notes.append(QStringLiteral("Subscription parse: %1").arg(report.skippedSummary()));
-            }
             return report;
         }
 
         QStringList clashSkipped;
         const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 clash count=%2").arg(iteration).arg(clashItems.size()));
+        rememberSkipped(clashSkipped);
         if (!clashItems.isEmpty()) {
             report.items = clashItems;
             report.skippedTypes = clashSkipped;
             report.notes.append(QStringLiteral("Subscription parse: selected parser=clash"));
-            if (report.hasSkippedNodes()) {
-                report.notes.append(QStringLiteral("Subscription parse: %1").arg(report.skippedSummary()));
-            }
             return report;
         }
 
@@ -96,14 +111,26 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
             break;
         }
 
+        // The prefix is shown decoded, not as the base64 of a prefix: four characters
+        // of base64 are three bytes, so what was printed was the encoding of a slice
+        // of the text, which is not what the user pasted and cannot be read as a
+        // format. A newline marker is inserted for the same reason -- it is the one
+        // structural hint that separates a share-link list from a YAML document.
+        QString prefix = decoded.left(80);
+        prefix.replace(QChar('\r'), QChar(' '));
+        prefix.replace(QChar('\n'), QChar('|'));
         report.notes.append(
             QStringLiteral("Subscription parse: base64 decode pass %1 produced length=%2 prefix=%3")
                 .arg(iteration)
                 .arg(decoded.size())
-                .arg(decoded.left(80).replace(QChar('\n'), QChar(' '))));
+                .arg(prefix));
         current = decoded;
     }
 
+    // A skipped node is reachable through skippedTypes, so the notes do not repeat
+    // it: a diagnostic belongs in the list that is only read when something goes
+    // wrong, and the per-pass counts stay readable.
+    report.skippedTypes = skipped;
     report.notes.append(QStringLiteral("Subscription parse: no parser matched"));
     return report;
 }
