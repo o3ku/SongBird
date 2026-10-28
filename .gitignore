@@ -1,5 +1,8 @@
 /build
 /build-tsan
+# The prebuilt static-Qt bundle a Windows release build extracts into. Only CI creates it, but a
+# local reproduction of the release configure would, and it is ~4 GB.
+/vcpkg_installed
 /CMakePresets.json
 /.claude/worktrees/
 # Local agent scratch space: memory notes, probe projects (one of them is a full clone with its

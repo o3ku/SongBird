@@ -59,27 +59,23 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 ## 发布
 
-由 GitHub Actions 完成，见 [.github/workflows/release.yml](.github/workflows/release.yml)。推送 `v*` 标签即触发：vcpkg 装 Qt5 → 构建 Release → `ctest -LE smoke` → `gh release create` 上传 `songbird.exe`。也可用 `workflow_dispatch` 手动触发（不发布）。
+由 GitHub Actions 完成，见 [.github/workflows/release.yml](.github/workflows/release.yml)。推送 `v*` 标签即触发：下载预编译的静态 Qt5 → 构建 Release → `ctest -LE smoke` → `gh release create` 上传 `songbird.exe`。也可用 `workflow_dispatch` 手动触发（不发布）。
 
 ⚠️ **workflow 里的 action 一律要跑在 Node 24 上**。GitHub 会把只声明 `node20` 的 action 强制跑在 Node 24 并**每次运行都出 annotation**（目前只是警告，但 node20 支持最终会被移除）。换 action 时**必须去读它的 `action.yml`/`action.yaml` 里 `runs.using`**，别只看版本号新不新。踩过一次：`ilammy/msvc-dev-cmd@v1` 的最后一次发版是 2024-01-01、最后一次 push 是 2024-04-01，`runs.using` 仍是 `node20`，而它有 5 个未合并的 PR 正是在求这个升级——已换成 `TheMrMilchmann/setup-msvc-dev@v4`（`runs.using: node24`，输入同名，但 `arch` **没有默认值**，必须显式写 `arch: x64`）。
 
-首次运行需从源码编译 Qt5（约 1.4 小时），之后应当命中 `vcpkg_cache`。缓存分两层，各自回答不同的问题：Actions 缓存负责把 vcpkg 的二进制仓库目录在两次运行之间搬运过去，而**某个包能否复用由 vcpkg 按 ABI 哈希逐包判断**——该哈希包含编译器版本、vcpkg 工具版本与端口配方，所以 runner 镜像一更新就会整批失效。镜像之所以能**精确预测**这个指纹，是因为 vcpkg 用的是镜像自带的 `VCPKG_INSTALLATION_ROOT`（`C:\vcpkg`），端口配方随镜像版本走。`cache/restore` 靠前缀 `restore-keys` 取最近一次保存，前缀里带 **runner 镜像版本**作命名空间；`cache/save` 每次运行都用唯一 key（镜像版本-`run_id`-`run_attempt`），带 `if: always()`，并在**仓库未变时跳过上传**（见下）。
+Qt5 不再由 workflow 从源码编译，而是**下载一个钉死的预编译 vcpkg 安装根**：`o3ku/qt-static` 这个 composite action，triplet 是 `x64-windows-static-md`，端口正好是 `qt5-base` + `qt5-svg`，并且在同一个 `windows-2022` 镜像上构建。于是 workflow 里**没有任何缓存**——原来那套 `cache/restore` + 按本次安装裁剪 + `cache/save` + 显式驱逐（连同 4 个本地 harness、约 300 行注释）唯一的存在理由，就是把一次约 1.4 小时的 Qt5 源码编译结果传给下一轮；没有编译，就没有要传的东西。换完单次运行稳定在几分钟。
 
-⚠️ **`cache/restore` 的 `key` 必须是一个从未被保存过的值**：它做**精确匹配优先**，一旦命中就**不再走 `restore-keys` 前缀**，整个「取最近一次保存」的机制就失效了。这里踩过一次——`key` 曾是老工作流的固定 key `...-v1`，而那条 2026-09-23 的条目一直都在，于是 2026-10-01 与 10-06 两次运行都精确命中它、vcpkg 报 `Restored 0 package(s)`、白编 1h13m，新仓库还存到一个下一轮永远不会看的 key 上。现在 `key` 里嵌了 `run_id`，让 miss 成为结构性的（保存 key 是同一前缀加 `run_id`-`run_attempt`，裸 `run_id` 永不写入；re-run 时 `run_id` 不变、`attempt` 变，仍保证 miss）。诊断特征：`gh cache list` 里所有 per-run 条目的 `lastAccessedAt == createdAt`（从未被读过），只有那条固定 key 的 `lastAccessedAt` 在动。
+**为什么这样也能链接上**：仓库里没有 `vcpkg.json`，所以 `vcpkg.cmake` 走 **classic mode** —— `-DVCPKG_INSTALLED_DIR` 只是被采纳（`vcpkg.cmake:417`）并把 `<dir>/<triplet>` 加进 `CMAKE_PREFIX_PATH`，而 `vcpkg install` 只在 manifest 模式下执行（同一文件 `:479`），这里永不执行。所以不需要对安装树有写权限、不校验 ABI 指纹、也不联网；「bundle 里的端口算已安装」这件事纯粹由目录内容成立，与镜像版本、缓存 key 都无关。这也是它比缓存稳的原因：缓存是在猜 vcpkg 会不会复用，预编译包根本不让它做这个判断。
 
-⚠️ **前缀里必须带 runner 镜像版本**，否则**镜像滚动期会陷入互相顶掉的重编循环**。滚动时新旧两代镜像同时在池子里，每次运行随机落到一代；每一代存下的仓库都会成为**未加命名空间的前缀**下「最近创建」的那一条，于是下一轮（落在另一代上）恢复的是**别人那代**的仓库，只有 ABI 没被端口版本变更波及的包能复用（2026-10-07 实测 **19/35**），其余 16 个重编约 1.5 小时，再存下自己这代——然后反过来，如此往复。实测证据：两次 `20260927.320.1` 的运行 35 条 `package ABI:` 逐字节相同，而 `20261004.326.1` 的那次有 16 条不同（变的是端口版本，如 `3.6.4#1→3.6.5`、`14.5.0→14.5.1`、`10.47#1→10.49`，级联到 16 个包）。加了镜像命名空间后每代各有自己的仓库，每代只需一轮预热，之后每轮都是 35/35 全命中。**`restore-keys` 要两条按序**：先是带镜像版本的，再是**不带镜像版本的通用回退**——回退那条不能省，否则全新镜像的第一轮会退化成冷启动（0/35、白编 1.4 小时），而它存在时至少还能拿到另一代的 19/35。镜像版本取自 `$env:ImageVersion`（runner 在**机器级**设置，见 actions/runner-images 的 `images/windows/scripts/build/Configure-SystemEnvironment.ps1`；缺省回落 `unknown` 只用于保证 key 形状合法）。
+`tag` 是写死的字面量（`qt5-win2022-20261024-0121`），action 本身钉到 commit 而不是 `@v1`：包内容不可变且下载后按 SHA256 校验，所以升级是一次可见的编辑而不是一次静默的缓存 miss；tag 里带的日期是构建它的 runner 镜像，`runs-on` 换代时这是唯一必须重新考虑的东西。来源也从「我们自己的 CI 编的」变成「同一个账号另一个仓库编的」——静态链接 LGPL 的义务模型没变，但可追溯性弱一档，所以 tag 和 commit 都写死在这里。
 
-**保存端绝不能按 `cache-hit` 跳过**：Actions 的缓存 key 不可覆盖，一旦跳过，ABI 整批变化那天编译出来的产物会被**永远**丢弃，之后每次运行都重新编译 Qt5（2026-09 实测每次 1h23m，而缓存条目停留在漂移前的 09-23）。
+⚠️ 如果将来又要回到「在 CI 里编译 vcpkg 包 + 缓存产物」，先读 `git log -p -- .github/workflows/release.yml` 里 2026-10 的那几版。那套机制踩过的坑都是实测换来的：`cache/restore` 的 `key` **必须永不命中**（精确匹配优先，一旦命中就绕开 `restore-keys`）；前缀里**必须带 runner 镜像版本**（否则滚动期两代镜像互相顶掉，每轮白编 ~1.5h）；保存端**不能按 `cache-hit` 跳过**（ABI 整批漂移那天的产物会被永久丢弃），但也不该无条件保存，「仓库变没变」要按 archive 名字集合实测而不是猜；以及 GitHub 文档写的 LRU 驱逐**实测并没有及时发生**。这些结论比那套代码更值钱，所以留在这里而不是跟着代码一起删掉。
 
-⚠️ 但这不等于「无条件每次都保存」，区别在于**按实测跳过**还是**按猜测跳过**。`cache-hit` 只是对 vcpkg 那个 ABI 判断的猜测，而「仓库里的 archive 名字集合没变」是实测：`Install Qt5` 步在 vcpkg 跑之前记下名字集合写进 `$GITHUB_OUTPUT`，裁剪步在裁剪后再记一次并比较（**比名字不比数量**——漂移会让数量仍是 35 而**换掉每一个名字**），相同就输出 `skip=true`，`cache/save` 的 `if` 才跳过；`store-before` 缺失或裁剪步失败时输出为空，条件 `!= 'true'` 成立 ⇒ 照常保存（fail-open，判定只会往「保存」这个安全方向出错）。`always()` 保留，所以仓库真变了时即使后续步失败也照存。实测 2026-10-07 一次全命中运行：`store changed: False`、`cache/save` 显示为跳过、仓库仍停在 8 条 / 7.78 GiB，而修复前每轮都会再加 ~1 GB（其中 5 条是写了从没被读过的死重），而默认的仓库级额度是 **10 GB 大小上限 + 7 天保留（保留期从最后一次访问算，所以 restore 本身就会续期）**，超限时 GitHub 按 LRU 驱逐最久未访问的条目。⚠️ **但那是文档行为，实测没见它及时发生**：2026-10-08 仓库停在 11 条 / 10.7 GiB（已超 10 GB）一条不少，两条 10-01 写入、从未被读过的条目闲置 7.5 天后仍在。所以「列表无限增长」不会让保存失败，但**也不会自己收敛**——代价是预算被没人能用的条目占住，而下一轮该复用的那份 store 要和它们争额度。
+本地对着这个 bundle 实测过（`qt5-win2022-20261024-0121`，2026-10-28）：压缩包 434 MB，解压约 **4.0 GB**、34 秒，`installed/` 里还带一个 `x64-windows` 的主机工具目录；**整棵树里没有任何指向构建机的绝对路径**（`grep 'D:/a/'` 零命中），所以它确实可重定位，`Qt5_DIR` 就解析在 `installed/x64-windows-static-md/share/cmake/Qt5`。它唯一的硬约束是**工具链下限**：这个 Qt 是用 14.4x 的 MSVC STL 编的，`.lib` 里引用了 `__std_find_trivial_4` 这类 17.6+ 才有的 STL 运行时符号，本机 VS2019（14.29）拿它链接的失败形态就是 `LNK2001: unresolved external symbol __std_find_trivial_4`——那是本机工具链旧，不是包坏了；`windows-2022` 的 MSVC 只会往前走，CI 永远在它之上。本机构建不受影响（`D:/local/Qt5/5.15.2/msvc2019_64`）。
 
-`cache/save` 之后还有一步 **`Evict superseded vcpkg caches`**（需要 `permissions: actions: write`），显式删掉**不可能再被选中**的条目。判据来自 restore 的查找方式：它先探 `<前缀><镜像>-<run_id>`、再探裸前缀，各自取「最近创建的那一条」，所以一条条目只有在它是自己命名空间里最新的一条时才有机会被选中。于是：按「ref + 命名空间」分组，每组只留最新的一条；命名空间 = key 去掉保存步自己写的 `<run_id>[-<run_attempt>]` 后缀（那段一定是数字，而它前面那截是 GitHub 的镜像版本，**故意不做模式匹配**——镜像版本换格式只会改变命名空间的名字，不会把活着的 store 误判成陌生条目；分不出形状的 key 自成一个命名空间、保留，即 fail-open）；再删掉最新条目**两周没被 restore 过**的整个命名空间（镜像几天内就换代，闲置两周说明那一代已经不再发放；这条判断和 GitHub 自己的 7 天保留同向，只是多留余量）。绝不删本次运行刚保存的 key。失败路径一律 `Write-Warning` + `exit 0`——**维护步骤绝不能拖垮一次发布**。本地 harness：`.workbuddy-ai/tmp/verify-vcpkg-evict.ps1`（51 项，含真实 11 条列表、分页、tag ref、staleness 边界、列出失败、单条删除失败、外来前缀）。
+macOS 的两半仍然用 Homebrew `qt@5`，Linux 的 CNB 用发行版 Qt5，都与这条路径无关。
 
-保存前还有一步「按本次实际安装的包裁剪仓库」（`installed/vcpkg/status` 里的 `Abi:` 行即保留集），把仓库稳定在单一 ABI 世代（约 1 GB）；否则它每随镜像漂移一次就多一份完整 Qt5，白白吃掉仓库级缓存额度、并让列表里堆满永远不会被读到的条目。⚠️ **别把这一步的目的写成「不裁剪就会保存失败、缓存彻底失效」**——那是错的：超出额度时 GitHub **按 LRU 自动驱逐**最久未访问的条目，`cache/save` 不会失败。（这条错误论断曾写进 workflow 注释与本文档，2026-10-07 查 `actions/cache` README 与官方 changelog 后更正。）
-
-GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `Restore vcpkg cache` 本身就是一次访问，所以 workflow 里有一条每周两次（周一/周四 UTC 03:00）的 `schedule` 保活：它跑在默认分支上，`Publish GitHub release` 因 ref 不是 tag 而保持跳过，同时兼作 main 的每周构建+测试健康检查。⚠️ 实测那次驱逐是**惰性**的（有条目超出到期日仍留在列表里），所以保活不能指望「它会迟到」来省。这个保活不是多余的——2026-08-17 之后的 5 周闲置导致缓存被驱逐，下一次构建耗时 **1h49m51s**，而暖缓存只需 **19m44s**。
-
-[.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定：版本确认、翻译校验、以及「构建/测试失败不得打 tag 或发布」。该文档以 CI 为唯一正式发布路径——推 `main` 预热 vcpkg 缓存并过门禁，推 `v*` tag 由 CI 构建并发布；本机构建只作为 CI 不可用时的备案路径。
+[.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定：版本确认、翻译校验、以及「构建/测试失败不得打 tag 或发布」。该文档以 CI 为唯一正式发布路径——推 `main` 过门禁，推 `v*` tag 由 CI 构建并发布；本机构建只作为 CI 不可用时的备案路径。
 
 发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件），`SongBirdAuto.exe` 目前不随 Release 分发。
 
@@ -196,7 +192,7 @@ GitHub 的文档保留期是**超过 7 天未被访问**即删除条目，而 `R
 
 新增测试时：在 [tests/](tests/) 下创建独立 `.cpp`，在 [tests/CMakeLists.txt](tests/CMakeLists.txt) 中**仅列出它依赖的源文件**，用 `songbird_add_qt_test(<target> <ctest-name> SOURCES ... LIBRARIES ...)` 注册（该函数已统一处理 Qt5/Qt6 差异、include 路径、`QT_QPA_PLATFORM=windows` 环境）。测试名要描述被测行为。
 
-不是 QtTest 的检查一律写成 [scripts/](scripts/) 下的 PowerShell 脚本并挂进同一个 `if(SONGBIRD_POWERSHELL_EXECUTABLE)` 块。两条硬要求：**扫不到东西必须非零退出并打印扫描量**（否则脚本会因为正则不再匹配而静默变绿），**失败必须非零退出**（ctest 只读退出码）。[scripts/verify-vcpkg-*.ps1](scripts/) 是另一类：它们把 `.github/workflows/release.yml` 里某个 step 的**真实 `run:` 块抽出来**在 pwsh 7 下真跑（不是重打一遍），用来在推 CI 之前就发现 workflow 改动把步骤跑坏了；它们从 `$PSScriptRoot` 向上找仓库根，因此不依赖机器特定路径。
+不是 QtTest 的检查一律写成 [scripts/](scripts/) 下的 PowerShell 脚本并挂进同一个 `if(SONGBIRD_POWERSHELL_EXECUTABLE)` 块。两条硬要求：**扫不到东西必须非零退出并打印扫描量**（否则脚本会因为正则不再匹配而静默变绿），**失败必须非零退出**（ctest 只读退出码）。还有一类（现存为零）：把 `.github/workflows/release.yml` 里某个 step 的**真实 `run:` 块抽出来**在 pwsh 7 下真跑，用来在推 CI 之前就发现 workflow 改动把步骤跑坏了。原先的 `scripts/verify-vcpkg-*.ps1` 就是这类，随 workflow 里的 vcpkg 缓存步骤一起删掉了；如果将来又写出值得本地验证的 workflow 步骤，按 `git log -- scripts/verify-vcpkg-guard.ps1` 里的写法恢复（从 `$PSScriptRoot` 向上找仓库根，不依赖机器特定路径）。
 
 ### 代码风格
 

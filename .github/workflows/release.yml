@@ -2,56 +2,41 @@ name: Release
 
 on:
   push:
-    # Tags publish a release. main builds do not publish; they exist so the
-    # vcpkg cache is written under the default branch scope, which is the only
-    # scope every tag ref can read from. Without this, each tag build starts
-    # from a cold cache and recompiles Qt5 from source (~1.5h).
+    # Tags publish a release. A main push does not publish; it is the Windows
+    # compile-and-test gate on the default branch. It used to exist mainly to
+    # write the vcpkg binary cache under the default-branch scope, and that cache
+    # is gone with the prebuilt Qt bundle - see "Install Qt5 (static)".
     branches:
       - main
     tags:
       - 'v*'
-  # Keep-alive for the vcpkg cache. The documented retention deletes an entry
-  # seven days after its last access, and restoring the cache is what counts as
-  # an access, so a quiet month makes the next tag build pay the full ~1.5h Qt5
+  # A twice-weekly health check of main. This used to double as a keep-alive for
+  # the vcpkg binary cache, whose documented retention is seven days from the
+  # last access - a quiet month made the next tag build pay the full ~1.5h Qt5
   # compile: the 2026-08-17 run was followed by 5 idle weeks, and the next build
-  # took 1h49m51s instead of the usual ~20 minutes. That eviction is lazy rather
-  # than punctual - entries have been seen to outlive their due date by a day or
-  # more - but it does happen, so the keep-alive cannot lean on the delay. A
-  # weekly run sits exactly on the boundary and scheduled runs are often delayed,
-  # so this fires twice a week.
-  #
-  # The run lands on the default branch, so the cache keeps the default-branch
-  # scope tag builds read from, and "Publish GitHub release" stays skipped
-  # because the ref is not a tag. It doubles as a weekly build-and-test check of
-  # main. GitHub disables scheduled workflows after 60 days without repository
-  # activity, which is also when a stale cache stops costing anything.
+  # took 1h49m51s instead of the usual ~20 minutes. There is no such cache any
+  # more, because Qt5 arrives as an immutable pinned bundle, so this is now
+  # purely a build-and-test gate. GitHub disables scheduled workflows after 60
+  # days without repository activity, which is the only cost of it going quiet.
   schedule:
     - cron: '0 3 * * 1,4'
   workflow_dispatch:
 
 permissions:
   contents: write
-  # Only the cache-eviction step uses this. `actions/cache` itself does not need
-  # it - it authenticates with ACTIONS_RUNTIME_TOKEN - but listing and deleting
-  # repository cache entries goes through the REST API, which wants "Actions"
-  # repository permission (write).
-  actions: write
 
-# One build per ref. Never cancel in progress: a killed run loses the vcpkg
-# cache save, which costs ~1.5h of Qt5 compilation on the next run.
+# One build per ref. Never cancel in progress: a tag build creates the GitHub
+# release as its last act, so a run killed before that leaves a pushed tag with
+# no asset behind it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
+  # The triplet the prebuilt Qt bundle was built for, and the name of the
+  # directory inside the extracted install root. `Install Qt5 (static)` and
+  # `Configure` both read it, so the two cannot drift apart.
   VCPKG_TRIPLET: x64-windows-static-md
-  # vcpkg keeps its own per-package binary cache in this directory, and the
-  # Actions cache below moves that directory between runs. Both layers are
-  # needed, and they answer different questions: the Actions cache decides
-  # whether the store is present at all, and vcpkg then decides *per package*,
-  # by ABI hash, whether an archive in that store may be reused. `clear` drops
-  # the default location so the store exists in exactly one place.
-  VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
 
 jobs:
   build:
@@ -61,65 +46,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Read runner image version
-        # The image decides which vcpkg sits in VCPKG_INSTALLATION_ROOT, vcpkg
-        # decides the port recipes, and the port recipes decide the ABI hash of
-        # every package - so the image version is an exact and free predictor of
-        # which archives a store can satisfy. The runner sets this variable at
-        # machine scope (actions/runner-images
-        # images/windows/scripts/build/Configure-SystemEnvironment.ps1), so every
-        # step inherits it; `unknown` only keeps the cache key well-formed if
-        # that ever stops being true. The restore step below explains why the
-        # image version has to be part of the key.
-        id: image
-        shell: pwsh
-        run: |
-          $image = if ($env:ImageVersion) { $env:ImageVersion } else { 'unknown' }
-          "image=$image" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host "runner image version: $image"
-
-      - name: Restore vcpkg cache
-        id: vcpkg-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ github.workspace }}/vcpkg_cache
-          # A hit on this exact key is not what we are after - the restore-key
-          # prefixes below are what do the work: each matches every save ever
-          # made for this triplet and image, and GitHub returns the most
-          # recently created match, which is the store most likely to still
-          # satisfy vcpkg's ABI hashes.
-          # `key` therefore has to be a value that has never been saved, and the
-          # run id is what makes that structural rather than conventional: the
-          # save step keys on "<run id>-<attempt>", so "<run id>" alone is never
-          # written. It used to read "...-v1" - the single fixed key of the
-          # workflow that predates per-run saving - and that entry is still
-          # there, so `actions/cache/restore` kept taking the exact match and
-          # every run restored the same 2026-09-23 snapshot. The store was 990 MB
-          # and matched nothing: "Restored 0 package(s)" in the Qt5 step, on
-          # 2026-10-01 and again on 2026-10-06, each time followed by a full
-          # Qt5 compile and a fresh store saved under a key the next run would
-          # never look at.
-          #
-          # The image version namespaces that prefix, which is what keeps a
-          # fleet rollover from settling into a rebuild loop. While GitHub rolls
-          # a new image out, runs land on either generation, and each
-          # generation's save becomes "the most recently created" entry for the
-          # *unscoped* prefix - so every run restored the other generation's
-          # store, reused only the packages whose ABI survived the port bump,
-          # rebuilt the rest for well over an hour, and saved, after which the
-          # next run on the other image did the same in reverse. Measured on
-          # 2026-10-07: two runs on image 20260927.320.1 shared one ABI set
-          # byte for byte, and a run on 20261004.326.1 differed in 16 of the 35
-          # packages. Scoping the key by image gives each generation its own
-          # store, so after one warm-up run per generation every run hits all
-          # 35. The second restore-key is the unscoped fallback, and it exists
-          # so that the first run on a brand new image still inherits the other
-          # generation's partial match instead of starting cold.
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-${{ github.run_id }}
-          restore-keys: |
-            vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-
-            vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-
-
       - name: Install ripgrep
         # Optional: scripts/check-backend-boundaries.ps1 uses rg when it is
         # available and otherwise falls back to an equivalent pure-PowerShell
@@ -128,316 +54,49 @@ jobs:
 
       - name: Install Qt5 (static)
         id: qt5
-        shell: pwsh
-        run: |
-          # Which cache entry the restore above picked is the first thing worth
-          # knowing when a build unexpectedly recompiles Qt5, so record it.
-          Write-Host "vcpkg cache restored from: ${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
-          $store = "${{ github.workspace }}/vcpkg_cache"
-          New-Item -ItemType Directory -Force -Path $store | Out-Null
-
-          # A restore that moved the store is not the same as a store vcpkg can
-          # use, and when it cannot, this step is where it shows - as an hour of
-          # Qt5 compilation rather than as a failure. vcpkg's reuse line is the
-          # only place that decision is visible, so keep it and check it.
-          #
-          # The names are recorded as a set, not just counted, because the prune
-          # step decides whether re-uploading the store is worth ~1 GB by asking
-          # whether the set changed. A drift keeps the count at 35 and replaces
-          # every name, so a count would answer the wrong question. This has to be
-          # read here, before vcpkg writes anything into the store.
-          $beforeArchives = @(Get-ChildItem -Path $store -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
-            ForEach-Object { $_.BaseName } | Sort-Object)
-          $storedBefore = $beforeArchives.Count
-          "store-before=" + ($beforeArchives -join ',') |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          $log = "${{ runner.temp }}/vcpkg-install.log"
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
-            "qt5-base:$env:VCPKG_TRIPLET" `
-            "qt5-svg:$env:VCPKG_TRIPLET" 2>&1 | Tee-Object -FilePath $log
-          $installExit = $LASTEXITCODE
-
-          # VCPKG_BINARY_SOURCES names exactly one provider, so there is one such
-          # line; if a second provider is ever added, this needs to say which one
-          # the store is.
-          $restored = $null
-          $match = [regex]::Match((Get-Content -Raw -Path $log -ErrorAction SilentlyContinue),
-            'Restored (\d+) package\(s\)')
-          if ($match.Success) { $restored = [int]$match.Groups[1].Value }
-
-          if ($null -eq $restored) {
-            Write-Warning "vcpkg printed no reuse line; the log is at $log"
-          } elseif ($restored -eq 0 -and $storedBefore -gt 0) {
-            # Not an error: a runner image update legitimately changes every ABI
-            # hash at once, and the run after this one gets a store it can use.
-            # It is worth shouting about because the only other symptom is the
-            # wall clock.
-            Write-Warning ("vcpkg reused none of the $storedBefore archive(s) in the store, so this run " +
-              "rebuilds Qt5 from source. That normally means the runner image moved the compiler or the " +
-              "port recipes; diff the 'package ABI:' lines against an earlier run to see which, and expect " +
-              "the next run to be fast again.")
-          } else {
-            Write-Host "vcpkg reused $restored package(s) from a store of $storedBefore archive(s)"
-          }
-
-          exit $installExit
-
-      - name: Prune vcpkg cache to this run's packages
-        id: prune
-        # Keep the store bounded. vcpkg names every archive after the package's
-        # ABI hash, and that hash covers the compiler version, the vcpkg tool
-        # version and the port recipes - all of which change whenever GitHub
-        # updates the runner image. A store that only ever grows therefore gains
-        # a second complete copy of Qt5 (~1 GB) on each such update, and every
-        # extra gigabyte is one the repository's 10 GB cache budget cannot spend
-        # on a store vcpkg can actually use. Exceeding that budget does not fail
-        # the save - the documented policy is a 10 GB limit plus seven-day
-        # retention from the last access, and GitHub evicts the least recently
-        # used entries - but that eviction has not been observed to fire, which is
-        # why the step after the save evicts entries explicitly. This step is
-        # about the store on disk rather than about the entries in the
-        # repository: the archives worth keeping are exactly the ones vcpkg
-        # recorded in its installed status file, so drop everything else.
-        if: always()
-        shell: pwsh
-        run: |
-          $root = "${{ github.workspace }}/vcpkg_cache"
-          New-Item -ItemType Directory -Force -Path $root | Out-Null
-          $status = "$env:VCPKG_INSTALLATION_ROOT/installed/vcpkg/status"
-          # Every "Abi:" line belongs to an installed package: stanzas for
-          # packages that are not installed, and the feature pseudo-packages of
-          # an installed one, carry no Abi field at all.
-          $keep = @{}
-          if (Test-Path $status) {
-            foreach ($m in [regex]::Matches((Get-Content -Raw $status), '(?m)^Abi: (.+)$')) {
-              $keep[$m.Groups[1].Value.Trim()] = $true
-            }
-          }
-          if ($keep.Count -eq 0) {
-            # Pruning against an empty set would delete the entire store, so when
-            # the status file cannot be read, leave it alone and say so. A store
-            # that grows is a nuisance; a store that was thrown away costs 1h23m
-            # of Qt5 compilation.
-            Write-Warning "vcpkg cache: no installed packages found in $status - skipping the prune"
-            # Nothing was pruned, so the store may well have grown and cannot be
-            # judged unchanged. Fail open on purpose: a needless upload costs a
-            # minute, a store that was never saved costs an hour.
-            "skip=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            exit 0
-          }
-          $kept = 0
-          $removed = 0
-          Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
-            ForEach-Object {
-              # Only files named like an ABI hash are candidates, so an
-              # unexpected on-disk layout degrades to "nothing is pruned" rather
-              # than "everything is pruned".
-              if ($keep.ContainsKey($_.BaseName)) {
-                $kept++
-              } else {
-                Remove-Item -LiteralPath $_.FullName -Force
-                $removed++
-              }
-            }
-          # A run that was killed mid-upload can leave "<abi>.zip.<pid>" behind.
-          Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip\.\d+$' } |
-            Remove-Item -Force
-          Write-Host "vcpkg cache: kept $kept archive(s), removed $removed superseded archive(s)"
-
-          # Tell the save step whether re-uploading the store is worth ~1 GB.
-          # Whether the store needed pruning and whether it changed are different
-          # questions: a run that reused every archive and pruned nothing leaves
-          # the store byte-identical to the one the restore handed over, and
-          # re-uploading that only spends the repository's 10 GB cache budget.
-          #
-          # The archive *names* are compared rather than the counts, because a
-          # runner-image drift keeps the count at 35 while replacing every name -
-          # a count would report "unchanged" for the exact case the save exists
-          # for. Joining the sorted names is enough of a set comparison here: the
-          # names are hex, so nothing in them can collide with the separator.
-          $before = @("${{ steps.qt5.outputs.store-before }}" -split ',' | Where-Object { $_ })
-          $after = @(Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^[0-9a-f]{64}\.zip$' } |
-            ForEach-Object { $_.BaseName })
-          $changed = (($before | Sort-Object) -join "`n") -ne (($after | Sort-Object) -join "`n")
-          "skip=$((-not $changed).ToString().ToLower())" |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host ("vcpkg cache: $($before.Count) archive(s) before this run, $($after.Count) after; " +
-            "store changed: $changed")
-
-      - name: Save vcpkg cache
-        # Save right after the expensive Qt5 build, and even when a later step
-        # fails, so a failed run does not discard hours of compilation.
+        # A pinned prebuilt vcpkg install root instead of running `vcpkg install`
+        # here. Qt5 stays statically linked, so the release asset is still one exe
+        # with no Qt DLLs beside it - which is why jurplel/install-qt-action (the
+        # official, dynamically-linked Qt) is not an alternative worth having: it
+        # would turn the release into a bundle that needs windeployqt.
         #
-        # The key is unique per run on purpose. Cache keys are immutable, so a
-        # fixed key can only ever be written once; the earlier version of this
-        # workflow coped with that by skipping the save whenever the restore had
-        # hit, which meant that on the day the runner image bumped the compiler
-        # or a port - changing every ABI hash at once - each run rebuilt Qt5 from
-        # source for 1h23m and then discarded the result, forever. Saving under a
-        # fresh key each time makes that impossible; the restore-key prefix above
-        # still finds the newest save for the current runner image, and falls
-        # back to the newest save for any image if that one does not exist yet.
+        # Everything this step replaces - cache/restore, the prune, cache/save and
+        # the eviction - existed only to hand a ~1.4h vcpkg compile of qt5-base
+        # and qt5-svg forwards from one run to the next, and each of those steps
+        # had a failure mode of its own (a fixed restore key that matched forever,
+        # an image namespace that a fleet rollover defeated, a ~1 GB store that
+        # outgrew the repository's budget). o3ku/qt-static publishes that same
+        # install root: x64-windows-static-md, exactly the two ports this
+        # repository needs, built on this same windows-2022 image. Nothing is left
+        # to keep warm, so nothing is cached.
         #
-        # Skipping the save is fine, but only for the right reason. That earlier
-        # version skipped on "the restore hit", which is a guess about vcpkg's ABI
-        # decision; what matters is whether the store changed, and the prune step
-        # answers that by comparing archive names. The verdict is "unchanged"
-        # exactly when this run left the store's contents alone. Re-uploading a
-        # byte-identical store buys nothing and spends ~1 GB of the repository's
-        # 10 GB cache budget, so skip it. `always()` still applies: a run that
-        # changed the store saves even if a later step fails, and a missing or
-        # failed prune leaves the output empty, which also saves rather than skips.
-        #
-        # The attempt number is part of the key because re-running a job keeps the
-        # run id: without it a re-run would try to save under a key that already
-        # exists and fail the step.
-        #
-        # Keep this key longer than the restore's `key`, which is the same prefix
-        # plus the run id alone. The restore relies on that bare run id never
-        # existing, so it falls through to the prefix search; saving under it
-        # would restore the exact-match trap the restore step warns about.
-        if: always() && steps.prune.outputs.skip != 'true'
-        uses: actions/cache/save@v6
+        # The action is pinned to a commit rather than to `@v1`, because a tag can
+        # be moved and this step decides what every release binary links against.
+        # `tag` is a literal on purpose too: the bundle is immutable and
+        # SHA256-verified by the action, so a bump is a visible edit here rather
+        # than a silent cache miss, and the tag names the runner image it was
+        # built on - the one thing to reconsider if `runs-on` ever moves away from
+        # windows-2022.
+        uses: o3ku/qt-static@f39a48465c5c788ed5e035f3a4a4e46552a6b423
         with:
-          path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-${{ steps.image.outputs.image }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Evict superseded vcpkg caches
-        id: evict
-        # The cache is repository-wide, so it is also repository-bounded, and the
-        # entries in it are not all worth their size. An entry is only ever
-        # selected by the restore above, which probes "<prefix><image>-<run id>"
-        # and then the prefix alone and takes the most recently created match for
-        # whichever it tries. So an entry nobody can select again is one that is
-        # neither the newest of its own namespace nor the newest overall, and it
-        # sits in the budget forever.
-        #
-        # The documented policy is a 10 GB size limit plus seven-day retention
-        # from the last access, and GitHub evicts the least recently used entries
-        # when either is exceeded - so nothing was ever going to fail. What it
-        # has not been observed to do is actually evict: on 2026-10-08 the
-        # repository held 11 entries and 10.7 GiB, over budget, with every entry
-        # intact, and the two entries written on 2026-10-01 and never read were
-        # still there 7.5 days later. Ten of those eleven were pre-namespace
-        # saves that the restore can no longer reach, so this step evicts them
-        # itself rather than waiting.
-        #
-        # The namespace is the key with the save step's own suffix, "<run
-        # id>[-<attempt>]", stripped off, and the grouping is per ref as well as
-        # per namespace because a tag ref can only read its own entries. That
-        # suffix is written by this workflow and is always numeric; the part in
-        # front of it is the runner image version and belongs to GitHub, so it is
-        # deliberately not pattern-matched. A change to the image version's
-        # format therefore cannot reclassify a live store as a stranger - it just
-        # becomes part of a namespace name, and keys sharing a namespace still
-        # collapse to the newest one. A key that matches neither shape keeps a
-        # namespace to itself and survives, which is the fail-open direction: an
-        # entry that cannot be classified is more expensive to lose than to keep.
-        #
-        # A namespace whose newest entry no run has restored in two weeks is
-        # dropped as well. The fleet rolls a new image out within days, so a
-        # store unread for two weeks belongs to an image that is no longer handed
-        # out; GitHub's own retention makes the same call at seven days and this
-        # only differs by the margin. Losing that bet costs one partial reuse on a
-        # run that lands on the old image again - the unscoped fallback still
-        # finds the newest store of any image - rather than a cold start.
-        #
-        # Maintenance only: this step must never be able to fail a release, so
-        # every failure path warns and exits 0, and nothing is deleted unless the
-        # listing succeeded.
-        if: always()
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $prefix = "vcpkg-qt5-${{ env.VCPKG_TRIPLET }}-${{ runner.os }}-"
-          # Concatenated rather than interpolated: inside a double-quoted string
-          # "$prefix2026..." is read as one variable name, and the digits are
-          # legal in one, so interpolation would silently yield a string that
-          # matches no key and this guard would never fire.
-          $saved = $prefix + "${{ steps.image.outputs.image }}-${{ github.run_id }}-${{ github.run_attempt }}"
-          $repo = "${{ github.repository }}"
-          $staleDays = 14
-
-          try {
-            # --slurp folds --paginate's concatenated pages into one JSON array,
-            # which keeps the parsing in PowerShell instead of jq.
-            $pages = gh api "repos/$repo/actions/caches?per_page=100" --paginate --slurp | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0) { throw "gh api exited $LASTEXITCODE" }
-
-            $live = @()
-            foreach ($e in @($pages | ForEach-Object { $_.actions_caches })) {
-              if (-not $e -or -not $e.key.StartsWith($prefix)) { continue }
-              $ns = $e.key
-              for ($i = 0; $i -lt 2; $i++) {
-                $stripped = $ns -replace '-\d+$', ''
-                if ($stripped -eq $ns) { break }
-                $ns = $stripped
-              }
-              $live += [pscustomobject]@{ Entry = $e; Namespace = $ns }
-            }
-
-            $now = [datetime]::UtcNow
-            $drop = @{}
-            $kept = @()
-            $groups = @($live | Group-Object -Property { $_.Entry.ref + "`t" + $_.Namespace })
-            foreach ($g in $groups) {
-              $ordered = @($g.Group | Sort-Object { [datetime]$_.Entry.created_at } -Descending)
-              $kept += $ordered[0]
-              foreach ($older in @($ordered | Select-Object -Skip 1)) { $drop[$older.Entry.id] = $older }
-            }
-
-            $stale = @()
-            foreach ($k in $kept) {
-              if (-not $k.Entry.last_accessed_at) { continue }
-              $accessed = [datetime]::MinValue
-              # The trailing Z is dropped before parsing so the value is read as
-              # the UTC wall clock it is, whatever timezone the runner is in.
-              if (-not [datetime]::TryParse(($k.Entry.last_accessed_at -replace 'Z$', ''), [ref]$accessed)) { continue }
-              if (($now - $accessed).TotalDays -ge $staleDays) {
-                $drop[$k.Entry.id] = $k
-                $stale += $k
-              }
-            }
-
-            # The save step ran a moment ago. Never delete what this run wrote,
-            # even when another run has since written a newer entry that shares
-            # its namespace.
-            foreach ($id in @($drop.Keys)) {
-              if ($drop[$id].Entry.key -eq $saved) { $drop.Remove($id) }
-            }
-
-            $freed = 0
-            $failed = 0
-            foreach ($id in @($drop.Keys)) {
-              gh api -X DELETE "repos/$repo/actions/caches/$id" | Out-Null
-              if ($LASTEXITCODE -ne 0) {
-                $failed++
-                Write-Warning "vcpkg cache eviction: could not delete $id ($($drop[$id].Entry.key))"
-              } else {
-                $freed += $drop[$id].Entry.size_in_bytes
-              }
-            }
-
-            Write-Host ("vcpkg cache eviction: $($live.Count) entry/entries under the prefix in " +
-              "$($groups.Count) namespace(s); kept $($live.Count - $drop.Count + $failed), " +
-              "deleted $($drop.Count - $failed), freed $([math]::Round($freed / 1MB)) MB")
-            foreach ($s in $stale) {
-              Write-Host "  dropped $($s.Entry.key) as stale [$($s.Entry.ref)]"
-            }
-            foreach ($k in $kept) {
-              if ($stale.Entry.id -contains $k.Entry.id) { continue }
-              Write-Host "  kept $($k.Entry.key) [$($k.Entry.ref)]"
-            }
-          } catch {
-            Write-Warning "vcpkg cache eviction: $($_.Exception.Message) - nothing else deleted"
-          }
-          exit 0
+          tag: qt5-win2022-20261024-0121
+          # The extracted root is what `Configure` passes as VCPKG_INSTALLED_DIR.
+          # There is no vcpkg.json in this repository, so the toolchain runs in
+          # classic mode: it appends <dir>/<triplet> to CMAKE_PREFIX_PATH and never
+          # invokes vcpkg.exe, which is why the shipped vcpkg/status needs no ABI
+          # to match and the build needs no write access to the tree.
+          #
+          # Measured against this tag from a local checkout, so the next person
+          # does not have to repeat it: the archive is 434 MB, unpacks to ~4 GB in
+          # 34 s, and grep finds no absolute path to the machine that built it
+          # anywhere in the tree - so it relocates, and `Qt5_DIR` resolves inside
+          # it. The one constraint it carries is a toolset floor: it was compiled
+          # against a 14.4x MSVC STL, so its .libs reference runtime symbols
+          # (`__std_find_trivial_4`) that VS 2019 does not define - a local link
+          # with 14.29 fails on exactly that, which says nothing about the bundle.
+          # windows-2022 only moves that toolset forwards, so CI is always at or
+          # above it.
+          dest: ${{ github.workspace }}/vcpkg_installed
 
       - name: Set up MSVC
         # Not ilammy/msvc-dev-cmd, which is what this used to be: it has not
@@ -459,7 +118,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_TEST=ON `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET" `
+            -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed"
 
       - name: Build
         run: cmake --build build --parallel

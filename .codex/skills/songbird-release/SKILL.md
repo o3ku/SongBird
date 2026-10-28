@@ -105,17 +105,15 @@ What CI guarantees that a local build does not:
    - The `smoke`-labelled tests download cores and subscriptions, start real processes, and
      write real system-proxy / registry entries, so CI excludes them with `-LE smoke`. The
      command above does **not** pass `-LE smoke`, so it runs them too — that is fine and adds
-     coverage, but it means the two counts differ by design: a full local run reports **59**
-     tests while CI reports **58**. Before reporting a lost test, reconcile with
-     `ctest --test-dir build/msvc-tests -N -L smoke` (exactly 1: `end-to-end-smoke`).
-   - Four of those tests (`vcpkg-guard`, `vcpkg-skip`, `vcpkg-image-namespace`, `vcpkg-evict`)
-     are not source checks: they extract the vcpkg cache steps' real `run:` blocks out of
-     `.github/workflows/release.yml` and execute them under pwsh 7 against fixtures. They spawn
-     child processes and take ~50 s together, which is why a full run is now ~2 min. A failure
-     names the individual case (e.g. `C2 full drift, 35 -> 35 new names -> save`).
+     coverage, but it means the two counts differ by design, and the difference is exactly the
+     `smoke`-labelled tests. Reconcile with
+     `ctest --test-dir build/msvc-tests -N -L smoke` (it lists them) instead of comparing totals
+     against a number written down here: this file used to carry the two totals and they went
+     stale. (The four `vcpkg-*` harnesses that used to be counted here are gone with the vcpkg
+     cache steps — see the Windows Qt note in `CLAUDE.md`.)
    - Everything in the `if(SONGBIRD_POWERSHELL_EXECUTABLE)` block disappears from the count if
-     `find_program` cannot locate `pwsh` or `powershell`; that silently drops five source checks
-     and these four harnesses.
+     `find_program` cannot locate `pwsh` or `powershell`; that silently drops every source check
+     in it.
    - Stop and report failures instead of tagging.
 
 6. Commit and push `main` before tagging.
@@ -125,9 +123,10 @@ What CI guarantees that a local build does not:
      ```powershell
      git push origin main
      ```
-   - This step is not optional. A `main` push builds without publishing and writes the
-     vcpkg cache under the default-branch scope, which is the only scope a tag build can
-     read from. Skipping it makes the next tag build compile Qt5 from source (~1.5h).
+   - This step is not optional. A `main` push builds and tests without publishing, so the
+     commit the tag will point at is proven green before the tag exists. It no longer has a
+     second job of warming a vcpkg cache: Qt5 arrives as a pinned prebuilt bundle, and there
+     is nothing to warm.
    - The `workflow` token scope is only required when pushing over HTTPS, because the
      restriction is imposed by the OAuth App mechanism. SSH keys carry no scopes, so an
      SSH push that adds or edits `.github/workflows/` is not affected. If an HTTPS push is
@@ -142,9 +141,9 @@ What CI guarantees that a local build does not:
      git tag -a v<version> -m "Release <version>"
      git push origin v<version>
      ```
-   - Pushing the tag runs `.github/workflows/release.yml`, which restores the vcpkg cache,
-     builds the static Qt5 release, runs `ctest -LE smoke`, stages `build/src/SongBird.exe`
-     as `songbird.exe`, and publishes the release.
+   - Pushing the tag runs `.github/workflows/release.yml`, which downloads the pinned
+     prebuilt static-Qt5 bundle, builds the release against it, runs `ctest -LE smoke`, stages
+     `build/src/SongBird.exe` as `songbird.exe`, and publishes the release.
    - A tag whose version carries a suffix (`v2.5.0-beta1`) makes CI add `--prerelease`, so a
      beta does not become the repository's "Latest release" while it is still a beta. The
      check is on the version, not on the tag shape, and plain `vX.Y.Z` tags publish exactly

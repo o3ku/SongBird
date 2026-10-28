@@ -84,7 +84,7 @@ macOS 支持是新增的。CI 会在 macOS 上构建、签名、启动程序并�
 
 ## 从源码构建
 
-SongBird 需要 CMake、C++20 编译器与 Qt 5.15。CI 工作流是可用配置的参考：`.github/workflows/release.yml` 里 Windows 用 vcpkg 静态链接 Qt，macOS 用 Homebrew 的 `qt@5`。
+SongBird 需要 CMake、C++20 编译器与 Qt 5.15。CI 工作流是可用配置的参考：`.github/workflows/release.yml` 里 Windows 用钉死版本的预编译静态 Qt5（一个 vcpkg 安装根，产物是单个 exe），macOS 用 Homebrew 的 `qt@5`。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

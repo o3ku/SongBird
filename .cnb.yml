@@ -1,9 +1,11 @@
 # CNB 流水线：与 .github/workflows 对齐的测试门禁。
 #
-# 为什么用 Linux + 发行版 Qt5，而不是照抄 release.yml 的 vcpkg 静态 Qt5：
-# release.yml 的成本几乎全在 vcpkg 缓存上（冷启动要从源码编译 Qt5，约 1.5 小时），
-# 而 CNB 的节点缓存是节点本地的 copy-on-write 缓存，跨节点不保证命中。
-# 把 release 那套搬过来，会得到一个动不动就一小时的验证流程。
+# 为什么用 Linux + 发行版 Qt5，而不是照抄 release.yml 的静态 Qt5：
+# release.yml 现在装的是 x64-windows-static-md 的**预编译 vcpkg 安装根**，那是 MSVC
+# 产物，Linux 上根本用不了；在 Linux 上照抄就得自己从源码编 Qt5，而 CNB 的节点缓存是
+# 节点本地的 copy-on-write 缓存，跨节点不保证命中，于是又会得到一个动不动就一小时的
+# 验证流程。（这条理由以前是「release.yml 的成本几乎全在 vcpkg 缓存上」，预编译包之后
+# 连那份成本也没有了，但「Windows MSVC 的 Qt 不能拿来编 Linux」这层永远成立。）
 # 这里要回答的是「这次改动能不能过」，不是「发布产物长什么样」——
 # 后者仍然只由 GitHub Actions 负责，本文件不碰产物、不发布。
 #

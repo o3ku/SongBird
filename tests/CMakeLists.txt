@@ -91,21 +91,6 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -NoProfile
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-readme-assets.ps1
     )
-    # These four do not read the source tree; they exercise the vcpkg cache steps in
-    # .github/workflows/release.yml. Each one extracts the step's real run: block from the workflow,
-    # substitutes the ${{ }} expressions, and runs it under pwsh 7 against fixtures -- so a step that
-    # stops parsing or starts computing the wrong verdict fails here instead of burning a CI run.
-    # They are the only checks that spawn child processes, and they take noticeably longer than the
-    # text-only ones; a failure names the individual case that broke.
-    foreach(harness vcpkg-guard vcpkg-skip vcpkg-image-namespace vcpkg-evict)
-        add_test(
-            NAME ${harness}
-            COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
-                -NoProfile
-                -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/verify-${harness}.ps1
-        )
-    endforeach()
-
     # A worker thread that keeps a raw pointer to a QObject the GUI thread can destroy is a
     # use-after-free that surfaces later, in unrelated code. This guard was written after six GUI
     # suites went red at once for exactly this. The rule: a continuation that captures `this` must

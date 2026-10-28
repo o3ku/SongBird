@@ -84,7 +84,7 @@ macOS support is new. CI builds the bundle, signs it, starts the application and
 
 ## Building From Source
 
-SongBird needs CMake, a C++20 compiler and Qt 5.15. The CI workflows are the reference for a working setup: `.github/workflows/release.yml` for Windows (vcpkg, statically linked Qt) and macOS (Homebrew `qt@5`).
+SongBird needs CMake, a C++20 compiler and Qt 5.15. The CI workflows are the reference for a working setup: `.github/workflows/release.yml` for Windows (a pinned prebuilt static-Qt5 vcpkg install root, so the release is a single exe) and macOS (Homebrew `qt@5`).
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
