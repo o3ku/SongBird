@@ -43,10 +43,10 @@ class MainCoreHostBase : public ICoreProcessHost {
 public:
     using ICoreProcessHost::start;
 
-    // Defined out of line, in QtCoreProcessHost.cpp, and it calls through qualified virtual
-    // dispatch rather than `ICoreProcessHost::start(...)`. The qualified form emits a reference to
-    // the pure virtual entry point, which no library defines -- so a target that compiles a caller
-    // of this overload without a concrete host in its own object files fails to link.
+    // Defined out of line, in runtime/ICoreProcessHost.cpp, and it calls the unqualified form (see
+    // the note in that file). Written as `ICoreProcessHost::start(...)` the body binds to the pure
+    // virtual entry point instead of dispatching, so a target that compiles a caller of this
+    // overload without a concrete host in its own object files fails to link.
     // EndToEndSmokeTests is exactly that target: it compiles CoreLifecycleService.cpp and takes
     // the real host from the shared objects as data only. The out-of-line definition also keeps
     // the vtable key function here rather than inline in every includer.

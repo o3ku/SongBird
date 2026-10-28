@@ -197,6 +197,7 @@ private slots:
     void exitLeavesAnUnownedProxyAlone();
     void aFailedTunStartGivesEveryFlagBack();
     void aFailureAfterTheScheduledStopEndsTheAttemptOnce();
+    void aStopThatWaitsForTheCoreLeavesTheCloseOutToTheExit();
 };
 
 // Regression pin for the seam refactor: initialize() called wireRuntimeEnvironment() before
@@ -356,9 +357,55 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
     QCOMPARE(harness.coreHost().startCount, 0);
 
     // Then the scheduled exit arrives, and that one does close the attempt out.
+    //
+    // Watched as well as asserted, because the close-out announces itself before it is finished:
+    // `runningChanged(false)` is emitted with `busy_` still standing and the TUN runtime between
+    // two states, so anything a listener does there sees a half-settled attempt. Reading the flags
+    // only after the handler returned is what makes them the close-out's verdict rather than a
+    // snapshot of its middle.
+    bool settledAtTheAnnouncement = false;
+    QObject::connect(&coordinator, &SongBirdAutoCoordinator::runningChanged, &coordinator,
+        [&settledAtTheAnnouncement](bool running) {
+            if (!running) {
+                settledAtTheAnnouncement = true;
+            }
+        });
     coordinator.handleSessionStoppedForTest();
 
     // The user stays stopped, the close-out happened, and still nothing started.
+    QVERIFY(settledAtTheAnnouncement);
+    QVERIFY(!coordinator.isRunning());
+    QVERIFY(!coordinator.isBusyForTest());
+    QCOMPARE(harness.coreHost().startCount, 0);
+}
+
+// The same two endings, on the other side of the interrupt: stop() has already run its teardown
+// and is waiting for the core to exit, so the flags are still the start's when a failure arrives.
+// The close-out belongs to the `stopped()` that exit will send -- settling it here as well would
+// write the status twice, and the second write is the one a busyChanged listener renders.
+void SongBirdAutoCoordinatorStopTests::aStopThatWaitsForTheCoreLeavesTheCloseOutToTheExit()
+{
+    Harness harness;
+    harness.proxy().enabled = true;
+    SongBirdAutoCoordinator& coordinator = harness.coordinator();
+
+    // The shape stop() leaves behind when it decides to wait: the interrupt is set, the flags are
+    // still the start's, and the exit is on its way. stop() itself is not called -- it runs a real
+    // teardown, which needs a session that had a core.
+    coordinator.setRunningForTest(true);
+    coordinator.setBusyForTest(true);
+    coordinator.stopRequestedForTest();
+
+    coordinator.handleSessionFailedForTest(QStringLiteral("TUN adapter cleanup failed"));
+
+    // Nothing resumed, and nothing was closed out either: the flags are where the waiting teardown
+    // left them, and the exit is still coming.
+    QCOMPARE(harness.coreHost().startCount, 0);
+    QVERIFY(coordinator.isRunning());
+    QVERIFY(coordinator.isBusyForTest());
+
+    coordinator.handleSessionStoppedForTest();
+
     QVERIFY(!coordinator.isRunning());
     QVERIFY(!coordinator.isBusyForTest());
     QCOMPARE(harness.coreHost().startCount, 0);

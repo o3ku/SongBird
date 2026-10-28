@@ -1951,14 +1951,23 @@ void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnc
     ProxySession::StartRequest request = harness.launchableRequest();
     request.config.tun().tunModeItem.enableTun = false;
 
+    QSignalSpy activatedSpy(harness.session.get(), &ProxySession::activated);
     harness.session->start(request);
 
-    // Read after the core answered rather than straight after start(): the claim is set at
-    // ApplySystemProxy, which is behind the readiness callback and a probe of the core's local
-    // inbound. Waiting on the callbacks instead of on a timer is what keeps this from depending on
-    // how fast the machine running the test is.
+    // Wait for the callbacks rather than for a timer: the claim is set at ApplySystemProxy, which
+    // is behind the readiness callback and a probe of the core's local inbound.
+    //
+    // And wait for Proxying, not merely for the claim. The claim is set one step before the
+    // session finishes activating, and this case's subject is the claim six crash exits each undo
+    // once -- so a crash round landing in that gap would be counted against a session still on its
+    // way up. Reaching Proxying is the moment the startup is over; `activated` is the signal that
+    // says so, and a suite that cannot reach it here would leave the count below measuring the
+    // startup as well as the exits.
     harness.mainCore.triggerStarted(QStringLiteral("core is up"));
     QTRY_VERIFY(harness.session->isManagedProxyActive());
+    QTRY_COMPARE_WITH_TIMEOUT(static_cast<int>(harness.session->phase()),
+        static_cast<int>(ProxySession::Phase::Proxying), 10000);
+    QCOMPARE(activatedSpy.count(), 1);
 
     QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
     QSignalSpy undoFailedSpy(harness.session.get(), &ProxySession::systemProxyUndoFailed);

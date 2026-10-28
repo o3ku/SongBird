@@ -13,23 +13,6 @@
 #include "platform/windows/WindowsJobObject.h"
 #endif
 
-OperationResult MainCoreHostBase::start(
-    const CoreInfo& coreInfo,
-    const QString& configFilePath,
-    std::function<void(const QString&)> outputReceived,
-    StartedCallback started,
-    StartFailedCallback startFailed,
-    ExitedCallback exited)
-{
-    return start(
-        coreInfo,
-        configFilePath,
-        std::move(outputReceived),
-        std::move(started),
-        std::move(startFailed),
-        std::move(exited));
-}
-
 QtCoreProcessHost::QtCoreProcessHost() = default;
 
 QtCoreProcessHost::~QtCoreProcessHost()
