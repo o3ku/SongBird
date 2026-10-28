@@ -161,7 +161,6 @@ set(SONGBIRD_SHARED_SOURCES
     backends/xray/XrayCoreBackend.h
     backends/xray/XrayCoreBackend.cpp
     runtime/ICoreProcessHost.h
-    runtime/ICoreProcessHost.cpp
     runtime/CoreProcessOutputBuffer.h
     runtime/CoreProcessOutputBuffer.cpp
     runtime/QtCoreProcessHost.h
