@@ -12,3 +12,6 @@
 /todo.md
 # Local review/scratch artifacts (patches, generated reports, zip bundles).
 /outputs/
+
+# Bytecode the Python guards leave behind when run by hand.
+__pycache__/

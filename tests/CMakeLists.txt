@@ -129,6 +129,80 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
     )
 endif()
 
+# The same guards as pure-stdlib Python scripts, so a Linux gate can run them. The PowerShell
+# copies above stay for the Windows release job and local development; the port exists because
+# Debian cannot install PowerShell at all (Microsoft's apt source is signed with the same SHA1
+# self-signed key as its own metadata, and sqv rejects that since 2026-02-01), which left the PR
+# gate running none of these rules.
+#
+# Verification scope is honest about what each one can see here:
+#   * the language rules (layering, destruction order, async owners, colours, localization,
+#     Q_OS_* scope, README assets) read the tree only, so they are the same check either way.
+#   * translations-fresh also needs lrelease for its byte-exact half, and skips it loudly when
+#     the tool is absent -- the recorded-hash half still runs, which is what catches an edited
+#     .ts that was never recompiled.
+#   * translations-embedded and test-suites-nonempty inspect a BUILD TREE (.qrc + linked
+#     executable, and re-executed test binaries), so they are registered only when one was
+#     passed in. A PR gate that builds runs them; a bare configure does not pretend to.
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    set(SONGBIRD_PYTHON_GUARD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/python)
+    set(SONGBIRD_PYTHON_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+    # add_python_guard(<test name> <script> <args>...)
+    function(songbird_add_python_guard test_name script)
+        add_test(
+            NAME ${test_name}
+            COMMAND ${Python3_EXECUTABLE} ${SONGBIRD_PYTHON_GUARD_DIR}/${script} ${ARGN}
+        )
+    endfunction()
+
+    songbird_add_python_guard(py-backend-boundaries check_backend_boundaries.py
+        ${SONGBIRD_PYTHON_SOURCE_ROOT})
+    songbird_add_python_guard(py-appbootstrap-member-order check_appbootstrap_member_order.py
+        ${SONGBIRD_PYTHON_SOURCE_ROOT})
+    songbird_add_python_guard(py-async-owners check_async_owners.py
+        ${SONGBIRD_PYTHON_SOURCE_ROOT})
+    songbird_add_python_guard(py-hardcoded-colors check_hardcoded_colors.py
+        ${SONGBIRD_PYTHON_SOURCE_ROOT})
+    songbird_add_python_guard(py-q-os-include-scope check_q_os_include_scope.py
+        --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
+        --test-root ${CMAKE_CURRENT_SOURCE_DIR})
+    songbird_add_python_guard(py-localization-coverage check_localization_coverage.py
+        --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
+        --translation-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
+        --english-surface-root ${SONGBIRD_PYTHON_SOURCE_ROOT}/auto)
+    songbird_add_python_guard(py-versions-consistent check_version_consistency.py
+        --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    songbird_add_python_guard(py-readme-assets check_readme_assets.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    songbird_add_python_guard(py-translations-fresh check_translations_fresh.py
+        --translation-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
+        --compiled-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/compiled/SongBird_zh_CN.qm)
+
+    # The self-test is the reason the rest can be trusted: it breaks each rule in a throwaway
+    # copy and asserts the guard goes red, then asserts every guard is green on an untouched
+    # copy. It re-runs every guard ~30 times, so it is labelled `guard` like its PowerShell twin.
+    songbird_add_python_guard(py-guard-selftest selftest_guards.py)
+    set_tests_properties(py-guard-selftest PROPERTIES LABELS "guard" TIMEOUT 900)
+
+    if(SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR)
+        songbird_add_python_guard(py-translations-embedded check_translations_embedded.py
+            --build-directory ${SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR}/src
+            --executable $<TARGET_FILE:songbird>)
+    endif()
+    if(SONGBIRD_PYTHON_GUARD_SUITE_BUILD_DIR)
+        songbird_add_python_guard(py-test-suites-nonempty check_test_suites.py
+            --build-directory ${SONGBIRD_PYTHON_GUARD_SUITE_BUILD_DIR})
+        set_tests_properties(py-test-suites-nonempty PROPERTIES
+            LABELS "suite"
+            TIMEOUT 900
+            ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>"
+        )
+    endif()
+endif()
+
 # Qt's platform plugin is named per platform, and the tests are told which one to use by name:
 # the Windows plugin does not exist on macOS, and a test that cannot create its QApplication
 # dies before it runs a single assertion. cocoa rather than offscreen on macOS because those

@@ -11,8 +11,9 @@
 #
 # 与 release.yml / macos-verify.yml 的对应关系：
 #   ctest -LE smoke        两边都有（smoke 用例要真连网跑内核，不进验证流程）
-#   scripts/check-*.ps1    这里没有（见下面「静态守卫」那段）；它们只在 GitHub 的
-#                          tag 构建和 main push 里跑，PR 门禁不覆盖
+#   scripts/check-*.ps1    这里跑的是 scripts/python/ 的等价移植版（见下面「静态守卫」那段）。
+#                          规则一条不少，实现从 PowerShell 换成纯标准库 Python，因为 Debian
+#                          装不上 PowerShell，而 PR 门禁不该因此少一层。
 #   --version + 启动即退出 对应 macos-verify 的 smoke-run
 #
 # 注释用中文，因为这套配置只有本仓库的人看；脚本内容保持与 .github 一致的英文，
@@ -41,27 +42,46 @@
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build ca-certificates \
-    qtbase5-dev qtbase5-dev-tools libqt5svg5-dev qttools5-dev-tools
+    qtbase5-dev qtbase5-dev-tools libqt5svg5-dev qttools5-dev-tools \
+    python3
   cmake --version | head -1
   g++ --version | head -1
   lupdate -version 2>&1 | head -1 || true
 
-# 静态守卫：只在 Windows 上跑，因此 CNB 的 stage 里没有它们。
+# 静态守卫：跑的是 scripts/python/ 下那套 Python 移植版，不是 .ps1。
 #
-# 那些脚本用 Start-Process 拉起子进程并比对退出码（selftest-guards.ps1 就是靠这个把每条规则
-# 破坏一次、看它是不是真的会红），而 PowerShell 只从微软的发行源装得到，那条源在 Debian 上
-# 已经验签不过了（理由见 dependencies 那段）。硬装会得到一个红得毫无信息量的流水线。
+# 背景：那批规则原本只有 PowerShell 实现，而 PowerShell 在 Debian 上装不了——它只存在于微软的
+# 发行源，那条源在 apt 2.6 起验签不过（Microsoft 的 InRelease 与它自己的包元数据由同一把只带
+# SHA1 自签的密钥签出，sqv 直接拒绝），update 以 100 退出。把公钥塞进 trusted.gpg.d 也没用：
+# 它要信任的签名带着同一个被政策拒绝的自签。于是这条流水线的 PR 门禁曾经一条守卫都不跑——那是
+# 一个已知缺口，不是能靠注释补上的东西。
 #
-# 所以这里的答案是不跑，而不是假装跑过。这不需要在下面额外关掉什么：
-# tests/CMakeLists.txt 用 find_program(SONGBIRD_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
-# 决定要不要注册这些用例，这里没有 pwsh 就整块不注册，ctest 也就不会报「缺命令」。代价要说清楚：
-# 这些守卫在 GitHub 的 tag 构建（release.yml 的 build job）和 main push（macos-verify.yml）里
-# 一条不少地跑着，但那两个流程都不是 PR 门禁——前者由 v* tag 和 main push 触发，后者由 main
-# push 触发。也就是说，PR 门禁现在只剩 CNB 这一条，而它不跑守卫。守卫今天只在开发者本机的
-# BUILD_TEST=ON 构建里拦得住东西。这是已知缺口，不是靠这段注释能补上的。
+# 补法是换实现而不是换发行源：scripts/python/ 下每条规则一份纯标准库 Python，与 .ps1 逐条对应，
+# 不需要装任何东西、不动信任链。.ps1 照旧保留，Windows 本机和 release.yml 仍在跑它们；两份实现
+# 同源同规则，改规则时一起改。
+#
+# 覆盖边界要说清楚：
+#   - 语言规则（分层、析构顺序、async 归属、颜色、本地化、Q_OS_* 作用域、README 资产、版本一致性）
+#     只读源码，两边等价。
+#   - translations-fresh 的「byte-exact 重编」那半要 lrelease；这里没有就响亮地跳过，recorded
+#     哈希那半照跑，而它正是拦住「改了 .ts 忘了 lrelease」的那一半。装上 lrelease（Debian 的
+#     qttools5-dev-tools 带它）之后两半都跑。
+#   - translations-embedded 要看构建产物（translations.qrc + 链接好的可执行文件），
+#     test-suites-nonempty 要重跑每个测试二进制。两者都靠下面 -D 传进来的构建目录注册，
+#     所以它们在有构建的这条流水线里跑，在裸 configure 里不会被假装跑过。
+#   - py-guard-selftest 是这套检查的自检：把每条规则在临时副本里破坏一次，断言它真的会红，
+#     再断言未改动副本全绿。规则能红才叫规则，绿不下来的自检同样算失败。
+#     （它自己带 guard 标签，不进默认 ctest 运行，跟 .ps1 那份一致。）
+
+# 构建。
+#
+# 两个 -D 是给静态守卫用的：它们要看构建产物、要重跑测试二进制，都得知道构建目录在哪。
+# 写成构建目录的绝对路径而不是相对路径，因为 ctest 的工作目录是 build/tests。
 .build: &build |
   set -euo pipefail
-  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=ON
+  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=ON \
+    -DSONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR="$PWD/build" \
+    -DSONGBIRD_PYTHON_GUARD_SUITE_BUILD_DIR="$PWD/build"
   cmake --build build --parallel "$(nproc)"
 
 # -LE smoke 与 release.yml / macos-verify.yml 一致。

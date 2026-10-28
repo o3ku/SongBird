@@ -42,7 +42,7 @@ CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，�
 
 `backend-boundaries`、`appbootstrap-member-order`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`auto-coordinator-logic`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
 
-三个特殊测试（均非 QtTest，是 PowerShell 脚本，不需要编译、无 Qt 环境也能单独跑）：
+三个特殊测试（均非 QtTest，不需要编译、无 Qt 环境也能单独跑；PowerShell 版与 `scripts/python/` 下的 Python 移植版各一份，规则相同）：
 
 - **`backend-boundaries`** — [scripts/check-backend-boundaries.ps1](scripts/check-backend-boundaries.ps1)，检查分层规则（见 [AGENTS.md](AGENTS.md)）。有 `rg` 时用它加速，没有则回退到等价的纯 PowerShell 扫描，**不再依赖 `rg` 在 PATH 上**。
   ```powershell
@@ -194,7 +194,7 @@ macOS 的两半仍然用 Homebrew `qt@5`，Linux 的 CNB 用发行版 Qt5，都�
 
 新增测试时：在 [tests/](tests/) 下创建独立 `.cpp`，在 [tests/CMakeLists.txt](tests/CMakeLists.txt) 中**仅列出它依赖的源文件**，用 `songbird_add_qt_test(<target> <ctest-name> SOURCES ... LIBRARIES ...)` 注册（该函数已统一处理 Qt5/Qt6 差异、include 路径、`QT_QPA_PLATFORM=windows` 环境）。测试名要描述被测行为。
 
-不是 QtTest 的检查一律写成 [scripts/](scripts/) 下的 PowerShell 脚本并挂进同一个 `if(SONGBIRD_POWERSHELL_EXECUTABLE)` 块。两条硬要求：**扫不到东西必须非零退出并打印扫描量**（否则脚本会因为正则不再匹配而静默变绿），**失败必须非零退出**（ctest 只读退出码）。还有一类（现存为零）：把 `.github/workflows/release.yml` 里某个 step 的**真实 `run:` 块抽出来**在 pwsh 7 下真跑，用来在推 CI 之前就发现 workflow 改动把步骤跑坏了。原先的 `scripts/verify-vcpkg-*.ps1` 就是这类，随 workflow 里的 vcpkg 缓存步骤一起删掉了；如果将来又写出值得本地验证的 workflow 步骤，按 `git log -- scripts/verify-vcpkg-guard.ps1` 里的写法恢复（从 `$PSScriptRoot` 向上找仓库根，不依赖机器特定路径）。
+不是 QtTest 的检查一律写成 [scripts/](scripts/) 下的 PowerShell 脚本并挂进同一个 `if(SONGBIRD_POWERSHELL_EXECUTABLE)` 块，同时在 [scripts/python/](scripts/python/) 下给出纯标准库 Python 的等价实现（CNB 的 PR 门禁跑的是这一份：Debian 装不上 PowerShell，而门禁不该因此少一层静态检查；[scripts/python/README.md](scripts/python/README.md) 记着每条规则需要什么、缺了就跳过哪一半）。两条硬要求：**扫不到东西必须非零退出并打印扫描量**（否则脚本会因为正则不再匹配而静默变绿），**失败必须非零退出**（ctest 只读退出码）。还有一类（现存为零）：把 `.github/workflows/release.yml` 里某个 step 的**真实 `run:` 块抽出来**在 pwsh 7 下真跑，用来在推 CI 之前就发现 workflow 改动把步骤跑坏了。原先的 `scripts/verify-vcpkg-*.ps1` 就是这类，随 workflow 里的 vcpkg 缓存步骤一起删掉了；如果将来又写出值得本地验证的 workflow 步骤，按 `git log -- scripts/verify-vcpkg-guard.ps1` 里的写法恢复（从 `$PSScriptRoot` 向上找仓库根，不依赖机器特定路径）。
 
 ### 代码风格
 
