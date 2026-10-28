@@ -106,6 +106,11 @@ int main(int argc, char* argv[])
     autoStartOption.setFlags(QCommandLineOption::HiddenFromHelp);
     QCommandLineOption disableSingleInstanceOption(
         QStringList{QStringLiteral("disable-single-instance")},
+        // Bare literal, not translate(): src/auto is this tree's one English surface, and
+        // check-localization-coverage.ps1's Check E rejects a wrapper here outright. The main
+        // app's identically worded option is translated because SongBird.exe installs a
+        // translator and SongBirdAuto.exe does not -- the wording matches so a reader moving
+        // between the two files is not left wondering whether one of them is a typo.
         QStringLiteral("Skip the single-instance guard for automation or testing."));
     parser.addOption(configOption);
     parser.addOption(adminRelaunchOption);
