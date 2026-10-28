@@ -53,11 +53,12 @@ public:
     // production host cannot report one without a real core binary. It is a borrowed pointer, not
     // an owned one: the caller wants to go on asking it, and it has to stay alive for exactly as
     // long as the session using it does. Null means build the production host, and initialize()
-    // keeps whichever host it was given.
+    // keeps whichever host it was given. Typed as the interface's defaulted base so a double can
+    // stand in -- the concrete host is final, and a double is the whole point of the parameter.
     explicit SongBirdAutoCoordinator(
         QString configPath,
         std::unique_ptr<ISystemProxyService> systemProxy = std::make_unique<PlatformSystemProxyService>(),
-        QtCoreProcessHost* mainCore = nullptr,
+        MainCoreHostBase* mainCore = nullptr,
         QObject* parent = nullptr);
     // The exit teardown is stopProxySession(true), and it is the session's ownership undo and
     // nothing else. There used to be a ForcedClear after it here (issue #12): a snapshot-blind
@@ -264,7 +265,7 @@ private:
     std::unique_ptr<AppRuntimeResolver> runtimeResolver_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
     // Borrowed when the caller injected one (the test seam), owned when it is the production host.
-    QtCoreProcessHost* mainCore_ = nullptr;
+    MainCoreHostBase* mainCore_ = nullptr;
     std::unique_ptr<QtCoreProcessHost> ownedMainCore_;
     std::unique_ptr<QtCoreProcessHost> auxiliaryCore_;
     std::unique_ptr<QtCoreProcessHost> tunCore_;

@@ -68,7 +68,7 @@ constexpr int kLowCountryNodeThreshold = 1;
 SongBirdAutoCoordinator::SongBirdAutoCoordinator(
     QString configPath,
     std::unique_ptr<ISystemProxyService> systemProxy,
-    QtCoreProcessHost* mainCore,
+    MainCoreHostBase* mainCore,
     QObject* parent)
     : QObject(parent)
     , configPath_(std::move(configPath))
