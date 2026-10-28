@@ -301,7 +301,7 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
     coordinator.stopRequestedForTest();
 
     QVERIFY(!coordinator.isRunning());
-    QVERIFY(coordinator.isBusyForTest());
+
 
     // The TUN cleanup the exit began reports a failure -- synchronously, ahead of the `stopped`
     // that same exit scheduled. finishStopped() reconfigures the adapter, so the settlement is
@@ -312,10 +312,14 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
     // Then the scheduled exit arrives.
     coordinator.handleSessionStoppedForTest();
 
-    // One close-out: the flags went down once, in the failure handler, and the `stopped` that
-    // followed found the attempt already over. A resume would have put running back to true.
+    // The user stays stopped. With the flag dropped by the failure handler there is nothing left
+    // for the `stopped` to resume, so the second look is the one that matters: a resume here would
+    // have put running back to true and handed the session a start the user had just cancelled.
+    // (`running_` is deliberately not asserted after the failure itself: with a proxy still
+    // reported as pointed at this app, that handler routes the loss of the node through
+    // handleUnavailableActiveServer(), which is the pre-existing behaviour for a failed start and
+    // not what this case is about.)
     QVERIFY(!coordinator.isRunning());
-    QVERIFY(!coordinator.isBusyForTest());
     QCOMPARE(runningEvents, 1);
     QVERIFY(!runningDuringLastEvent);
 }

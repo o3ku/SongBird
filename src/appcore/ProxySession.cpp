@@ -1695,27 +1695,19 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         tunAdapterConflictDetected,
         runDuration);
 
-    if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableAfterTunConflict) {
+    // Restart is disabled: the session is over. Both branches below end there, so they share one
+    // exit rather than each spelling out the same four steps -- and, before this, they did not.
+    // The auxiliary core took a third shape: it still ran the whole exit, undo included, and then
+    // announced `stopped` *and* `failed`, so two handlers finished one teardown.
+    //
+    // One event, never two. `failed` is the whole report of a session that cannot come back; the
+    // coordinator closes the teardown on it (and on `stopped`, which the exits that schedule it
+    // send close behind). Which core died does not change what the caller has to do.
+    if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableAfterTunConflict
+        || restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
         emit logMessage(restartDecision.message);
-        // Restart is disabled: the session is over. Forget like a failed startup -- the undo
-        // at the top of this handler already ran, and nothing will be around to retry a write
-        // that failed.
-        managedSystemProxyActive_ = false;
-        clearProxyStateAfterStopped();
-        emit statusSyncRequested();
-        // One event, never two. `failed` is the whole report of a session that will not come
-        // back -- the coordinator closes the teardown on it -- so pairing it with `stopped` made
-        // two handlers finish the same exit, each running its own TUN write and its own flag
-        // release. It used to be `stopped` for the auxiliary core and `failed` for the main one;
-        // that split is why the main branch could be corrected alone and the auxiliary one left
-        // announcing both. Which core died does not change what the caller has to do.
-        emit failed(restartDecision.message);
-        return;
-    }
-
-    if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
-        emit logMessage(restartDecision.message);
-        // Same forget as the TUN-conflict branch above: restart disabled, session over.
+        // Forget like a failed startup: the exit above already ran its undo, and nothing will be
+        // around to retry a write that failed.
         managedSystemProxyActive_ = false;
         clearProxyStateAfterStopped();
         emit statusSyncRequested();

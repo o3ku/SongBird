@@ -1930,6 +1930,10 @@ void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent()
 void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnce()
 {
     ProxySessionHarness harness;
+    // Both conditions, because they answer different questions: ownership is whose values are in
+    // the registry (ours), the enabled flag is whether anything is still pointed at this app. A
+    // stop rewrites it to "disabled" on its way out, and a later pass would then LeaveAlone --
+    // which is correct behaviour and would hide the second undo this case is looking for.
     harness.systemProxyEnabled = true;
     harness.session->adoptManagedSystemProxy(true);
 
