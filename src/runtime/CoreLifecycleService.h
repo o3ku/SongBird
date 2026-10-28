@@ -15,11 +15,15 @@
 // waited on through QSignalSpy, which resolves the signal by *string* name, so
 // it will not appear in a grep for CoreLifecycleService:: -- removing it looks
 // safe and is not.
+//
+// The host is taken as MainCoreHostBase rather than the bare interface because start() below passes
+// only the two callbacks: the defaulted overload that fills in the rest lives on that base, so a
+// caller written against ICoreProcessHost alone would have to spell them out.
 class CoreLifecycleService final : public QObject {
     Q_OBJECT
 
 public:
-    explicit CoreLifecycleService(ICoreProcessHost& host, QObject* parent = nullptr);
+    explicit CoreLifecycleService(MainCoreHostBase& host, QObject* parent = nullptr);
 
     OperationResult start(const CoreInfo& coreInfo, const QString& configPath);
     OperationResult stop(bool immediate = false);
@@ -31,5 +35,5 @@ signals:
     void started(const QString& message);
 
 private:
-    ICoreProcessHost& host_;
+    MainCoreHostBase& host_;
 };

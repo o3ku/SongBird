@@ -26,6 +26,7 @@
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxySession.h"
 #include "runtime/ClientConfigWriter.h"
+#include "runtime/CoreInfo.h"
 #include "runtime/ICoreProcessHost.h"
 
 class ProxySessionTests : public QObject
@@ -89,16 +90,19 @@ private slots:
 
 namespace {
 
-class FakeCoreProcessHost final : public ICoreProcessHost
+class FakeCoreProcessHost final : public MainCoreHostBase
 {
 public:
+    // The defaults come from MainCoreHostBase, not from this override: a start the session issues
+    // with only the callbacks has to land here, and a copy of the defaults on this signature would
+    // bind at whatever static type the call site happens to see.
     OperationResult start(
         const CoreInfo& coreInfo,
         const QString& configFilePath,
         std::function<void(const QString&)> outputReceived,
-        StartedCallback started = {},
-        StartFailedCallback startFailed = {},
-        ExitedCallback exited = {}) override
+        StartedCallback started,
+        StartFailedCallback startFailed,
+        ExitedCallback exited) override
     {
         Q_UNUSED(coreInfo)
         Q_UNUSED(configFilePath)
@@ -1866,19 +1870,14 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails()
 // crash loop producing orphaned writes on purpose -- a capturing connection to an atomic worker
 // count, no ownership read until the end -- and insists nothing lands after the session is gone.
 // `tests/README-tsan.md` has the recipe for running the suite under -fsanitize=thread.
-// The auxiliary half of the spent budget. The main branch above was corrected alone: it stopped
-// announcing `stopped` and left the auxiliary one emitting both, so a helper core that burnt its
-// restart budget told the coordinator twice -- once that the session had stopped, once that it had
-// failed -- and each of those handlers closes out a teardown (its own TUN write, its own flag
-// release). Neither event is wrong; announcing both is.
+// The main-core half, unchanged by this patch on purpose. It is the shape the auxiliary case below
+// copies, and a change that quietly made it two events would be exactly the regression these cases
+// exist to catch -- so it is pinned here instead of being left to the crash-loop case above, which
+// asserts the same thing only after driving a real session to Proxying.
 //
 // Driven without a start, because the announcement does not depend on one: the policy is reached
-// with an exit the session never asked for, and five of those are what exhaust the budget. What
-// this pins is the shape of the exit, not the road to it.
-// The main-core half, unchanged by this patch on purpose. It is the shape the auxiliary case above
-// now copies, and a change that quietly made it two events would be exactly the regression the
-// two cases exist to catch -- so it is pinned here instead of being left to the crash-loop case,
-// which asserts the same thing only after driving a real session to Proxying.
+// with an exit the session never asked for, and six of those are what exhaust the budget. What this
+// pins is the shape of the exit, not the road to it.
 void ProxySessionTests::aSpentRestartBudgetOnTheMainCoreAnnouncesOneEvent()
 {
     ProxySessionHarness harness;
@@ -1893,6 +1892,11 @@ void ProxySessionTests::aSpentRestartBudgetOnTheMainCoreAnnouncesOneEvent()
     QCOMPARE(stoppedSpy.count(), 0);
 }
 
+// The auxiliary half of the spent budget. The main branch above was corrected alone: it stopped
+// announcing `stopped` and left the auxiliary one emitting both, so a helper core that burnt its
+// restart budget told the coordinator twice -- once that the session had stopped, once that it had
+// failed -- and each of those handlers closes out a teardown (its own TUN write, its own flag
+// release). Neither event is wrong; announcing both is.
 void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent()
 {
     ProxySessionHarness harness;
@@ -1927,23 +1931,46 @@ void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent()
 // the registry to "disabled" in the double, so a second pass through the same decision would be
 // LeaveAlone and a write counter would read one for two undos. The undo's own log line is the
 // event that ran; `systemProxyUndoFailed` is the same event when the write itself fails.
+//
+// The rounds are main-core exits, the road the crash-loop case above already walks: an auxiliary
+// exit only ever announces, it never undoes, so it cannot tell one announcement from two.
+// `restartAfterStop` is kept off for the same reason it is off there -- a pending restart sends the
+// exit down the stop branch, which is a different branch than the budget's.
 void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnce()
 {
     ProxySessionHarness harness;
-    // Both conditions, because they answer different questions: ownership is whose values are in
-    // the registry (ours), the enabled flag is whether anything is still pointed at this app. A
-    // stop rewrites it to "disabled" on its way out, and a later pass would then LeaveAlone --
-    // which is correct behaviour and would hide the second undo this case is looking for.
-    harness.systemProxyEnabled = true;
-    harness.session->adoptManagedSystemProxy(true);
+    // A startup, not an adopted claim: the claim has to arrive the way it does in production
+    // (ApplySystemProxy writes the registry and sets it), and both halves below need the state a
+    // session that really applied a proxy is in.
+    QVERIFY(harness.tempDir.isValid());
+    QVERIFY(harness.proxyServer.listen());
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.tun().tunModeItem.enableTun = false;
+
+    harness.session->start(request);
+
+    // Read here rather than after an exit, so what the crash rounds carry does not depend on what
+    // the inbound probe said -- the fake's inbound answers a request, not this session's.
+    QVERIFY(harness.session->isManagedProxyActive());
+    QVERIFY(harness.session->isCoreRunning());
 
     QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
     QSignalSpy undoFailedSpy(harness.session.get(), &ProxySession::systemProxyUndoFailed);
 
-    for (int round = 1; round <= 6; ++round) {
-        harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, true);
+    for (int round = 1; round <= 5; ++round) {
+        // A crash exit is the kind the budget counts. Five of them exhaust nothing, and none of
+        // them undoes: that is the baseline the sixth is measured against.
+        harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, false);
     }
 
+    harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, false);
+
+    // One announcement, one undo. A second announcement is a second undo, and the second undo lands
+    // on whatever the first had just decided.
     int undoLines = 0;
     for (const QString& line : logLines(logSpy)) {
         if (line.contains(QStringLiteral("System proxy"))) {

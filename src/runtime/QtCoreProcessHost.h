@@ -11,18 +11,20 @@
 #include "runtime/CoreProcessOutputBuffer.h"
 #include "runtime/ICoreProcessHost.h"
 
-class QtCoreProcessHost final : public ICoreProcessHost {
+class QtCoreProcessHost final : public MainCoreHostBase {
 public:
     QtCoreProcessHost();
     ~QtCoreProcessHost() override;
 
+    // No defaults here either: the overload inherited from MainCoreHostBase carries them, and a
+    // second copy on the override is what makes a call's argument list depend on its static type.
     OperationResult start(
         const CoreInfo& coreInfo,
         const QString& configFilePath,
         std::function<void(const QString&)> outputReceived,
-        StartedCallback started = {},
-        StartFailedCallback startFailed = {},
-        ExitedCallback exited = {}) override;
+        StartedCallback started,
+        StartFailedCallback startFailed,
+        ExitedCallback exited) override;
 
     OperationResult stop(bool immediate = false) override;
     OperationResult reload() override;

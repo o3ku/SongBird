@@ -47,9 +47,17 @@ public:
     // uses; the parameter exists so a test can inject a recording double, which is the only
     // way the coordinator's own teardown -- the half that ran a second, snapshot-blind
     // ForcedClear until issue #12 -- can be pinned from the outside.
+    //
+    // `mainCore` is the main core's process host, injected for the same kind of reason: a start
+    // the coordinator should not have performed is only visible as a call on the host, and the
+    // production host cannot report one without a real core binary. It is a borrowed pointer, not
+    // an owned one: the caller wants to go on asking it, and it has to stay alive for exactly as
+    // long as the session using it does. Null means build the production host, and initialize()
+    // keeps whichever host it was given.
     explicit SongBirdAutoCoordinator(
         QString configPath,
         std::unique_ptr<ISystemProxyService> systemProxy = std::make_unique<PlatformSystemProxyService>(),
+        QtCoreProcessHost* mainCore = nullptr,
         QObject* parent = nullptr);
     // The exit teardown is stopProxySession(true), and it is the session's ownership undo and
     // nothing else. There used to be a ForcedClear after it here (issue #12): a snapshot-blind
@@ -89,9 +97,6 @@ public:
     // running, so there is nothing for the real start to claim them from.
     void setRunningForTest(bool running);
     void setBusyForTest(bool busy);
-    // What finishStopped() leaves behind, minus the adapter write: the flags are the subject of
-    // this seam, and a real TUN start would decide the outcome by the machine running the test.
-    void settleStoppedStateForTest(const QString& status);
     // The user's interrupt, without the teardown stop() also performs: the teardown needs a
     // session that had a core, and the ending handlers do not.
     void stopRequestedForTest();
@@ -258,7 +263,9 @@ private:
     std::unique_ptr<TunRuntimeService> tunRuntimeService_;
     std::unique_ptr<AppRuntimeResolver> runtimeResolver_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
-    std::unique_ptr<QtCoreProcessHost> mainCore_;
+    // Borrowed when the caller injected one (the test seam), owned when it is the production host.
+    QtCoreProcessHost* mainCore_ = nullptr;
+    std::unique_ptr<QtCoreProcessHost> ownedMainCore_;
     std::unique_ptr<QtCoreProcessHost> auxiliaryCore_;
     std::unique_ptr<QtCoreProcessHost> tunCore_;
     std::unique_ptr<OutboundLocationProbeService> locationProbe_;

@@ -67,6 +67,46 @@ public:
     SystemProxySnapshot captured;
 };
 
+// Stands in for the core host the coordinator starts. A resume the coordinator should not have
+// performed is only visible as a start, and the production host cannot report one without a real
+// core binary -- so the case that asks "did anything start?" records the call here.
+//
+// The forwarding base is what makes a *defaulted* start observable: the callers that matter pass
+// only the two callbacks, and only the base's non-virtual overload turns that into a call on the
+// one this class overrides. Overriding the interface directly would leave the default arguments to
+// be supplied per static type, which is how a recording double ends up recording nothing.
+class RecordingCoreProcessHost final : public MainCoreHostBase
+{
+public:
+    OperationResult start(
+        const CoreInfo& coreInfo,
+        const QString& configFilePath,
+        std::function<void(const QString&)> outputReceived,
+        StartedCallback started,
+        StartFailedCallback startFailed,
+        ExitedCallback exited) override
+    {
+        Q_UNUSED(coreInfo)
+        Q_UNUSED(configFilePath)
+        Q_UNUSED(outputReceived)
+        Q_UNUSED(started)
+        Q_UNUSED(startFailed)
+        Q_UNUSED(exited)
+        ++startCount;
+        return OperationResult::ok(QStringLiteral("started"));
+    }
+
+    OperationResult stop(bool immediate = false) override
+    {
+        Q_UNUSED(immediate)
+        return OperationResult::ok(QStringLiteral("stopped"));
+    }
+    OperationResult reload() override { return OperationResult::ok(QStringLiteral("reloaded")); }
+    bool isRunning() const override { return false; }
+
+    int startCount = 0;
+};
+
 // Forwards to the recorder while the coordinator owns it. The counters have to outlive the
 // coordinator, because the exit case destroys the subject and then asserts on what it wrote.
 class RecordingProxyForwarder final : public ISystemProxyService
@@ -104,10 +144,15 @@ class Harness {
 public:
     Harness()
         : recorder_(std::make_shared<RecordingSystemProxyService>())
+        , coreHost_(std::make_unique<RecordingCoreProcessHost>())
     {
+        // The host lives here rather than in the coordinator's unique_ptr: it has to be askable
+        // after the coordinator is gone (the exit case resets it), and the coordinator keeps
+        // whatever host it is given, so a raw pointer is what outlives both.
         coordinator_ = std::make_unique<SongBirdAutoCoordinator>(
             QStringLiteral("songbird-auto-test.json"),
-            std::unique_ptr<ISystemProxyService>(new RecordingProxyForwarder(recorder_)));
+            std::unique_ptr<ISystemProxyService>(new RecordingProxyForwarder(recorder_)),
+            coreHost_.get());
         // Not initialize(): the point is that the teardown half is reachable without a config
         // file, a core or the network. Nothing about initialize() is being stubbed -- the real
         // wiring that builds the session is the production one.
@@ -126,6 +171,9 @@ public:
 
     SongBirdAutoCoordinator& coordinator() { return *coordinator_; }
     RecordingSystemProxyService& proxy() const { return *recorder_; }
+    // Injected for every case, so "nothing started" is answerable from the host the coordinator
+    // actually holds rather than from a flag it keeps.
+    RecordingCoreProcessHost& coreHost() const { return *coreHost_; }
 
     // Destroys the coordinator while the recorder stays alive: this is the exit path, where the
     // destructor's stopProxySession(true) is the last thing that can write.
@@ -133,6 +181,7 @@ public:
 
 private:
     std::shared_ptr<RecordingSystemProxyService> recorder_;
+    std::unique_ptr<RecordingCoreProcessHost> coreHost_;
     std::unique_ptr<SongBirdAutoCoordinator> coordinator_;
 };
 
@@ -274,22 +323,15 @@ void SongBirdAutoCoordinatorStopTests::aFailedTunStartGivesEveryFlagBack()
 //   the TUN cleanup the exit began fails -> `failed()` arrives *synchronously, before* `stopped()`
 //   `stopped()` then arrives -> the flag is still set -> startProxySession() on a stopped session
 //
-// The ordering is what this drives, through the two production handlers: first the failure, which
-// has to end the attempt and drop the flag, then the `stopped()` it was scheduled ahead of, which
-// must find nothing left to resume.
+// What this drives is the flag, through the two production handlers: the failure drops it, so the
+// `stopped()` that was scheduled ahead of it has nothing left to resume. A resume is visible only
+// as a second start -- the core host's start count -- because busy_ belongs to the close-out, not
+// to the resume: it is still standing here only because an exit is on its way.
 void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttemptOnce()
 {
     Harness harness;
     harness.proxy().enabled = true;
     SongBirdAutoCoordinator& coordinator = harness.coordinator();
-
-    int runningEvents = 0;
-    bool runningDuringLastEvent = true;
-    QObject::connect(&coordinator, &SongBirdAutoCoordinator::runningChanged, &coordinator,
-        [&runningEvents, &runningDuringLastEvent](bool running) {
-            ++runningEvents;
-            runningDuringLastEvent = running;
-        });
 
     // The shape the session is in when the user presses Stop with a restart armed: running and
     // busy, waiting on an exit it has scheduled. stop() itself is not called -- it releases
@@ -302,26 +344,21 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
 
     QVERIFY(!coordinator.isRunning());
 
-
     // The TUN cleanup the exit began reports a failure -- synchronously, ahead of the `stopped`
-    // that same exit scheduled. finishStopped() reconfigures the adapter, so the settlement is
-    // driven over the second seam: what this case is about is the flags, not what the adapter
-    // says, and a real TUN start would make the outcome depend on the machine running the test.
-    coordinator.settleStoppedStateForTest(QStringLiteral("TUN adapter cleanup failed"));
+    // that same exit scheduled.
+    coordinator.handleSessionFailedForTest(QStringLiteral("TUN adapter cleanup failed"));
 
     // Then the scheduled exit arrives.
     coordinator.handleSessionStoppedForTest();
 
     // The user stays stopped. With the flag dropped by the failure handler there is nothing left
-    // for the `stopped` to resume, so the second look is the one that matters: a resume here would
-    // have put running back to true and handed the session a start the user had just cancelled.
-    // (`running_` is deliberately not asserted after the failure itself: with a proxy still
-    // reported as pointed at this app, that handler routes the loss of the node through
-    // handleUnavailableActiveServer(), which is the pre-existing behaviour for a failed start and
-    // not what this case is about.)
+    // for the `stopped` to resume -- and a resume is the one thing a flag cannot report, so it is
+    // read where it happens: as a start on the core host. (`running_` is deliberately not asserted
+    // after the failure itself: with a proxy still reported as pointed at this app, that handler
+    // routes the loss of the node through handleUnavailableActiveServer(), which is the
+    // pre-existing behaviour for a failed start and not what this case is about.)
     QVERIFY(!coordinator.isRunning());
-    QCOMPARE(runningEvents, 1);
-    QVERIFY(!runningDuringLastEvent);
+    QCOMPARE(harness.coreHost().startCount, 0);
 }
 
 QTEST_MAIN(SongBirdAutoCoordinatorStopTests)

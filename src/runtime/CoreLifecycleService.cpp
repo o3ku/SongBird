@@ -1,6 +1,6 @@
 #include "runtime/CoreLifecycleService.h"
 
-CoreLifecycleService::CoreLifecycleService(ICoreProcessHost& host, QObject* parent)
+CoreLifecycleService::CoreLifecycleService(MainCoreHostBase& host, QObject* parent)
     : QObject(parent)
     , host_(host)
 {

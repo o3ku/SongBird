@@ -68,11 +68,18 @@ constexpr int kLowCountryNodeThreshold = 1;
 SongBirdAutoCoordinator::SongBirdAutoCoordinator(
     QString configPath,
     std::unique_ptr<ISystemProxyService> systemProxy,
+    QtCoreProcessHost* mainCore,
     QObject* parent)
     : QObject(parent)
     , configPath_(std::move(configPath))
     , systemProxyService_(std::move(systemProxy))
+    , mainCore_(mainCore)
+    , ownedMainCore_(mainCore == nullptr ? std::make_unique<QtCoreProcessHost>() : nullptr)
 {
+    if (mainCore_ == nullptr) {
+        mainCore_ = ownedMainCore_.get();
+    }
+
     qRegisterMetaType<AutoNodeEvaluation>();
     qRegisterMetaType<QList<AutoNodeEvaluation>>();
     qRegisterMetaType<AutoCountrySummary>();
@@ -113,7 +120,6 @@ bool SongBirdAutoCoordinator::initialize()
     coreCleanupService_ = std::make_unique<CoreProcessCleanupService>();
     tunRuntimeService_ = std::make_unique<TunRuntimeService>();
     clientConfigWriter_ = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
-    mainCore_ = std::make_unique<QtCoreProcessHost>();
     auxiliaryCore_ = std::make_unique<QtCoreProcessHost>();
     tunCore_ = std::make_unique<QtCoreProcessHost>();
     locationProbe_ = std::make_unique<OutboundLocationProbeService>();
@@ -248,12 +254,13 @@ void SongBirdAutoCoordinator::wireActivationCoordinator()
 void SongBirdAutoCoordinator::createProxySession()
 {
     // initialize() builds every member below before its tail reaches this function; the null
-    // guards keep the same call usable standalone -- the teardown tests build the session (and
+    // guard keeps the same call usable standalone -- the teardown tests build the session (and
     // only the session) without a config file, a core or the network. The activation
     // coordinator gets the full production wiring (shared with initialize()), so the teardown
-    // decides with exactly the lambdas a production session uses.
-    if (!mainCore_) {
-        mainCore_ = std::make_unique<QtCoreProcessHost>();
+    // decides with exactly the lambdas a production session uses. The main core host is not on
+    // this list: it exists from the constructor on (owned, or borrowed from the caller), and
+    // rebuilding it here would swap out the host a caller injected to watch.
+    if (auxiliaryCore_ == nullptr) {
         auxiliaryCore_ = std::make_unique<QtCoreProcessHost>();
         clientConfigWriter_ = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
         locationProbe_ = std::make_unique<OutboundLocationProbeService>();
@@ -1829,15 +1836,6 @@ void SongBirdAutoCoordinator::stopRequestedForTest()
     stopRequested_ = true;
 }
 
-void SongBirdAutoCoordinator::settleStoppedStateForTest(const QString& status)
-{
-    activeServerId_.clear();
-    activeServerSinceMs_ = 0;
-    setRunning(false);
-    setBusy(false);
-    setStatus(status);
-}
-
 bool SongBirdAutoCoordinator::abandonPendingStartAfterStop()
 {
     const bool wasPending = pendingStartAfterStop_;
@@ -2406,21 +2404,22 @@ void SongBirdAutoCoordinator::handleSessionStopped()
 void SongBirdAutoCoordinator::handleSessionFailed(const QString& reason)
 {
     log(QStringLiteral("Proxy start failed: %1").arg(reason));
-    // A failure ends whatever start was queued behind a stop, and the flag says so before any
-    // branch reads it. `stopped()` is not the only way an attempt ends: ProxySession's restart
-    // budget runs out and the TUN cleanup reports a failure -- the first arrives as `failed`
-    // alone, and the second arrives *synchronously, before* the `stopped()` that same exit
-    // scheduled. Leaving the flag set let the later `stopped()` resume on top of a session the
-    // user had just stopped, which is issue #14 item 2 through another entrance.
+    // The queued start goes before anything reads the flag. `stopped()` is not the only way an
+    // attempt ends: ProxySession's restart budget runs out and the TUN cleanup reports a failure
+    // -- the first arrives as `failed` alone, and the second arrives *synchronously, before* the
+    // `stopped()` that same exit scheduled. Leaving the flag set let the later `stopped()` resume
+    // on top of a session the user had just stopped, which is issue #14 item 2 through another
+    // entrance.
     abandonPendingStartAfterStop();
     if (stopRequested_) {
-        // The user has stopped: this failure belongs to the teardown. Where the exit schedules a
-        // `stopped`, that event has already started the next attempt or closed this one out --
-        // resuming here on top of it would run a second start on a session the user just stopped.
-        // Where it does not (restart budget spent), this is the only event that will ever report
-        // the stop, so this handler has to be the one that closes it out. Closing out twice is
-        // harmless by construction (the flags are already where finishStopped() puts them).
-        finishStopped();
+        // The user has stopped: this failure belongs to the teardown, and the teardown owns the
+        // close-out. Resuming here would run a start on a session the user just stopped, and
+        // closing out here would run the close-out twice wherever the exit also schedules a
+        // `stopped` -- the failure arrives first, so finishStopped() would settle the flags and
+        // write a status that the `stopped` then overwrites with its own. `busy_` is still true at
+        // this point only when `stop()` decided to wait for the core's exit, which is exactly when
+        // that event is coming; the branch that does not wait (no core running) has already
+        // finished, and this handler finds nothing left to do.
         return;
     }
     // startProxySession()'s own listener owns the flags of a start it drove: it either retries
