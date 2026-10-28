@@ -292,11 +292,13 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
         });
 
     // The shape the session is in when the user presses Stop with a restart armed: running and
-    // busy, waiting on an exit it has scheduled.
+    // busy, waiting on an exit it has scheduled. stop() itself is not called -- it releases
+    // busy_ whenever the session has no core running, which this one never had, so the interrupt
+    // has to be simulated. What the case is about is the two endings that follow it.
     coordinator.setRunningForTest(true);
     coordinator.setBusyForTest(true);
     coordinator.armPendingStartAfterStopForTest();
-    coordinator.stop();
+    coordinator.stopRequestedForTest();
 
     QVERIFY(!coordinator.isRunning());
     QVERIFY(coordinator.isBusyForTest());

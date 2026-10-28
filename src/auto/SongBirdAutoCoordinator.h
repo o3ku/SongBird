@@ -92,6 +92,9 @@ public:
     // What finishStopped() leaves behind, minus the adapter write: the flags are the subject of
     // this seam, and a real TUN start would decide the outcome by the machine running the test.
     void settleStoppedStateForTest(const QString& status);
+    // The user's interrupt, without the teardown stop() also performs: the teardown needs a
+    // session that had a core, and the ending handlers do not.
+    void stopRequestedForTest();
     bool isBusyForTest() const;
 
 public slots:

@@ -1824,6 +1824,11 @@ bool SongBirdAutoCoordinator::isBusyForTest() const
     return busy_;
 }
 
+void SongBirdAutoCoordinator::stopRequestedForTest()
+{
+    stopRequested_ = true;
+}
+
 void SongBirdAutoCoordinator::settleStoppedStateForTest(const QString& status)
 {
     activeServerId_.clear();

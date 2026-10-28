@@ -1920,22 +1920,33 @@ void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent()
 }
 
 // The same exit, with a proxy this session is carrying. The two announcements above are not
-// merely redundant on the wire: each one runs a teardown, so both of them wrote. One announcement
-// means one undo -- and the second write landed on whatever the first had just decided.
+// merely redundant on the wire: each one runs a teardown, so both of them wrote -- and the second
+// write landed on whatever the first had just decided.
+//
+// Counts undos, not registry writes, and that is the honest unit here. A Clear that succeeds sets
+// the registry to "disabled" in the double, so a second pass through the same decision would be
+// LeaveAlone and a write counter would read one for two undos. The undo's own log line is the
+// event that ran; `systemProxyUndoFailed` is the same event when the write itself fails.
 void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnce()
 {
     ProxySessionHarness harness;
-    // Adopted the way the other ownership cases adopt it, and with the same consequence: no
-    // capture is wired, so the undo decision lands on Clear. The claim is dropped only when that
-    // write succeeds, which is what makes a second announcement a second write.
     harness.systemProxyEnabled = true;
     harness.session->adoptManagedSystemProxy(true);
+
+    QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
+    QSignalSpy undoFailedSpy(harness.session.get(), &ProxySession::systemProxyUndoFailed);
 
     for (int round = 1; round <= 6; ++round) {
         harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, true);
     }
 
-    QCOMPARE(harness.proxyUpdateCount, 1);
+    int undoLines = 0;
+    for (const QString& line : logLines(logSpy)) {
+        if (line.contains(QStringLiteral("System proxy"))) {
+            ++undoLines;
+        }
+    }
+    QCOMPARE(undoLines + undoFailedSpy.count(), 1);
     QVERIFY(!harness.session->isManagedProxyActive());
 }
 
