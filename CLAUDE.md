@@ -69,6 +69,8 @@ Qt5 不再由 workflow 从源码编译，而是**下载一个钉死的预编译 
 
 `tag` 是写死的字面量（`qt5-win2022-20261024-0121`），action 本身钉到 commit 而不是 `@v1`：包内容不可变且下载后按 SHA256 校验，所以升级是一次可见的编辑而不是一次静默的缓存 miss；tag 里带的日期是构建它的 runner 镜像，`runs-on` 换代时这是唯一必须重新考虑的东西。来源也从「我们自己的 CI 编的」变成「同一个账号另一个仓库编的」——静态链接 LGPL 的义务模型没变，但可追溯性弱一档，所以 tag 和 commit 都写死在这里。
 
+**MSVC 环境**用 `TheMrMilchmann/setup-msvc-dev@v4`（`arch: x64`，该 action 不填就用不了），它替换掉的是只声明 `node20` 的 `ilammy/msvc-dev-cmd`。
+
 ⚠️ 如果将来又要回到「在 CI 里编译 vcpkg 包 + 缓存产物」，先读 `git log -p -- .github/workflows/release.yml` 里 2026-10 的那几版。那套机制踩过的坑都是实测换来的：`cache/restore` 的 `key` **必须永不命中**（精确匹配优先，一旦命中就绕开 `restore-keys`）；前缀里**必须带 runner 镜像版本**（否则滚动期两代镜像互相顶掉，每轮白编 ~1.5h）；保存端**不能按 `cache-hit` 跳过**（ABI 整批漂移那天的产物会被永久丢弃），但也不该无条件保存，「仓库变没变」要按 archive 名字集合实测而不是猜；以及 GitHub 文档写的 LRU 驱逐**实测并没有及时发生**。这些结论比那套代码更值钱，所以留在这里而不是跟着代码一起删掉。
 
 本地对着这个 bundle 实测过（`qt5-win2022-20261024-0121`，2026-10-28）：压缩包 434 MB，解压约 **4.0 GB**、34 秒，`installed/` 里还带一个 `x64-windows` 的主机工具目录；**整棵树里没有任何指向构建机的绝对路径**（`grep 'D:/a/'` 零命中），所以它确实可重定位，`Qt5_DIR` 就解析在 `installed/x64-windows-static-md/share/cmake/Qt5`。它唯一的硬约束是**工具链下限**：这个 Qt 是用 14.4x 的 MSVC STL 编的，`.lib` 里引用了 `__std_find_trivial_4` 这类 17.6+ 才有的 STL 运行时符号，本机 VS2019（14.29）拿它链接的失败形态就是 `LNK2001: unresolved external symbol __std_find_trivial_4`——那是本机工具链旧，不是包坏了；`windows-2022` 的 MSVC 只会往前走，CI 永远在它之上。本机构建不受影响（`D:/local/Qt5/5.15.2/msvc2019_64`）。
