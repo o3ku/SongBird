@@ -1953,10 +1953,12 @@ void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnc
 
     harness.session->start(request);
 
-    // Read here rather than after an exit, so what the crash rounds carry does not depend on what
-    // the inbound probe said -- the fake's inbound answers a request, not this session's.
-    QVERIFY(harness.session->isManagedProxyActive());
-    QVERIFY(harness.session->isCoreRunning());
+    // Read after the core answered rather than straight after start(): the claim is set at
+    // ApplySystemProxy, which is behind the readiness callback and a probe of the core's local
+    // inbound. Waiting on the callbacks instead of on a timer is what keeps this from depending on
+    // how fast the machine running the test is.
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+    QTRY_VERIFY(harness.session->isManagedProxyActive());
 
     QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
     QSignalSpy undoFailedSpy(harness.session.get(), &ProxySession::systemProxyUndoFailed);

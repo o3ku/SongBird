@@ -334,30 +334,33 @@ void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttem
     SongBirdAutoCoordinator& coordinator = harness.coordinator();
 
     // The shape the session is in when the user presses Stop with a restart armed: running and
-    // busy, waiting on an exit it has scheduled. stop() itself is not called -- it releases
-    // busy_ whenever the session has no core running, which this one never had, so the interrupt
-    // has to be simulated. What the case is about is the two endings that follow it.
+    // busy, waiting on an exit it has scheduled. stop() itself is not called -- it runs a real
+    // teardown, which needs a session that had a core, and this case is about the two endings that
+    // follow the interrupt. What it does carry is the one thing the stop sets first, because the
+    // first branch of the failure handler reads it.
     coordinator.setRunningForTest(true);
     coordinator.setBusyForTest(true);
     coordinator.armPendingStartAfterStopForTest();
     coordinator.stopRequestedForTest();
 
-    QVERIFY(!coordinator.isRunning());
+    QVERIFY(coordinator.isRunning());
 
     // The TUN cleanup the exit began reports a failure -- synchronously, ahead of the `stopped`
     // that same exit scheduled.
     coordinator.handleSessionFailedForTest(QStringLiteral("TUN adapter cleanup failed"));
 
-    // Then the scheduled exit arrives.
+    // Nothing resumed behind it: a resume is a start on the core host, and that is the one thing
+    // the ending must not do once the user has stopped. (The flags are not read here: the failure
+    // handler reuses the ordinary failed-start path, which asks the session to recover the node --
+    // the pre-existing behaviour for a failed start, and not what this case is about.)
+    QCOMPARE(harness.coreHost().startCount, 0);
+
+    // Then the scheduled exit arrives, and that one does close the attempt out.
     coordinator.handleSessionStoppedForTest();
 
-    // The user stays stopped. With the flag dropped by the failure handler there is nothing left
-    // for the `stopped` to resume -- and a resume is the one thing a flag cannot report, so it is
-    // read where it happens: as a start on the core host. (`running_` is deliberately not asserted
-    // after the failure itself: with a proxy still reported as pointed at this app, that handler
-    // routes the loss of the node through handleUnavailableActiveServer(), which is the
-    // pre-existing behaviour for a failed start and not what this case is about.)
+    // The user stays stopped, the close-out happened, and still nothing started.
     QVERIFY(!coordinator.isRunning());
+    QVERIFY(!coordinator.isBusyForTest());
     QCOMPARE(harness.coreHost().startCount, 0);
 }
 
