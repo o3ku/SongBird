@@ -846,8 +846,13 @@ void ProxySession::undoManagedSystemProxyAfterAbortedStartup()
     // startup (which forgets the claim outright -- its session is dead and nothing there is
     // ever coming back to retry). Here the session stays alive, and a later
     // stop() must still be able to redo this undo, so a failed write must not erase the claim.
-    // Auto wires no snapshot capture, so a restorable snapshot is always false here and the
-    // decision lands on Clear -- the documented fallback for "ours, and the port is dead".
+    //
+    // Both front ends capture a snapshot now (the main app in AppBootstrapServiceWiring, SongBirdAuto
+    // in its coordinator's activation-coordinator wiring), so the decision below is live rather than
+    // a constant: a valid snapshot routes to Restore, and only the snapshot-less case lands on Clear
+    // -- the documented fallback for "ours, and the port is dead". Do not restate here which front
+    // end wires what; this comment once did, and it went stale the moment SongBirdAuto gained its
+    // capture -- the code was already correct when the text said otherwise.
     const bool snapshotRestorable =
         isRestorableSystemProxySnapshot(deps_.activationCoordinator.capturedSystemProxySnapshot());
     switch (decideFailedStartupProxyAction(managedSystemProxyActive_, snapshotRestorable)) {

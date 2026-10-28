@@ -11,6 +11,7 @@
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QThread>
 #include <QTimer>
 #include <QTranslator>
 
@@ -329,7 +330,14 @@ int main(int argc, char* argv[])
             [&singleInstanceBootstrap]() {
                 return singleInstanceBootstrap.tryAcquire();
             },
-            [](int) {})) {
+            [](int intervalMs) {
+                // The restart handoff waits up to 100 x 100 ms for the previous instance to
+                // release the guard. Without the sleep the retries spin at zero cost to the
+                // old process and at full cost to this one, and the decision's retryIntervalMs
+                // is quietly ignored -- a parameter nobody honours is worse than none, because
+                // it reads as a bounded wait that is actually a busy loop.
+                QThread::msleep(intervalMs);
+            })) {
         DialogUtils::showInformation(
             nullptr,
             QStringLiteral("SongBird"),

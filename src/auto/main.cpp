@@ -5,6 +5,8 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QMessageBox>
+#include <QThread>
 #include <QTimer>
 
 #include "appcore/StartupAdminElevation.h"
@@ -12,6 +14,7 @@
 #include "auto/SongBirdAutoWindow.h"
 #include "common/AppPaths.h"
 #include "common/AppPlatform.h"
+#include "platform/SingleInstanceGuard.h"
 
 #ifndef SONGBIRD_APP_VERSION
 // Deliberately not a version number. src/CMakeLists.txt always defines this from
@@ -101,10 +104,14 @@ int main(int argc, char* argv[])
     restartWaitPidOption.setFlags(QCommandLineOption::HiddenFromHelp);
     QCommandLineOption autoStartOption(QStringList{QStringLiteral("auto-start")});
     autoStartOption.setFlags(QCommandLineOption::HiddenFromHelp);
+    QCommandLineOption disableSingleInstanceOption(
+        QStringList{QStringLiteral("disable-single-instance")},
+        QStringLiteral("Skip the single-instance guard for automation or testing."));
     parser.addOption(configOption);
     parser.addOption(adminRelaunchOption);
     parser.addOption(restartWaitPidOption);
     parser.addOption(autoStartOption);
+    parser.addOption(disableSingleInstanceOption);
     parser.process(app);
 
     const qint64 restartWaitPid = parser.isSet(restartWaitPidOption)
@@ -128,6 +135,44 @@ int main(int argc, char* argv[])
         if (restartProcessAsAdministrator(QCoreApplication::applicationFilePath(), arguments)) {
             return 0;
         }
+    }
+
+    // One Auto process at a time, through the same guard shape as the main app.
+    //
+    // This used to be "the port conflict will stop a second instance anyway", which is not a
+    // lock: a second instance can come up far enough to run recoverSystemProxyFromPreviousRun()
+    // -- the coordinator's startup step that restores the registry from the persisted snapshot
+    // -- and treat the FIRST instance's live, owned system proxy as a killed run's leftover.
+    // The restore would wipe values the other process is actively serving. The guard is what
+    // makes the startup recovery sound, so it has to be taken before the coordinator (and
+    // therefore before initialize()) runs. The key differs from the main app's on purpose:
+    // SongBird.exe and SongBirdAuto.exe can run side by side, each guarding its own kind.
+    //
+    // The decision and the retry ladder live in appcore/StartupAdminElevation.h beside the
+    // main app's copy of this dance: an admin relaunch or a restart handoff (restart-wait-pid)
+    // is the one context where the previous instance may still be holding the guard, and the
+    // decision answers it with a bounded retry instead of a refusal or a spin.
+    SingleInstanceGuard singleInstanceGuard(QStringLiteral("SongBirdAuto-single-instance"));
+    const StartupSingleInstanceAcquireDecision singleInstanceDecision =
+        evaluateStartupSingleInstanceAcquireDecision(
+            parser.isSet(disableSingleInstanceOption),
+            parser.isSet(adminRelaunchOption) || restartWaitPid > 0);
+    if (!tryAcquireStartupSingleInstance(
+            singleInstanceDecision,
+            [&singleInstanceGuard]() {
+                return singleInstanceGuard.tryAcquire();
+            },
+            [](int intervalMs) {
+                // Honoured rather than ignored: the decision's retryIntervalMs is the whole
+                // difference between a bounded wait for the old instance and a zero-cost busy
+                // loop. See the same call site in src/app/main.cpp.
+                QThread::msleep(intervalMs);
+            })) {
+        QMessageBox::information(
+            nullptr,
+            QStringLiteral("SongBirdAuto"),
+            QStringLiteral("Another SongBirdAuto instance is already running."));
+        return 0;
     }
 
     SongBirdAutoCoordinator coordinator(configPath);

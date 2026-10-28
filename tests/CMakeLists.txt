@@ -629,6 +629,18 @@ songbird_add_qt_test(songbird_thread_shutdown_tests thread-shutdown
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# The single-instance guard both front ends take at startup. SongBirdAuto's startup proxy
+# recovery is only sound while a second instance is refused, which makes the guard's own
+# semantics -- same key collides, different keys coexist, release unblocks the next taker --
+# worth pinning independently of the decision helpers in StartupAdminElevationTests. Those
+# tests stub the acquire lambda out, so they cannot reach this object at all.
+songbird_add_qt_test(songbird_single_instance_guard_tests single-instance-guard
+    SOURCES
+        SingleInstanceGuardTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 # The outbound location probe. Its timing constants are injectable for the same reason the
 # shutdown budgets are: the production values add up to twelve seconds before the deadline branch
 # is reached. The case that matters is the failing one -- a proxy that answers the plain http

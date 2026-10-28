@@ -60,6 +60,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/ProcessRunner.cpp
     common/ServerDisplayName.h
     common/StartupSequencer.h
+    platform/SingleInstanceGuard.h
+    platform/SingleInstanceGuard.cpp
     common/SubscriptionOrder.h
     common/SubscriptionOrder.cpp
     common/SystemProxyExceptions.h
@@ -391,8 +393,6 @@ set(SONGBIRD_SOURCES
     platform/IAutoRunService.h
     platform/IUwpLoopbackService.h
     platform/UwpPackageInfo.h
-    platform/SingleInstanceGuard.h
-    platform/SingleInstanceGuard.cpp
     backends/mihomo/MihomoCoreDescriptor.h
     backends/singbox/SingBoxCoreDescriptor.h
     backends/xray/XrayCoreDescriptor.h
