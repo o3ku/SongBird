@@ -14,5 +14,11 @@ OperationResult MainCoreHostBase::start(
     StartFailedCallback startFailed,
     ExitedCallback exited)
 {
-    return start(coreInfo, configFilePath, std::move(outputReceived), std::move(started), std::move(startFailed), std::move(exited));
+    return start(
+        coreInfo,
+        configFilePath,
+        std::move(outputReceived),
+        std::move(started),
+        std::move(startFailed),
+        std::move(exited));
 }

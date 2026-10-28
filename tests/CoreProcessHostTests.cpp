@@ -160,7 +160,11 @@ void CoreProcessHostTests::coreHostStartMessageHasNoJobFallbackNoteWhenAssignmen
         QSKIP("ping.exe is not available; skipping the host start message probe.");
     }
 
-    QtCoreProcessHost host;
+    // The trailing defaults live only on MainCoreHostBase's overload, which this same-signature
+    // override hides -- production reaches them through CoreLifecycleService's MainCoreHostBase&,
+    // so the defaulted call is tested through that type too.
+    QtCoreProcessHost concreteHost;
+    MainCoreHostBase& host = concreteHost;
     CoreInfo coreInfo;
     coreInfo.program = pingPath;
     coreInfo.arguments = QStringList{
