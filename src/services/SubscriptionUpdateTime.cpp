@@ -10,10 +10,6 @@ constexpr qint64 kMinuteMs = 60LL * 1000LL;
 constexpr qint64 kHourMs = 60LL * kMinuteMs;
 constexpr qint64 kDayMs = 24LL * kHourMs;
 
-QString translate(const char* text)
-{
-    return QCoreApplication::translate("SubscriptionUpdateTime", text);
-}
 
 } // namespace
 
@@ -28,26 +24,26 @@ qint64 SubscriptionUpdateTime::ageMinutes(qint64 updatedAtMs, qint64 nowMs)
 QString SubscriptionUpdateTime::relativeLabel(qint64 updatedAtMs, qint64 nowMs)
 {
     if (updatedAtMs <= 0) {
-        return translate("Never updated");
+        return QCoreApplication::translate("SubscriptionUpdateTime", "Never updated");
     }
 
     const qint64 ageMs = nowMs > updatedAtMs ? nowMs - updatedAtMs : 0;
     if (ageMs < kMinuteMs) {
-        return translate("Just now");
+        return QCoreApplication::translate("SubscriptionUpdateTime", "Just now");
     }
     if (ageMs < kHourMs) {
-        return translate("%1 min ago").arg(ageMs / kMinuteMs);
+        return QCoreApplication::translate("SubscriptionUpdateTime", "%1 min ago").arg(ageMs / kMinuteMs);
     }
     if (ageMs < kDayMs) {
-        return translate("%1 h ago").arg(ageMs / kHourMs);
+        return QCoreApplication::translate("SubscriptionUpdateTime", "%1 h ago").arg(ageMs / kHourMs);
     }
-    return translate("%1 d ago").arg(ageMs / kDayMs);
+    return QCoreApplication::translate("SubscriptionUpdateTime", "%1 d ago").arg(ageMs / kDayMs);
 }
 
 QString SubscriptionUpdateTime::absoluteLabel(qint64 updatedAtMs)
 {
     if (updatedAtMs <= 0) {
-        return translate("Never updated");
+        return QCoreApplication::translate("SubscriptionUpdateTime", "Never updated");
     }
     // Local time on purpose: the user compares it against the clock in the corner, not
     // against a UTC header in a download log.
@@ -70,7 +66,7 @@ QString SubscriptionUpdateTime::tooltipText(
     }
     if (updatedAtMs > 0) {
         lines.append(
-            translate("Updated %1 (%2)")
+            QCoreApplication::translate("SubscriptionUpdateTime", "Updated %1 (%2)")
                 .arg(relativeLabel(updatedAtMs, nowMs), absoluteLabel(updatedAtMs)));
     }
     if (!networkError.trimmed().isEmpty()) {

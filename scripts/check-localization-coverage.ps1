@@ -99,6 +99,11 @@ $allowlist = @{
     '%1 MB'           = 'pure number + unit template; no translatable prose'
     '%1 GB'           = 'pure number + unit template; no translatable prose'
 
+    # Date/time format returned by SubscriptionUpdateTime::absoluteLabel(). Pure Qt format
+    # tokens -- no word for a translator to move, and zh-CN writes the same year-month-day
+    # order the format already spells.
+    'yyyy-MM-dd HH:mm' = 'Qt date/time format tokens; no translatable prose'
+
     # Generated-and-persisted placeholder. normalizedServerRemarks() writes this into
     # VmessItem::remarks when a custom-config server has none, and remarks is saved to the
     # config file -- so translating it would make stored data depend on the UI language at
@@ -275,10 +280,10 @@ $messageHelpers = @(
     @{ File = 'src/services/SpeedTestServiceInternal.h'; Function = 'formatUrlProbeResult' }
     @{ File = 'src/services/SpeedTestUrlProbe.cpp'; Function = 'normalizeUpstreamProxyErrorText' }
 
-    # The subscription parse summary and the log panel's line decoration.
-    #   skippedTypeLabel()  -> "(no type)" inside skippedSummary(), which is shown to the user
-    #   normalizeLine()     -> " ... [truncated]" appended to a log line in the log panel
-    @{ File = 'src/subscription/ClashProxyItemParser.cpp'; Function = 'skippedTypeLabel' }
+    # The log panel's line decoration. The skipped-node "(no type)" label lives in
+    # SubscriptionSkippedNode::label (src/subscription/SubscriptionSkippedNode.h), which
+    # localizes it inline and so needs no registration.
+    #   normalizeLine() -> " ... [truncated]" appended to a log line in the log panel
     @{ File = 'src/ui/models/LogListModel.cpp'; Function = 'normalizeLine' }
 
     # The fallback display name for a server that has none. It IS user-visible (it becomes the
@@ -469,7 +474,7 @@ function Get-TranslationPairs {
     param([string]$Path)
 
     $pairs = @{}
-    [xml]$document = Get-Content -LiteralPath $Path -Raw
+    [xml]$document = [System.IO.File]::ReadAllText($Path)
     foreach ($context in $document.TS.context) {
         $name = $context.name
         foreach ($message in $context.message) {

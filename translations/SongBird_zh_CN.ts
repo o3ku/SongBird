@@ -2167,6 +2167,10 @@ The running core will be stopped before installation if needed.</source>
         <source>Keyboard Shortcuts</source>
         <translation>键盘快捷键</translation>
     </message>
+    <message>
+        <source>Reorder Subscriptions...</source>
+        <translation>重新排序订阅...</translation>
+    </message>
 </context>
 <context>
     <name>MihomoCoreBackend</name>
@@ -2889,6 +2893,14 @@ Switch this protocol to %3?</source>
         <source>Move To Bottom</source>
         <translation>移到底部</translation>
     </message>
+    <message>
+        <source>Nothing to reorder</source>
+        <translation>没有可重新排序的订阅</translation>
+    </message>
+    <message>
+        <source>%1 (hidden)</source>
+        <translation>%1（已隐藏）</translation>
+    </message>
 </context>
 <context>
     <name>QtCoreProcessHost</name>
@@ -3384,6 +3396,14 @@ Switch this protocol to %3?</source>
     <message>
         <source>(malformed flow item) here</source>
         <translation>（格式错误的行内条目）此处</translation>
+    </message>
+    <message>
+        <source>non-printable %1 bytes</source>
+        <translation>非文本数据（%1 字节）</translation>
+    </message>
+    <message>
+        <source>(unclosed quoted value) here</source>
+        <translation>（引号未闭合）此处</translation>
     </message>
 </context>
 <context>

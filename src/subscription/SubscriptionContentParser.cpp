@@ -54,7 +54,7 @@ bool isDecodableText(const QString& decoded)
 QString readablePrefix(const QString& decoded)
 {
     if (!isDecodableText(decoded)) {
-        return QStringLiteral("non-printable %1 bytes").arg(decoded.size());
+        return QCoreApplication::translate("SubscriptionContentParser", "non-printable %1 bytes").arg(decoded.size());
     }
 
     QString prefix = decoded.left(kPrefixCharacters);
