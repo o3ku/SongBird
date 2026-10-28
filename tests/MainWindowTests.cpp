@@ -123,6 +123,7 @@ private slots:
     void tabDragPersistsTheDroppedOrder();
     void tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder();
     void tabDragOntoUngroupedMovesTheSubscriptionLast();
+    void dragReorderWriteBackDoesNotRebuildTabsMidDrag();
     void subscriptionTabMenuMoveActionsFollowTheCurrentTab();
     void reorderSubscriptionsMenuReachesAHiddenSubscription();
     void rebuiltTabsAreNotReportedAsAUserReorder();
@@ -2418,6 +2419,64 @@ void MainWindowTests::tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder()
 // Ungrouped is pinned last and is not part of the order, so it has no rank to be dropped on. A
 // drop past the final subscription is read as "last subscription" -- the tab the user dragged ends
 // up where they dropped it, and the list says the same thing.
+
+// The coordinator answers a drag reorder by saving the list and pushing a refreshed config back
+// through setConfig() -- synchronously, inside the tabMoved emission, which is inside
+// QTabBar::moveTab(). With a live drag that rebuild tore the bar down under QTabBar's own drag
+// state and tripped Q_ASSERT(index >= 0) in QTabBarPrivate::layoutTab. The refresh a drag triggers
+// is now skipped (the bar already shows the order), and the skip is one-shot: the next unrelated
+// setConfig() rebuilds the bar as before.
+void MainWindowTests::dragReorderWriteBackDoesNotRebuildTabsMidDrag()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("Group 1"), QStringLiteral("https://example.com/1"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("Group 2"), QStringLiteral("https://example.com/2"), true, QString()}};
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+
+    // The production wiring in a nutshell: reorderSubscriptionsRequested -> save ->
+    // syncWindow() -> setConfig() with the persisted order, all inside the moveTab() call.
+    QObject::connect(
+        &window,
+        &MainWindow::reorderSubscriptionsRequested,
+        &window,
+        [&window, config](const QStringList& orderedIds) mutable {
+            QList<SubItem> reordered;
+            for (const QString& id : orderedIds) {
+                for (const SubItem& item : config.collection().subscriptions) {
+                    if (item.id == id) {
+                        reordered.append(item);
+                    }
+                }
+            }
+            config.collection().subscriptions = reordered;
+            window.setConfig(config);
+        });
+
+    tabBar->moveTab(1, 0);
+    QCoreApplication::processEvents();
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
+
+    // The skip must not outlive the drag: a later refresh that changes the tab set rebuilds.
+    Config other = config;
+    for (SubItem& item : other.collection().subscriptions) {
+        if (item.id == QStringLiteral("sub-2")) {
+            item.enabled = false;
+        }
+    }
+    window.setConfig(other);
+    QCoreApplication::processEvents();
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
+}
 void MainWindowTests::tabDragOntoUngroupedMovesTheSubscriptionLast()
 {
     MainWindow window;

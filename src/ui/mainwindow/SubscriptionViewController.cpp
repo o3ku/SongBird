@@ -33,6 +33,12 @@ void SubscriptionViewController::rebuildTabs(const QString& previousTabKey)
     if (context_.subscriptionTabBar == nullptr || context_.serverFilterModel == nullptr) {
         return;
     }
+    if (skipTabsRebuildFromDragReorder_) {
+        // The order change came from the bar's own drag; rebuilding now would run mid-drag (see
+        // the member's comment). Consume the skip exactly once so a later refresh still rebuilds.
+        skipTabsRebuildFromDragReorder_ = false;
+        return;
+    }
 
     context_.serverFilterModel->setKnownSubscriptionIds(
         SubscriptionViewSupport::enabledSubscriptionIds(subscriptions_));
@@ -440,7 +446,12 @@ void SubscriptionViewController::handleTabMoved(int from, int to)
     reordered.insert(qBound(0, targetRank, reordered.size()), draggedItem);
 
     if (callbacks_.reorderSubscriptions) {
+        // The bar already shows this order, and rebuilding it here runs inside tabMoved -- QTabBar
+        // is still mid-drag, and tearing its tabs down under the drag is what asserts in layoutTab.
+        // The one refresh this reorder triggers is skipped; the next unrelated refresh rebuilds.
+        skipTabsRebuildFromDragReorder_ = true;
         callbacks_.reorderSubscriptions(reordered);
+        skipTabsRebuildFromDragReorder_ = false;
     }
 }
 

@@ -85,4 +85,9 @@ private:
     // tabMoved for removeTab()/insertTab() too, so without this every refresh would report the
     // reconstruction as the user reordering the tabs.
     bool rebuildingTabs_ = false;
+    // True between handleTabMoved() handing an order to reorderSubscriptions and the refresh that
+    // follows it. The bar already shows that order -- the drag just put it there -- and rebuilding
+    // it synchronously inside tabMoved, while QTabBar's drag still holds internal state for tabs
+    // that get removed, trips Q_ASSERT(index >= 0) in QTabBarPrivate::layoutTab (issue #37).
+    bool skipTabsRebuildFromDragReorder_ = false;
 };
