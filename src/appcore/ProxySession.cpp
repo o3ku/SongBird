@@ -1703,24 +1703,23 @@ void ProxySession::handleCoreExited(int exitCode, int status, bool stopRequested
         managedSystemProxyActive_ = false;
         clearProxyStateAfterStopped();
         emit statusSyncRequested();
-        if (auxiliary) {
-            emit stopped();
-        }
+        // One event, never two. `failed` is the whole report of a session that will not come
+        // back -- the coordinator closes the teardown on it -- so pairing it with `stopped` made
+        // two handlers finish the same exit, each running its own TUN write and its own flag
+        // release. It used to be `stopped` for the auxiliary core and `failed` for the main one;
+        // that split is why the main branch could be corrected alone and the auxiliary one left
+        // announcing both. Which core died does not change what the caller has to do.
         emit failed(restartDecision.message);
         return;
     }
 
     if (restartDecision.action == ProxyCrashRestartPolicy::Action::DisableRestart) {
         emit logMessage(restartDecision.message);
-        if (!auxiliary) {
-            // Same forget as the TUN-conflict branch above: restart disabled, session over.
-            managedSystemProxyActive_ = false;
-            clearProxyStateAfterStopped();
-            emit statusSyncRequested();
-            emit failed(restartDecision.message);
-            return;
-        }
-        emit stopped();
+        // Same forget as the TUN-conflict branch above: restart disabled, session over.
+        managedSystemProxyActive_ = false;
+        clearProxyStateAfterStopped();
+        emit statusSyncRequested();
+        emit failed(restartDecision.message);
         return;
     }
 

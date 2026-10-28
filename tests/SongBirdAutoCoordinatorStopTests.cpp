@@ -147,6 +147,7 @@ private slots:
     void stopLeavesAnUnownedProxyAlone();
     void exitLeavesAnUnownedProxyAlone();
     void aFailedTunStartGivesEveryFlagBack();
+    void aFailureAfterTheScheduledStopEndsTheAttemptOnce();
 };
 
 // Regression pin for the seam refactor: initialize() called wireRuntimeEnvironment() before
@@ -261,6 +262,60 @@ void SongBirdAutoCoordinatorStopTests::aFailedTunStartGivesEveryFlagBack()
     QVERIFY(!observed->busyDuringLastEvent);
     QVERIFY(!observed->runningDuringLastEvent);
     QCOMPARE(observed->statusDuringLastBusyEvent, observed->status);
+}
+
+// Issue #14 item 2, one layer out. ProxySession gives its scheduled resume an identity so a stop
+// cancels it; the coordinator arms its *own* "start again once the session is down" behind it, and
+// that flag used to be read only by the two handlers that resume. It is now read by the failure
+// handler as well, because a failure is an ending too:
+//
+//   user starts -> a restart is armed behind a stop (pendingStartAfterStop_)
+//   user stops  -> the session schedules `stopped()`
+//   the TUN cleanup the exit began fails -> `failed()` arrives *synchronously, before* `stopped()`
+//   `stopped()` then arrives -> the flag is still set -> startProxySession() on a stopped session
+//
+// The ordering is what this drives, through the two production handlers: first the failure, which
+// has to end the attempt and drop the flag, then the `stopped()` it was scheduled ahead of, which
+// must find nothing left to resume.
+void SongBirdAutoCoordinatorStopTests::aFailureAfterTheScheduledStopEndsTheAttemptOnce()
+{
+    Harness harness;
+    harness.proxy().enabled = true;
+    SongBirdAutoCoordinator& coordinator = harness.coordinator();
+
+    int runningEvents = 0;
+    bool runningDuringLastEvent = true;
+    QObject::connect(&coordinator, &SongBirdAutoCoordinator::runningChanged, &coordinator,
+        [&runningEvents, &runningDuringLastEvent](bool running) {
+            ++runningEvents;
+            runningDuringLastEvent = running;
+        });
+
+    // The shape the session is in when the user presses Stop with a restart armed: running and
+    // busy, waiting on an exit it has scheduled.
+    coordinator.setRunningForTest(true);
+    coordinator.setBusyForTest(true);
+    coordinator.armPendingStartAfterStopForTest();
+    coordinator.stop();
+
+    QVERIFY(!coordinator.isRunning());
+    QVERIFY(coordinator.isBusyForTest());
+
+    // The TUN cleanup the exit began reports a failure -- synchronously, ahead of the `stopped`
+    // that same exit scheduled. finishStopped() reconfigures the adapter, so the settlement is
+    // driven over the second seam: what this case is about is the flags, not what the adapter
+    // says, and a real TUN start would make the outcome depend on the machine running the test.
+    coordinator.settleStoppedStateForTest(QStringLiteral("TUN adapter cleanup failed"));
+
+    // Then the scheduled exit arrives.
+    coordinator.handleSessionStoppedForTest();
+
+    // One close-out: the flags went down once, in the failure handler, and the `stopped` that
+    // followed found the attempt already over. A resume would have put running back to true.
+    QVERIFY(!coordinator.isRunning());
+    QVERIFY(!coordinator.isBusyForTest());
+    QCOMPARE(runningEvents, 1);
+    QVERIFY(!runningDuringLastEvent);
 }
 
 QTEST_MAIN(SongBirdAutoCoordinatorStopTests)

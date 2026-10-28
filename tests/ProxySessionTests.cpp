@@ -75,6 +75,9 @@ private slots:
     void failedStartupForgetsOwnershipEvenWhenTheClearFails();
     void aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot();
     void aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails();
+    void aSpentRestartBudgetOnTheMainCoreAnnouncesOneEvent();
+    void aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent();
+    void aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnce();
     void theDeadCoreForgetNeverWritesToADestroyedSession();
 
     void healthWatchWarnsAfterTwoConsecutiveFailedProbes();
@@ -1863,6 +1866,79 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails()
 // crash loop producing orphaned writes on purpose -- a capturing connection to an atomic worker
 // count, no ownership read until the end -- and insists nothing lands after the session is gone.
 // `tests/README-tsan.md` has the recipe for running the suite under -fsanitize=thread.
+// The auxiliary half of the spent budget. The main branch above was corrected alone: it stopped
+// announcing `stopped` and left the auxiliary one emitting both, so a helper core that burnt its
+// restart budget told the coordinator twice -- once that the session had stopped, once that it had
+// failed -- and each of those handlers closes out a teardown (its own TUN write, its own flag
+// release). Neither event is wrong; announcing both is.
+//
+// Driven without a start, because the announcement does not depend on one: the policy is reached
+// with an exit the session never asked for, and five of those are what exhaust the budget. What
+// this pins is the shape of the exit, not the road to it.
+// The main-core half, unchanged by this patch on purpose. It is the shape the auxiliary case above
+// now copies, and a change that quietly made it two events would be exactly the regression the
+// two cases exist to catch -- so it is pinned here instead of being left to the crash-loop case,
+// which asserts the same thing only after driving a real session to Proxying.
+void ProxySessionTests::aSpentRestartBudgetOnTheMainCoreAnnouncesOneEvent()
+{
+    ProxySessionHarness harness;
+    QSignalSpy stoppedSpy(harness.session.get(), &ProxySession::stopped);
+    QSignalSpy failedSpy(harness.session.get(), &ProxySession::failed);
+
+    for (int round = 1; round <= 6; ++round) {
+        harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, false);
+    }
+
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(stoppedSpy.count(), 0);
+}
+
+void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreAnnouncesOneEvent()
+{
+    ProxySessionHarness harness;
+    QSignalSpy stoppedSpy(harness.session.get(), &ProxySession::stopped);
+    QSignalSpy failedSpy(harness.session.get(), &ProxySession::failed);
+
+    for (int round = 1; round <= 5; ++round) {
+        // A crash exit is the kind that counts; the earlier rounds only schedule a restart, and a
+        // later round replaces that decision because the budget is cumulative. The exit does not
+        // have to be real: the announcement only depends on the policy's verdict.
+        harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, true);
+    }
+
+    // Still inside the budget: nothing has been announced, so the counts below are the sixth
+    // exit's alone.
+    QCOMPARE(stoppedSpy.count(), 0);
+    QCOMPARE(failedSpy.count(), 0);
+
+    harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, true);
+
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(stoppedSpy.count(), 0);
+    QVERIFY(failedSpy.constFirst().constFirst().toString().contains(
+        QStringLiteral("Auto-restart disabled after 6 consecutive failures.")));
+}
+
+// The same exit, with a proxy this session is carrying. The two announcements above are not
+// merely redundant on the wire: each one runs a teardown, so both of them wrote. One announcement
+// means one undo -- and the second write landed on whatever the first had just decided.
+void ProxySessionTests::aSpentRestartBudgetOnTheAuxiliaryCoreForgetsOwnershipOnce()
+{
+    ProxySessionHarness harness;
+    // Adopted the way the other ownership cases adopt it, and with the same consequence: no
+    // capture is wired, so the undo decision lands on Clear. The claim is dropped only when that
+    // write succeeds, which is what makes a second announcement a second write.
+    harness.systemProxyEnabled = true;
+    harness.session->adoptManagedSystemProxy(true);
+
+    for (int round = 1; round <= 6; ++round) {
+        harness.session->handleCoreExitedForTest(0, QProcess::CrashExit, false, true);
+    }
+
+    QCOMPARE(harness.proxyUpdateCount, 1);
+    QVERIFY(!harness.session->isManagedProxyActive());
+}
+
 void ProxySessionTests::theDeadCoreForgetNeverWritesToADestroyedSession()
 {
     auto harness = std::make_unique<ProxySessionHarness>();

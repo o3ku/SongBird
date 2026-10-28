@@ -312,41 +312,10 @@ void SongBirdAutoCoordinator::createProxySession()
         publishActiveServer(location);
     });
     QObject::connect(proxySession_.get(), &ProxySession::failed, this, [this](const QString& reason) {
-        log(QStringLiteral("Proxy start failed: %1").arg(reason));
-        // startProxySession()'s own listener owns the flags of a start it drove: it either retries
-        // with another node or writes the terminal state itself, and a busy_ released here first
-        // would let a queued subscription refresh slip into a session that has not settled.
-        if (stopRequested_) {
-            // The user has stopped: this failure is the teardown's, and the exit that follows it
-            // now arrives as `failed` too. A stop with a restart pending has to resume from one of
-            // the two, so it is armed here as well.
-            if (pendingStartAfterStop_) {
-                pendingStartAfterStop_ = false;
-                startProxySession();
-                return;
-            }
-            finishStopped();
-            return;
-        }
-        if (pendingStartAfterStop_) {
-            return;
-        }
-        setBusy(false);
-        if (running_) {
-            handleUnavailableActiveServer(reason);
-        } else {
-            setRunning(false);
-        }
+        handleSessionFailed(reason);
     });
     QObject::connect(proxySession_.get(), &ProxySession::stopped, this, [this]() {
-        if (pendingStartAfterStop_ && !stopRequested_) {
-            pendingStartAfterStop_ = false;
-            startProxySession();
-            return;
-        }
-        if (stopRequested_) {
-            finishStopped();
-        }
+        handleSessionStopped();
     });
     QObject::connect(proxySession_.get(), &ProxySession::coreOutput, this, [this](const QString& line) {
         log(QStringLiteral("core | %1").arg(line));
@@ -1825,6 +1794,52 @@ bool SongBirdAutoCoordinator::selectServer(const QString& indexId)
     return result.success;
 }
 
+void SongBirdAutoCoordinator::handleSessionStoppedForTest()
+{
+    handleSessionStopped();
+}
+
+void SongBirdAutoCoordinator::handleSessionFailedForTest(const QString& reason)
+{
+    handleSessionFailed(reason);
+}
+
+void SongBirdAutoCoordinator::armPendingStartAfterStopForTest()
+{
+    pendingStartAfterStop_ = true;
+}
+
+void SongBirdAutoCoordinator::setRunningForTest(bool running)
+{
+    setRunning(running);
+}
+
+void SongBirdAutoCoordinator::setBusyForTest(bool busy)
+{
+    setBusy(busy);
+}
+
+bool SongBirdAutoCoordinator::isBusyForTest() const
+{
+    return busy_;
+}
+
+void SongBirdAutoCoordinator::settleStoppedStateForTest(const QString& status)
+{
+    activeServerId_.clear();
+    activeServerSinceMs_ = 0;
+    setRunning(false);
+    setBusy(false);
+    setStatus(status);
+}
+
+bool SongBirdAutoCoordinator::abandonPendingStartAfterStop()
+{
+    const bool wasPending = pendingStartAfterStop_;
+    pendingStartAfterStop_ = false;
+    return wasPending;
+}
+
 void SongBirdAutoCoordinator::startProxySession()
 {
     if (proxySession_ == nullptr) {
@@ -2369,6 +2384,52 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
 
     refreshAfterFailover_ = false;
     return false;
+}
+
+void SongBirdAutoCoordinator::handleSessionStopped()
+{
+    const bool resumeRequested = abandonPendingStartAfterStop();
+    if (resumeRequested && !stopRequested_) {
+        startProxySession();
+        return;
+    }
+    if (stopRequested_) {
+        finishStopped();
+    }
+}
+
+void SongBirdAutoCoordinator::handleSessionFailed(const QString& reason)
+{
+    log(QStringLiteral("Proxy start failed: %1").arg(reason));
+    // A failure ends whatever start was queued behind a stop, and the flag says so before any
+    // branch reads it. `stopped()` is not the only way an attempt ends: ProxySession's restart
+    // budget runs out and the TUN cleanup reports a failure -- the first arrives as `failed`
+    // alone, and the second arrives *synchronously, before* the `stopped()` that same exit
+    // scheduled. Leaving the flag set let the later `stopped()` resume on top of a session the
+    // user had just stopped, which is issue #14 item 2 through another entrance.
+    abandonPendingStartAfterStop();
+    if (stopRequested_) {
+        // The user has stopped: this failure belongs to the teardown. Where the exit schedules a
+        // `stopped`, that event has already started the next attempt or closed this one out --
+        // resuming here on top of it would run a second start on a session the user just stopped.
+        // Where it does not (restart budget spent), this is the only event that will ever report
+        // the stop, so this handler has to be the one that closes it out. Closing out twice is
+        // harmless by construction (the flags are already where finishStopped() puts them).
+        finishStopped();
+        return;
+    }
+    // startProxySession()'s own listener owns the flags of a start it drove: it either retries
+    // with another node or writes the terminal state itself, and a busy_ released here first
+    // would let a queued subscription refresh slip into a session that has not settled.
+    if (pendingStartAfterStop_) {
+        return;
+    }
+    setBusy(false);
+    if (running_) {
+        handleUnavailableActiveServer(reason);
+    } else {
+        setRunning(false);
+    }
 }
 
 void SongBirdAutoCoordinator::finishStopped()

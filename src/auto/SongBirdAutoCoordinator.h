@@ -75,6 +75,24 @@ public:
     // test instead of by start(); nothing is stubbed and the binary never calls them.
     void setTunRuntimeEnvironmentForTest(std::unique_ptr<IRuntimeEnvironment> environment);
     void startSessionForTest();
+    // The coordinator's answers to the two events that end an attempt. Both are the production
+    // lambdas, reached from the test instead of from the session signal, because the "stopped()
+    // has already started the next attempt, and now the failure arrives" ordering cannot be
+    // produced through ProxySession without a real core to stop: the only exits that schedule a
+    // `stopped` are behind a running main core.
+    void handleSessionStoppedForTest();
+    void handleSessionFailedForTest(const QString& reason);
+    // The test's half of arming one: production arms pendingStartAfterStop_ from three paths that
+    // all need a running session (a failover switch, a manual switch, a country re-pick).
+    void armPendingStartAfterStopForTest();
+    // The two flags a start claims, for a case that drives the endings directly: nothing is
+    // running, so there is nothing for the real start to claim them from.
+    void setRunningForTest(bool running);
+    void setBusyForTest(bool busy);
+    // What finishStopped() leaves behind, minus the adapter write: the flags are the subject of
+    // this seam, and a real TUN start would decide the outcome by the machine running the test.
+    void settleStoppedStateForTest(const QString& status);
+    bool isBusyForTest() const;
 
 public slots:
     void setSelectedCountryCode(const QString& countryCode);
@@ -204,6 +222,13 @@ private:
     QString nextFailoverServerId(const QString& failedServerId) const;
     bool switchToNextBestSameCountry(const QString& failedServerId);
     void finishStopped();
+    void handleSessionStopped();
+    void handleSessionFailed(const QString& reason);
+    // Drops the "start again once the session is down" flag and reports whether it was set. Read
+    // from every exit that ends the attempt: the flag has to be cleared by whoever sees the exit,
+    // not only by `stopped()`, because a failure can arrive without one (restart budget spent)
+    // or ahead of one (TUN cleanup, emitted synchronously before the scheduled `stopped()`).
+    bool abandonPendingStartAfterStop();
     void setBusy(bool busy);
     void setRunning(bool running);
     // Re-announces the active server. Split out because the presentation is refreshed from two
