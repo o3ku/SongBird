@@ -2,11 +2,14 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
 #include <QEventLoop>
+#include <QFileInfo>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSaveFile>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -24,6 +27,53 @@ namespace {
 constexpr int kSubscriptionDownloadTimeoutMs = ServiceTimeouts::kDefaultNetworkTimeoutMs;
 constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
+
+// Filename-safe form of the subscription identity for the raw backup: Windows-invalid
+// characters collapse to '_', the id suffix keeps two subscriptions whose remarks
+// collide from overwriting each other's archive.
+QString buildRawBackupFileName(const SubItem& item)
+{
+    static const QString kInvalidChars = QStringLiteral("<>:\"/\\|?*");
+    QString cleaned;
+    for (const QChar ch : item.remarks) {
+        if (kInvalidChars.contains(ch) || ch.unicode() < 0x20) {
+            cleaned += QLatin1Char('_');
+        } else {
+            cleaned += ch;
+        }
+    }
+    cleaned = cleaned.left(64).trimmed();
+    while (cleaned.endsWith(QLatin1Char('.'))) {
+        cleaned.chop(1);
+    }
+    if (cleaned.isEmpty()) {
+        cleaned = item.id;
+    }
+    return QStringLiteral("%1_%2.raw").arg(cleaned, item.id.left(8));
+}
+
+// Best-effort archive of the payload exactly as received. A write failure is logged
+// and swallowed: archiving must never fail an update that otherwise succeeded, which
+// is also why this runs after the download loop but before parsing -- an unparseable
+// payload is the one a user is most likely to want the original bytes of.
+void writeRawSubscriptionBackup(const QString& directoryPath, const SubItem& item, const QString& content)
+{
+    QDir directory(directoryPath);
+    if (!directory.exists() && !QDir().mkpath(directoryPath)) {
+        qWarning() << "SubscriptionUpdateService: cannot create raw backup directory" << directoryPath;
+        return;
+    }
+
+    QSaveFile file(directory.filePath(buildRawBackupFileName(item)));
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "SubscriptionUpdateService: cannot open raw backup file" << file.fileName();
+        return;
+    }
+    file.write(content.toUtf8());
+    if (!file.commit()) {
+        qWarning() << "SubscriptionUpdateService: failed to commit raw backup file" << file.fileName();
+    }
+}
 
 bool currentThreadInterruptionRequested()
 {
@@ -122,6 +172,11 @@ SubscriptionUpdateService::SubscriptionUpdateService(
 {
 }
 
+
+void SubscriptionUpdateService::setRawBackupDirectory(const QString& directoryPath)
+{
+    rawBackupDirectory_ = directoryPath;
+}
 OperationResult SubscriptionUpdateService::updateAll(Config& config, bool useProxy)
 {
     QList<SubItem> items;
@@ -395,8 +450,12 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
     if (currentThreadInterruptionRequested()) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
+    if (!rawBackupDirectory_.trimmed().isEmpty() && !content.trimmed().isEmpty()) {
+        writeRawSubscriptionBackup(rawBackupDirectory_.trimmed(), item, content);
+    }
 
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);
+
     const QList<VmessItem> servers = report.items;
     if (servers.isEmpty()) {
         // The content arrived whole and was not a document this build can read, so the

@@ -1,10 +1,13 @@
 #include <QtTest>
 
 #include <QDateTime>
+#include <QDir>
 #include <QEventLoop>
+#include <QFile>
 #include <QNetworkAccessManager>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include "domain/models/Config.h"
@@ -184,6 +187,9 @@ private slots:
     void notModified304StampsLastUpdated();
     void failedDownloadLeavesLastUpdatedAlone();
     void failuresAreAttributedToTheSubscriptionTheyBelongTo();
+    void successfulDownloadWritesRawBackupFile();
+    void rawBackupIsOverwrittenOnSecondUpdate();
+    void rawBackupNotWrittenWhenNotModified();
 };
 
 // ---- helpers shared across slots ----------------------------------------
@@ -645,5 +651,71 @@ void SubscriptionUpdateServiceTests::failuresAreAttributedToTheSubscriptionTheyB
     QVERIFY(success.subjectFailures.isEmpty());
 }
 
+
+void SubscriptionUpdateServiceTests::successfulDownloadWritesRawBackupFile()
+{
+    Harness h;
+    h.repo.config_.collection().subscriptions.first().remarks = QStringLiteral("sub / one: dirty*");
+    QTemporaryDir rawDir;
+    h.updateService.setRawBackupDirectory(rawDir.path());
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+
+    const OperationResult result = h.update();
+    QVERIFY2(result.success, qPrintable(result.message));
+
+    const QStringList entries = QDir(rawDir.path()).entryList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    QCOMPARE(entries.size(), 1);
+    // Windows-invalid characters from the remarks must not survive into the file name.
+    QVERIFY2(!entries.first().contains(QLatin1String("<>:\"/\\|?*")),
+        qPrintable(entries.first()));
+    QVERIFY(entries.first().endsWith(QStringLiteral("_sub-1.raw")));
+
+    QFile rawFile(QDir(rawDir.path()).filePath(entries.first()));
+    QVERIFY(rawFile.open(QIODevice::ReadOnly));
+    QCOMPARE(rawFile.readAll(), kVmessPayload);
+}
+
+void SubscriptionUpdateServiceTests::rawBackupIsOverwrittenOnSecondUpdate()
+{
+    Harness h;
+    QTemporaryDir rawDir;
+    h.updateService.setRawBackupDirectory(rawDir.path());
+
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+    QVERIFY2(h.update().success, "first update");
+    const QByteArray secondPayload = kVmessPayload + "\n#marker";
+    h.server.setNextResponse(makeHttpResponse(200, secondPayload));
+    QVERIFY2(h.update().success, "second update");
+
+    const QStringList entries = QDir(rawDir.path()).entryList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    QCOMPARE(entries.size(), 1);
+
+    QFile rawFile(QDir(rawDir.path()).filePath(entries.first()));
+    QVERIFY(rawFile.open(QIODevice::ReadOnly));
+    QCOMPARE(rawFile.readAll(), secondPayload);
+}
+
+void SubscriptionUpdateServiceTests::rawBackupNotWrittenWhenNotModified()
+{
+    Harness h;
+    QTemporaryDir rawDir;
+    h.updateService.setRawBackupDirectory(rawDir.path());
+
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload,
+        "ETag: \"abc123\"\r\n"));
+    QVERIFY2(h.update().success, "first update");
+    h.server.setNextResponse(makeHttpResponse(304, {},
+        "ETag: \"abc123\"\r\n"));
+    QVERIFY2(h.update().success, "not-modified update");
+
+    const QStringList entries = QDir(rawDir.path()).entryList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    QCOMPARE(entries.size(), 1);
+    QFile rawFile(QDir(rawDir.path()).filePath(entries.first()));
+    QVERIFY(rawFile.open(QIODevice::ReadOnly));
+    QCOMPARE(rawFile.readAll(), kVmessPayload);
+}
 QTEST_MAIN(SubscriptionUpdateServiceTests)
 #include "SubscriptionUpdateServiceTests.moc"

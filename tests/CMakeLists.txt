@@ -946,8 +946,6 @@ songbird_add_qt_test(songbird_json_config_repository_tests json-config-repositor
 
 set(SONGBIRD_CONFIG_BACKUP_STATE_DOCUMENT_TEST_SOURCES
     ConfigBackupStateDocumentTests.cpp
-    ../src/services/ConfigBackupStateDocument.h
-    ../src/services/ConfigBackupStateDocument.cpp
 )
 
 songbird_add_qt_test(songbird_config_backup_state_document_tests config-backup-state-document

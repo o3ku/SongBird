@@ -36,6 +36,7 @@
 #include "runtime/AuxiliaryTunConfig.h"
 #include "runtime/core/CoreCatalog.h"
 #include "runtime/ProtocolCoreCompat.h"
+#include "services/ConfigBackupService.h"
 #include "services/CoreUpdateService.h"
 #include "services/ProxyAvailabilityCheckService.h"
 #include "services/SpeedTestRuntimeRunner.h"
@@ -702,6 +703,7 @@ void SongBirdAutoCoordinator::updateSubscriptionsAndRetest(bool forceUpdate)
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService updateService(repository, subscriptionService, networkAccessManager);
+        updateService.setRawBackupDirectory(ConfigBackupService::backupDirectoryPathFor(configPath));
         Config workerConfig = repository.load();
         // A corrupt config parses to an empty Config; persisting that would
         // wipe the user's data, so abort the update instead.

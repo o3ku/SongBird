@@ -61,11 +61,16 @@ QString ConfigBackupService::configPath() const
 
 QString ConfigBackupService::backupDirectoryPath() const
 {
-    if (configPath_.trimmed().isEmpty()) {
+    return backupDirectoryPathFor(configPath_);
+}
+
+QString ConfigBackupService::backupDirectoryPathFor(const QString& configPath)
+{
+    if (configPath.trimmed().isEmpty()) {
         return {};
     }
 
-    return QFileInfo(configPath_).dir().filePath(QStringLiteral("backups"));
+    return QFileInfo(configPath).dir().filePath(QStringLiteral("backups"));
 }
 
 OperationResult ConfigBackupService::backupCurrentConfig(const Config& fallbackConfig) const

@@ -191,6 +191,10 @@ set(SONGBIRD_SHARED_SOURCES
     persistence/JsonConfigTunSerialization.cpp
     persistence/JsonConfigUiSerialization.h
     persistence/JsonConfigUiSerialization.cpp
+    services/ConfigBackupService.h
+    services/ConfigBackupService.cpp
+    services/ConfigBackupStateDocument.h
+    services/ConfigBackupStateDocument.cpp
     services/ServerService.h
     services/ServerService.cpp
     services/ServerCustomConfigStore.h
@@ -396,10 +400,6 @@ set(SONGBIRD_SOURCES
     backends/mihomo/MihomoCoreDescriptor.h
     backends/singbox/SingBoxCoreDescriptor.h
     backends/xray/XrayCoreDescriptor.h
-    services/ConfigBackupService.h
-    services/ConfigBackupService.cpp
-    services/ConfigBackupStateDocument.h
-    services/ConfigBackupStateDocument.cpp
     services/AppUpdateService.h
     services/AppUpdateService.cpp
     services/AppUpdateReleaseMetadata.h
