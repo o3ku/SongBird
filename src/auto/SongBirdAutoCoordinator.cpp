@@ -1492,23 +1492,9 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
 
 void SongBirdAutoCoordinator::mergeEvaluationResults(const QList<AutoNodeEvaluation>& results)
 {
-    // Feed every completed probe into the scoring policy before merging, so the pick made below
-    // (and by maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    for (const AutoNodeEvaluation& result : results) {
-        // An inconclusive probe measured nothing: no core ever ran, so nothing was learned about the
-        // node. Feeding it to the policy as a failure is how a temporary port shortage used to trip
-        // the breaker on healthy nodes and take them out of the ranking for a minute.
-        if (!result.tested || result.inconclusive) {
-            continue;
-        }
-        RoutingScorePolicy::NodeState& state = nodeScores_[result.indexId];
-        // A probe that reports a latency is a measurement; one that reports failure is not. The
-        // policy takes both through the same call so the failure counter and the breaker advance
-        // together.
-        routingScorePolicy_.recordResult(
-            &state, result.available, static_cast<int>(result.latencyMs), nowMs);
-    }
+    // Feed every completed probe into the engine before merging, so the pick made below (and by
+    // maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
+    selectionEngine_.recordProbeResults(results);
 
     QMap<QString, AutoNodeEvaluation> byId;
     for (const AutoNodeEvaluation& evaluation : std::as_const(evaluations_)) {
@@ -1616,24 +1602,20 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
 
     // Ranking alone is not a reason to move: the fastest node in a batch is often only a few
     // milliseconds ahead of the one already carrying traffic, and trading the connection for that
-    // costs a reconnect plus a fresh core start. The policy holds the switch margin, the minimum
-    // hold window (a rotation subscription is otherwise restarted every round) and the rule that a
-    // node with an open breaker loses its claim regardless of score -- without this call all three
-    // were dead code, and every probe round reordered the active connection.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const auto currentIt = nodeScores_.constFind(currentServerId);
-    const auto challengerIt = nodeScores_.constFind(bestServerId);
-    // The active node is normally in the map -- it is what an earlier round ranked -- but it can be
+    // costs a reconnect plus a fresh core start. The engine's gate holds the switch margin, the
+    // minimum hold window (a rotation subscription is otherwise restarted every round) and the
+    // rule that a node with an open breaker loses its claim regardless of score -- without this
+    // call all three were dead code, and every probe round reordered the active connection.
+    // The active node is normally measured -- it is what an earlier round ranked -- but it can be
     // missing on the first round after a manual pick. An unmeasured side means there is nothing to
     // compare, and startBestServerForSelectedCountry() would restart the core for nothing.
-    if (currentIt == nodeScores_.constEnd() || challengerIt == nodeScores_.constEnd()
-        || !currentIt->hasSample || !challengerIt->hasSample) {
+    if (!selectionEngine_.hasMeasuredNode(currentServerId)
+        || !selectionEngine_.hasMeasuredNode(bestServerId)) {
         log(QStringLiteral("Keeping the active node; %1 and %2 have not both been measured.")
                 .arg(currentServerId, bestServerId));
         return;
     }
-    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
-            routingScorePolicy_, &currentIt.value(), &challengerIt.value(), nowMs, activeServerSinceMs())) {
+    if (!selectionEngine_.shouldSwitch(currentServerId, bestServerId, activeServerSinceMs())) {
         log(QStringLiteral("Keeping %1; %2 is not ahead by the switch margin, or %1 is still within its hold window.")
                 .arg(currentServerId, bestServerId));
         return;
@@ -1668,18 +1650,10 @@ CoreInfo SongBirdAutoCoordinator::resolveCoreInfo(const VmessItem& server) const
 
 QString SongBirdAutoCoordinator::currentCountryBestServerId() const
 {
-    // Rank by the policy's effective score rather than by the raw latency of the last probe, so a
-    // node that is currently failing cannot win on a stale good reading, and one slow sample does
-    // not reorder the list. The map is rebuilt per call because it is small (one entry per tested
-    // node) and a cached copy would have to be invalidated from four different places.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    QHash<QString, double> effectiveScores;
-    effectiveScores.reserve(nodeScores_.size());
-    for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
-        effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
-    }
-    return bestAutoServerIdForCountryByScore(
-        evaluations_, selectedCountryCode_, effectiveScores);
+    // The engine ranks by the policy's effective score rather than by the raw latency of the last
+    // probe, so a node that is currently failing cannot win on a stale good reading, and one slow
+    // sample does not reorder the list.
+    return selectionEngine_.bestServerIdForCountry(evaluations_, selectedCountryCode_);
 }
 
 QString SongBirdAutoCoordinator::currentCountryFirstAvailableServerId() const
@@ -2203,7 +2177,7 @@ void SongBirdAutoCoordinator::clearEvaluationState()
     evaluations_.clear();
     // Scoring history describes nodes that are about to be replaced, so it must not survive a
     // clear: a recycled indexId would inherit another server's smoothed latency and breaker state.
-    nodeScores_.clear();
+    selectionEngine_.reset();
     countrySummaries_ = buildCountrySummaries(evaluations_);
     activeServerId_.clear();
     activeServerSinceMs_ = 0;
@@ -2300,14 +2274,8 @@ QString SongBirdAutoCoordinator::nextFailoverServerId(const QString& failedServe
     if (!usesFirstAvailableStrategy()) {
         // Same ranking as currentCountryBestServerId(), with the failed node excluded so a node
         // that just went dark is not immediately re-picked as its own replacement.
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        QHash<QString, double> effectiveScores;
-        effectiveScores.reserve(nodeScores_.size());
-        for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
-            effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
-        }
-        return bestAutoServerIdForCountryByScore(
-            evaluations_, selectedCountryCode_, effectiveScores, failedServerId);
+        return selectionEngine_.bestServerIdForCountry(
+            evaluations_, selectedCountryCode_, failedServerId);
     }
 
     const QString normalizedCountryCode = normalizeAutoCountryCode(selectedCountryCode_);
@@ -2336,12 +2304,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     // unmeasured side, so without the seed the breaker would trip invisibly and the gate below
     // would never open on this side at all. What the seed buys is the comparison, not the verdict: until the breaker trips, the margin still governs, so a seeded but untested current node can be moved for a faster challenger, never merely for a slower one. The seeded initialScore is
     // overwritten by the first real probe.
-    const auto failedIt = nodeScores_.find(failedServerId);
-    if (failedIt != nodeScores_.end()) {
-        RoutingScorePolicy::NodeState& failedState = failedIt.value();
-        routingScorePolicy_.seed(&failedState);
-        routingScorePolicy_.recordResult(&failedState, false, 0, QDateTime::currentMSecsSinceEpoch());
-    }
+    selectionEngine_.recordHealthCheckFailure(failedServerId);
 
     // No challenger is not a question the policy can answer, so it stays outside the gate: with
     // no alternative there is nothing to compare, and this refresh is the only way a country
@@ -2360,14 +2323,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     // that would trip the failing node's breaker have not run yet, and the policy skips the margin
     // for a tripped node, so a node that is genuinely gone is still replaced -- just on evidence
     // rather than on a single sample. Until then the hold window applies as usual.
-    const auto currentIt = nodeScores_.constFind(failedServerId);
-    const auto nextIt = nodeScores_.constFind(nextId);
-    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
-            routingScorePolicy_,
-            currentIt == nodeScores_.constEnd() ? nullptr : &currentIt.value(),
-            nextIt == nodeScores_.constEnd() ? nullptr : &nextIt.value(),
-            QDateTime::currentMSecsSinceEpoch(),
-            activeServerSinceMs())) {
+    if (!selectionEngine_.shouldSwitch(failedServerId, nextId, activeServerSinceMs())) {
         log(QStringLiteral("Health check failed; keeping the current node until its probes say it is gone."));
         scheduleHealthCheck(kHealthCheckIntervalMs);
         return false;

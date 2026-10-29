@@ -40,6 +40,7 @@ class OutboundLivenessProbeService;
 class OutboundLocationProbeService;
 class QThread;
 class QTimer;
+class StartupResourceBroker;
 class ProxySession final : public QObject
 {
     Q_OBJECT
@@ -262,6 +263,14 @@ private:
     void failStartup(const OperationResult& result);
     void cleanupAfterFailedStartup();
 
+    // Thin entries over StartupResourceBroker, the QObject child that owns the
+    // download-and-resume paths (geo files, sing-box rule sets, core binaries). The call sites
+    // inside startInternal/resolveStartupProfile keep their names; the broker supplies the
+    // workers, the progress posting and the shared finish handler, and hands the resume back
+    // through a hook whose body is startInternal(skipTunCleanup, true, showStartupOverlay).
+    // Phase writes stay here: the broker performs them through an injected callback, so the
+    // session remains the single writer of the phase machine. See StartupResourceBroker.h for
+    // the threading contract and the resume-generation analysis.
     void downloadMissingGeoFilesAndResume(
         const CoreInfo& coreInfo,
         const QString& geoValidationMessage,
@@ -279,23 +288,6 @@ private:
         const QString& downloadCoreStep,
         bool skipTunCleanup,
         bool showStartupOverlay);
-    void postStartupDownloadProgress(
-        const QString& step,
-        const QString& message,
-        const std::weak_ptr<char>& guard);
-    void postStartupDownloadProgress(
-        const QString& step,
-        const QString& message,
-        const BackgroundTaskCoordinator::Token& token,
-        const std::weak_ptr<char>& guard);
-    void handleStartupDownloadFinished(
-        const QString& step,
-        const OperationResult& result,
-        bool skipTunCleanup,
-        bool showStartupOverlay,
-        const QString& canceledMessage,
-        const QString& completedButCanceledMessage,
-        const std::function<void()>& successAction = {});
 
     void handleCoreStarted(const QString& serverIndexId);
     void validateCoreListeningAndHandleStarted(
@@ -366,6 +358,13 @@ private:
     // construction, so the load-bearing member order in AppBootstrapObjects.h does not gain
     // a new entry, and it dies with the session in every teardown path.
     ProxyHealthWatchdog* healthWatch_ = nullptr;
+    // The download-and-resume satellite (geo files, rule sets, core binaries). Same shape as
+    // healthWatch_: a QObject child of this session, so it dies with it in every teardown path
+    // and the AppBootstrapObjects member order gains nothing. It holds no state of its own --
+    // only the injected seams -- so there is no cancel()/arm() to call from the phase machine;
+    // an in-flight worker's continuation retires itself through the phase check in the finish
+    // handler (see StartupResourceBroker.h).
+    StartupResourceBroker* resourceBroker_ = nullptr;
     ProxyCrashRestartPolicy crashRestartPolicy_;
 
     CoreStartupChecklist checklist_;

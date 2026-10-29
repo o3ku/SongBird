@@ -1399,6 +1399,31 @@ songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logi
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The scoring half of SongBirdAutoCoordinator, extracted so the probe-feeding rules, the ranking
+# map the single selection loop consumes, and the switch-gate wrapper are testable without the
+# coordinator's config file, core process or UI wiring. RoutingScorePolicy itself stays frozen and
+# pinned by its own suite; this one covers the engine that owns the per-node state.
+set(SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES
+    AutoSelectionEngineTests.cpp
+    ../src/auto/AutoSelectionEngine.h
+    ../src/auto/AutoSelectionEngine.cpp
+    ../src/auto/AutoCoordinatorLogic.h
+    ../src/auto/AutoCoordinatorLogic.cpp
+    ../src/auto/AutoCountrySelection.h
+    ../src/auto/AutoCountrySelection.cpp
+    ../src/auto/AutoCountrySupport.h
+    ../src/auto/AutoCountrySupport.cpp
+    ../src/auto/AutoTypes.h
+)
+
+songbird_add_qt_test(songbird_auto_selection_engine_tests auto-selection-engine
+    SOURCES
+        ${SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 # The coordinator itself, not a pure helper: this suite exists because issue #12's deletion had no
 # coverage -- the mutation check (put the ForcedClear back) left every suite green, since
 # ProxySessionTests drives a session that cannot see the coordinator. It links the production
@@ -1417,6 +1442,8 @@ set(SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES
     ../src/auto/AutoCountrySupport.cpp
     ../src/auto/AutoNodeEvaluationService.h
     ../src/auto/AutoNodeEvaluationService.cpp
+    ../src/auto/AutoSelectionEngine.h
+    ../src/auto/AutoSelectionEngine.cpp
     ../src/auto/AutoRuntimeDefaults.h
     ../src/auto/AutoRuntimeDefaults.cpp
     ../src/auto/AutoTypes.h

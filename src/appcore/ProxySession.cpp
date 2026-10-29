@@ -22,6 +22,7 @@
 
 #include "appcore/OutboundLivenessProbeService.h"
 #include "appcore/OutboundLocationProbeService.h"
+#include "appcore/StartupResourceBroker.h"
 #include "common/ServerDisplayName.h"
 #include "appcore/TunSettingsApplyDecision.h"
 #include "appcore/TunRuntimeState.h"
@@ -35,7 +36,6 @@
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 #include "services/CoreUpdateService.h"
-#include "services/GeoResourceUpdateService.h"
 
 namespace {
 
@@ -124,35 +124,8 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
     return missingTags;
 }
 
-QStringList normalizedUniqueTags(const QStringList& tags)
-{
-    QStringList normalizedTags;
-    QSet<QString> seenTags;
-    for (const QString& tag : tags) {
-        const QString normalizedTag = tag.trimmed().toLower();
-        if (normalizedTag.isEmpty() || seenTags.contains(normalizedTag)) {
-            continue;
-        }
-        seenTags.insert(normalizedTag);
-        normalizedTags.append(normalizedTag);
-    }
-    return normalizedTags;
-}
-
-OperationResult combineOperationResults(const QList<OperationResult>& results)
-{
-    bool success = true;
-    QStringList messages;
-    for (const OperationResult& result : results) {
-        success = success && result.success;
-        if (!result.message.trimmed().isEmpty()) {
-            messages.append(result.message.trimmed());
-        }
-    }
-
-    const QString message = messages.join(QChar('\n'));
-    return success ? OperationResult::ok(message) : OperationResult::fail(message);
-}
+// combineOperationResults and normalizedUniqueTags moved to StartupResourceBroker.cpp's
+// anonymous namespace: only the download-and-resume paths used them.
 
 bool waitForLocalTcpPortReady(int port, int timeoutMs)
 {
@@ -222,6 +195,87 @@ ProxySession::ProxySession(Dependencies deps, QObject* parent)
     QObject::connect(healthWatch_, &ProxyHealthWatchdog::logMessage, this, [this](const QString& message) {
         emit logMessage(message);
     });
+
+    // The download-and-resume satellite, same construction shape as the health watch above.
+    // Every sentence it emits comes back here as a provider so the tr() calls and the .ts's
+    // "ProxySession" context stay together; every phase write it needs goes through the
+    // setPhase hook so this class stays the single writer of the phase machine; and the resume
+    // it hands back is startInternal(skipTunCleanup, /*environmentAlreadyChecked=*/true,
+    // showStartupOverlay) -- the same single entry every other resume path uses.
+    StartupResourceBroker::SessionStrings brokerStrings;
+    brokerStrings.coreDataDirectoryEmptySentence = [this]() {
+        return tr("Core data directory is empty.");
+    };
+    brokerStrings.geoDownloadStartSentence = [this](const QString& nativeDirectory) {
+        return tr("Missing geo database files detected. Downloading to %1.").arg(nativeDirectory);
+    };
+    brokerStrings.geoCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while Geo files were updating.");
+    };
+    brokerStrings.geoCompletedButCanceledSentence = [this]() {
+        return tr("Geo files were updated, but proxy startup was canceled.");
+    };
+    brokerStrings.ruleSetDownloadStartSentence = [this](int count, const QString& nativeDirectory) {
+        return tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
+            .arg(count)
+            .arg(nativeDirectory);
+    };
+    brokerStrings.ruleSetCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while sing-box rule sets were updating.");
+    };
+    brokerStrings.ruleSetCompletedButCanceledSentence = [this]() {
+        return tr("sing-box rule sets were updated, but proxy startup was canceled.");
+    };
+    brokerStrings.coreDownloadStartSentence = [this](const QString& coreName, const QString& nativeDirectory) {
+        return tr("Missing %1 core detected. Downloading to %2.").arg(coreName, nativeDirectory);
+    };
+    brokerStrings.backgroundTaskBusySentence = [this]() {
+        return tr("Another background task is already running.");
+    };
+    brokerStrings.coreDownloadBusyFailSentence = [this](const QString& coreName) {
+        return tr("Cannot download %1 while another background task is running.").arg(coreName);
+    };
+    brokerStrings.coreCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while the core was downloading.");
+    };
+    brokerStrings.coreCompletedButCanceledSentence = [this]() {
+        return tr("The core was downloaded, but proxy startup was canceled.");
+    };
+
+    StartupResourceBroker::SessionHooks brokerHooks;
+    brokerHooks.setPhase = [this](Phase phase) { setPhase(phase); };
+    brokerHooks.setCheckpointStatus =
+        [this](CoreStartupCheckpointStatus status, const QString& step, const QString& detail) {
+            setCheckpointStatus(status, step, detail);
+        };
+    brokerHooks.keepChecklistForUserDismissal =
+        [this](const QString& step, const QString& detail) {
+            keepChecklistForUserDismissal(step, detail);
+        };
+    brokerHooks.cancelActivation = [this]() { cancelActivation(); };
+    brokerHooks.failStartup = [this](const OperationResult& result) { failStartup(result); };
+    brokerHooks.resumeStartup = [this](bool skipTunCleanup, bool showStartupOverlay) {
+        startInternal(skipTunCleanup, true, showStartupOverlay);
+    };
+    brokerHooks.isActivationInProgress = [this]() { return isActivationInProgress(); };
+    brokerHooks.shuttingDown = [this]() { return shuttingDown_.load(); };
+    brokerHooks.configuredSystemProxyMode = [this]() {
+        return normalizeSystemProxyMode(currentRequest_.config.sysProxyType);
+    };
+    brokerHooks.requestStatusSync = [this]() { emit statusSyncRequested(); };
+    brokerHooks.logMessage = [this](const QString& message) { emit logMessage(message); };
+    brokerHooks.trackThread = [this](QThread* thread) { trackBackgroundThread(thread); };
+
+    resourceBroker_ = new StartupResourceBroker(
+        lifetimeGuard_,
+        StartupResourceBroker::Dependencies{
+            deps_.profileResolver,
+            deps_.backgroundTasks,
+            deps_.activationCoordinator,
+        },
+        std::move(brokerStrings),
+        std::move(brokerHooks),
+        this);
 }
 
 ProxySession::~ProxySession()
@@ -933,7 +987,13 @@ void ProxySession::cleanupAfterFailedStartup()
     emit statusSyncRequested();
 }
 
-// --- Download and resume ---
+// --- Download and resume -------------------------------------------------------
+// The bodies live in StartupResourceBroker (a QObject child of this session). The three
+// entries below keep their call sites' names and stay here because they read session state on
+// the GUI thread (the checklist step strings, the config snapshot for the core download) and
+// then hand everything the broker needs over as values -- a worker must never read a session
+// member. The tr() calls stay here for the same reason: the .ts holds every sentence under the
+// "ProxySession" context, and the broker receives them as finished strings.
 
 void ProxySession::downloadMissingGeoFilesAndResume(
     const CoreInfo& coreInfo,
@@ -942,60 +1002,12 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const QString targetDirectory = coreGeoDirectory(coreInfo);
-    if (targetDirectory.trimmed().isEmpty()) {
-        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Core data directory is empty.")));
-        return;
-    }
-
-    const QList<CoreGeoFileRequirement> requirements = coreGeoFileRequirementsFor(coreInfo);
-    if (requirements.isEmpty()) {
-        // Nothing to fetch after all; go straight on rather than stalling on an empty download.
-        startInternal(skipTunCleanup, true, showStartupOverlay);
-        return;
-    }
-
-    const QString startMessage = tr("Missing geo database files detected. Downloading to %1.")
-        .arg(QDir::toNativeSeparators(targetDirectory));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
-    emit logMessage(geoValidationMessage);
-
-    setPhase(Phase::ValidateRuntimeResources);
-
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread([this, targetDirectory, requirements, checkGeoStep,
-                                       skipTunCleanup, showStartupOverlay, guard]() {
-        const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            postStartupDownloadProgress(checkGeoStep, message, guard);
-        };
-
-        GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
-        QList<OperationResult> results;
-        for (const CoreGeoFileRequirement& requirement : requirements) {
-            // A file already on disk is not fetched again, so a retry after a canceled or failed
-            // download resumes instead of re-pulling everything the core needs.
-            if (coreGeoFileIsPresent(targetDirectory, requirement.fileName)) {
-                continue;
-            }
-            results.append(geoUpdateService.updateCoreGeoFile(requirement));
-        }
-        const OperationResult result = combineOperationResults(results);
-
-        QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
-                                         showStartupOverlay, guard]() {
-            if (guard.expired() || shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                checkGeoStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while Geo files were updating."),
-                tr("Geo files were updated, but proxy startup was canceled."));
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
+    resourceBroker_->downloadMissingGeoFilesAndResume(
+        coreInfo,
+        geoValidationMessage,
+        checkGeoStep,
+        skipTunCleanup,
+        showStartupOverlay);
 }
 
 void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
@@ -1004,49 +1016,11 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const QStringList tags = normalizedUniqueTags(missingRuleSetTags);
-    if (tags.isEmpty()) {
-        startInternal(skipTunCleanup, true, showStartupOverlay);
-        return;
-    }
-
-    const QString targetDirectory = AppPaths::applicationDirectory();
-    const QString startMessage = tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
-        .arg(tags.size())
-        .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(SingBoxPaths::ruleSetDirectoryName())));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
-
-    setPhase(Phase::ValidateRuntimeResources);
-
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread([this, targetDirectory, tags, checkGeoStep, skipTunCleanup,
-                                       showStartupOverlay, guard]() {
-        const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            postStartupDownloadProgress(checkGeoStep, message, guard);
-        };
-
-        GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
-        QList<OperationResult> results;
-        for (const QString& tag : tags) {
-            results.append(geoUpdateService.updateSingBoxRuleSet(tag));
-        }
-        const OperationResult result = combineOperationResults(results);
-
-        QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
-                                         showStartupOverlay, guard]() {
-            if (guard.expired() || shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                checkGeoStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while sing-box rule sets were updating."),
-                tr("sing-box rule sets were updated, but proxy startup was canceled."));
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
+    resourceBroker_->downloadMissingSingBoxRuleSetsAndResume(
+        missingRuleSetTags,
+        checkGeoStep,
+        skipTunCleanup,
+        showStartupOverlay);
 }
 
 void ProxySession::downloadMissingCoreAndResume(
@@ -1056,154 +1030,18 @@ void ProxySession::downloadMissingCoreAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const CoreType runtimeCore = deps_.profileResolver.resolveRuntimeCoreType(coreType);
-    const QString installDirectory = deps_.profileResolver.resolveCoreInstallDirectory(runtimeCore);
-    if (runtimeCore == CoreType::Unknown || installDirectory.trimmed().isEmpty()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep, missingCoreResult.message);
-        failStartup(missingCoreResult);
-        return;
-    }
-
-    const QString startMessage = tr("Missing %1 core detected. Downloading to %2.")
-        .arg(coreTypeDisplayName(runtimeCore))
-        .arg(QDir::toNativeSeparators(installDirectory));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, downloadCoreStep, startMessage);
-    emit logMessage(missingCoreResult.message);
-
-    const BackgroundTaskCoordinator::Token token =
-        deps_.backgroundTasks.tryBeginStartupTask(BackgroundTaskCoordinator::Kind::CoreUpdate);
-    if (!token.isValid()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep,
-            tr("Another background task is already running."));
-        failStartup(OperationResult::fail(
-            tr("Cannot download %1 while another background task is running.")
-                .arg(coreTypeDisplayName(runtimeCore))));
-        return;
-    }
-
-    setPhase(Phase::ValidateCoreApplication);
-
+    // The config snapshot the core download reads, copied on the GUI thread before the worker
+    // launches -- the same seam-copy rule every worker in this class follows.
     const CoreUpdateConfig workerConfig{
         currentRequest_.config.checkPreReleaseUpdate,
         currentRequest_.config.ignoreGeoUpdateCore};
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-
-    QThread* thread = launchBackgroundThread([this, runtimeCore, workerConfig, installDirectory,
-                                       downloadCoreStep, skipTunCleanup,
-                                       showStartupOverlay, token, guard]() {
-        CoreUpdateService coreUpdateService;
-        CoreUpdateService::UpdateOptions options;
-        options.progressHandler = [this, downloadCoreStep, token, guard](const QString& message) {
-            postStartupDownloadProgress(downloadCoreStep, message, token, guard);
-        };
-        options.cancelCheck = [this]() {
-            QThread* currentThread = QThread::currentThread();
-            return shuttingDown_.load()
-                || (currentThread != nullptr && currentThread->isInterruptionRequested());
-        };
-        options.skipLocalVersionCheck = true;
-
-        const OperationResult result = coreUpdateService.update(
-            runtimeCore, workerConfig, installDirectory, options);
-
-        QMetaObject::invokeMethod(this, [this, downloadCoreStep, skipTunCleanup,
-                                         showStartupOverlay, token, result, guard]() {
-            if (guard.expired()) {
-                return;
-            }
-            if (!deps_.backgroundTasks.isCurrent(token)) {
-                return;
-            }
-            deps_.backgroundTasks.finish(token);
-            if (shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                downloadCoreStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while the core was downloading."),
-                tr("The core was downloaded, but proxy startup was canceled."),
-                [this]() { deps_.activationCoordinator.refreshExistingCoreTypes(); });
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
-}
-
-void ProxySession::postStartupDownloadProgress(
-    const QString& step,
-    const QString& message,
-    const std::weak_ptr<char>& guard)
-{
-    if (message.trimmed().isEmpty()) {
-        return;
-    }
-
-    QMetaObject::invokeMethod(this, [this, step, message, guard]() {
-        if (guard.expired() || !isActivationInProgress()) {
-            return;
-        }
-        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
-    }, Qt::QueuedConnection);
-}
-
-void ProxySession::postStartupDownloadProgress(
-    const QString& step,
-    const QString& message,
-    const BackgroundTaskCoordinator::Token& token,
-    const std::weak_ptr<char>& guard)
-{
-    if (message.trimmed().isEmpty()) {
-        return;
-    }
-
-    QMetaObject::invokeMethod(this, [this, step, message, token, guard]() {
-        if (guard.expired()) {
-            return;
-        }
-        if (!deps_.backgroundTasks.isCurrent(token)) {
-            return;
-        }
-        if (!isActivationInProgress()) {
-            return;
-        }
-        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
-    }, Qt::QueuedConnection);
-}
-
-void ProxySession::handleStartupDownloadFinished(
-    const QString& step,
-    const OperationResult& result,
-    bool skipTunCleanup,
-    bool showStartupOverlay,
-    const QString& canceledMessage,
-    const QString& completedButCanceledMessage,
-    const std::function<void()>& successAction)
-{
-    if (!isActivationInProgress()) {
-        keepChecklistForUserDismissal(step, canceledMessage);
-        cancelActivation();
-        emit statusSyncRequested();
-        return;
-    }
-    if (!result.success) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, step, result.message);
-        failStartup(result);
-        return;
-    }
-    if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
-        keepChecklistForUserDismissal(step, completedButCanceledMessage);
-        cancelActivation();
-        emit statusSyncRequested();
-        return;
-    }
-
-    if (successAction) {
-        successAction();
-    }
-    setCheckpointStatus(CoreStartupCheckpointStatus::Passed, step, result.message);
-    startInternal(skipTunCleanup, true, showStartupOverlay);
+    resourceBroker_->downloadMissingCoreAndResume(
+        coreType,
+        missingCoreResult,
+        downloadCoreStep,
+        skipTunCleanup,
+        showStartupOverlay,
+        workerConfig);
 }
 // --- Core started/failed ---
 

@@ -20,12 +20,15 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/ProxyRuntimeInterfaces.h
     appcore/IUserFeedback.h
     appcore/PostStopAction.h
+    appcore/ProxySessionHost.h
     appcore/ProxyCrashRestartPolicy.h
     appcore/ProxyCrashRestartPolicy.cpp
     appcore/ProxyHealthWatchPolicy.h
     appcore/ProxyHealthWatchPolicy.cpp
     appcore/ProxyHealthWatchdog.h
     appcore/ProxyHealthWatchdog.cpp
+    appcore/StartupResourceBroker.h
+    appcore/StartupResourceBroker.cpp
     appcore/HealthStripPolicy.h
     appcore/HealthStripPolicy.cpp
     appcore/RoutingScorePolicy.h
@@ -574,6 +577,8 @@ set(SONGBIRD_AUTO_SOURCES
     auto/AutoRuntimeDefaults.cpp
     auto/AutoNodeEvaluationService.h
     auto/AutoNodeEvaluationService.cpp
+    auto/AutoSelectionEngine.h
+    auto/AutoSelectionEngine.cpp
     auto/SongBirdAutoCoordinator.h
     auto/SongBirdAutoCoordinator.cpp
     auto/SongBirdAutoWindow.h
