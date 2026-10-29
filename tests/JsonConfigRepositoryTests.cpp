@@ -1047,11 +1047,15 @@ void JsonConfigRepositoryTests::saveSkipsRewritingFilesWhoseContentDidNotChange(
     QCOMPARE(QFileInfo(configPath).lastModified(), primaryBefore);
     QCOMPARE(QFileInfo(statePath).lastModified(), stateBefore);
 
-    // A real change still rewrites. This also keeps the first half honest on a filesystem
-    // whose clock is coarse enough to hide a rewrite that did happen.
+    // A real change still reaches the disk. The observable is content, not a newer
+    // modification time: Qt reports file times to the millisecond, and a fast machine
+    // (this case runs again as part of the suite check, with everything still in the
+    // file cache) can finish the whole sequence inside one millisecond, which made the
+    // time comparison flaky on the release runner while never failing locally.
     config.collection().servers[0].remarks = QStringLiteral("renamed");
     QVERIFY(repository.save(config));
-    QVERIFY(QFileInfo(configPath).lastModified() != primaryBefore);
+    const QJsonArray servers = readJsonFile(configPath).value(QStringLiteral("servers")).toArray();
+    QCOMPARE(servers.at(0).toObject().value(QStringLiteral("remarks")).toString(), QStringLiteral("renamed"));
 }
 void JsonConfigRepositoryTests::saveRemovesEmptyStateFile()
 {
