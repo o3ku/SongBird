@@ -186,6 +186,16 @@ if(Python3_Interpreter_FOUND)
     songbird_add_python_guard(py-guard-selftest selftest_guards.py)
     set_tests_properties(py-guard-selftest PROPERTIES LABELS "guard" TIMEOUT 900)
 
+    # The equivalence harness: the same rules, .ps1 and .py, against the same clean and
+    # mutated trees, with the violation lists required to agree. Registered only where pwsh
+    # exists, because it runs both halves; on the Linux PR gate that condition is false and
+    # the harness would have nothing to compare.
+    find_program(SONGBIRD_GUARD_EQUIV_PWSH NAMES pwsh)
+    if(SONGBIRD_GUARD_EQUIV_PWSH)
+        songbird_add_python_guard(py-guard-equivalence guard_equivalence.py)
+        set_tests_properties(py-guard-equivalence PROPERTIES LABELS "guard" TIMEOUT 900)
+    endif()
+
     if(SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR)
         songbird_add_python_guard(py-translations-embedded check_translations_embedded.py
             --build-directory ${SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR}/src

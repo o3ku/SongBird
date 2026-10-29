@@ -17,7 +17,7 @@
 #include "appcore/CoreStartupChecklist.h"
 #include "appcore/PostStopAction.h"
 #include "appcore/ProxyCrashRestartPolicy.h"
-#include "appcore/ProxyHealthWatchPolicy.h"
+#include "appcore/ProxyHealthWatchdog.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
@@ -112,7 +112,7 @@ public:
     // The probe period. `intervalMs` is a parameter rather than a constant because the first probe
     // only fires after a full interval, so a test that cannot shorten it can never reach the watch
     // at all -- the same reason ThreadShutdownBudget is injectable. Production callers leave it.
-    static constexpr int kDefaultHealthWatchIntervalMs = 30000;
+    static constexpr int kDefaultHealthWatchIntervalMs = ProxyHealthWatchdog::kDefaultIntervalMs;
     void setAvailabilityCheck(
         AvailabilityCheck check,
         int intervalMs = kDefaultHealthWatchIntervalMs);
@@ -325,16 +325,6 @@ private:
     void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
 
-    void scheduleHealthWatch();
-    void runHealthWatch();
-    void finishHealthWatch(const OperationResult& result);
-    void cancelHealthWatch();
-    // Re-probes direct connectivity while a warning that was caused by it is still on screen, and
-    // drops the warning once the machine can reach the probe hosts again. Bounded in the worker.
-    void recheckWaivedOutboundWarning();
-    void runDirectRecheck();
-    void finishDirectRecheck(bool directReachable);
-
     void setServerLocation(QString location);
     void clearServerLocation();
 
@@ -369,20 +359,14 @@ private:
     // The identity of the armed scheduleCoreStartAfterStop() lambda. Bumped by stopInternal() and
     // cleanupAfterFailedStartup() so a resume armed before either of them cannot run afterwards.
     quint64 pendingResumeId_ = 0;
-    QTimer* healthWatchTimer_ = nullptr;
+
+    // Every piece of health-watch state lives in this satellite object (two timers, the
+    // policy, the in-flight flags, the two injected probes). It is a QObject child of the
+    // session rather than a member of AppBootstrapObjects: the session outlives it by
+    // construction, so the load-bearing member order in AppBootstrapObjects.h does not gain
+    // a new entry, and it dies with the session in every teardown path.
+    ProxyHealthWatchdog* healthWatch_ = nullptr;
     ProxyCrashRestartPolicy crashRestartPolicy_;
-    ProxyHealthWatchPolicy healthWatchPolicy_;
-    AvailabilityCheck availabilityCheck_;
-    DirectConnectivityCheck directConnectivityCheck_;
-    int healthWatchIntervalMs_ = kDefaultHealthWatchIntervalMs;
-    bool healthWatchInProgress_ = false;
-    // Set only while the status bar is showing the "cannot reach the probe hosts directly either"
-    // waiver. That sentence describes the local network, not the node, so nothing in the health
-    // watch ever retracts it -- it used to survive for the rest of the session even after the
-    // network came back.
-    bool waivedOutboundWarningShown_ = false;
-    bool directRecheckInProgress_ = false;
-    QTimer* directRecheckTimer_ = nullptr;
 
     CoreStartupChecklist checklist_;
 

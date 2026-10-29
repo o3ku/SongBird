@@ -24,6 +24,8 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/ProxyCrashRestartPolicy.cpp
     appcore/ProxyHealthWatchPolicy.h
     appcore/ProxyHealthWatchPolicy.cpp
+    appcore/ProxyHealthWatchdog.h
+    appcore/ProxyHealthWatchdog.cpp
     appcore/HealthStripPolicy.h
     appcore/HealthStripPolicy.cpp
     appcore/RoutingScorePolicy.h

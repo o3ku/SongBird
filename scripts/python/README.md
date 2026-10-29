@@ -23,6 +23,16 @@ live in the `.ps1` — the port does not restate them. When you change a rule, c
 `selftest_guards.py` is the check on that: it breaks every rule in a throwaway copy and
 asserts the port goes red, then asserts every port is green on an untouched copy.
 
+`guard_equivalence.py` is the check on the other half of that promise: the self-test proves
+each implementation can fail, the equivalence run proves the two implementations *agree*.
+For every rule it runs the `.ps1` and the `.py` against the same clean tree and the same
+mutations, and requires identical violation lists (path spellings normalized). It needs
+both pwsh and python, so `py-guard-equivalence` is registered only where pwsh exists —
+the GitHub Windows runners qualify, the Linux PR gate does not. Its first run already paid
+for itself: `check-backend-boundaries.ps1` compared front-end directories by string, and
+`Resolve-Path`'s 8.3 short-path form made every front end look uncovered on a temp-tree
+copy — invisible while the guard only ever scanned `src` by relative path.
+
 ## What each one needs
 
 | Test | Needs | Skips loudly without |
