@@ -1,7 +1,9 @@
 #include <QtTest>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -302,6 +304,7 @@ private slots:
     void loadIgnoresLegacyOnlyFields();
     void loadDropsPortOverridesThatDisagreeWithTheLocalPort();
     void saveWritesCanonicalSongBirdStructure();
+    void saveSkipsRewritingFilesWhoseContentDidNotChange();
     void saveRemovesEmptyStateFile();
     void saveReplacesExistingRootInsteadOfMerging();
     void textImportFailureNamesTheProtocolsItCouldNotUse();
@@ -1017,6 +1020,39 @@ void JsonConfigRepositoryTests::saveWritesCanonicalSongBirdStructure()
     QCOMPARE(reloaded.collection().servers.constFirst().subId, QStringLiteral("sub-1"));
 }
 
+
+void JsonConfigRepositoryTests::saveSkipsRewritingFilesWhoseContentDidNotChange()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+    const QString statePath = makeStatePath(tempDir);
+    JsonConfigRepository repository(configPath);
+
+    Config config;
+    config.collection().servers = {makeServer()};
+    QVERIFY(repository.save(config));
+
+    const QDateTime primaryBefore = QFileInfo(configPath).lastModified();
+    const QDateTime stateBefore = QFileInfo(statePath).lastModified();
+
+    // Saving an unchanged config must not touch either file: the replace inside
+    // writeFileAtomically gives the file a new identity, which a cloud-synced directory
+    // (a portable install kept in OneDrive) reads as a modification to copy -- and two
+    // machines copying at each other is exactly how "-DESKTOP-XXX" conflict copies appear.
+    // Identical modification times are the observable: NTFS and ext4 both timestamp far
+    // finer than the microseconds a skipped save takes, so an actual rewrite would differ.
+    QVERIFY(repository.save(config));
+    QCOMPARE(QFileInfo(configPath).lastModified(), primaryBefore);
+    QCOMPARE(QFileInfo(statePath).lastModified(), stateBefore);
+
+    // A real change still rewrites. This also keeps the first half honest on a filesystem
+    // whose clock is coarse enough to hide a rewrite that did happen.
+    config.collection().servers[0].remarks = QStringLiteral("renamed");
+    QVERIFY(repository.save(config));
+    QVERIFY(QFileInfo(configPath).lastModified() != primaryBefore);
+}
 void JsonConfigRepositoryTests::saveRemovesEmptyStateFile()
 {
     QTemporaryDir tempDir;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QFile>
 #include <QIODevice>
 #include <QSaveFile>
 #include <QString>
@@ -31,6 +32,24 @@ inline WriteResult writeFileAtomically(
     const QByteArray& content,
     QIODevice::OpenModeFlag textFlag = QIODevice::NotOpen)
 {
+    // An identical rewrite is skipped rather than replaced: QSaveFile's temp-and-replace gives
+    // the file a brand-new identity, so a cloud-synced folder (OneDrive) treats every save as a
+    // modification to copy -- a state-only save was re-uploading the unchanged primary config on
+    // every probe round, and two machines doing that could only end in conflict copies. Reading
+    // the existing file with the same text flag compares what a write would produce (line-ending
+    // translation included) against what is already on disk. The reader is scoped: a handle left
+    // open on Windows blocks the replace below.
+    bool identicalOnDisk = false;
+    {
+        QFile existing(path);
+        if (existing.open(QIODevice::ReadOnly | textFlag)) {
+            identicalOnDisk = existing.readAll() == content;
+        }
+    }
+    if (identicalOnDisk) {
+        return {true, WriteFailureStage::None, {}};
+    }
+
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | textFlag)) {
         return {false, WriteFailureStage::Open, file.errorString()};
