@@ -23,6 +23,7 @@
 #include "appcore/TunRuntimeService.h"
 #include "common/ThreadShutdown.h"
 #include "auto/AutoSelectionEngine.h"
+#include "auto/AutoTunRuntime.h"
 #include "auto/AutoTypes.h"
 #include "domain/models/Config.h"
 #include "persistence/JsonConfigRepository.h"
@@ -205,15 +206,14 @@ private:
     void wireActivationCoordinator();
     void wireRuntimeEnvironment(FunctionRuntimeEnvironment& runtime);
     void stopProxySession(bool immediate);
-    OperationResult startTunRuntime(bool relayToProxy);
-    void stopTunRuntime(bool cleanupAdapter);
+    // The TUN runtime's presentation wiring (log/status forwarding), shared by the two
+    // construction paths so neither builds a silent shell.
+    void wireTunRuntimePresentation();
     bool syncTunRuntimeForCurrentState();
     // A killed process leaves our values in the registry with no one to undo them. The persisted
     // snapshot is the evidence they are ours: a registry that is on with no snapshot may be the
     // user's own proxy, and touching that is what the ownership rules exist to prevent.
     void recoverSystemProxyFromPreviousRun();
-    QString writeTunRuntimeConfig(bool relayToProxy) const;
-    CoreInfo resolveSingBoxCoreInfo() const;
     bool updateSystemProxyMode(SystemProxyMode mode) const;
     QString proxyExceptions() const;
     QString selectedCountryDisplayName() const;
@@ -261,6 +261,9 @@ private:
     std::unique_ptr<CoreDiscoveryService> coreDiscoveryService_;
     std::unique_ptr<CoreProcessCleanupService> coreCleanupService_;
     std::unique_ptr<TunRuntimeService> tunRuntimeService_;
+    // The TUN shell (AutoSessionShell's first resident): owns the TUN core's lifecycle and the
+    // adapter cleanup that used to be four inline methods here. See auto/AutoTunRuntime.h.
+    std::unique_ptr<AutoTunRuntime> tunRuntime_;
     std::unique_ptr<AppRuntimeResolver> runtimeResolver_;
     std::unique_ptr<ClientConfigWriter> clientConfigWriter_;
     // Borrowed when the caller injected one (the test seam), owned when it is the production host.
@@ -298,7 +301,6 @@ private:
     bool forceCountryTestAfterSubscriptionUpdate_ = false;
     bool forceSubscriptionUpdateIfNoUsableAfterTest_ = false;
     bool noUsableRecoveryUpdateAttempted_ = false;
-    bool tunRuntimeRelayToProxy_ = false;
     bool healthCheckInProgress_ = false;
     // When the active node finished starting. Reset with the other per-session state, because a
     // hold window that survived a stop would delay the first switch of the next session.

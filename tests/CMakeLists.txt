@@ -1444,6 +1444,8 @@ set(SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES
     ../src/auto/AutoNodeEvaluationService.cpp
     ../src/auto/AutoSelectionEngine.h
     ../src/auto/AutoSelectionEngine.cpp
+    ../src/auto/AutoTunRuntime.h
+    ../src/auto/AutoTunRuntime.cpp
     ../src/auto/AutoRuntimeDefaults.h
     ../src/auto/AutoRuntimeDefaults.cpp
     ../src/auto/AutoTypes.h

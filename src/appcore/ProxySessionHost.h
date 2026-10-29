@@ -149,11 +149,15 @@
 // Future shells
 // ---------------------------------------------------------------------------
 //
-// AutoSessionShell: if the Auto-only surface grows past
-// undoManagedSystemProxyAfterAbortedStartup() — a second auto-only entry point of any kind is
-// the trigger — the fix is a shell class above ProxySession in src/auto/ that owns the
-// TUN-before-session ordering and whatever else accumulates, not a new method or flag on the
-// shared session. Until that trigger fires, the single method above stays, documented.
+// AutoSessionShell — status: its first resident exists. src/auto/AutoTunRuntime is the
+// shell's opening move: the TUN runtime SongBirdAuto owns (core lifecycle, adapter cleanup,
+// the TUN-before-session ordering, and the caller of undoManagedSystemProxyAfterAbortedStartup
+// on the abort branch) moved out of SongBirdAutoCoordinator into it. The session entry itself
+// stays on ProxySession for now — the ownership decision is session-side by design and moving
+// the decision would be churn, not decoupling — but its caller now lives in the front end the
+// seam exists for, which is the shape the AGENTS.md rule prescribes. A second Auto-only entry
+// point of any kind still means growing AutoTunRuntime (or a sibling shell class in src/auto/),
+// never a new method or flag on the shared session.
 //
 // The terminal proxy (see AGENTS.md, "The terminal proxy is implemented but deliberately not
 // wired into the app") must NOT add any new ProxySession seam at all when it is wired. It is

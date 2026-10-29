@@ -579,6 +579,8 @@ set(SONGBIRD_AUTO_SOURCES
     auto/AutoNodeEvaluationService.cpp
     auto/AutoSelectionEngine.h
     auto/AutoSelectionEngine.cpp
+    auto/AutoTunRuntime.h
+    auto/AutoTunRuntime.cpp
     auto/SongBirdAutoCoordinator.h
     auto/SongBirdAutoCoordinator.cpp
     auto/SongBirdAutoWindow.h

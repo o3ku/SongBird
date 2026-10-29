@@ -24,6 +24,7 @@
 #include "auto/AutoCountryInference.h"
 #include "auto/AutoNodeEvaluationService.h"
 #include "auto/AutoRuntimeDefaults.h"
+#include "auto/AutoTunRuntime.h"
 #include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 #include "common/BackgroundThreadLaunch.h"
@@ -102,7 +103,9 @@ SongBirdAutoCoordinator::~SongBirdAutoCoordinator()
         evaluationCancel_->store(true);
     }
     stopProxySession(true);
-    stopTunRuntime(true);
+    if (tunRuntime_ != nullptr) {
+        tunRuntime_->shutdown(true);
+    }
     clearThreads();
 }
 
@@ -122,6 +125,17 @@ bool SongBirdAutoCoordinator::initialize()
     clientConfigWriter_ = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
     auxiliaryCore_ = std::make_unique<QtCoreProcessHost>();
     tunCore_ = std::make_unique<QtCoreProcessHost>();
+    // The TUN runtime shell (AutoSessionShell's first resident, see ProxySessionHost.h): it owns
+    // the TUN core, the adapter cleanup and the abort-branch undo ordering that used to be four
+    // inline methods here. Wiring happens after config load -- like the inline code, it needs
+    // config_ for nothing at construction, but the log/status forwarding below needs `this`.
+    tunRuntime_ = std::make_unique<AutoTunRuntime>(AutoTunRuntime::Dependencies{
+        *tunCore_,
+        *tunRuntimeService_,
+        coreDiscoveryService_.get(),
+        configPath_,
+        []() { return isProcessElevated(); }});
+    wireTunRuntimePresentation();
     locationProbe_ = std::make_unique<OutboundLocationProbeService>();
     livenessProbe_ = std::make_unique<OutboundLivenessProbeService>();
     backgroundTasks_ = std::make_unique<BackgroundTaskCoordinator>();
@@ -251,6 +265,32 @@ void SongBirdAutoCoordinator::wireActivationCoordinator()
     };
 }
 
+// One forwarding wiring, two construction paths (initialize() and the standalone session):
+// every line, status and sentence the shell reports arrives here and keeps the presentation
+// this class already used -- the shell itself carries no log strings of its own.
+void SongBirdAutoCoordinator::wireTunRuntimePresentation()
+{
+    if (tunRuntime_ == nullptr) {
+        return;
+    }
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunOutput, this, [this](const QString& line) {
+        log(QStringLiteral("tun | %1").arg(line));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunStarted, this, [this](const QString& message) {
+        log(QStringLiteral("TUN runtime started. %1").arg(message));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunStartFailed, this, [this](const QString& message) {
+        log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunExitedUnexpectedly, this, [this](int exitCode) {
+        log(QStringLiteral("TUN runtime exited unexpectedly: %1").arg(exitCode));
+        setStatus(QStringLiteral("TUN stopped unexpectedly"));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::adapterCleanupResult, this, [this](const OperationResult& result) {
+        log(result.message);
+    });
+}
+
 void SongBirdAutoCoordinator::createProxySession()
 {
     // initialize() builds every member below before its tail reaches this function; the null
@@ -274,6 +314,19 @@ void SongBirdAutoCoordinator::createProxySession()
         runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
         wireRuntimeEnvironment(*runtimeEnvironment_);
         wireActivationCoordinator();
+    }
+    if (tunRuntime_ == nullptr && tunCore_ != nullptr && tunRuntimeService_ != nullptr) {
+        // The standalone session path (the teardown tests) may arrive before initialize(); the
+        // TUN shell needs the same two members initialize() hands it, and the same log/status
+        // forwarding, or a TUN failure driven through startSessionForTest() would report
+        // nothing at all.
+        tunRuntime_ = std::make_unique<AutoTunRuntime>(AutoTunRuntime::Dependencies{
+            *tunCore_,
+            *tunRuntimeService_,
+            coreDiscoveryService_.get(),
+            configPath_,
+            []() { return isProcessElevated(); }});
+        wireTunRuntimePresentation();
     }
     proxySession_ = std::make_unique<ProxySession>(ProxySession::Dependencies{
         *mainCore_,
@@ -1822,14 +1875,13 @@ void SongBirdAutoCoordinator::startProxySession()
     if (proxySession_ == nullptr) {
         return;
     }
-    const OperationResult tunResult = startTunRuntime(true);
+    // TUN-before-session is the ordering this front end owns (ProxySessionHost.h): the shell
+    // starts the device, and its failure branch runs the session-side ownership undo because
+    // nothing on the not-yet-started session's path would -- issue #8's chain.
+    const OperationResult tunResult = tunRuntime_->syncForConfig(
+        config_, AutoTunRuntime::Routing::RelayToLocalProxy, proxySession_.get());
     if (!tunResult.success) {
-        // A TUN failure aborts the start before ProxySession::start() runs, so nothing on that
-        // path would undo a proxy an earlier round of this session applied -- issue #8's chain
-        // (core crash -> internal restart -> stop -> the queued continuation re-entering here).
-        // The ownership decision lives in the session, never here: only it knows whether the
-        // registry holds our values.
-        proxySession_->undoManagedSystemProxyAfterAbortedStartup();
+        tunRuntime_->undoSessionProxyAfterAbortedStart(proxySession_.get());
         rollbackStartAfterTunFailure(QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
         return;
     }
@@ -1895,118 +1947,31 @@ void SongBirdAutoCoordinator::stopProxySession(bool immediate)
     }
 }
 
-CoreInfo SongBirdAutoCoordinator::resolveSingBoxCoreInfo() const
+bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
 {
-    CoreInfo info;
-    info.type = CoreType::SingBox;
-    const QString program = coreDiscoveryService_ == nullptr
-        ? QString()
-        : coreDiscoveryService_->locateFirstExistingFile(
-              coreDiscoveryService_->resolveCoreCandidates(CoreType::SingBox, configPath_));
-    if (program.trimmed().isEmpty()) {
-        return {};
+    if (tunRuntime_ == nullptr) {
+        return !config_.tun().tunModeItem.enableTun;
     }
-    info.program = program;
-    info.arguments.clear();
-    info.arguments << QStringLiteral("run") << QStringLiteral("-c") << info.configPlaceholder;
-    info.appendConfigArgument = false;
-    info.workingDirectory = QFileInfo(program).absolutePath();
-    return info;
-}
-
-QString SongBirdAutoCoordinator::writeTunRuntimeConfig(bool relayToProxy) const
-{
-    const QString runtimeDirectory = AppPaths::runtimeDirectory();
-    if (!QDir().mkpath(runtimeDirectory)) {
-        return {};
-    }
-
-    // The TUN device is created by a sing-box process of its own, so its configuration is a core
-    // artifact: it is assembled by the core backend, not here. Writing it ourselves is what used to
-    // nest the outbound list one level deep and hand sing-box a config it refused to load.
-    const QJsonObject root = AuxiliaryTunConfig::buildRoot(
-        CoreType::SingBox,
-        config_,
-        relayToProxy ? AuxiliaryTunRouting::RelayToLocalProxy : AuxiliaryTunRouting::DirectOnly);
-    if (root.isEmpty()) {
-        return {};
-    }
-
-    const QString configPath = QDir(runtimeDirectory).filePath(QStringLiteral("auto-tun.generated.json"));
-    QFile file(configPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return {};
-    }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-    file.close();
-    return configPath;
-}
-
-OperationResult SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
-{
-    if (!config_.tun().tunModeItem.enableTun) {
-        stopTunRuntime(true);
-        return OperationResult::ok();
-    }
-    if (tunCore_ == nullptr) {
-        return OperationResult::fail(QStringLiteral("TUN runtime unavailable"));
-    }
-    if (tunCore_->isRunning() && tunRuntimeRelayToProxy_ == relayToProxy) {
-        return OperationResult::ok();
-    }
-    if (isWindowsPlatform() && !isProcessElevated()) {
-        log(QStringLiteral("TUN requires administrator privileges."));
-        return OperationResult::fail(QStringLiteral("TUN requires administrator privileges"));
-    }
-
-    stopTunRuntime(false);
-    if (tunRuntimeService_ != nullptr) {
-        const OperationResult cleanupResult = tunRuntimeService_->removeStaleAdapterIfPresent();
-        log(cleanupResult.message);
-        if (!cleanupResult.success) {
-            // Rebuilt rather than returned as-is: the caller composes this message into the status
-            // line, so it must not carry a `cancelled` flag it did not earn.
-            return OperationResult::fail(cleanupResult.message);
+    const AutoTunRuntime::Routing routing = running_ && isProxySessionRunningOrTransitioning()
+        ? AutoTunRuntime::Routing::RelayToLocalProxy
+        : AutoTunRuntime::Routing::DirectOnly;
+    const OperationResult tunResult = tunRuntime_->syncForConfig(config_, routing, nullptr);
+    if (tunResult.success) {
+        if (config_.tun().tunModeItem.enableTun) {
+            setStatus(routing == AutoTunRuntime::Routing::RelayToLocalProxy
+                    ? QStringLiteral("TUN routing through proxy")
+                    : QStringLiteral("TUN device ready"));
         }
+        return true;
     }
-
-    const CoreInfo coreInfo = resolveSingBoxCoreInfo();
-    if (coreInfo.program.trimmed().isEmpty()) {
-        const QString message = QStringLiteral("TUN requires sing-box, but no sing-box executable was found.");
-        log(message);
-        return OperationResult::fail(message);
-    }
-    const QString configPath = writeTunRuntimeConfig(relayToProxy);
-    if (configPath.trimmed().isEmpty()) {
-        const QString message = QStringLiteral("Failed to write TUN runtime config.");
-        log(message);
-        return OperationResult::fail(message);
-    }
-
-    tunRuntimeRelayToProxy_ = relayToProxy;
-    const OperationResult startResult = tunCore_->start(
-        coreInfo,
-        configPath,
-        [this](const QString& line) { log(QStringLiteral("tun | %1").arg(line)); },
-        [this](const QString& message) { log(QStringLiteral("TUN runtime started. %1").arg(message)); },
-        // Logged, not published: the caller composes one status from this result, so a status
-        // written here would only be overwritten by the caller's version of the same fact.
-        [this](const QString& message) {
-            log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
-        },
-        [this](int exitCode, QProcess::ExitStatus, bool stopRequested) {
-            if (!stopRequested && config_.tun().tunModeItem.enableTun) {
-                log(QStringLiteral("TUN runtime exited unexpectedly: %1").arg(exitCode));
-                setStatus(QStringLiteral("TUN stopped unexpectedly"));
-            }
-        });
-    if (!startResult.success) {
-        log(startResult.message);
-        return startResult;
-    }
-    setStatus(relayToProxy ? QStringLiteral("TUN routing through proxy") : QStringLiteral("TUN device ready"));
-    return OperationResult::ok();
+    // The reason the shell just logged would otherwise be replaced by whatever the caller says
+    // next -- the same two-step that made a failed TUN indistinguishable from a plain stop.
+    setStatus(running_
+            ? QStringLiteral("TUN failed: %1 (the proxy is still active)").arg(tunResult.message)
+            : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
+    return false;
 }
+
 void SongBirdAutoCoordinator::recoverSystemProxyFromPreviousRun()
 {
     if (systemProxyService_ == nullptr) {
@@ -2039,39 +2004,6 @@ void SongBirdAutoCoordinator::recoverSystemProxyFromPreviousRun()
         log(QStringLiteral("Failed to restore the system proxy a previous run left behind; will retry on the next start."));
     }
 }
-
-
-void SongBirdAutoCoordinator::stopTunRuntime(bool cleanupAdapter)
-{
-    if (tunCore_ != nullptr) {
-        tunCore_->stop(true);
-    }
-    tunRuntimeRelayToProxy_ = false;
-    if (cleanupAdapter && tunRuntimeService_ != nullptr) {
-        const OperationResult cleanupResult = tunRuntimeService_->removeStaleAdapterIfPresent();
-        log(cleanupResult.message);
-    }
-}
-
-bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
-{
-    if (!config_.tun().tunModeItem.enableTun) {
-        stopTunRuntime(true);
-        setStatus(running_ ? QStringLiteral("TUN disabled") : QStringLiteral("Stopped"));
-        return true;
-    }
-    const OperationResult tunResult = startTunRuntime(running_ && isProxySessionRunningOrTransitioning());
-    if (!tunResult.success) {
-        // The reason startTunRuntime() just logged would otherwise be replaced by whatever the
-        // caller says next -- the same two-step that made a failed TUN indistinguishable from a
-        // plain stop.
-        setStatus(running_
-                ? QStringLiteral("TUN failed: %1 (the proxy is still active)").arg(tunResult.message)
-                : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
-    }
-    return tunResult.success;
-}
-
 bool SongBirdAutoCoordinator::updateSystemProxyMode(SystemProxyMode mode) const
 {
     return systemProxyService_ == nullptr
@@ -2400,7 +2332,9 @@ void SongBirdAutoCoordinator::finishStopped()
     // With TUN on, the adapter stays up across a stop (relay off); a failure here is a real state,
     // not noise. The reason comes from the same call that failed -- writing a generic message over
     // it is how "Stopped; TUN failed" said nothing about why.
-    const OperationResult tunResult = startTunRuntime(false);
+    const OperationResult tunResult = tunRuntime_ == nullptr
+        ? OperationResult::fail(QStringLiteral("TUN runtime unavailable"))
+        : tunRuntime_->syncForConfig(config_, AutoTunRuntime::Routing::DirectOnly, nullptr);
     setRunning(false);
     setBusy(false);
     setStatus(tunResult.success
