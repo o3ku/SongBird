@@ -249,6 +249,11 @@ OperationResult SubscriptionService::replaceSubscriptionServers(
             const ReusableServerState reusableServer = reusableServers.takeFirst();
             item.indexId = reusableServer.indexId;
             item.testResult = reusableServer.testResult;
+            // The manual location/favorite state rides the same reuse the test result does: the
+            // reuse key matched, so this is the same node the user assigned by hand, and losing
+            // the assignment on every subscription refresh would make hand-grouping useless.
+            item.locationOverride = reusableServer.locationOverride;
+            item.favorite = reusableServer.favorite;
         } else {
             item.indexId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             item.testResult.clear();
@@ -305,7 +310,7 @@ QHash<QString, QList<SubscriptionService::ReusableServerState>> SubscriptionServ
                 *currentBelongedToUpdatedSubscription = true;
             }
 
-            reusableServersByKey[serverReuseKey(item)].append(ReusableServerState{item.indexId, item.testResult});
+            reusableServersByKey[serverReuseKey(item)].append(ReusableServerState{item.indexId, item.testResult, item.locationOverride, item.favorite});
             return true;
         });
     servers.erase(newEnd, servers.end());

@@ -368,7 +368,10 @@ void SongBirdAutoCoordinator::createProxySession()
             maybeRefreshWhenCountryLow();
         }
     });
-    QObject::connect(proxySession_.get(), &ProxySession::serverLocationChanged, this, [this](const QString& location) {
+    QObject::connect(proxySession_.get(), &ProxySession::serverLocationChanged, this, [this](const QString& location, const QString& countryCode) {
+        // Auto has no location-grouped view, so the code half of the pair is unused here; it is
+        // accepted rather than ignored-by-name so the connect stays signature-exact.
+        Q_UNUSED(countryCode);
         log(QStringLiteral("Proxy exit location: %1").arg(location));
         publishActiveServer(location);
     });

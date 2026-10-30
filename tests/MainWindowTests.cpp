@@ -18,6 +18,7 @@
 #include <QPlainTextEdit>
 #include <QComboBox>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -35,6 +36,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QWidgetList>
+#include <QWindow>
 
 #include "common/LogFileWriter.h"
 #include "common/LogSeverity.h"
@@ -123,6 +125,9 @@ private slots:
     void tabDragPersistsTheDroppedOrder();
     void tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder();
     void tabDragOntoUngroupedMovesTheSubscriptionLast();
+    void draggingASubscriptionAcrossUngroupedKeepsItPinnedLast();
+    void theUngroupedTabItselfCannotBeDragged();
+    void tabDragCommitsOncePerDragNotOncePerCrossedNeighbour();
     void dragReorderWriteBackDoesNotRebuildTabsMidDrag();
     void subscriptionTabMenuMoveActionsFollowTheCurrentTab();
     void reorderSubscriptionsMenuReachesAHiddenSubscription();
@@ -158,6 +163,9 @@ private slots:
     void restoreUiStateSelectsTheSavedSubscriptionEvenWithoutNodes();
     void restoreUiStateFallsBackToUngroupedForAnUnknownSubscription();
     void restoreUiStateReappliesTheSubscriptionFilterForTheSelectedTab();
+    void groupByLocationToggleSwapsTheTabBarToLocationItems();
+    void groupByLocationRestoreSelectsTheSavedLocationItem();
+    void eachGroupingModeRemembersItsOwnSelection();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
     void serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate();
     void serverTableEmptyStateIsLaidOutInCompactMode();
@@ -2274,6 +2282,21 @@ QStringList tabKeys(QTabBar* bar)
     return keys;
 }
 
+// The write-back of a drag reorder happens on the release that ends the drag (see
+// setupSubscriptionViewConnections()), so a test that simulates the drop with moveTab()
+// must also deliver that release.
+void endTabBarDrag(QTabBar* bar)
+{
+    QMouseEvent release(
+        QEvent::MouseButtonRelease,
+        bar->rect().center(),
+        Qt::LeftButton,
+        Qt::LeftButton,
+        Qt::NoModifier);
+    QApplication::sendEvent(bar, &release);
+    QCoreApplication::processEvents();
+}
+
 } // namespace
 
 // The saved subscription order is the tab order. The bar used to insert each tab at index 0, which
@@ -2374,10 +2397,12 @@ void MainWindowTests::tabDragPersistsTheDroppedOrder()
     QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
     QVERIFY(reorderSpy.isValid());
 
-    // QTabBar::moveTab() is what an accepted drop calls, so it is the exact event the window has to
-    // turn into a config write.
+    // QTabBar::moveTab() is what an accepted drop calls, and the release that ends the drag is
+    // what turns it into a config write -- one write per drag, not one per crossed neighbour.
     tabBar->moveTab(1, 0);
     QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0);
+    endTabBarDrag(tabBar);
 
     QCOMPARE(reorderSpy.count(), 1);
     QCOMPARE(reorderSpy.first().first().toStringList(),
@@ -2410,6 +2435,8 @@ void MainWindowTests::tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder()
     // its place at the front -- it is in the list, just not in the bar.
     tabBar->moveTab(0, 1);
     QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0);
+    endTabBarDrag(tabBar);
 
     QCOMPARE(reorderSpy.count(), 1);
     QCOMPARE(reorderSpy.first().first().toStringList(),
@@ -2421,11 +2448,11 @@ void MainWindowTests::tabDragAroundAHiddenSubscriptionPersistsTheDroppedOrder()
 // up where they dropped it, and the list says the same thing.
 
 // The coordinator answers a drag reorder by saving the list and pushing a refreshed config back
-// through setConfig() -- synchronously, inside the tabMoved emission, which is inside
-// QTabBar::moveTab(). With a live drag that rebuild tore the bar down under QTabBar's own drag
-// state and tripped Q_ASSERT(index >= 0) in QTabBarPrivate::layoutTab. The refresh a drag triggers
-// is now skipped (the bar already shows the order), and the skip is one-shot: the next unrelated
-// setConfig() rebuilds the bar as before.
+// through setConfig() -- synchronously, inside the release that ends the drag. With a live drag
+// that rebuild tore the bar down under QTabBar's own drag state and tripped
+// Q_ASSERT(index >= 0) in QTabBarPrivate::layoutTab. The refresh a drag triggers is skipped (the
+// bar already shows the order), and the skip is one-shot: the next unrelated setConfig() rebuilds
+// the bar as before.
 void MainWindowTests::dragReorderWriteBackDoesNotRebuildTabsMidDrag()
 {
     MainWindow window;
@@ -2440,7 +2467,7 @@ void MainWindowTests::dragReorderWriteBackDoesNotRebuildTabsMidDrag()
     QVERIFY(tabBar != nullptr);
 
     // The production wiring in a nutshell: reorderSubscriptionsRequested -> save ->
-    // syncWindow() -> setConfig() with the persisted order, all inside the moveTab() call.
+    // syncWindow() -> setConfig() with the persisted order, all inside the drag's release.
     QObject::connect(
         &window,
         &MainWindow::reorderSubscriptionsRequested,
@@ -2460,6 +2487,7 @@ void MainWindowTests::dragReorderWriteBackDoesNotRebuildTabsMidDrag()
 
     tabBar->moveTab(1, 0);
     QCoreApplication::processEvents();
+    endTabBarDrag(tabBar);
     QCOMPARE(
         tabKeys(tabBar),
         (QStringList{QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
@@ -2493,10 +2521,153 @@ void MainWindowTests::tabDragOntoUngroupedMovesTheSubscriptionLast()
 
     tabBar->moveTab(0, tabBar->count() - 1);
     QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0);
+    // Mid-drag the bar shows the drop literally: Ungrouped was pushed off the last slot.
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-2"), QStringLiteral("ungrouped"), QStringLiteral("sub:sub-1")}));
+    endTabBarDrag(tabBar);
 
     QCOMPARE(reorderSpy.count(), 1);
     QCOMPARE(reorderSpy.first().first().toStringList(),
              (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1")}));
+    // The pin: the drag ends and Ungrouped is last again, not stranded mid-bar until the next
+    // unrelated refresh.
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
+}
+
+// The one signal shape a real drag sends when a subscription crosses Ungrouped: QTabBar
+// expresses the swap from the displaced tab's side, so what arrives is a tabMoved describing
+// UNGROUPED's own move (empty moved id), not the dragged subscription's. The old code ignored
+// that shape -- Ungrouped parked mid-bar, nothing was staged and nothing written, which read
+// as "Ungrouped can still be dragged". Now the intended order is read back off the bar,
+// staged, and Ungrouped is snapped to the last slot right away, inside the same drag.
+void MainWindowTests::draggingASubscriptionAcrossUngroupedKeepsItPinnedLast()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabBar->count(), 3);
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    // Real shape, step 1: sub-1 crosses sub-2 -- tabMoved addresses the dragged tab.
+    tabBar->moveTab(0, 1);
+    QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0);
+
+    // Real shape, step 2: sub-1 crosses Ungrouped -- tabMoved addresses UNGROUPED.
+    tabBar->moveTab(2, 1);
+    QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0);
+    // The pin held inside the gesture: Ungrouped is already back in the last slot.
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-2"), QStringLiteral("sub:sub-1"), QStringLiteral("ungrouped")}));
+
+    endTabBarDrag(tabBar);
+
+    QCOMPARE(reorderSpy.count(), 1);
+    QCOMPARE(reorderSpy.first().first().toStringList(),
+             (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-1")}));
+}
+
+// Ungrouped is pinned last, and the pin holds against a drag of the tab itself: a left press
+// on the last tab never becomes a drag (LocationTabBar swallows its mouse moves, which is the
+// only place QTabBar starts one), so the bar cannot be left showing Ungrouped mid-bar -- the
+// state a drag of it used to reach, which no rebuild was scheduled to undo.
+void MainWindowTests::theUngroupedTabItselfCannotBeDragged()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+    QCOMPARE(tabBar->count(), 3);
+    QVERIFY(tabBar->isMovable());
+
+    QSignalSpy movedSpy(tabBar, SIGNAL(tabMoved(int, int)));
+    QVERIFY(movedSpy.isValid());
+
+    // Press on Ungrouped, then move far enough left to cross both subscription tabs -- the
+    // gesture that, unanswered, drags it to the front of the bar. The QWindow-level QTest mouse
+    // functions because a movable drag only starts for moves that arrive through Qt's window
+    // delivery with the button held: a raw QMouseEvent sendEvent never reaches the handler, and
+    // the QWidget-level mouseMove() moves the real cursor (whatever window happens to be under
+    // it gets the event).
+    const QRect lastTabRect = tabBar->tabRect(tabBar->count() - 1);
+    QVERIFY(!lastTabRect.isEmpty());
+    const QPoint pressAt = lastTabRect.center();
+    const QPoint moveTo = pressAt
+        - QPoint(tabBar->tabRect(0).width() + lastTabRect.width(), 0);
+
+    QWindow* windowHandle = tabBar->window()->windowHandle();
+    QVERIFY(windowHandle != nullptr);
+    const QPoint windowPressAt = tabBar->mapTo(tabBar->window(), pressAt);
+    const QPoint windowMoveTo = tabBar->mapTo(tabBar->window(), moveTo);
+
+    QTest::mousePress(windowHandle, Qt::LeftButton, Qt::NoModifier, windowPressAt);
+    for (int step = 1; step <= 8; ++step) {
+        QTest::mouseMove(
+            windowHandle,
+            windowPressAt + (windowMoveTo - windowPressAt) * step / 8);
+    }
+    QTest::mouseRelease(windowHandle, Qt::LeftButton, Qt::NoModifier, windowMoveTo);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(movedSpy.count(), 0);
+    QCOMPARE(
+        tabKeys(tabBar),
+        (QStringList{QStringLiteral("sub:sub-1"), QStringLiteral("sub:sub-2"), QStringLiteral("ungrouped")}));
+}
+
+// One drag crosses as many neighbours as the user slides past, and QTabBar reports each crossing
+// as its own tabMoved. The write-back -- a config save plus the full window/tray refresh -- must
+// happen once per drag, on the release, or the drag stutters on its own write-backs (that was the
+// reorder lag: each crossed neighbour did a disk write and a whole-window refresh inside the
+// bar's mouse handling).
+void MainWindowTests::tabDragCommitsOncePerDragNotOncePerCrossedNeighbour()
+{
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().subscriptions = {
+        SubItem{QStringLiteral("sub-1"), QStringLiteral("Group 1"), QStringLiteral("https://example.com/1"), true, QString()},
+        SubItem{QStringLiteral("sub-2"), QStringLiteral("Group 2"), QStringLiteral("https://example.com/2"), true, QString()},
+        SubItem{QStringLiteral("sub-3"), QStringLiteral("Group 3"), QStringLiteral("https://example.com/3"), true, QString()}};
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(tabBar != nullptr);
+
+    QSignalSpy reorderSpy(&window, SIGNAL(reorderSubscriptionsRequested(QStringList)));
+    QVERIFY(reorderSpy.isValid());
+
+    // Two crossings of one drag: sub-1 slides past sub-2, then past sub-3.
+    tabBar->moveTab(0, 1);
+    tabBar->moveTab(1, 2);
+    QCoreApplication::processEvents();
+    QCOMPARE(reorderSpy.count(), 0); // Nothing written while the drag is still going.
+
+    endTabBarDrag(tabBar);
+
+    QCOMPARE(reorderSpy.count(), 1); // One drag, one commit, both swaps composed.
+    QCOMPARE(reorderSpy.first().first().toStringList(),
+             (QStringList{QStringLiteral("sub-2"), QStringLiteral("sub-3"), QStringLiteral("sub-1")}));
+
+    // A release that did not end a reorder commits nothing.
+    endTabBarDrag(tabBar);
+    QCOMPARE(reorderSpy.count(), 1);
 }
 
 // "Move Up" is greyed out on the first tab and enabled on the second. The state is answered while
@@ -3864,6 +4035,153 @@ void MainWindowTests::restoreUiStateReappliesTheSubscriptionFilterForTheSelected
     // pointing at the previous tab is visible as the wrong row count under the new tab.
     QCOMPARE(serverView->model()->rowCount(), 1);
     QVERIFY(serverView->model()->rowCount() != rowsOnFirstSubscription);
+}
+
+namespace {
+
+// The visible row count through the table's view: what a tab/filter change actually shows the
+// user, which is what the location tests assert on (the model's own row count is unfiltered).
+int serverViewRowCount(MainWindow& window)
+{
+    auto* serverView = window.findChild<ServerTableView*>(QStringLiteral("serverTableView"));
+    return serverView == nullptr || serverView->model() == nullptr ? -1 : serverView->model()->rowCount();
+}
+
+// A config whose node names carry country marks, so the location view has something to group:
+// US (flag emoji), HK (Chinese alias, folds into the merged TW item), and one unrecognized node.
+Config createLocationMarkedConfig()
+{
+    Config config = createServerSelectionConfig();
+    config.collection().servers[0].remarks = QStringLiteral("🇺🇸 Los Angeles 01");
+    config.collection().servers[1].remarks = QStringLiteral("香港 IEPL 02");
+    config.collection().servers[2].remarks = QStringLiteral("Mystery Relay 03");
+    return config;
+}
+
+} // namespace
+
+void MainWindowTests::groupByLocationToggleSwapsTheTabBarToLocationItems()
+{
+    // Checked, the bar shows the location items the catalog fixes -- not one per subscription,
+    // and not the subscription names at all. Empty items are dropped, HK folds into the merged TW
+    // item, and each label carries its node count, because the count is the only way an item can
+    // say what it holds before it is selected.
+    MainWindow window;
+    window.setConfig(createLocationMarkedConfig());
+    window.restoreUiState(createLocationMarkedConfig());
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* toggle = window.findChild<QToolButton*>(QStringLiteral("groupByLocationButton"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(toggle != nullptr);
+
+    // Subscription view first: the toggle is not checked and the bar is the subscriptions (this
+    // config has none, so the bar is Ungrouped alone -- that is the subscription view too).
+    QVERIFY(!toggle->isChecked());
+    QVERIFY(tabBar->count() >= 1);
+    QCOMPARE(tabBar->tabData(0).toString(), QStringLiteral("ungrouped"));
+
+    toggle->setChecked(true);
+    QCoreApplication::processEvents();
+
+    QStringList tabKeys;
+    for (int index = 0; index < tabBar->count(); ++index) {
+        tabKeys.append(tabBar->tabData(index).toString());
+    }
+    QCOMPARE(tabKeys, QStringList({QStringLiteral("loc:US"), QStringLiteral("loc:TW"), QStringLiteral("loc:OTHER")}));
+    // The bar is not draggable in location mode: the fixed order is the catalog's, and a drag
+    // would be a reorder nothing can store.
+    QVERIFY(!tabBar->isMovable());
+    // Every label names its count: US 1, the merged HK/TW item 1, Other 1.
+    QVERIFY(tabBar->tabText(0).contains(QStringLiteral("(1)")));
+    QVERIFY(tabBar->tabText(1).contains(QStringLiteral("(1)")));
+
+    // The table follows the selected item: the first location item shows only its own nodes.
+    QCOMPARE(tabBar->currentIndex(), 0);
+    QCOMPARE(serverViewRowCount(window), 1);
+
+    // A favorite node appears in the Favorite item, which an unfavorited-only config does not
+    // show at all -- the empty-item rule, exercised from the other side.
+    toggle->setChecked(false);
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->isMovable());
+}
+
+void MainWindowTests::groupByLocationRestoreSelectsTheSavedLocationItem()
+{
+    // The saved mode and item survive a restart: mainGroupByLocation decides what the bar shows,
+    // and mainSelectedLocationId which item is current. An item the config can no longer fill
+    // (the subscription that carried it was deleted) falls back to the first non-empty item.
+    MainWindow window;
+    Config config = createLocationMarkedConfig();
+    config.ui().mainGroupByLocation = true;
+    config.ui().mainSelectedLocationId = QStringLiteral("TW");
+    window.setConfig(config);
+    window.restoreUiState(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* toggle = window.findChild<QToolButton*>(QStringLiteral("groupByLocationButton"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(toggle != nullptr);
+
+    QVERIFY(toggle->isChecked());
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("loc:TW"));
+    // The TW item holds the folded HK node.
+    QCOMPARE(serverViewRowCount(window), 1);
+
+    // A stale saved item falls back to the first non-empty item rather than no selection.
+    MainWindow staleWindow;
+    Config staleConfig = createLocationMarkedConfig();
+    staleConfig.ui().mainGroupByLocation = true;
+    staleConfig.ui().mainSelectedLocationId = QStringLiteral("JP");
+    staleWindow.setConfig(staleConfig);
+    staleWindow.restoreUiState(staleConfig);
+    auto* staleBar = staleWindow.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    QVERIFY(staleBar != nullptr);
+    QVERIFY(staleBar->currentIndex() >= 0);
+    QCOMPARE(staleBar->tabData(staleBar->currentIndex()).toString(), QStringLiteral("loc:US"));
+}
+
+void MainWindowTests::eachGroupingModeRemembersItsOwnSelection()
+{
+    // Toggling is not destructive: the subscription selected before the toggle is restored when
+    // the user toggles back, and the location item selected while grouped is what a capture in
+    // that mode writes. One selection per mode, remembered separately, because the two modes do
+    // not share a tab namespace.
+    MainWindow window;
+    Config config = createGroupedServerSelectionConfig();
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* toggle = window.findChild<QToolButton*>(QStringLiteral("groupByLocationButton"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(toggle != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+
+    // Toggle to locations and back: sub-2 comes back, not "first tab" and not Ungrouped.
+    toggle->setChecked(true);
+    QCoreApplication::processEvents();
+    QVERIFY(tabBar->tabData(tabBar->currentIndex()).toString().startsWith(QStringLiteral("loc:")));
+    toggle->setChecked(false);
+    QCoreApplication::processEvents();
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+
+    // A capture taken while grouped keeps the subscription selection too: the controller cannot
+    // answer for it (its tab is a location item), so the remembered id is what must be written.
+    toggle->setChecked(true);
+    QCoreApplication::processEvents();
+    Config captured;
+    window.captureUiState(captured);
+    QVERIFY(captured.ui().mainGroupByLocation);
+    QCOMPARE(captured.ui().mainSelectedSubId, QStringLiteral("sub-2"));
+    QVERIFY(!captured.ui().mainSelectedLocationId.trimmed().isEmpty());
 }
 
 void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription()

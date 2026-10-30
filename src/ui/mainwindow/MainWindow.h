@@ -137,6 +137,18 @@ signals:
     // the formatter, so the UI layer never depends on services/ExportService.
     void exportServersAsShareLinksRequested(const QStringList& indexIds);
     void exportServersAsClashYamlRequested(const QStringList& indexIds);
+    // The auto-switch preference from a location item's context menu: the window updates its
+    // member and reports the new state; the composition root persists it and implements the
+    // behaviour on the session's failed signal.
+    void autoSwitchInGroupChanged(bool enabled);
+    // Location-grouping state, same shape as the other server mutations: the window reports the
+    // selection, the composition root owns the config write. Empty locationId clears the manual
+    // assignment (back to name inference); "FAVORITE" is not a locationId here (favoriting is its
+    // own toggleServerFavoriteRequested).
+    void setServersLocationRequested(const QStringList& indexIds, const QString& locationId);
+    void toggleServerFavoriteRequested(const QStringList& indexIds, bool favorite);
+    // The active node's exit location is applied as a manual assignment (overrides inference).
+    void applyExitLocationToActiveServerRequested();
     void routingModeSelected(const QString& routingModeId);
     void enableSystemProxyRequested();
     void disableSystemProxyRequested();
@@ -322,6 +334,10 @@ private:
     QList<QWidget*> desktopOnlyToolbarWidgets_;
     QList<QAction*> desktopOnlyToolbarWidgetActions_;
     MainWindowConfigSnapshot configSnapshot_;
+    // The auto-switch preference (config.ui().autoSwitchInGroup's mirror): the location context
+    // menu reads it to draw its checkmark, toggling it updates the member and emits
+    // autoSwitchInGroupChanged, and the composition root persists the value.
+    bool autoSwitchInGroup_ = false;
     QHash<QString, QString> subscriptionUpdateFailures_;
     std::function<QString(const QString&)> shareUrlResolver_;
     std::function<QString(const QStringList&)> shareLinksExportProvider_;
@@ -337,4 +353,13 @@ private:
     bool initialCurrentServerRevealScheduled_ = false;
     bool initialCurrentServerRevealDone_ = false;
     bool compactMode_ = false;
+    // The location item selected in location mode, kept so the toggle remembers it while the
+    // other mode is active and the capture can write it to the ui state. Subscription view keeps
+    // its selection through the controller's own tab key; locations have no controller-side
+    // equivalent because the tab bar only carries the current one.
+    QString persistedLocationSelectionId_;
+    // The mirror image: the subscription last selected in subscription mode, so a capture taken
+    // while location mode is active does not write "no subscription" over the choice the user
+    // made before toggling. Without it the toggle would cost the subscription view its selection.
+    QString persistedSubscriptionSelectionId_;
 };

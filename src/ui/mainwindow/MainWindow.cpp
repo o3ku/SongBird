@@ -521,6 +521,35 @@ void MainWindow::restoreUiState(const Config& config)
     }
 
     if (subscriptionTabBar_ != nullptr && serverModel_ != nullptr) {
+        // The grouping mode is restored before the tab logic below: it decides what the bar even
+        // shows, and the saved location item only exists to be selected in that mode.
+        persistedLocationSelectionId_ = config.ui().mainSelectedLocationId;
+        autoSwitchInGroup_ = config.ui().autoSwitchInGroup;
+        if (serverWorkspace_ != nullptr && serverWorkspace_->groupByLocationButton() != nullptr) {
+            // Set without emitting: the toggle's handler rebuilds through the controller, and the
+            // controller's rebuild below is the one that must win here (it runs on the model that
+            // was just populated). A signal round-trip in between would rebuild against stale data.
+            QSignalBlocker blocker(serverWorkspace_->groupByLocationButton());
+            serverWorkspace_->groupByLocationButton()->setChecked(config.ui().mainGroupByLocation);
+        }
+        if (subscriptionViewController_ != nullptr) {
+            subscriptionViewController_->setGroupByLocation(config.ui().mainGroupByLocation);
+            // The bar wash follows the same mode: the toggle's handler only fires on user
+            // interaction, and a restored mode must tint the container too.
+            if (serverWorkspace_ != nullptr) {
+                serverWorkspace_->setGroupByLocationMode(config.ui().mainGroupByLocation);
+            }
+            // The bar must be rebuilt for the mode it is now in: the tabs sitting in it were
+            // built for the other mode (applyConfig ran with the controller still in its
+            // previous state), so selecting a "loc:" key against subscription tabs can only
+            // fall through. The rebuild takes the restore key below as its previous-tab hint, and
+            // the explicit selection afterwards is what settles the current tab.
+            subscriptionViewController_->rebuildTabs(
+                config.ui().mainGroupByLocation
+                    ? SubscriptionViewSupport::tabKeyFromLocationId(config.ui().mainSelectedLocationId)
+                    : SubscriptionViewSupport::tabKeyFromSelectionId(config.ui().mainSelectedSubId));
+        }
+
         // The saved subscription is the user's explicit choice and it outranks the active
         // server. Letting the current server win is what used to drag the window back onto
         // its own tab -- and therefore off a subscription that holds no server yet, which is
@@ -548,7 +577,18 @@ void MainWindow::restoreUiState(const Config& config)
             }
             return false;
         };
-        if (!selectTabKey(preferredTabKey)) {
+        // In location mode the saved item wins (it is a hand-picked or inferred grouping the user
+        // chose to browse); in subscription mode the saved subscription does. Both fall back to
+        // the first tab, which in location mode is the first non-empty item.
+        if (config.ui().mainGroupByLocation) {
+            const QString locationTabKey = SubscriptionViewSupport::tabKeyFromLocationId(
+                config.ui().mainSelectedLocationId);
+            if (!selectTabKey(locationTabKey)) {
+                selectTabKey(subscriptionTabBar_->count() > 0
+                    ? subscriptionTabBar_->tabData(0).toString()
+                    : QString());
+            }
+        } else if (!selectTabKey(preferredTabKey)) {
             selectTabKey(QStringLiteral("ungrouped"));
         }
         // The tab changed, and setCurrentIndex() is not the only way the table empties, so
@@ -556,6 +596,19 @@ void MainWindow::restoreUiState(const Config& config)
         // config sync. It reads the tab key, not the table, so no loop.
         if (subscriptionViewController_ != nullptr) {
             subscriptionViewController_->applyCurrentTabFilter();
+            if (!config.ui().mainGroupByLocation) {
+                // The subscription half of the two remembered selections. In location mode the
+                // controller's answer is "none" (a location tab is not a subscription), so the
+                // member is only refreshed while subscription mode is actually showing.
+                persistedSubscriptionSelectionId_ = subscriptionViewController_->persistedSelectionId();
+            }
+        }
+        // The rebuild above moves the current tab inside a signal blocker, so the tab-change
+        // slot that re-describes the empty-state panel never runs here; push the context for the
+        // tab the restore settled on, exactly the way a config sync does after its own rebuild.
+        pushEmptyStateContext(config.collection().subscriptions);
+        if (serverWorkspace_ != nullptr) {
+            serverWorkspace_->syncCompactSections();
         }
     }
 
@@ -567,9 +620,27 @@ void MainWindow::captureUiState(Config& config) const
         windowLayoutStateController_->captureToConfig(config);
     }
     config.ui().mainQrPreviewVisible = qrPreviewVisible_;
-    config.ui().mainSelectedSubId = subscriptionViewController_ == nullptr
+    // The location selection is captured here rather than through the controller's
+    // persistedSelectionId(): a location tab is "no subscription" from that method's point of
+    // view, and the two selections are independent, so each is written by the one place that
+    // knows it.
+    config.ui().mainGroupByLocation = subscriptionViewController_ != nullptr
+        && subscriptionViewController_->groupByLocation();
+    config.ui().mainSelectedLocationId = config.ui().mainGroupByLocation
+        ? SubscriptionViewSupport::locationIdFromTabKey(
+            subscriptionViewController_->currentTabKey())
+        : persistedLocationSelectionId_;
+    // While location mode is showing, the controller's tab is a location item and its answer is
+    // "no subscription"; the member keeps the subscription the user last had selected so the
+    // toggle does not cost the other mode its selection.
+    const bool groupByLocation = subscriptionViewController_ != nullptr
+        && subscriptionViewController_->groupByLocation();
+    const QString controllerSelectionId = subscriptionViewController_ == nullptr
         ? QStringLiteral("__unsubscribed__")
         : subscriptionViewController_->persistedSelectionId();
+    config.ui().mainSelectedSubId = groupByLocation && controllerSelectionId.trimmed().isEmpty()
+        ? persistedSubscriptionSelectionId_
+        : controllerSelectionId;
     if (serverListController_ != nullptr) {
         serverListController_->captureSortState(config);
     }
@@ -1136,6 +1207,15 @@ void MainWindow::setupSubscriptionViewController()
                 subscriptionViewController_->showContextMenuForTabKey(tabKey, globalPosition);
             }
         });
+        // The toggle's menu reads and writes the auto-switch preference; the window owns it, the
+        // workspace owns the button. Toggling reports to the composition root, which persists
+        // the value (see autoSwitchInGroupChanged wiring).
+        serverWorkspace_->setGroupByLocationContextMenu(
+            [this]() { return autoSwitchInGroup_; },
+            [this](bool enabled) {
+                autoSwitchInGroup_ = enabled;
+                emit autoSwitchInGroupChanged(enabled);
+            });
     }
 }
 
@@ -1219,6 +1299,19 @@ void MainWindow::setupServerActionsController()
             setDefaultServerWithTunAction_},
         [this]() { return serverSelectionController_ == nullptr ? QString() : serverSelectionController_->selectedServerId(); },
         [this]() { return serverSelectionController_ == nullptr ? QStringList() : serverSelectionController_->selectedServerIds(); },
+        // Any unfavorited row makes the toggle read "add": the selection is what the menu acts
+        // on as a whole, and a mixed selection is more likely a batch add than a batch remove.
+        [this]() {
+            if (serverSelectionController_ == nullptr) {
+                return true;
+            }
+            for (const ServerTableRow* row : serverSelectionController_->selectedServers()) {
+                if (row != nullptr && !row->favorite) {
+                    return true;
+                }
+            }
+            return false;
+        },
         [this]() { return isUngroupedSubscriptionTabSelected(); },
         [this]() { return ensureCanStartBackgroundTask(); },
         [this]() { updateActionState(); },
@@ -1371,6 +1464,18 @@ void MainWindow::setupSubscriptionViewConnections()
         if (serverListController_ != nullptr) {
             serverListController_->handleSubscriptionFilterChanged();
         }
+        // Refreshed on every change while subscription mode is showing, so the remembered
+        // selection is the last one the user actually saw (not merely the one at the last config
+        // sync). In location mode currentTabKey() is "loc:..." and persistedSelectionId() is
+        // "none", which is exactly why the member is not written there.
+        if (subscriptionViewController_ != nullptr) {
+            if (subscriptionViewController_->groupByLocation()) {
+                persistedLocationSelectionId_ = SubscriptionViewSupport::locationIdFromTabKey(
+                    subscriptionViewController_->currentTabKey());
+            } else {
+                persistedSubscriptionSelectionId_ = subscriptionViewController_->persistedSelectionId();
+            }
+        }
         if (serverWorkspace_ != nullptr) {
             // Every tab change has to re-describe the panel, not just the ones that go
             // through a config sync. Switching from a tab with nodes to one without
@@ -1393,6 +1498,40 @@ void MainWindow::setupSubscriptionViewConnections()
             subscriptionViewController_->handleTabMoved(from, to);
         }
     });
+    // The commit half of the drag reorder: tabMoved arrives for every neighbour the dragged tab
+    // slides past, so handleTabMoved() only records the order and the release that ends the drag
+    // is what writes it back -- once per drag instead of once per crossed neighbour, and off the
+    // bar's own drag handling. The bar has the mouse grabbed for the whole drag, so the release
+    // is delivered even when the cursor has left the bar. The filter does not consume the event:
+    // QTabBar still needs the release to finish the drag.
+    subscriptionTabBar_->installEventFilter(this);
+
+    // The grouping toggle swaps the tab bar between subscriptions and location items. The mode
+    // change itself is persisted (the window is the one place that holds the ui state), while the
+    // rebuild lives in the controller: it is the same rebuild path a config sync takes, so the
+    // counts and the restored tab come along for free. Each mode remembers its own selection:
+    // the restore key is the id saved while that mode was last showing, because the bar the
+    // toggle is tearing down belongs to the *other* mode and none of its tabs can be restored to.
+    if (serverWorkspace_ != nullptr && serverWorkspace_->groupByLocationButton() != nullptr) {
+        connect(serverWorkspace_->groupByLocationButton(), &QToolButton::toggled, this, [this](bool checked) {
+            if (subscriptionViewController_ == nullptr) {
+                return;
+            }
+            subscriptionViewController_->setGroupByLocation(checked);
+            if (serverWorkspace_ != nullptr) {
+                serverWorkspace_->setGroupByLocationMode(checked);
+            }
+            const QString restoreKey = checked
+                ? SubscriptionViewSupport::tabKeyFromLocationId(persistedLocationSelectionId_)
+                : SubscriptionViewSupport::tabKeyFromSelectionId(persistedSubscriptionSelectionId_);
+            subscriptionViewController_->rebuildTabs(restoreKey);
+            subscriptionViewController_->applyCurrentTabFilter();
+            if (serverWorkspace_ != nullptr) {
+                pushEmptyStateContext();
+                serverWorkspace_->syncCompactSections();
+            }
+        });
+    }
 }
 
 void MainWindow::setupSplitterViewConnections()
@@ -1557,6 +1696,15 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
 
+    // Ends a subscription tab drag (see setupSubscriptionViewConnections()); a no-op on every
+    // release that did not reorder anything.
+    if (watched == subscriptionTabBar_
+        && event != nullptr
+        && event->type() == QEvent::MouseButtonRelease
+        && subscriptionViewController_ != nullptr) {
+        subscriptionViewController_->commitDraggedTabOrder();
+    }
+
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -1668,6 +1816,9 @@ void MainWindow::syncConfigControllers(const Config& config)
     }
     if (subscriptionViewController_ != nullptr) {
         subscriptionViewController_->setSubscriptions(config.collection().subscriptions);
+        // The servers are what the location items are built from (counts, empty-item dropping),
+        // so they are pushed on the same sync a rebuild follows.
+        subscriptionViewController_->setServers(config.collection().servers);
         subscriptionViewController_->rebuildTabs(subscriptionViewController_->currentTabKey());
         // After rebuildTabs(): a rebuild recreates the tabs, and a tooltip set before it would be
         // attached to tabs that no longer exist.

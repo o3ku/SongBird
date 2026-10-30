@@ -7,6 +7,10 @@ namespace {
 const QString UngroupedTabKey = QStringLiteral("ungrouped");
 const QString UnsubscribedSelectionId = QStringLiteral("__unsubscribed__");
 const QString SubscriptionTabPrefix = QStringLiteral("sub:");
+// Location items share the tab-key namespace with subscriptions ("sub:") and ungrouped, so
+// every consumer that switches on tabData() -- the context menu, the filter, the persisted
+// selection -- can tell the three apart by prefix alone.
+const QString LocationTabPrefix = QStringLiteral("loc:");
 
 } // namespace
 
@@ -56,6 +60,19 @@ QString SubscriptionViewSupport::subscriptionIdFromTabKey(const QString& tabKey)
 {
     return tabKey.startsWith(SubscriptionTabPrefix)
         ? tabKey.mid(SubscriptionTabPrefix.size())
+        : QString();
+}
+
+QString SubscriptionViewSupport::tabKeyFromLocationId(const QString& locationId)
+{
+    const QString normalized = locationId.trimmed();
+    return normalized.isEmpty() ? QString() : LocationTabPrefix + normalized;
+}
+
+QString SubscriptionViewSupport::locationIdFromTabKey(const QString& tabKey)
+{
+    return tabKey.startsWith(LocationTabPrefix)
+        ? tabKey.mid(LocationTabPrefix.size())
         : QString();
 }
 

@@ -310,6 +310,7 @@ private slots:
     void textImportFailureNamesTheProtocolsItCouldNotUse();
     void subscriptionFetchFailureNamesTheProtocolsItCouldNotUse();
     void healthStripRoundTripsThroughTheStateFile();
+    void locationStateRoundTripsThroughTheStateFile();
     void subscriptionLastUpdatedRoundTripsAndDefaultsToNever();
     void loadDropsAHealthStripThePolicyCannotRead();
     void saveReportsPrimaryConfigWriteFailure();
@@ -814,6 +815,54 @@ void JsonConfigRepositoryTests::healthStripRoundTripsThroughTheStateFile()
     const Config reloaded = repository.load();
     QCOMPARE(reloaded.collection().servers.size(), 1);
     QCOMPARE(reloaded.collection().servers[0].healthStrip, strip);
+}
+
+void JsonConfigRepositoryTests::locationStateRoundTripsThroughTheStateFile()
+{
+    // Location grouping is hand-made state: it belongs beside testResult/healthStrip in the state
+    // file, and it must survive a restart without touching the primary config -- subscriptions,
+    // subIds and server order are the config file's business, and grouping must not leak into it.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    Config config;
+    config.collection().servers = {makeServer()};
+    config.collection().servers[0].locationOverride = QStringLiteral("JP");
+    config.collection().servers[0].favorite = true;
+    config.ui().mainGroupByLocation = true;
+    config.ui().mainSelectedLocationId = QStringLiteral("JP");
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    QVERIFY(repository.save(config));
+
+    const QJsonObject stateRoot = readJsonFile(makeStatePath(tempDir));
+    const QJsonArray serverStates = stateRoot.value(QStringLiteral("serverStates")).toArray();
+    QCOMPARE(serverStates.size(), 1);
+    QCOMPARE(serverStates.at(0).toObject().value(QStringLiteral("locationOverride")).toString(), QStringLiteral("JP"));
+    QVERIFY(serverStates.at(0).toObject().value(QStringLiteral("favorite")).toBool());
+    QVERIFY(stateRoot.value(QStringLiteral("ui")).toObject().value(QStringLiteral("mainGroupByLocation")).toBool());
+    QCOMPARE(stateRoot.value(QStringLiteral("ui")).toObject().value(QStringLiteral("mainSelectedLocationId")).toString(), QStringLiteral("JP"));
+    // The primary config stays untouched: grouping a node is not configuring it.
+    const QByteArray primaryRaw = QJsonDocument(readJsonFile(makeConfigPath(tempDir))).toJson();
+    QVERIFY(!primaryRaw.contains("locationOverride"));
+    QVERIFY(!primaryRaw.contains("mainGroupByLocation"));
+
+    const Config reloaded = repository.load();
+    QCOMPARE(reloaded.collection().servers.size(), 1);
+    QCOMPARE(reloaded.collection().servers[0].locationOverride, QStringLiteral("JP"));
+    QVERIFY(reloaded.collection().servers[0].favorite);
+    QVERIFY(reloaded.ui().mainGroupByLocation);
+    QCOMPARE(reloaded.ui().mainSelectedLocationId, QStringLiteral("JP"));
+
+    // An unfavorited, unassigned node writes neither key: the state file a build without the
+    // feature wrote should read back byte-identically through this code path.
+    Config plain;
+    plain.collection().servers = {makeServer()};
+    QVERIFY(repository.save(plain));
+    const QJsonArray plainStates = readJsonFile(makeStatePath(tempDir))
+        .value(QStringLiteral("serverStates")).toArray();
+    QVERIFY(!plainStates.at(0).toObject().contains(QStringLiteral("locationOverride")));
+    QVERIFY(!plainStates.at(0).toObject().contains(QStringLiteral("favorite")));
 }
 
 void JsonConfigRepositoryTests::loadDropsAHealthStripThePolicyCannotRead()

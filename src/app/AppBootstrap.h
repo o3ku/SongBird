@@ -143,6 +143,11 @@ private:
     void cleanupRuntimeForExit(bool windowsShutdown);
     void enableSystemProxy(bool showStartupOverlay = false);
     void retryCoreStartup(bool showStartupOverlay = true);
+    // The "auto switch in group" preference (config.ui().autoSwitchInGroup): after a session
+    // failure that the crash-restart path could not recover, restarts the proxy on the next node
+    // in the currently selected location group. No-op when the preference is off, the location
+    // view holds no selection, or the group has no other node.
+    void autoSwitchWithinGroupOnFailure();
     void disableSystemProxy();
     void setTunEnabled(bool enabled);
     void importFromClipboard();

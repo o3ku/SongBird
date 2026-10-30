@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "appcore/LocationCatalog.h"
 #include "common/OperationResult.h"
 #include "common/SubscriptionOrder.h"
 #include "domain/models/Config.h"
@@ -38,6 +39,12 @@ public:
     void moveSubscriptions(const QStringList& subscriptionIds, SubscriptionOrder::MoveOperation operation);
     void reorderSubscriptions(const QStringList& orderedSubscriptionIds);
     void reorderServers(const QStringList& orderedIndexIds);
+    // Location-grouping state (favorite flag, manual location override). These touch only the
+    // per-server state fields, never a subscription or the server order, so they neither stop nor
+    // restart the core and they persist through the same .state.json path as test results.
+    void setServersLocation(const QStringList& indexIds, const QString& locationId);
+    void setServersFavorite(const QStringList& indexIds, bool favorite);
+    void applyExitLocationToActiveServer(const QString& countryCode);
     void hideSubscription(const QString& subscriptionId);
     void deleteSubscription(const QString& subscriptionId);
     // Writes whatever the in-memory config holds now. Hiding a subscription is deferred (see

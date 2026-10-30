@@ -121,6 +121,11 @@ void AppBootstrap::wireProxySessionSignals()
                              setCurrentActivationPending_ = false;
                          }
                          syncStatusIndicators();
+                         // The auto-switch decision runs after the teardown above is done: the
+                         // session is stopped by the time failed arrives, so this handler is
+                         // already the post-teardown path and the switch is a plain "write the
+                         // next node, start the proxy".
+                         autoSwitchWithinGroupOnFailure();
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::activated,
                      objects_->mainWindow.get(), [this]() {
@@ -363,6 +368,14 @@ void AppBootstrap::wireMainWindowCommands()
         }
     });
 
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::autoSwitchInGroupChanged,
+                     objects_->mainWindow.get(), [this](bool enabled) {
+                         config_.ui().autoSwitchInGroup = enabled;
+                         if (objects_->serverService != nullptr) {
+                             appendResult(objects_->serverService->save(config_));
+                         }
+                     });
+
     QObject::connect(objects_->mainWindow.get(), &MainWindow::uwpLoopbackRequested, objects_->mainWindow.get(), [this]() {
         openUwpLoopbackDialog();
     });
@@ -383,6 +396,31 @@ void AppBootstrap::wireMainWindowCommands()
         if (objects_->serverCollectionCoordinator != nullptr) {
             objects_->serverCollectionCoordinator->reorderServers(orderedIndexIds);
         }
+    });
+
+    // Location-grouping state: straight through to the coordinator, which writes the per-server
+    // state fields and syncs. None of the three may touch the core -- grouping is a view over the
+    // same nodes, not a different runtime configuration.
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::setServersLocationRequested, objects_->mainWindow.get(), [this](const QStringList& indexIds, const QString& locationId) {
+        if (objects_->serverCollectionCoordinator != nullptr) {
+            objects_->serverCollectionCoordinator->setServersLocation(indexIds, locationId);
+        }
+    });
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::toggleServerFavoriteRequested, objects_->mainWindow.get(), [this](const QStringList& indexIds, bool favorite) {
+        if (objects_->serverCollectionCoordinator != nullptr) {
+            objects_->serverCollectionCoordinator->setServersFavorite(indexIds, favorite);
+        }
+    });
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::applyExitLocationToActiveServerRequested, objects_->mainWindow.get(), [this]() {
+        // The display probe already answered where the active node exits; the fix applies that
+        // answer as a manual assignment. No probe is re-run from the menu path.
+        const QString countryCode = objects_->proxySession != nullptr
+            ? objects_->proxySession->serverCountryCode()
+            : QString();
+        if (countryCode.isEmpty() || objects_->serverCollectionCoordinator == nullptr) {
+            return;
+        }
+        objects_->serverCollectionCoordinator->applyExitLocationToActiveServer(countryCode);
     });
 
     QObject::connect(objects_->mainWindow.get(), &MainWindow::moveSubscriptionsRequested, objects_->mainWindow.get(), [this](const QStringList& subscriptionIds, int operation) {

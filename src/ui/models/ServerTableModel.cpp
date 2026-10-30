@@ -41,7 +41,9 @@ void ServerTableModel::setItems(const QList<VmessItem>& items, QString currentIn
             item.address,
             item.port,
             item.testResult,
-            item.subId});
+            item.subId,
+            item.locationOverride,
+            item.favorite});
     }
     rowByIndexId_.clear();
     rowByIndexId_.reserve(items_.size());

@@ -370,6 +370,14 @@
 <context>
     <name>AppBootstrap</name>
     <message>
+        <source>Auto switch skipped: the current group has no other node.</source>
+        <translation>自动切换跳过：当前分组没有其它节点。</translation>
+    </message>
+    <message>
+        <source>Auto switch in group: retrying on "%1" after the previous node failed.</source>
+        <translation>分组内自动切换：上个节点失败，正在重试"%1"。</translation>
+    </message>
+    <message>
         <source>Administrator Permission</source>
         <translation>管理员权限</translation>
     </message>
@@ -2846,6 +2854,38 @@ Switch this protocol to %3?</source>
         <translation>未分组</translation>
     </message>
     <message>
+        <source>Favorite</source>
+        <translation>收藏</translation>
+    </message>
+    <message>
+        <source>Favorite (%1)</source>
+        <translation>收藏 (%1)</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>其它</translation>
+    </message>
+    <message>
+        <source>Other (%1)</source>
+        <translation>其它 (%1)</translation>
+    </message>
+    <message>
+        <source>Add to Favorite</source>
+        <translation>添加到收藏</translation>
+    </message>
+    <message>
+        <source>Remove from Favorite</source>
+        <translation>从收藏移除</translation>
+    </message>
+    <message>
+        <source>Move to group</source>
+        <translation>移动到地区</translation>
+    </message>
+    <message>
+        <source>Automatic (from name)</source>
+        <translation>自动（按名称）</translation>
+    </message>
+    <message>
         <source>Copy Subscription Url</source>
         <translation>复制订阅 URL</translation>
     </message>
@@ -3238,6 +3278,14 @@ Switch this protocol to %3?</source>
     <message>
         <source>Filter servers</source>
         <translation>筛选服务器</translation>
+    </message>
+    <message>
+        <source>Group servers</source>
+        <translation>按地区分组服务器</translation>
+    </message>
+    <message>
+        <source>Auto Switch in Group on Failure</source>
+        <translation>失败时在分组内自动切换</translation>
     </message>
 </context>
 <context>

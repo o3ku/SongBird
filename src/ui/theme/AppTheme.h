@@ -48,7 +48,13 @@ QString successColor();
 QString warningColor();
 QString errorColor();
 QString attentionBorderColor();
+QString accentSoftColor();
+QString navigationSelectedTextColor();
 QIcon themedSvgIcon(const QString& resourcePath);
+// Same rendering as themedSvgIcon, but tinted with the palette's accent (light #2f6d56, dark
+// #63b58e) instead of the text colour -- for glyphs that sit on a neutral ground and need to
+// read as brand accent (the location-grouping toggle) rather than as content.
+QIcon accentSvgIcon(const QString& resourcePath);
 QString iconColor(bool enabled);
 int textControlMinimumWidth(
     const QWidget* widget,

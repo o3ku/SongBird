@@ -67,6 +67,11 @@ QJsonObject toUiStateObject(const Config& config)
         ui.insert(QStringLiteral("mainServerSortOrder"), config.ui().mainServerSortOrder);
     }
     writeIfNotEmpty(ui, QStringLiteral("mainSelectedSubscriptionId"), config.ui().mainSelectedSubId);
+    // Written only when set: unchecked is the default, and a state file from a build without the
+    // toggle reads back as subscription view, which is what its user last saw.
+    writeIfTrue(ui, QStringLiteral("mainGroupByLocation"), config.ui().mainGroupByLocation);
+    writeIfNotEmpty(ui, QStringLiteral("mainSelectedLocationId"), config.ui().mainSelectedLocationId);
+    writeIfTrue(ui, QStringLiteral("autoSwitchInGroup"), config.ui().autoSwitchInGroup);
     writeIfNotEmpty(ui, QStringLiteral("settingsRoutingRuleTabKey"), config.ui().settingsRoutingRuleTabKey);
     writeIfNotDefault(ui, QStringLiteral("mainServerLogSplitPercent"), config.ui().mainServerLogSplitPercent, 60);
     writeIfNotDefault(ui, QStringLiteral("mainServerQrSplitPercent"), config.ui().mainServerQrSplitPercent, 78);
@@ -99,6 +104,14 @@ QJsonArray toServerStateArray(const QList<VmessItem>& servers)
         const QList<HealthStripPolicy::Cell> cells = HealthStripPolicy::decode(server.healthStrip);
         if (!cells.isEmpty()) {
             writeIfNotEmpty(object, QStringLiteral("healthStrip"), HealthStripPolicy::encode(cells));
+        }
+        // Location grouping state sits beside the other per-server state: it is a hand-made
+        // assignment, not configuration, and it must survive a restart without touching the
+        // primary config file. favorite is only written when set, so a state file written before
+        // this field existed reads back identically to one written by a build that has it.
+        writeIfNotEmpty(object, QStringLiteral("locationOverride"), server.locationOverride);
+        if (server.favorite) {
+            object.insert(QStringLiteral("favorite"), true);
         }
         if (object.contains(QStringLiteral("indexId")) && object.size() > 1) {
             array.append(object);
@@ -133,6 +146,13 @@ void read(const QJsonObject& root, Config& config)
         if (ui.contains(QStringLiteral("mainSelectedSubscriptionId"))) {
             config.ui().mainSelectedSubId = readString(ui, QStringLiteral("mainSelectedSubscriptionId"));
         }
+        config.ui().mainGroupByLocation =
+            readBool(ui, QStringLiteral("mainGroupByLocation"), config.ui().mainGroupByLocation);
+        if (ui.contains(QStringLiteral("mainSelectedLocationId"))) {
+            config.ui().mainSelectedLocationId = readString(ui, QStringLiteral("mainSelectedLocationId"));
+        }
+        config.ui().autoSwitchInGroup =
+            readBool(ui, QStringLiteral("autoSwitchInGroup"), config.ui().autoSwitchInGroup);
         if (ui.contains(QStringLiteral("settingsRoutingRuleTabKey"))) {
             config.ui().settingsRoutingRuleTabKey = readString(ui, QStringLiteral("settingsRoutingRuleTabKey"));
         }
@@ -187,6 +207,13 @@ void read(const QJsonObject& root, Config& config)
                 server.healthStrip = HealthStripPolicy::encode(
                     HealthStripPolicy::decode(readString(object, QStringLiteral("healthStrip"))));
             }
+            if (object.contains(QStringLiteral("locationOverride"))) {
+                // Not validated against the catalog here: persistence is a dumb copy, and the
+                // catalog's own normalize-at-read (LocationCatalog::resolvedLocationId) is what
+                // keeps a stale or hand-edited value from hiding the node from every item.
+                server.locationOverride = readString(object, QStringLiteral("locationOverride"));
+            }
+            server.favorite = readBool(object, QStringLiteral("favorite"), false);
             break;
         }
     }

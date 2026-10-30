@@ -148,6 +148,8 @@ public:
     bool isActivationInProgress() const;
     bool isTransitioning() const;
     QString serverLocation() const;
+    // ISO country code of the current exit (from the display probe; empty when unknown).
+    QString serverCountryCode() const;
     QString serverWarning() const;
     // The short handle this activation's log lines carry. One activation interleaves its own gate,
     // location and core-output lines with the next one's, and the timestamp is the only thing that
@@ -190,7 +192,7 @@ signals:
     // Announced when the exit location is detected, which now happens after the session is already
     // up. Kept separate from activated() because the two facts arrive at two different times: a
     // session that cannot say where it exits is still a working session.
-    void serverLocationChanged(const QString& location);
+    void serverLocationChanged(const QString& location, const QString& countryCode);
     // The undo write itself failed: the registry still holds whatever it held, and the message
     // says what (if anything) will retry. The log line inside the undo says the same thing to
     // the log; this signal exists because a user offline behind a dead proxy cannot see the log.
@@ -317,7 +319,7 @@ private:
     void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
 
-    void setServerLocation(QString location);
+    void setServerLocation(QString location, QString countryCode);
     void clearServerLocation();
 
     bool updateSystemProxyMode(SystemProxyMode mode) const;
@@ -334,6 +336,10 @@ private:
     StartRequest currentRequest_;
     VmessItem currentServer_;
     QString currentServerLocation_;
+    // ISO country code of the last location probe (empty when unknown). Kept beside the display
+    // string so the "fix location from exit" action can use the probe's answer without the UI
+    // parsing the formatted location text.
+    QString currentServerCountryCode_;
     QString currentServerWarning_;
     // Regenerated only when a fresh activation begins, so the resume paths that re-enter
     // startInternal mid-activation keep the id their earlier log lines were written under.

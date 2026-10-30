@@ -809,6 +809,8 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/SubscriptionViewSupport.cpp
     ../src/ui/mainwindow/SubscriptionViewController.h
     ../src/ui/mainwindow/SubscriptionViewController.cpp
+    ../src/ui/mainwindow/LocationTabBar.h
+    ../src/ui/mainwindow/LocationTabBar.cpp
     ../src/ui/mainwindow/ServerWorkspaceWidget.h
     ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
     ../src/ui/mainwindow/ServerEmptyStatePolicy.h
@@ -1114,6 +1116,39 @@ endif()
 # logic over an explicitly-supplied clock, so it gets its own target and needs no timer.
 set(SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES
     HealthStripPolicyTests.cpp
+)
+
+# LocationCatalog is the decision table for the location-grouped server view: which items exist
+# and in what order, which countries fold where (HK -> the merged TW item, the rest -> Other),
+# and manual override vs name inference. Pure logic, linked from songbird_shared_objs.
+set(SONGBIRD_LOCATION_CATALOG_TEST_SOURCES
+    LocationCatalogTests.cpp
+)
+
+songbird_add_qt_test(songbird_location_catalog_tests location-catalog
+    SOURCES
+        ${SONGBIRD_LOCATION_CATALOG_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# The location half of the server filter: favorite shows favorited nodes regardless of location,
+# location resolves override-before-name, and the modes hand the subscription filter back intact
+# when cleared.
+set(SONGBIRD_SERVER_FILTER_LOCATION_TEST_SOURCES
+    ServerFilterProxyModelLocationTests.cpp
+    ../src/ui/models/ServerFilterProxyModel.h
+    ../src/ui/models/ServerFilterProxyModel.cpp
+    ../src/ui/models/ServerTableModel.h
+    ../src/ui/models/ServerTableModel.cpp
+)
+
+songbird_add_qt_test(songbird_server_filter_location_tests server-filter-location
+    SOURCES
+        ${SONGBIRD_SERVER_FILTER_LOCATION_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
 )
 
 songbird_add_qt_test(songbird_health_strip_policy_tests health-strip-policy

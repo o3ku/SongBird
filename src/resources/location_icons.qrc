@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/flags">
+        <file alias="favorite.svg">flags/favorite.svg</file>
+        <file alias="us.svg">flags/us.svg</file>
+        <file alias="sg.svg">flags/sg.svg</file>
+        <file alias="tw.svg">flags/tw.svg</file>
+        <file alias="jp.svg">flags/jp.svg</file>
+        <file alias="kr.svg">flags/kr.svg</file>
+        <file alias="gb.svg">flags/gb.svg</file>
+        <file alias="de.svg">flags/de.svg</file>
+        <file alias="ru.svg">flags/ru.svg</file>
+        <file alias="au.svg">flags/au.svg</file>
+        <file alias="other.svg">flags/other.svg</file>
+        <file alias="group.svg">flags/group.svg</file>
+        <file alias="group-checked.svg">flags/group-checked.svg</file>
+        <!-- Drawn, not shipped, on purpose: present so the catalog's lookup has an answer for
+             every country code it can fold to a country item, and harmless to leave unused. -->
+        <file alias="fr.svg">flags/fr.svg</file>
+    </qresource>
+</RCC>

@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <utility>
 
+#include "appcore/LocationCatalog.h"
 #include "services/SubscriptionService.h"
 
 ServerCollectionCoordinator::ServerCollectionCoordinator(Dependencies deps, Callbacks callbacks)
@@ -66,6 +67,82 @@ void ServerCollectionCoordinator::reorderServers(const QStringList& orderedIndex
 {
     appendResult(deps_.serverService.reorderServers(deps_.config, orderedIndexIds));
     syncWindow();
+}
+
+void ServerCollectionCoordinator::setServersLocation(const QStringList& indexIds, const QString& locationId)
+{
+    // A location change is state, not configuration: no subscription, no server order, no core
+    // restart -- the tabs and the table refresh from the same config sync every other edit uses.
+    // An empty locationId is the reset entry ("Automatic (from name)"): the override is cleared
+    // and the name inference takes over on the next read.
+    const QString normalized = locationId.trimmed();
+    const QString overrideValue = normalized == QLatin1String("FAVORITE")
+        ? QString() // favorite is its own flag; a location of FAVORITE is not a thing
+        : LocationCatalog::normalizedOverride(normalized);
+
+    int changed = 0;
+    for (const QString& indexId : indexIds) {
+        const QString trimmedId = indexId.trimmed();
+        for (VmessItem& server : deps_.config.collection().servers) {
+            if (server.indexId != trimmedId) {
+                continue;
+            }
+            if (normalized == QLatin1String("FAVORITE")) {
+                if (!server.favorite) {
+                    server.favorite = true;
+                    ++changed;
+                }
+            } else if (server.locationOverride != overrideValue) {
+                server.locationOverride = overrideValue;
+                ++changed;
+            }
+            break;
+        }
+    }
+
+    if (changed > 0) {
+        appendResult(deps_.serverService.save(deps_.config));
+        syncWindow();
+    }
+}
+
+void ServerCollectionCoordinator::setServersFavorite(const QStringList& indexIds, bool favorite)
+{
+    int changed = 0;
+    for (const QString& indexId : indexIds) {
+        const QString trimmedId = indexId.trimmed();
+        for (VmessItem& server : deps_.config.collection().servers) {
+            if (server.indexId == trimmedId && server.favorite != favorite) {
+                server.favorite = favorite;
+                ++changed;
+            }
+        }
+    }
+
+    if (changed > 0) {
+        appendResult(deps_.serverService.save(deps_.config));
+        syncWindow();
+    }
+}
+
+void ServerCollectionCoordinator::applyExitLocationToActiveServer(const QString& countryCode)
+{
+    const std::optional<VmessItem> activeServer = resolveActiveServer();
+    if (!activeServer.has_value()) {
+        return;
+    }
+
+    // The exit fix is a manual decision and writes the override, per the product call: it must
+    // survive subscription refreshes (which it does, via the reuse path) and outrank the name.
+    const QString locationId = LocationCatalog::locationIdForCountryCode(countryCode);
+    if (locationId == QLatin1String("OTHER")) {
+        // A node whose exit is a country with no item would be pushed into Other -- losing the
+        // name-inferred grouping it already has for no gain. The user asked to fix the location;
+        // Other is not a location.
+        return;
+    }
+
+    setServersLocation({activeServer->indexId}, locationId);
 }
 
 void ServerCollectionCoordinator::hideSubscription(const QString& subscriptionId)

@@ -41,6 +41,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+
+#include "appcore/LocationCatalog.h"
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QDir>
@@ -863,6 +865,56 @@ void AppBootstrap::retryCoreStartup(bool showStartupOverlay)
     if (objects_->systemProxyCoordinator != nullptr) {
         objects_->systemProxyCoordinator->retryStartup(showStartupOverlay);
     }
+}
+
+void AppBootstrap::autoSwitchWithinGroupOnFailure()
+{
+    if (!config_.ui().autoSwitchInGroup) {
+        return;
+    }
+    const QString locationId = config_.ui().mainSelectedLocationId.trimmed();
+    if (locationId.isEmpty() || objects_->proxySession == nullptr) {
+        return;
+    }
+
+    // The nodes of the group the location view is currently showing: the favorite flag for the
+    // Favorite item, the resolved location for everything else. The failed node must be in the
+    // group too -- a failure while browsing another group's tab is not a reason to switch.
+    QStringList groupIds;
+    int currentIndex = -1;
+    const QString currentId = config_.currentIndexId.trimmed();
+    for (const VmessItem& server : config_.collection().servers) {
+        const bool inGroup = locationId == QLatin1String("FAVORITE")
+            ? server.favorite
+            : LocationCatalog::resolvedLocationId(server) == locationId;
+        if (!inGroup) {
+            continue;
+        }
+        if (server.indexId == currentId) {
+            currentIndex = groupIds.size();
+        }
+        groupIds.append(server.indexId);
+    }
+    if (groupIds.size() < 2 || currentIndex < 0) {
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap",
+            "Auto switch skipped: the current group has no other node.")));
+        return;
+    }
+
+    const QString nextId = groupIds[(currentIndex + 1) % groupIds.size()];
+    const VmessItem* next = findServerById(nextId);
+    appendResult(OperationResult::ok(QCoreApplication::translate(
+        "AppBootstrap",
+        "Auto switch in group: retrying on \"%1\" after the previous node failed.")
+        .arg(next != nullptr ? serverDisplayName(*next) : nextId)));
+
+    // The session is already torn down at this point (failed means the teardown ran), so this is
+    // the same shape as pressing START on the new node: write the default and start the proxy.
+    if (objects_->defaultServerSwitchCoordinator != nullptr) {
+        objects_->defaultServerSwitchCoordinator->setDefaultServer(nextId);
+    }
+    startManagedProxyCoreInternal(false, false);
 }
 
 void AppBootstrap::disableSystemProxy()

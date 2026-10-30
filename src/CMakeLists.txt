@@ -34,6 +34,10 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/RoutingScorePolicy.h
     appcore/RoutingScorePolicy.cpp
     appcore/SystemProxyOwnershipPolicy.h
+    appcore/CountryNameInference.h
+    appcore/CountryNameInference.cpp
+    appcore/LocationCatalog.h
+    appcore/LocationCatalog.cpp
     domain/models/RuntimeState.h
     domain/models/RuntimeState.cpp
     appcore/AppRuntimeResolver.h
@@ -311,6 +315,7 @@ set(SONGBIRD_SHARED_SOURCES
     platform/null/NullSystemProxyService.h
     resources/app_icons.qrc
     resources/themes.qrc
+    resources/location_icons.qrc
 )
 
 # The platform services both front-ends construct. Only the implementation is
@@ -478,6 +483,8 @@ set(SONGBIRD_SOURCES
     ui/mainwindow/RoutingModeController.cpp
     ui/mainwindow/SubscriptionViewSupport.h
     ui/mainwindow/SubscriptionViewSupport.cpp
+    ui/mainwindow/LocationTabBar.h
+    ui/mainwindow/LocationTabBar.cpp
     ui/mainwindow/SubscriptionViewController.h
     ui/mainwindow/SubscriptionViewController.cpp
     ui/mainwindow/ServerWorkspaceWidget.h

@@ -389,6 +389,11 @@ QString ProxySession::serverLocation() const
     return currentServerLocation_;
 }
 
+QString ProxySession::serverCountryCode() const
+{
+    return currentServerCountryCode_;
+}
+
 QString ProxySession::serverWarning() const
 {
     return currentServerWarning_;
@@ -1319,16 +1324,20 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
     const QString activeServerId = serverIndexId.trimmed();
     const qint64 startTime = coreStartTime_;
     QThread* thread = launchBackgroundThread([this, guard, activeServerId, httpPort, startTime]() {
-        const OutboundLocationProbeResult probeResult = deps_.locationProbe.probe(httpPort);
-        const QString location = probeResult.location;
-        const QString lastError = probeResult.error;
-        QMetaObject::invokeMethod(this, [this, guard, activeServerId, location, lastError, startTime]() {
+        // Structured rather than the formatted string: the country code is what the window's
+        // "fix location from exit" action needs, and re-parsing the emoji out of the display
+        // string is exactly the kind of coupling the structured probe exists to avoid.
+        const OutboundLocationDetails details = deps_.locationProbe.probeStructured(httpPort);
+        const QString location = details.location;
+        const QString countryCode = details.countryCode;
+        const QString lastError = details.error;
+        QMetaObject::invokeMethod(this, [this, guard, activeServerId, location, countryCode, lastError, startTime]() {
             if (guard.expired() || shuttingDown_.load() || phase_ != Phase::Proxying
                 || !deps_.mainCore.isRunning() || coreStartTime_ != startTime
                 || deps_.profileResolver.currentIndexId() != activeServerId) {
                 return; // A display result is never allowed to cancel an activation.
             }
-            setServerLocation(location);
+            setServerLocation(location, countryCode);
             // The location signal may synchronously stop or switch the session.
             if (phase_ != Phase::Proxying || coreStartTime_ != startTime
                 || deps_.profileResolver.currentIndexId() != activeServerId) {
@@ -1732,14 +1741,16 @@ void ProxySession::cancelPendingCoreRestarts()
 
 // --- Server location ---
 
-void ProxySession::setServerLocation(QString location)
+void ProxySession::setServerLocation(QString location, QString countryCode)
 {
     location = location.trimmed();
-    if (currentServerLocation_ == location) {
+    countryCode = countryCode.trimmed().toUpper();
+    if (currentServerLocation_ == location && currentServerCountryCode_ == countryCode) {
         return;
     }
     currentServerLocation_ = std::move(location);
-    emit serverLocationChanged(currentServerLocation_);
+    currentServerCountryCode_ = std::move(countryCode);
+    emit serverLocationChanged(currentServerLocation_, currentServerCountryCode_);
     emit statusSyncRequested();
 }
 
@@ -1755,10 +1766,11 @@ void ProxySession::setServerWarning(QString warning)
 
 void ProxySession::clearServerLocation()
 {
-    if (currentServerLocation_.isEmpty() && currentServerWarning_.isEmpty()) {
+    if (currentServerLocation_.isEmpty() && currentServerCountryCode_.isEmpty() && currentServerWarning_.isEmpty()) {
         return;
     }
     currentServerLocation_.clear();
+    currentServerCountryCode_.clear();
     currentServerWarning_.clear();
     emit statusSyncRequested();
 }

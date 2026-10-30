@@ -155,4 +155,15 @@ struct VmessItem {
     // the primary config file. Empty means "no history", which is also what an old state file
     // yields -- the strip then shows 24 untested cells, which is the truth.
     QString healthStrip;
+    // State, not configuration, and persisted beside testResult/healthStrip in the .state.json's
+    // serverStates[]: a location assignment made by hand (right-click "move to location", or the
+    // exit-location fix) outranks the name-based inference on every refresh, so it must survive a
+    // subscription update -- and updates carry it across because the same serverReuseKey path that
+    // preserves testResult re-attaches the old indexId. Empty means "infer from the name". The
+    // value is a LocationCatalog item id; FAVORITE is not a valid value (favoriting is its own
+    // flag), and an unknown value falls back to inference at read time.
+    QString locationOverride;
+    // State: hand-picked nodes for the Favorite location item. Independent of the location:
+    // a node can be favorite and US at the same time.
+    bool favorite = false;
 };

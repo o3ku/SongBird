@@ -4,6 +4,7 @@
 #include <QRegularExpression>
 
 #include "common/UrlProbeLatency.h"
+#include "appcore/LocationCatalog.h"
 #include "ui/models/ServerTableModel.h"
 
 namespace {
@@ -151,6 +152,29 @@ QString ServerFilterProxyModel::subscriptionId() const
     return subscriptionId_;
 }
 
+void ServerFilterProxyModel::setLocationFilterMode(LocationFilterMode mode, QString locationId)
+{
+    locationId = locationId.trimmed();
+    if (locationModeActive_ && locationFilterMode_ == mode && locationId_ == locationId) {
+        return;
+    }
+
+    locationModeActive_ = true;
+    locationFilterMode_ = mode;
+    locationId_ = std::move(locationId);
+    invalidateFilter();
+}
+
+void ServerFilterProxyModel::clearLocationFilterMode()
+{
+    if (!locationModeActive_) {
+        return;
+    }
+
+    locationModeActive_ = false;
+    invalidateFilter();
+}
+
 QVariant ServerFilterProxyModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid()) {
@@ -185,7 +209,11 @@ bool ServerFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex& 
         return false;
     }
 
-    if (!matchesSubscriptionFilter(item->subId)) {
+    if (locationModeActive_) {
+        if (!matchesLocationFilter(item->locationOverride, item->displayName, item->favorite)) {
+            return false;
+        }
+    } else if (!matchesSubscriptionFilter(item->subId)) {
         return false;
     }
 
@@ -245,6 +273,22 @@ bool ServerFilterProxyModel::matchesSubscriptionFilter(const QString& subscripti
         return trimmedSubscriptionId.isEmpty() || !knownSubscriptionIds_.contains(trimmedSubscriptionId);
     case SubscriptionFilterMode::Subscription:
         return !subscriptionId_.isEmpty() && trimmedSubscriptionId == subscriptionId_;
+    default:
+        return true;
+    }
+}
+
+bool ServerFilterProxyModel::matchesLocationFilter(
+    const QString& locationOverride,
+    const QString& displayName,
+    bool favorite) const
+{
+    switch (locationFilterMode_) {
+    case LocationFilterMode::Favorite:
+        return favorite;
+    case LocationFilterMode::Location:
+        return !locationId_.isEmpty()
+            && LocationCatalog::resolvedLocationId(locationOverride, displayName) == locationId_;
     default:
         return true;
     }

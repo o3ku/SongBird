@@ -16,6 +16,11 @@ struct ServerTableRow {
     int port = 0;
     QString testResult;
     QString subId;
+    // Location-grouping state, resolved from the same VmessItem fields the catalog reads. The
+    // override is carried raw (the catalog normalizes at read time) so a row is a faithful copy
+    // of the item, and favorite drives both the filter and the star decoration.
+    QString locationOverride;
+    bool favorite = false;
 };
 
 class ServerTableModel final : public QAbstractTableModel {
