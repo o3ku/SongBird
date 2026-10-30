@@ -18,6 +18,7 @@
 #include "app/SubscriptionImportFailure.h"
 #include "common/BackgroundThreadLaunch.h"
 #include "persistence/JsonConfigRepository.h"
+#include "services/ConfigBackupService.h"
 #include "services/ServerService.h"
 #include "services/SubscriptionService.h"
 #include "services/SubscriptionUpdateService.h"
@@ -117,6 +118,7 @@ void SubscriptionWorkflowCoordinator::importClipboard(const QString& text)
         ServerService serverService(repository, customConfigDirectory);
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
+        subscriptionUpdateService.setRawBackupDirectory(ConfigBackupService::backupDirectoryPathFor(configPath));
         Config workerConfig = repository.load();
         // A corrupt config parses to an empty Config; persisting that would
         // wipe the user's data, so abort the import instead.
@@ -185,6 +187,7 @@ void SubscriptionWorkflowCoordinator::importSubscriptionUrls(const QString& text
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
+        subscriptionUpdateService.setRawBackupDirectory(ConfigBackupService::backupDirectoryPathFor(configPath));
         SubscriptionUrlImportService importService(
             repository,
             subscriptionService,
@@ -293,6 +296,7 @@ void SubscriptionWorkflowCoordinator::updateByIds(
         SubscriptionService subscriptionService(repository);
         QNetworkAccessManager networkAccessManager;
         SubscriptionUpdateService subscriptionUpdateService(repository, subscriptionService, networkAccessManager);
+        subscriptionUpdateService.setRawBackupDirectory(ConfigBackupService::backupDirectoryPathFor(configPath));
         Config workerConfig = repository.load();
         // A corrupt config parses to an empty Config; persisting that would
         // wipe the user's data, so abort the update instead.

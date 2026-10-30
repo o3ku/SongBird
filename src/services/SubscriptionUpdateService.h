@@ -27,6 +27,13 @@ public:
     OperationResult updateAllWithProgress(Config& config, bool useProxy, const ProgressCallback& progressCallback);
     OperationResult importFromText(Config& config, const QString& text);
 
+
+    // When set to a non-empty directory, every successfully downloaded subscription
+    // payload is archived there verbatim (latest copy per subscription, overwritten
+    // in place) before parsing. The parsed server list in the config is a lossy
+    // projection; this keeps the original bytes recoverable. Empty (the default)
+    // disables archiving.
+    void setRawBackupDirectory(const QString& directoryPath);
 private:
     OperationResult updateInternal(Config& config, const QList<SubItem>& items, bool useProxy, const ProgressCallback& progressCallback = {});
     OperationResult updateSingle(Config& config, const SubItem& item, int* importedCount, bool useProxy);
@@ -44,4 +51,5 @@ private:
     IConfigRepository& repository_;
     SubscriptionService& subscriptionService_;
     QNetworkAccessManager& networkAccessManager_;
+    QString rawBackupDirectory_;
 };

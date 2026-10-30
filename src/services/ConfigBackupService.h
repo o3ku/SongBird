@@ -11,6 +11,9 @@ public:
 
     QString configPath() const;
     QString backupDirectoryPath() const;
+    // The one true spelling of "where do backups live", shared with callers that
+    // only need the directory (subscription raw backups) and have no service instance.
+    static QString backupDirectoryPathFor(const QString& configPath);
     OperationResult backupCurrentConfig(const Config& fallbackConfig) const;
     OperationResult restoreFromPath(const QString& backupPath) const;
 
