@@ -29,7 +29,13 @@ function Stop-CheckWithError {
     exit 1
 }
 
-$sourcePath = Resolve-Path -LiteralPath $SourceRoot
+# Canonicalize through Get-Item, not Resolve-Path: Resolve-Path keeps the caller's spelling (an
+# 8.3 short name such as C:\Users\RUNNER~1\...), while Get-ChildItem below reports children by the
+# long spelling (C:\Users\runneradmin\...). The substring that rebuilds the repo-relative path
+# would then slice into the tail of `...\clean\src` and double the `src/` prefix -- exactly what
+# guard-equivalence caught on the GitHub Windows runner. Get-Item's FullName uses the same
+# spelling as Get-ChildItem's, so the slice lands on the separator as intended.
+$sourcePath = (Get-Item -LiteralPath $SourceRoot).FullName
 
 # The only files allowed to name a colour. Kept as a small list rather than a naming rule: a rule
 # like "*Palette*" would let a new file opt out by being named helpfully.
@@ -87,7 +93,7 @@ $scannedLiterals = 0
 
 foreach ($file in $files) {
     $fullPath = $file.FullName
-    $relative = "src/" + ($fullPath.Substring($sourcePath.Path.Length).TrimStart('\', '/') -replace '\\', '/')
+    $relative = "src/" + ($fullPath.Substring($sourcePath.Length).TrimStart('\', '/') -replace '\\', '/')
     if ($allowedFiles -contains $relative) {
         continue
     }

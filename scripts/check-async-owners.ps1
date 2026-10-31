@@ -40,7 +40,13 @@ function Stop-CheckWithError {
     exit 1
 }
 
-$sourcePath = Resolve-Path -LiteralPath $SourceRoot
+# Canonicalize through Get-Item, not Resolve-Path: Resolve-Path keeps the caller's spelling (an
+# 8.3 short name such as C:\Users\RUNNER~1\...), while Get-ChildItem below reports children by the
+# long spelling (C:\Users\runneradmin\...). The substring that rebuilds the repo-relative path
+# would then slice into the tail of the source root and corrupt every reported path -- exactly
+# what guard-equivalence caught on the GitHub Windows runner. Get-Item's FullName uses the same
+# spelling as Get-ChildItem's, so the slice lands on the separator as intended.
+$sourcePath = (Get-Item -LiteralPath $SourceRoot).FullName
 $files = @(Get-ChildItem -LiteralPath $sourcePath -Recurse -File -Include *.cpp -ErrorAction SilentlyContinue)
 if ($files.Count -eq 0) {
     Stop-CheckWithError "No .cpp files under '$SourceRoot'; refusing to report a pass on an empty scan."
@@ -149,7 +155,7 @@ $scannedCalls = 0
 
 foreach ($file in $files) {
     $text = Remove-CppComments -Text (Get-Content -LiteralPath $file.FullName -Raw)
-    $relative = $file.FullName.Substring((Resolve-Path -LiteralPath $SourceRoot).Path.Length).TrimStart('\', '/')
+    $relative = $file.FullName.Substring($sourcePath.Length).TrimStart('\', '/')
     $relative = "src/" + ($relative -replace '\\', '/')
 
     $lineAt = {
