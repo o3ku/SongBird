@@ -613,7 +613,7 @@ void SongBirdAutoWindow::applyCompactStyle()
             background: %surfaceMuted%;
         }
         QComboBox#countryCombo::down-arrow {
-            image: url(:/app/down.svg);
+            image: url(:/app/chevron-down.svg);
             width: 11px;
             height: 11px;
         }
@@ -644,7 +644,7 @@ void SongBirdAutoWindow::applyCompactStyle()
             background: %surfaceMuted%;
         }
         QComboBox#strategyCombo::down-arrow {
-            image: url(:/app/down.svg);
+            image: url(:/app/chevron-down.svg);
             width: 10px;
             height: 10px;
         }

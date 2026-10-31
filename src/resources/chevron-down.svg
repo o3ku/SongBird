@@ -1,0 +1,18 @@
+<!-- The spinbox/combobox chevron. Same geometry ToolbarWidgets::paintChevron()
+     draws by hand for the toolbar combo (8 wide, 3.5 tall, 1.6px round pen), so
+     every drop-down/step arrow in the app speaks one visual language. Stroke is
+     ThemePalette::text; QSS image: url() loads the file as-is, which is why
+     the dark variant is a separate file rather than currentColor. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="10"
+  height="10"
+  viewBox="0 0 10 10"
+  fill="none"
+  stroke="#1f2328"
+  stroke-width="1.6"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M1 3.25 L5 6.75 L9 3.25" />
+</svg>
