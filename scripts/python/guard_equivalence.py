@@ -192,13 +192,36 @@ def compare(rule_name: str, case_name: str, ps1_out: tuple[int, list[str]], py_o
     ps1_norm = sorted(normalize_line(ln) for ln in violation_lines(ps1_raw))
     py_norm = sorted(normalize_line(ln) for ln in violation_lines(py_raw))
 
-    # Path spelling: 8.3 short names vs long names, drive letter case, slashes. The
-    # comparison is on the violation's identity, not on how the host spells its location.
+    # Path spelling: 8.3 short names vs long names, drive letter case, slashes, and on macOS
+    # the /var -> /private/var symlink (the .py ports resolve() their roots, the .ps1 halves do
+    # not, so one host reports /var/folders/... and the other /private/var/folders/... for the
+    # same violation). The comparison is on the violation's identity, not on how the host spells
+    # its location. A token is resolved only when it exists as spelled: a POSIX-looking token on
+    # Windows (or a URL path, or an #include) would otherwise resolve against the current
+    # drive's root and corrupt the message, so it passes through untouched -- and both halves
+    # pass through the same corruption-free text either way.
     def canonicalize(violation: str) -> str:
         def fix_path(match: re.Match) -> str:
-            return str(Path(match.group(0)).resolve()).replace("\\", "/")
+            text = match.group(0)
+            # Drive-letter spans keep the unconditional resolve that has always normalized
+            # 8.3 short names and separator direction on Windows (a span that swallows a
+            # `:LINE:` tail names no real file, so an existence gate here would re-introduce
+            # exactly the drift this function exists to hide). A POSIX span is resolved only
+            # when it exists as spelled: on Windows a stray /-token would resolve against the
+            # current drive's root and corrupt the message.
+            if text[1:2] != ":" and not Path(text).exists():
+                return text
+            return str(Path(text).resolve()).replace("\\", "/")
 
-        return re.sub(r"[A-Za-z]:[\\/][^'\"]*", fix_path, violation)
+        # Drive-letter paths keep the greedy form that has always worked on Windows; POSIX
+        # absolute paths are matched component-wise (letters, digits, dots, dashes only) so the
+        # match stops at the `:LINE:` that trails a path in a violation, and never starts at a
+        # `/` inside a relative include or a URL.
+        return re.sub(
+            r"[A-Za-z]:[\\/][^'\"]*|(?<![\w./])/(?:[A-Za-z0-9._+-]+/)*[A-Za-z0-9._+-]+",
+            fix_path,
+            violation,
+        )
 
     ps1_set = {canonicalize(x) for x in ps1_norm}
     py_set = {canonicalize(x) for x in py_norm}
