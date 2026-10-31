@@ -166,6 +166,7 @@ private slots:
     void groupByLocationToggleSwapsTheTabBarToLocationItems();
     void groupByLocationRestoreSelectsTheSavedLocationItem();
     void eachGroupingModeRemembersItsOwnSelection();
+    void togglingBackToSubscriptionViewRestoresTheTableFilter();
     void serverTableEmptyStateButtonsDriveTheWindowActions();
     void serverTableEmptyStateRefreshButtonFollowsTheBackgroundTaskGate();
     void serverTableEmptyStateIsLaidOutInCompactMode();
@@ -4182,6 +4183,46 @@ void MainWindowTests::eachGroupingModeRemembersItsOwnSelection()
     QVERIFY(captured.ui().mainGroupByLocation);
     QCOMPARE(captured.ui().mainSelectedSubId, QStringLiteral("sub-2"));
     QVERIFY(!captured.ui().mainSelectedLocationId.trimmed().isEmpty());
+}
+
+void MainWindowTests::togglingBackToSubscriptionViewRestoresTheTableFilter()
+{
+    // Location mode leaves its filter on the proxy model, and the model consults the location
+    // filter for as long as it is active -- a subscription filter set without clearing it is
+    // ignored. Toggling back has to put the selected subscription's own rows back in the table;
+    // keeping the location item's rows under the restored subscription tabs (no matter which one
+    // is clicked) is the "the table did not refresh" bug.
+    Config config = createGroupedServerSelectionConfig();
+    config.collection().servers[0].remarks = QStringLiteral("🇺🇸 US 01");
+    config.collection().servers[1].remarks = QStringLiteral("🇺🇸 US 02");
+    config.collection().servers[2].remarks = QStringLiteral("🇯🇵 JP 01");
+
+    MainWindow window;
+    window.setConfig(config);
+    window.show();
+    QCoreApplication::processEvents();
+
+    auto* tabBar = window.findChild<QTabBar*>(QStringLiteral("subscriptionTabBar"));
+    auto* toggle = window.findChild<QToolButton*>(QStringLiteral("groupByLocationButton"));
+    QVERIFY(tabBar != nullptr);
+    QVERIFY(toggle != nullptr);
+    QVERIFY(window.selectSubscriptionTab(QStringLiteral("sub-2")));
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    QCOMPARE(serverViewRowCount(window), 1); // sub-2 holds the JP node alone.
+
+    // Grouped: the first non-empty item is US, whose two nodes come from sub-1 -- a different
+    // row set than the selected subscription's, which is what makes a stale filter observable.
+    toggle->setChecked(true);
+    QCoreApplication::processEvents();
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("loc:US"));
+    QCOMPARE(serverViewRowCount(window), 2);
+
+    // Back on subscription view: sub-2 is selected again and its own row is what shows, not the
+    // location item's two.
+    toggle->setChecked(false);
+    QCoreApplication::processEvents();
+    QCOMPARE(tabBar->tabData(tabBar->currentIndex()).toString(), QStringLiteral("sub:sub-2"));
+    QCOMPARE(serverViewRowCount(window), 1);
 }
 
 void MainWindowTests::restoreUiStateFallsBackToUngroupedForAnUnknownSubscription()

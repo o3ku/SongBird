@@ -348,6 +348,12 @@ void SubscriptionViewController::applyCurrentTabFilter()
         return;
     }
 
+    // Leaving location mode has to clear it on the model: filterAcceptsRow() consults the
+    // location filter for as long as locationModeActive_ is set, so a subscription filter set
+    // here without the clear would be ignored and the table would keep showing the location
+    // mode's rows under the restored subscription tabs, no matter which one is selected.
+    context_.serverFilterModel->clearLocationFilterMode();
+
     const QString tabKey = currentTabKey();
     if (tabKey == QStringLiteral("ungrouped")) {
         context_.serverFilterModel->setSubscriptionFilterMode(ServerFilterProxyModel::SubscriptionFilterMode::Ungrouped);
