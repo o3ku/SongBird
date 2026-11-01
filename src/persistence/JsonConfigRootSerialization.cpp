@@ -98,6 +98,10 @@ void read(const QJsonObject& root, RootConfigState& config)
     config.skipOutboundCheck = readBool(root, QStringLiteral("skipOutboundCheck"), false);
     config.systemProxyAdvancedProtocol = readString(root, QStringLiteral("systemProxyAdvancedProtocol"));
     config.checkPreReleaseUpdate = readBool(root, QStringLiteral("checkPreReleaseUpdate"), false);
+    config.subscriptionAutoUpdateEnabled =
+        readBool(root, QStringLiteral("subscriptionAutoUpdateEnabled"), false);
+    config.subscriptionAutoUpdateIntervalHours = readInt(
+        root, QStringLiteral("subscriptionAutoUpdateIntervalHours"), 6);
 }
 
 void write(QJsonObject& root, const RootConfigState& config)
@@ -175,6 +179,8 @@ void write(QJsonObject& root, const RootConfigState& config)
     writeIfNotDefault(root, QStringLiteral("skipOutboundCheck"), config.skipOutboundCheck, false);
     writeIfNotEmpty(root, QStringLiteral("systemProxyAdvancedProtocol"), config.systemProxyAdvancedProtocol);
     writeIfNotDefault(root, QStringLiteral("checkPreReleaseUpdate"), config.checkPreReleaseUpdate, false);
+    writeIfNotDefault(root, QStringLiteral("subscriptionAutoUpdateEnabled"), config.subscriptionAutoUpdateEnabled, false);
+    writeIfNotDefault(root, QStringLiteral("subscriptionAutoUpdateIntervalHours"), config.subscriptionAutoUpdateIntervalHours, 6);
 }
 
 } // namespace JsonConfigRootSerialization

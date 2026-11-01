@@ -144,6 +144,12 @@ struct RootConfigState {
     bool skipOutboundCheck = false;
     QString systemProxyAdvancedProtocol;
     bool checkPreReleaseUpdate = false;
+    // Scheduled subscription refresh (the Subscriptions settings tab's auto-update row): while
+    // enabled, a low-frequency timer refreshes every enabled subscription whose last successful
+    // update is older than the interval. A subscription never updated yet (lastUpdatedAtMs == 0)
+    // counts as due, so enabling the feature baselines every subscription once.
+    bool subscriptionAutoUpdateEnabled = false;
+    int subscriptionAutoUpdateIntervalHours = 6;
 };
 
 struct CollectionConfigState {

@@ -800,6 +800,18 @@ songbird_add_qt_test(songbird_auto_switch_tests auto-switch
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+set(SONGBIRD_SUBSCRIPTION_AUTO_UPDATE_TEST_SOURCES
+    SubscriptionAutoUpdateLogicTests.cpp
+    ../src/app/SubscriptionAutoUpdateLogic.h
+)
+
+songbird_add_qt_test(songbird_subscription_auto_update_tests subscription-auto-update
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_AUTO_UPDATE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     MainWindowTests.cpp
     TestSupport.h

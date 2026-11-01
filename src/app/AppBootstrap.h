@@ -106,6 +106,12 @@ private:
     void adoptManagedSystemProxyOnStartup();
     void presentMainWindowOnStartup();
     void scheduleAppUpdateChecks();
+    // The scheduled subscription refresh's tick: every SubscriptionAutoUpdateLogic::kCheckIntervalMs
+    // (plus one early check after startup), refresh the subscriptions the logic names as due.
+    // The refresh itself is the manual update path (updateByIds), which already no-ops while
+    // another background task holds the slot -- the tick's own guards only keep it from racing
+    // a proxy activation.
+    void scheduleSubscriptionAutoUpdate();
     void offerCoreDownloadOnStartup();
 
     void syncWindow();

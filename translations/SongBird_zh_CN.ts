@@ -374,6 +374,10 @@
         <translation>自动切换跳过：当前分组没有其它节点。</translation>
     </message>
     <message>
+        <source>Auto-updating stale subscriptions in the background...</source>
+        <translation>正在后台自动更新过期的订阅……</translation>
+    </message>
+    <message>
         <source>Auto switch in group: retrying on "%1" after the previous node failed.</source>
         <translation>分组内自动切换：上个节点失败，正在重试"%1"。</translation>
     </message>
@@ -3550,6 +3554,18 @@ Switch this protocol to %3?</source>
     <message>
         <source>Update Selected</source>
         <translation>更新所选</translation>
+    </message>
+    <message>
+        <source>Auto-update subscriptions every</source>
+        <translation>自动更新订阅，间隔</translation>
+    </message>
+    <message>
+        <source> h</source>
+        <translation> 小时</translation>
+    </message>
+    <message>
+        <source>While enabled, subscriptions older than this interval are refreshed through the same background path as a manual update (conditional requests, serial batches).</source>
+        <translation>开启后，超过该间隔未更新的订阅将走与手动更新相同的后台路径自动刷新（条件请求、串行批次）。</translation>
     </message>
     <message>
         <source>Move Up</source>
