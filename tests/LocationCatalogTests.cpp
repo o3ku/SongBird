@@ -113,6 +113,19 @@ void LocationCatalogTests::inferenceCoversEmojiAliasAndToken()
     QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("首尔 07")), QStringLiteral("KR"));
     QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("Seoul 08")), QStringLiteral("KR"));
     QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("东京 09")), QStringLiteral("JP"));
+
+    // Traditional-Chinese names name the same countries (美國/韓國/台灣...), and the dotted
+    // abbreviation is a name the token pass cannot see ("U.S.A." splits into single letters).
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("美國 洛杉磯 10")), QStringLiteral("US"));
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("韓國 首爾 11")), QStringLiteral("KR"));
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("台灣 台北 12")), QStringLiteral("TW"));
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("U.S.A. 13")), QStringLiteral("US"));
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("美利坚 14")), QStringLiteral("US"));
+
+    // A name carrying two country words belongs to the word it leads with, not to whichever
+    // alias happens to sit higher in the table: transit names read "entrance exit 中转".
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("美国 香港 中转 15")), QStringLiteral("US"));
+    QCOMPARE(LocationCatalog::inferredLocationIdForNodeName(QStringLiteral("香港 美国 中转 16")), QStringLiteral("TW"));
 }
 
 void LocationCatalogTests::overrideBeatsInference()
