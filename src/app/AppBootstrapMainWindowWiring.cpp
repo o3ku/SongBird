@@ -5,6 +5,7 @@
 #include <QMessageBox>
 #include <QStringList>
 
+#include "app/AutoSwitchCoordinator.h"
 #include "app/AppUpdateCheckCoordinator.h"
 #include "appcore/BackgroundTaskCoordinator.h"
 #include "app/CoreUpdateCoordinator.h"
@@ -135,6 +136,12 @@ void AppBootstrap::wireProxySessionSignals()
                          if (!systemProxyUndoWarning_.isEmpty()) {
                              systemProxyUndoWarning_.clear();
                              syncStatusIndicators();
+                         }
+                         // Any successful activation ends an auto-switch failure streak and
+                         // kicks the warm round, so the group's data is fresh while this
+                         // session lives.
+                         if (objects_->autoSwitchCoordinator != nullptr) {
+                             objects_->autoSwitchCoordinator->noteSessionActivated();
                          }
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::systemProxyUndoFailed,

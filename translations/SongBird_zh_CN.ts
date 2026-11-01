@@ -378,6 +378,26 @@
         <translation>分组内自动切换：上个节点失败，正在重试"%1"。</translation>
     </message>
     <message>
+        <source>Auto switch in group: switching to "%1" (%2measured %3 s ago) after the previous node failed.</source>
+        <translation>分组内自动切换：上个节点失败，切换到"%1"（%2测于 %3 秒前）。</translation>
+    </message>
+    <message>
+        <source>Auto switch in group: probing %1 node(s) for a reachable target...</source>
+        <translation>分组内自动切换：正在探测 %1 个节点以寻找可用目标……</translation>
+    </message>
+    <message>
+        <source>Auto switch in group: switching to "%1", the best reachable node after probing.</source>
+        <translation>分组内自动切换：探测完成，切换到最优可用节点"%1"。</translation>
+    </message>
+    <message>
+        <source>Auto switch in group: no node answered the probe; retrying on "%1".</source>
+        <translation>分组内自动切换：探测无节点可用，正在重试"%1"。</translation>
+    </message>
+    <message>
+        <source>Auto switch stopped: every node in the group has failed. Switching resumes after a successful connection.</source>
+        <translation>分组内自动切换已停止：组内全部节点均已失败。成功连接后将恢复自动切换。</translation>
+    </message>
+    <message>
         <source>Administrator Permission</source>
         <translation>管理员权限</translation>
     </message>

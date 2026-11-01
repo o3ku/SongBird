@@ -35,6 +35,7 @@ class ServerEditorCoordinator;
 class ServerService;
 class SettingsApplyCoordinator;
 class SettingsWorkflowCoordinator;
+class AutoSwitchCoordinator;
 class SpeedTestController;
 class SpeedTestCoordinator;
 class SubscriptionService;
@@ -118,6 +119,11 @@ struct AppBootstrapObjects {
     std::unique_ptr<TunModeCoordinator> tunModeCoordinator;
     std::unique_ptr<TrayController> trayController;
     // The OS light/dark preference, read when the stored theme is "System".
-    // Declared last: nothing borrows it.
+    // The OS light/dark preference, read when the stored theme is "System".
+    // Nothing borrows it.
     std::unique_ptr<IThemePreferenceService> themePreferenceService;
+    // Appended last: it borrows backgroundTasks, speedTestController and mainWindow through
+    // AppBootstrap lambdas, so it must be destroyed before them -- see the ordering note at the
+    // top of this struct.
+    std::unique_ptr<AutoSwitchCoordinator> autoSwitchCoordinator;
 };

@@ -393,6 +393,9 @@ set(SONGBIRD_SOURCES
     app/SettingsApplyCoordinator.cpp
     app/SettingsWorkflowCoordinator.h
     app/SettingsWorkflowCoordinator.cpp
+    app/AutoSwitchGroupLogic.h
+    app/AutoSwitchCoordinator.h
+    app/AutoSwitchCoordinator.cpp
     app/SpeedTestCoordinator.h
     app/SpeedTestCoordinator.cpp
     app/SingleInstanceBootstrap.h

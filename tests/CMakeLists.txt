@@ -784,6 +784,22 @@ songbird_add_qt_test(songbird_runtime_state_tests runtime-state
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# LocationCatalog/CountryNameInference come from songbird_shared_objs; only the new app/
+# sources are listed here.
+set(SONGBIRD_AUTO_SWITCH_TEST_SOURCES
+    AutoSwitchGroupTests.cpp
+    ../src/app/AutoSwitchGroupLogic.h
+    ../src/app/AutoSwitchCoordinator.h
+    ../src/app/AutoSwitchCoordinator.cpp
+)
+
+songbird_add_qt_test(songbird_auto_switch_tests auto-switch
+    SOURCES
+        ${SONGBIRD_AUTO_SWITCH_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     MainWindowTests.cpp
     TestSupport.h

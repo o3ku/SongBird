@@ -1,5 +1,6 @@
 #include "app/AppBootstrapObjects.h"
 
+#include "app/AutoSwitchCoordinator.h"
 #include "appcore/AppRuntimeResolver.h"
 #include "app/AppUpdateCheckCoordinator.h"
 #include "app/AppUpdateInstallService.h"
