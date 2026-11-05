@@ -155,7 +155,10 @@ void SubscriptionAutoUpdateLogicTests::backoffStreakIsCapped()
 {
     using SubscriptionAutoUpdateLogic::kCheckIntervalMs;
     using SubscriptionAutoUpdateLogic::kMaxBackoffStreak;
-    const qint64 alignedTick = 1000 * kCheckIntervalMs;
+    // Pick a tick whose index is a multiple of the capped period (2^kMaxBackoffStreak).
+    // 1000 looked aligned for the small streaks in the previous case but 1000 % 64 != 0,
+    // so a capped streak is correctly held back there. 64 * 16 = 1024 is genuinely aligned.
+    const qint64 alignedTick = (qint64(1) << kMaxBackoffStreak) * 16 * kCheckIntervalMs;
     Config config;
     config.subscriptionAutoUpdateEnabled = true;
     config.subscriptionAutoUpdateIntervalHours = 1;
