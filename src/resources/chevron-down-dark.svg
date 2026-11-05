@@ -1,0 +1,15 @@
+<!-- The spinbox/combobox chevron, dark theme stroke (ThemePalette::text). See
+     chevron-down.svg for the geometry contract. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="10"
+  height="10"
+  viewBox="0 0 10 10"
+  fill="none"
+  stroke="#edf1f6"
+  stroke-width="1.6"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M1 3.25 L5 6.75 L9 3.25" />
+</svg>

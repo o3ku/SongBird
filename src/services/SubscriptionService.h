@@ -48,6 +48,10 @@ private:
     struct ReusableServerState {
         QString indexId;
         QString testResult;
+        // Carried across a refresh beside testResult -- same node (reuse key matched), same
+        // hand-made location/favorite assignment.
+        QString locationOverride;
+        bool favorite = false;
     };
 
     static QHash<QString, QList<ReusableServerState>> takeReusableServerStates(

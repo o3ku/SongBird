@@ -85,6 +85,18 @@ struct UiConfigState {
     int mainServerSortColumn = -1;
     int mainServerSortOrder = 0;
     QString mainSelectedSubId;
+    // The location-grouping toggle on the subscription tab bar: when true the tab bar shows
+    // location items (Favorite / US / SG / TW(HK+TW) / JP / KR / GB / DE / RU / AU / Other) and the
+    // selected item is mainSelectedLocationId. Persisted in the .state.json so the grouping mode
+    // survives a restart. Subscription view keeps using mainSelectedSubId; the two selections are
+    // independent and only one of them is meaningful at a time.
+    bool mainGroupByLocation = false;
+    QString mainSelectedLocationId;
+    // The checkable "auto switch" action in a location item's context menu: when set and the
+    // active node fails for good (the session reports failed, meaning the crash-restart path
+    // could not bring it back), the composition root restarts the proxy on the next node in the
+    // same location group. Session-wide preference, persisted with the rest of the ui state.
+    bool autoSwitchInGroup = false;
     QString settingsRoutingRuleTabKey;
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
@@ -132,6 +144,12 @@ struct RootConfigState {
     bool skipOutboundCheck = false;
     QString systemProxyAdvancedProtocol;
     bool checkPreReleaseUpdate = false;
+    // Scheduled subscription refresh (the Subscriptions settings tab's auto-update row): while
+    // enabled, a low-frequency timer refreshes every enabled subscription whose last successful
+    // update is older than the interval. A subscription never updated yet (lastUpdatedAtMs == 0)
+    // counts as due, so enabling the feature baselines every subscription once.
+    bool subscriptionAutoUpdateEnabled = false;
+    int subscriptionAutoUpdateIntervalHours = 6;
 };
 
 struct CollectionConfigState {

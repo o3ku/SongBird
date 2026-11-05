@@ -32,6 +32,10 @@ QHash<QString, QIcon>& themedIconCache()
     return cache;
 }
 
+// The shared tinted-SVG body behind themedSvgIcon/accentSvgIcon; defined below the wrappers so
+// the public API reads first.
+QIcon tintedSvgIcon(const QString& resourcePath, const QString& tintColor);
+
 } // namespace
 
 void AppTheme::applyApplicationTheme(QApplication& app)
@@ -211,9 +215,33 @@ QString AppTheme::attentionBorderColor()
     return color(currentPalette().warning);
 }
 
+QString AppTheme::accentSoftColor()
+{
+    return color(currentPalette().accentSoft);
+}
+
+QString AppTheme::navigationSelectedTextColor()
+{
+    return color(currentPalette().navigationSelectedText);
+}
+
 QIcon AppTheme::themedSvgIcon(const QString& resourcePath)
 {
-    const QString cacheKey = iconColor(true) + QLatin1Char('|') + resourcePath;
+    return tintedSvgIcon(resourcePath, color(currentPalette().text));
+}
+
+QIcon AppTheme::accentSvgIcon(const QString& resourcePath)
+{
+    return tintedSvgIcon(resourcePath, color(currentPalette().accent));
+}
+
+namespace {
+
+// Shared body of themedSvgIcon/accentSvgIcon: loads the SVG, swaps every currentColor for the
+// caller's tint, normalizes the canvas to 24x24, and caches per (tint, path).
+QIcon tintedSvgIcon(const QString& resourcePath, const QString& tintColor)
+{
+    const QString cacheKey = tintColor + QLatin1Char('|') + resourcePath;
     const auto cached = themedIconCache().constFind(cacheKey);
     if (cached != themedIconCache().constEnd()) {
         return cached.value();
@@ -225,8 +253,7 @@ QIcon AppTheme::themedSvgIcon(const QString& resourcePath)
     }
 
     QString svg = QString::fromUtf8(file.readAll());
-    const QString iconColorValue = iconColor(true);
-    svg.replace(QStringLiteral("currentColor"), iconColorValue);
+    svg.replace(QStringLiteral("currentColor"), tintColor);
     svg.replace(QRegularExpression(QStringLiteral("\\swidth=\"1em\"")), QStringLiteral(" width=\"24\""));
     svg.replace(QRegularExpression(QStringLiteral("\\sheight=\"1em\"")), QStringLiteral(" height=\"24\""));
     svg.replace(QRegularExpression(QStringLiteral("<svg\\b(?![^>]*\\bwidth=)")),
@@ -255,6 +282,8 @@ QIcon AppTheme::themedSvgIcon(const QString& resourcePath)
     themedIconCache().insert(cacheKey, icon);
     return icon;
 }
+
+} // namespace
 
 QString AppTheme::iconColor(bool enabled)
 {

@@ -186,6 +186,16 @@ if(Python3_Interpreter_FOUND)
     songbird_add_python_guard(py-guard-selftest selftest_guards.py)
     set_tests_properties(py-guard-selftest PROPERTIES LABELS "guard" TIMEOUT 900)
 
+    # The equivalence harness: the same rules, .ps1 and .py, against the same clean and
+    # mutated trees, with the violation lists required to agree. Registered only where pwsh
+    # exists, because it runs both halves; on the Linux PR gate that condition is false and
+    # the harness would have nothing to compare.
+    find_program(SONGBIRD_GUARD_EQUIV_PWSH NAMES pwsh)
+    if(SONGBIRD_GUARD_EQUIV_PWSH)
+        songbird_add_python_guard(py-guard-equivalence guard_equivalence.py)
+        set_tests_properties(py-guard-equivalence PROPERTIES LABELS "guard" TIMEOUT 900)
+    endif()
+
     if(SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR)
         songbird_add_python_guard(py-translations-embedded check_translations_embedded.py
             --build-directory ${SONGBIRD_PYTHON_GUARD_EMBEDDED_BUILD_DIR}/src
@@ -774,6 +784,34 @@ songbird_add_qt_test(songbird_runtime_state_tests runtime-state
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# LocationCatalog/CountryNameInference come from songbird_shared_objs; only the new app/
+# sources are listed here.
+set(SONGBIRD_AUTO_SWITCH_TEST_SOURCES
+    AutoSwitchGroupTests.cpp
+    ../src/app/AutoSwitchGroupLogic.h
+    ../src/app/AutoSwitchCoordinator.h
+    ../src/app/AutoSwitchCoordinator.cpp
+)
+
+songbird_add_qt_test(songbird_auto_switch_tests auto-switch
+    SOURCES
+        ${SONGBIRD_AUTO_SWITCH_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+set(SONGBIRD_SUBSCRIPTION_AUTO_UPDATE_TEST_SOURCES
+    SubscriptionAutoUpdateLogicTests.cpp
+    ../src/app/SubscriptionAutoUpdateLogic.h
+)
+
+songbird_add_qt_test(songbird_subscription_auto_update_tests subscription-auto-update
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_AUTO_UPDATE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     MainWindowTests.cpp
     TestSupport.h
@@ -799,6 +837,8 @@ set(SONGBIRD_MAIN_WINDOW_TEST_SOURCES
     ../src/ui/mainwindow/SubscriptionViewSupport.cpp
     ../src/ui/mainwindow/SubscriptionViewController.h
     ../src/ui/mainwindow/SubscriptionViewController.cpp
+    ../src/ui/mainwindow/LocationTabBar.h
+    ../src/ui/mainwindow/LocationTabBar.cpp
     ../src/ui/mainwindow/ServerWorkspaceWidget.h
     ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
     ../src/ui/mainwindow/ServerEmptyStatePolicy.h
@@ -1106,6 +1146,39 @@ set(SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES
     HealthStripPolicyTests.cpp
 )
 
+# LocationCatalog is the decision table for the location-grouped server view: which items exist
+# and in what order, which countries fold where (HK -> the merged TW item, the rest -> Other),
+# and manual override vs name inference. Pure logic, linked from songbird_shared_objs.
+set(SONGBIRD_LOCATION_CATALOG_TEST_SOURCES
+    LocationCatalogTests.cpp
+)
+
+songbird_add_qt_test(songbird_location_catalog_tests location-catalog
+    SOURCES
+        ${SONGBIRD_LOCATION_CATALOG_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
+# The location half of the server filter: favorite shows favorited nodes regardless of location,
+# location resolves override-before-name, and the modes hand the subscription filter back intact
+# when cleared.
+set(SONGBIRD_SERVER_FILTER_LOCATION_TEST_SOURCES
+    ServerFilterProxyModelLocationTests.cpp
+    ../src/ui/models/ServerFilterProxyModel.h
+    ../src/ui/models/ServerFilterProxyModel.cpp
+    ../src/ui/models/ServerTableModel.h
+    ../src/ui/models/ServerTableModel.cpp
+)
+
+songbird_add_qt_test(songbird_server_filter_location_tests server-filter-location
+    SOURCES
+        ${SONGBIRD_SERVER_FILTER_LOCATION_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 songbird_add_qt_test(songbird_health_strip_policy_tests health-strip-policy
     SOURCES
         ${SONGBIRD_HEALTH_STRIP_POLICY_TEST_SOURCES}
@@ -1387,6 +1460,31 @@ songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logi
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The scoring half of SongBirdAutoCoordinator, extracted so the probe-feeding rules, the ranking
+# map the single selection loop consumes, and the switch-gate wrapper are testable without the
+# coordinator's config file, core process or UI wiring. RoutingScorePolicy itself stays frozen and
+# pinned by its own suite; this one covers the engine that owns the per-node state.
+set(SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES
+    AutoSelectionEngineTests.cpp
+    ../src/auto/AutoSelectionEngine.h
+    ../src/auto/AutoSelectionEngine.cpp
+    ../src/auto/AutoCoordinatorLogic.h
+    ../src/auto/AutoCoordinatorLogic.cpp
+    ../src/auto/AutoCountrySelection.h
+    ../src/auto/AutoCountrySelection.cpp
+    ../src/auto/AutoCountrySupport.h
+    ../src/auto/AutoCountrySupport.cpp
+    ../src/auto/AutoTypes.h
+)
+
+songbird_add_qt_test(songbird_auto_selection_engine_tests auto-selection-engine
+    SOURCES
+        ${SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 # The coordinator itself, not a pure helper: this suite exists because issue #12's deletion had no
 # coverage -- the mutation check (put the ForcedClear back) left every suite green, since
 # ProxySessionTests drives a session that cannot see the coordinator. It links the production
@@ -1405,6 +1503,10 @@ set(SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES
     ../src/auto/AutoCountrySupport.cpp
     ../src/auto/AutoNodeEvaluationService.h
     ../src/auto/AutoNodeEvaluationService.cpp
+    ../src/auto/AutoSelectionEngine.h
+    ../src/auto/AutoSelectionEngine.cpp
+    ../src/auto/AutoTunRuntime.h
+    ../src/auto/AutoTunRuntime.cpp
     ../src/auto/AutoRuntimeDefaults.h
     ../src/auto/AutoRuntimeDefaults.cpp
     ../src/auto/AutoTypes.h

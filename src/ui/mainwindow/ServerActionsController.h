@@ -53,6 +53,7 @@ public:
         const Context& context,
         std::function<QString()> selectedServerId,
         std::function<QStringList()> selectedServerIds,
+        std::function<bool()> anySelectedServerUnfavorited,
         std::function<bool()> isUngroupedSubscriptionTabSelected,
         std::function<bool()> canStartBackgroundTask,
         std::function<void()> updateActionState,
@@ -69,6 +70,10 @@ private:
     Context context_;
     std::function<QString()> selectedServerId_;
     std::function<QStringList()> selectedServerIds_;
+    // Reads the favorite flag off the current selection's rows: the toggle's label depends on it
+    // ("Add to Favorite" vs "Remove from Favorite"), and the rows live in the model the window
+    // owns, so the flag is injected rather than re-derived here.
+    std::function<bool()> anySelectedServerUnfavorited_;
     std::function<bool()> isUngroupedSubscriptionTabSelected_;
     std::function<bool()> canStartBackgroundTask_;
     std::function<void()> updateActionState_;

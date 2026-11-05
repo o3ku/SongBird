@@ -59,6 +59,7 @@ class CoreDiscoveryService;
 class OutboundLocationProbeService;
 class TunRuntimeService;
 struct CoreUpdateConfig;
+struct SpeedTestRequestItem;
 class ServerService;
 class SpeedTestController;
 class SubscriptionService;
@@ -105,6 +106,12 @@ private:
     void adoptManagedSystemProxyOnStartup();
     void presentMainWindowOnStartup();
     void scheduleAppUpdateChecks();
+    // The scheduled subscription refresh's tick: every SubscriptionAutoUpdateLogic::kCheckIntervalMs
+    // (plus one early check after startup), refresh the subscriptions the logic names as due.
+    // The refresh itself is the manual update path (updateByIds), which already no-ops while
+    // another background task holds the slot -- the tick's own guards only keep it from racing
+    // a proxy activation.
+    void scheduleSubscriptionAutoUpdate();
     void offerCoreDownloadOnStartup();
 
     void syncWindow();
@@ -143,6 +150,19 @@ private:
     void cleanupRuntimeForExit(bool windowsShutdown);
     void enableSystemProxy(bool showStartupOverlay = false);
     void retryCoreStartup(bool showStartupOverlay = true);
+    // The "auto switch in group" preference (config.ui().autoSwitchInGroup): after a session
+    // failure that the crash-restart path could not recover, hands the decision to
+    // AutoSwitchCoordinator -- warm-probe target first, one probe round second, round-robin
+    // neighbour last, with a per-group exhaustion ceiling. No-op when the preference is off,
+    // the location view holds no selection, or the group has no other node.
+    void autoSwitchWithinGroupOnFailure();
+    // One AutoSwitchCoordinator probe batch: BackgroundTaskCoordinator token (startup scope)
+    // plus the SpeedTestController run it gates. A member of AppBootstrap rather than a lambda
+    // so the token/cancel rules live in one named, reviewable place.
+    bool runAutoSwitchProbe(
+        QObject* completionContext,
+        const QList<SpeedTestRequestItem>& items,
+        std::function<void()> onFinished);
     void disableSystemProxy();
     void setTunEnabled(bool enabled);
     void importFromClipboard();

@@ -24,6 +24,7 @@
 #include "auto/AutoCountryInference.h"
 #include "auto/AutoNodeEvaluationService.h"
 #include "auto/AutoRuntimeDefaults.h"
+#include "auto/AutoTunRuntime.h"
 #include "common/AppPaths.h"
 #include "common/AppPlatform.h"
 #include "common/BackgroundThreadLaunch.h"
@@ -103,7 +104,9 @@ SongBirdAutoCoordinator::~SongBirdAutoCoordinator()
         evaluationCancel_->store(true);
     }
     stopProxySession(true);
-    stopTunRuntime(true);
+    if (tunRuntime_ != nullptr) {
+        tunRuntime_->shutdown(true);
+    }
     clearThreads();
 }
 
@@ -123,6 +126,17 @@ bool SongBirdAutoCoordinator::initialize()
     clientConfigWriter_ = std::make_unique<ClientConfigWriter>(resolveCustomConfigDirectory());
     auxiliaryCore_ = std::make_unique<QtCoreProcessHost>();
     tunCore_ = std::make_unique<QtCoreProcessHost>();
+    // The TUN runtime shell (AutoSessionShell's first resident, see ProxySessionHost.h): it owns
+    // the TUN core, the adapter cleanup and the abort-branch undo ordering that used to be four
+    // inline methods here. Wiring happens after config load -- like the inline code, it needs
+    // config_ for nothing at construction, but the log/status forwarding below needs `this`.
+    tunRuntime_ = std::make_unique<AutoTunRuntime>(AutoTunRuntime::Dependencies{
+        *tunCore_,
+        *tunRuntimeService_,
+        coreDiscoveryService_.get(),
+        configPath_,
+        []() { return isProcessElevated(); }});
+    wireTunRuntimePresentation();
     locationProbe_ = std::make_unique<OutboundLocationProbeService>();
     livenessProbe_ = std::make_unique<OutboundLivenessProbeService>();
     backgroundTasks_ = std::make_unique<BackgroundTaskCoordinator>();
@@ -252,6 +266,32 @@ void SongBirdAutoCoordinator::wireActivationCoordinator()
     };
 }
 
+// One forwarding wiring, two construction paths (initialize() and the standalone session):
+// every line, status and sentence the shell reports arrives here and keeps the presentation
+// this class already used -- the shell itself carries no log strings of its own.
+void SongBirdAutoCoordinator::wireTunRuntimePresentation()
+{
+    if (tunRuntime_ == nullptr) {
+        return;
+    }
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunOutput, this, [this](const QString& line) {
+        log(QStringLiteral("tun | %1").arg(line));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunStarted, this, [this](const QString& message) {
+        log(QStringLiteral("TUN runtime started. %1").arg(message));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunStartFailed, this, [this](const QString& message) {
+        log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::tunExitedUnexpectedly, this, [this](int exitCode) {
+        log(QStringLiteral("TUN runtime exited unexpectedly: %1").arg(exitCode));
+        setStatus(QStringLiteral("TUN stopped unexpectedly"));
+    });
+    QObject::connect(tunRuntime_.get(), &AutoTunRuntime::adapterCleanupResult, this, [this](const OperationResult& result) {
+        log(result.message);
+    });
+}
+
 void SongBirdAutoCoordinator::createProxySession()
 {
     // initialize() builds every member below before its tail reaches this function; the null
@@ -275,6 +315,19 @@ void SongBirdAutoCoordinator::createProxySession()
         runtimeEnvironment_ = std::make_unique<FunctionRuntimeEnvironment>();
         wireRuntimeEnvironment(*runtimeEnvironment_);
         wireActivationCoordinator();
+    }
+    if (tunRuntime_ == nullptr && tunCore_ != nullptr && tunRuntimeService_ != nullptr) {
+        // The standalone session path (the teardown tests) may arrive before initialize(); the
+        // TUN shell needs the same two members initialize() hands it, and the same log/status
+        // forwarding, or a TUN failure driven through startSessionForTest() would report
+        // nothing at all.
+        tunRuntime_ = std::make_unique<AutoTunRuntime>(AutoTunRuntime::Dependencies{
+            *tunCore_,
+            *tunRuntimeService_,
+            coreDiscoveryService_.get(),
+            configPath_,
+            []() { return isProcessElevated(); }});
+        wireTunRuntimePresentation();
     }
     proxySession_ = std::make_unique<ProxySession>(ProxySession::Dependencies{
         *mainCore_,
@@ -315,7 +368,10 @@ void SongBirdAutoCoordinator::createProxySession()
             maybeRefreshWhenCountryLow();
         }
     });
-    QObject::connect(proxySession_.get(), &ProxySession::serverLocationChanged, this, [this](const QString& location) {
+    QObject::connect(proxySession_.get(), &ProxySession::serverLocationChanged, this, [this](const QString& location, const QString& countryCode) {
+        // Auto has no location-grouped view, so the code half of the pair is unused here; it is
+        // accepted rather than ignored-by-name so the connect stays signature-exact.
+        Q_UNUSED(countryCode);
         log(QStringLiteral("Proxy exit location: %1").arg(location));
         publishActiveServer(location);
     });
@@ -1494,23 +1550,9 @@ void SongBirdAutoCoordinator::startBackgroundTestForSelectedCountry(bool forceTe
 
 void SongBirdAutoCoordinator::mergeEvaluationResults(const QList<AutoNodeEvaluation>& results)
 {
-    // Feed every completed probe into the scoring policy before merging, so the pick made below
-    // (and by maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    for (const AutoNodeEvaluation& result : results) {
-        // An inconclusive probe measured nothing: no core ever ran, so nothing was learned about the
-        // node. Feeding it to the policy as a failure is how a temporary port shortage used to trip
-        // the breaker on healthy nodes and take them out of the ranking for a minute.
-        if (!result.tested || result.inconclusive) {
-            continue;
-        }
-        RoutingScorePolicy::NodeState& state = nodeScores_[result.indexId];
-        // A probe that reports a latency is a measurement; one that reports failure is not. The
-        // policy takes both through the same call so the failure counter and the breaker advance
-        // together.
-        routingScorePolicy_.recordResult(
-            &state, result.available, static_cast<int>(result.latencyMs), nowMs);
-    }
+    // Feed every completed probe into the engine before merging, so the pick made below (and by
+    // maybeSwitchToBestServerAfterEvaluation) sees the smoothed value and the breaker.
+    selectionEngine_.recordProbeResults(results);
 
     QMap<QString, AutoNodeEvaluation> byId;
     for (const AutoNodeEvaluation& evaluation : std::as_const(evaluations_)) {
@@ -1618,24 +1660,20 @@ void SongBirdAutoCoordinator::maybeSwitchToBestServerAfterEvaluation()
 
     // Ranking alone is not a reason to move: the fastest node in a batch is often only a few
     // milliseconds ahead of the one already carrying traffic, and trading the connection for that
-    // costs a reconnect plus a fresh core start. The policy holds the switch margin, the minimum
-    // hold window (a rotation subscription is otherwise restarted every round) and the rule that a
-    // node with an open breaker loses its claim regardless of score -- without this call all three
-    // were dead code, and every probe round reordered the active connection.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const auto currentIt = nodeScores_.constFind(currentServerId);
-    const auto challengerIt = nodeScores_.constFind(bestServerId);
-    // The active node is normally in the map -- it is what an earlier round ranked -- but it can be
+    // costs a reconnect plus a fresh core start. The engine's gate holds the switch margin, the
+    // minimum hold window (a rotation subscription is otherwise restarted every round) and the
+    // rule that a node with an open breaker loses its claim regardless of score -- without this
+    // call all three were dead code, and every probe round reordered the active connection.
+    // The active node is normally measured -- it is what an earlier round ranked -- but it can be
     // missing on the first round after a manual pick. An unmeasured side means there is nothing to
     // compare, and startBestServerForSelectedCountry() would restart the core for nothing.
-    if (currentIt == nodeScores_.constEnd() || challengerIt == nodeScores_.constEnd()
-        || !currentIt->hasSample || !challengerIt->hasSample) {
+    if (!selectionEngine_.hasMeasuredNode(currentServerId)
+        || !selectionEngine_.hasMeasuredNode(bestServerId)) {
         log(QStringLiteral("Keeping the active node; %1 and %2 have not both been measured.")
                 .arg(currentServerId, bestServerId));
         return;
     }
-    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
-            routingScorePolicy_, &currentIt.value(), &challengerIt.value(), nowMs, activeServerSinceMs())) {
+    if (!selectionEngine_.shouldSwitch(currentServerId, bestServerId, activeServerSinceMs())) {
         log(QStringLiteral("Keeping %1; %2 is not ahead by the switch margin, or %1 is still within its hold window.")
                 .arg(currentServerId, bestServerId));
         return;
@@ -1670,18 +1708,10 @@ CoreInfo SongBirdAutoCoordinator::resolveCoreInfo(const VmessItem& server) const
 
 QString SongBirdAutoCoordinator::currentCountryBestServerId() const
 {
-    // Rank by the policy's effective score rather than by the raw latency of the last probe, so a
-    // node that is currently failing cannot win on a stale good reading, and one slow sample does
-    // not reorder the list. The map is rebuilt per call because it is small (one entry per tested
-    // node) and a cached copy would have to be invalidated from four different places.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    QHash<QString, double> effectiveScores;
-    effectiveScores.reserve(nodeScores_.size());
-    for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
-        effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
-    }
-    return bestAutoServerIdForCountryByScore(
-        evaluations_, selectedCountryCode_, effectiveScores);
+    // The engine ranks by the policy's effective score rather than by the raw latency of the last
+    // probe, so a node that is currently failing cannot win on a stale good reading, and one slow
+    // sample does not reorder the list.
+    return selectionEngine_.bestServerIdForCountry(evaluations_, selectedCountryCode_);
 }
 
 QString SongBirdAutoCoordinator::currentCountryFirstAvailableServerId() const
@@ -1850,14 +1880,13 @@ void SongBirdAutoCoordinator::startProxySession()
     if (proxySession_ == nullptr) {
         return;
     }
-    const OperationResult tunResult = startTunRuntime(true);
+    // TUN-before-session is the ordering this front end owns (ProxySessionHost.h): the shell
+    // starts the device, and its failure branch runs the session-side ownership undo because
+    // nothing on the not-yet-started session's path would -- issue #8's chain.
+    const OperationResult tunResult = tunRuntime_->syncForConfig(
+        config_, AutoTunRuntime::Routing::RelayToLocalProxy, proxySession_.get());
     if (!tunResult.success) {
-        // A TUN failure aborts the start before ProxySession::start() runs, so nothing on that
-        // path would undo a proxy an earlier round of this session applied -- issue #8's chain
-        // (core crash -> internal restart -> stop -> the queued continuation re-entering here).
-        // The ownership decision lives in the session, never here: only it knows whether the
-        // registry holds our values.
-        proxySession_->undoManagedSystemProxyAfterAbortedStartup();
+        tunRuntime_->undoSessionProxyAfterAbortedStart(proxySession_.get());
         rollbackStartAfterTunFailure(QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
         return;
     }
@@ -1923,118 +1952,31 @@ void SongBirdAutoCoordinator::stopProxySession(bool immediate)
     }
 }
 
-CoreInfo SongBirdAutoCoordinator::resolveSingBoxCoreInfo() const
+bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
 {
-    CoreInfo info;
-    info.type = CoreType::SingBox;
-    const QString program = coreDiscoveryService_ == nullptr
-        ? QString()
-        : coreDiscoveryService_->locateFirstExistingFile(
-              coreDiscoveryService_->resolveCoreCandidates(CoreType::SingBox, configPath_));
-    if (program.trimmed().isEmpty()) {
-        return {};
+    if (tunRuntime_ == nullptr) {
+        return !config_.tun().tunModeItem.enableTun;
     }
-    info.program = program;
-    info.arguments.clear();
-    info.arguments << QStringLiteral("run") << QStringLiteral("-c") << info.configPlaceholder;
-    info.appendConfigArgument = false;
-    info.workingDirectory = QFileInfo(program).absolutePath();
-    return info;
-}
-
-QString SongBirdAutoCoordinator::writeTunRuntimeConfig(bool relayToProxy) const
-{
-    const QString runtimeDirectory = AppPaths::runtimeDirectory();
-    if (!QDir().mkpath(runtimeDirectory)) {
-        return {};
-    }
-
-    // The TUN device is created by a sing-box process of its own, so its configuration is a core
-    // artifact: it is assembled by the core backend, not here. Writing it ourselves is what used to
-    // nest the outbound list one level deep and hand sing-box a config it refused to load.
-    const QJsonObject root = AuxiliaryTunConfig::buildRoot(
-        CoreType::SingBox,
-        config_,
-        relayToProxy ? AuxiliaryTunRouting::RelayToLocalProxy : AuxiliaryTunRouting::DirectOnly);
-    if (root.isEmpty()) {
-        return {};
-    }
-
-    const QString configPath = QDir(runtimeDirectory).filePath(QStringLiteral("auto-tun.generated.json"));
-    QFile file(configPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return {};
-    }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-    file.close();
-    return configPath;
-}
-
-OperationResult SongBirdAutoCoordinator::startTunRuntime(bool relayToProxy)
-{
-    if (!config_.tun().tunModeItem.enableTun) {
-        stopTunRuntime(true);
-        return OperationResult::ok();
-    }
-    if (tunCore_ == nullptr) {
-        return OperationResult::fail(QStringLiteral("TUN runtime unavailable"));
-    }
-    if (tunCore_->isRunning() && tunRuntimeRelayToProxy_ == relayToProxy) {
-        return OperationResult::ok();
-    }
-    if (isWindowsPlatform() && !isProcessElevated()) {
-        log(QStringLiteral("TUN requires administrator privileges."));
-        return OperationResult::fail(QStringLiteral("TUN requires administrator privileges"));
-    }
-
-    stopTunRuntime(false);
-    if (tunRuntimeService_ != nullptr) {
-        const OperationResult cleanupResult = tunRuntimeService_->removeStaleAdapterIfPresent();
-        log(cleanupResult.message);
-        if (!cleanupResult.success) {
-            // Rebuilt rather than returned as-is: the caller composes this message into the status
-            // line, so it must not carry a `cancelled` flag it did not earn.
-            return OperationResult::fail(cleanupResult.message);
+    const AutoTunRuntime::Routing routing = running_ && isProxySessionRunningOrTransitioning()
+        ? AutoTunRuntime::Routing::RelayToLocalProxy
+        : AutoTunRuntime::Routing::DirectOnly;
+    const OperationResult tunResult = tunRuntime_->syncForConfig(config_, routing, nullptr);
+    if (tunResult.success) {
+        if (config_.tun().tunModeItem.enableTun) {
+            setStatus(routing == AutoTunRuntime::Routing::RelayToLocalProxy
+                    ? QStringLiteral("TUN routing through proxy")
+                    : QStringLiteral("TUN device ready"));
         }
+        return true;
     }
-
-    const CoreInfo coreInfo = resolveSingBoxCoreInfo();
-    if (coreInfo.program.trimmed().isEmpty()) {
-        const QString message = QStringLiteral("TUN requires sing-box, but no sing-box executable was found.");
-        log(message);
-        return OperationResult::fail(message);
-    }
-    const QString configPath = writeTunRuntimeConfig(relayToProxy);
-    if (configPath.trimmed().isEmpty()) {
-        const QString message = QStringLiteral("Failed to write TUN runtime config.");
-        log(message);
-        return OperationResult::fail(message);
-    }
-
-    tunRuntimeRelayToProxy_ = relayToProxy;
-    const OperationResult startResult = tunCore_->start(
-        coreInfo,
-        configPath,
-        [this](const QString& line) { log(QStringLiteral("tun | %1").arg(line)); },
-        [this](const QString& message) { log(QStringLiteral("TUN runtime started. %1").arg(message)); },
-        // Logged, not published: the caller composes one status from this result, so a status
-        // written here would only be overwritten by the caller's version of the same fact.
-        [this](const QString& message) {
-            log(QStringLiteral("TUN runtime failed to start: %1").arg(message));
-        },
-        [this](int exitCode, QProcess::ExitStatus, bool stopRequested) {
-            if (!stopRequested && config_.tun().tunModeItem.enableTun) {
-                log(QStringLiteral("TUN runtime exited unexpectedly: %1").arg(exitCode));
-                setStatus(QStringLiteral("TUN stopped unexpectedly"));
-            }
-        });
-    if (!startResult.success) {
-        log(startResult.message);
-        return startResult;
-    }
-    setStatus(relayToProxy ? QStringLiteral("TUN routing through proxy") : QStringLiteral("TUN device ready"));
-    return OperationResult::ok();
+    // The reason the shell just logged would otherwise be replaced by whatever the caller says
+    // next -- the same two-step that made a failed TUN indistinguishable from a plain stop.
+    setStatus(running_
+            ? QStringLiteral("TUN failed: %1 (the proxy is still active)").arg(tunResult.message)
+            : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
+    return false;
 }
+
 void SongBirdAutoCoordinator::recoverSystemProxyFromPreviousRun()
 {
     if (systemProxyService_ == nullptr) {
@@ -2067,39 +2009,6 @@ void SongBirdAutoCoordinator::recoverSystemProxyFromPreviousRun()
         log(QStringLiteral("Failed to restore the system proxy a previous run left behind; will retry on the next start."));
     }
 }
-
-
-void SongBirdAutoCoordinator::stopTunRuntime(bool cleanupAdapter)
-{
-    if (tunCore_ != nullptr) {
-        tunCore_->stop(true);
-    }
-    tunRuntimeRelayToProxy_ = false;
-    if (cleanupAdapter && tunRuntimeService_ != nullptr) {
-        const OperationResult cleanupResult = tunRuntimeService_->removeStaleAdapterIfPresent();
-        log(cleanupResult.message);
-    }
-}
-
-bool SongBirdAutoCoordinator::syncTunRuntimeForCurrentState()
-{
-    if (!config_.tun().tunModeItem.enableTun) {
-        stopTunRuntime(true);
-        setStatus(running_ ? QStringLiteral("TUN disabled") : QStringLiteral("Stopped"));
-        return true;
-    }
-    const OperationResult tunResult = startTunRuntime(running_ && isProxySessionRunningOrTransitioning());
-    if (!tunResult.success) {
-        // The reason startTunRuntime() just logged would otherwise be replaced by whatever the
-        // caller says next -- the same two-step that made a failed TUN indistinguishable from a
-        // plain stop.
-        setStatus(running_
-                ? QStringLiteral("TUN failed: %1 (the proxy is still active)").arg(tunResult.message)
-                : QStringLiteral("Stopped; TUN direct mode failed: %1").arg(tunResult.message));
-    }
-    return tunResult.success;
-}
-
 bool SongBirdAutoCoordinator::updateSystemProxyMode(SystemProxyMode mode) const
 {
     return systemProxyService_ == nullptr
@@ -2205,7 +2114,7 @@ void SongBirdAutoCoordinator::clearEvaluationState()
     evaluations_.clear();
     // Scoring history describes nodes that are about to be replaced, so it must not survive a
     // clear: a recycled indexId would inherit another server's smoothed latency and breaker state.
-    nodeScores_.clear();
+    selectionEngine_.reset();
     countrySummaries_ = buildCountrySummaries(evaluations_);
     activeServerId_.clear();
     activeServerSinceMs_ = 0;
@@ -2302,14 +2211,8 @@ QString SongBirdAutoCoordinator::nextFailoverServerId(const QString& failedServe
     if (!usesFirstAvailableStrategy()) {
         // Same ranking as currentCountryBestServerId(), with the failed node excluded so a node
         // that just went dark is not immediately re-picked as its own replacement.
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        QHash<QString, double> effectiveScores;
-        effectiveScores.reserve(nodeScores_.size());
-        for (auto it = nodeScores_.constBegin(); it != nodeScores_.constEnd(); ++it) {
-            effectiveScores.insert(it.key(), routingScorePolicy_.effectiveScore(it.value(), nowMs));
-        }
-        return bestAutoServerIdForCountryByScore(
-            evaluations_, selectedCountryCode_, effectiveScores, failedServerId);
+        return selectionEngine_.bestServerIdForCountry(
+            evaluations_, selectedCountryCode_, failedServerId);
     }
 
     const QString normalizedCountryCode = normalizeAutoCountryCode(selectedCountryCode_);
@@ -2338,12 +2241,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     // unmeasured side, so without the seed the breaker would trip invisibly and the gate below
     // would never open on this side at all. What the seed buys is the comparison, not the verdict: until the breaker trips, the margin still governs, so a seeded but untested current node can be moved for a faster challenger, never merely for a slower one. The seeded initialScore is
     // overwritten by the first real probe.
-    const auto failedIt = nodeScores_.find(failedServerId);
-    if (failedIt != nodeScores_.end()) {
-        RoutingScorePolicy::NodeState& failedState = failedIt.value();
-        routingScorePolicy_.seed(&failedState);
-        routingScorePolicy_.recordResult(&failedState, false, 0, QDateTime::currentMSecsSinceEpoch());
-    }
+    selectionEngine_.recordHealthCheckFailure(failedServerId);
 
     // No challenger is not a question the policy can answer, so it stays outside the gate: with
     // no alternative there is nothing to compare, and this refresh is the only way a country
@@ -2362,14 +2260,7 @@ bool SongBirdAutoCoordinator::switchToNextBestSameCountry(const QString& failedS
     // that would trip the failing node's breaker have not run yet, and the policy skips the margin
     // for a tripped node, so a node that is genuinely gone is still replaced -- just on evidence
     // rather than on a single sample. Until then the hold window applies as usual.
-    const auto currentIt = nodeScores_.constFind(failedServerId);
-    const auto nextIt = nodeScores_.constFind(nextId);
-    if (!AutoCoordinatorLogic::shouldMoveActiveServer(
-            routingScorePolicy_,
-            currentIt == nodeScores_.constEnd() ? nullptr : &currentIt.value(),
-            nextIt == nodeScores_.constEnd() ? nullptr : &nextIt.value(),
-            QDateTime::currentMSecsSinceEpoch(),
-            activeServerSinceMs())) {
+    if (!selectionEngine_.shouldSwitch(failedServerId, nextId, activeServerSinceMs())) {
         log(QStringLiteral("Health check failed; keeping the current node until its probes say it is gone."));
         scheduleHealthCheck(kHealthCheckIntervalMs);
         return false;
@@ -2446,7 +2337,9 @@ void SongBirdAutoCoordinator::finishStopped()
     // With TUN on, the adapter stays up across a stop (relay off); a failure here is a real state,
     // not noise. The reason comes from the same call that failed -- writing a generic message over
     // it is how "Stopped; TUN failed" said nothing about why.
-    const OperationResult tunResult = startTunRuntime(false);
+    const OperationResult tunResult = tunRuntime_ == nullptr
+        ? OperationResult::fail(QStringLiteral("TUN runtime unavailable"))
+        : tunRuntime_->syncForConfig(config_, AutoTunRuntime::Routing::DirectOnly, nullptr);
     setRunning(false);
     setBusy(false);
     setStatus(tunResult.success

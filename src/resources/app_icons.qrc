@@ -9,7 +9,9 @@
 
         <file alias="down.svg">down.svg</file>
         <file alias="up.svg">up.svg</file>
-        <file alias="down-dark.svg">down-dark.svg</file>
-        <file alias="up-dark.svg">up-dark.svg</file>
+        <file alias="chevron-down.svg">chevron-down.svg</file>
+        <file alias="chevron-up.svg">chevron-up.svg</file>
+        <file alias="chevron-down-dark.svg">chevron-down-dark.svg</file>
+        <file alias="chevron-up-dark.svg">chevron-up-dark.svg</file>
     </qresource>
 </RCC>
