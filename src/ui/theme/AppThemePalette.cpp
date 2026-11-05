@@ -62,8 +62,8 @@ constexpr ThemePalette kLightPalette{
     .serverCurrentBackground = "#e1f3e9",
     .selectionText = "#1f2328",
     .tabSelectedText = "#ffffff",
-    .downArrowImage = ":/app/down.svg",
-    .upArrowImage = ":/app/up.svg"};
+    .downArrowImage = ":/app/chevron-down.svg",
+    .upArrowImage = ":/app/chevron-up.svg"};
 
 constexpr ThemePalette kDarkPalette{
     .background = "#20262d",
@@ -123,8 +123,8 @@ constexpr ThemePalette kDarkPalette{
     .serverCurrentBackground = "#2b4a3a",
     .selectionText = "#edf1f6",
     .tabSelectedText = "#edf1f6",
-    .downArrowImage = ":/app/down-dark.svg",
-    .upArrowImage = ":/app/up-dark.svg"};
+    .downArrowImage = ":/app/chevron-down-dark.svg",
+    .upArrowImage = ":/app/chevron-up-dark.svg"};
 
 QString currentThemeName = QString::fromLatin1(kThemeLight);
 

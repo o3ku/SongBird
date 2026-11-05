@@ -38,6 +38,8 @@ Download the build for your platform from the [latest release](https://github.co
 **Servers and subscriptions**
 
 - Add, edit, delete, reorder and filter servers, grouped by subscription.
+- Reorder subscriptions by dragging their tabs; the built-in *Ungrouped* tab stays pinned last.
+- Group servers by exit location instead — flag tabs with live per-location counts — and toggle between the two views at any time.
 - Import servers from the clipboard or from share links; copy a share link and preview its QR code.
 - Update subscriptions, and run URL tests and latency (speed) tests.
 - Show the outbound location the running proxy actually exits from, so a node that is up but not working is visible as such.

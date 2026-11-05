@@ -157,6 +157,8 @@ inline bool areSettingsGeneralFieldsEqual(const Config& previousConfig, const Co
         && previousConfig.dns().defaultFingerprint.trimmed() == updatedConfig.dns().defaultFingerprint.trimmed()
         && previousConfig.defaults().speedPingTestUrl.trimmed() == updatedConfig.defaults().speedPingTestUrl.trimmed()
         && previousConfig.skipOutboundCheck == updatedConfig.skipOutboundCheck
+        && previousConfig.subscriptionAutoUpdateEnabled == updatedConfig.subscriptionAutoUpdateEnabled
+        && previousConfig.subscriptionAutoUpdateIntervalHours == updatedConfig.subscriptionAutoUpdateIntervalHours
         && normalizeSettingsLanguageCode(previousConfig.ui().languageCode)
             == normalizeSettingsLanguageCode(updatedConfig.ui().languageCode)
         && normalizeSettingsThemeName(previousConfig.ui().themeName)

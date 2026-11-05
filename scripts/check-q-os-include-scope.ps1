@@ -34,7 +34,11 @@ function Resolve-ScannedRoot {
     if (-not (Test-Path -LiteralPath $Path)) {
         Stop-CheckWithError "$Label root '$Path' does not exist, so the scan would read nothing. Refusing to report a pass."
     }
-    return (Resolve-Path -LiteralPath $Path).Path
+    # Get-Item, not Resolve-Path: the returned root is later used as a length prefix for paths
+    # Get-ChildItem produced (FullName), which uses the long spelling of every component. Resolve-Path
+    # keeps the caller's spelling, and an 8.3 short prefix (C:\Users\RUNNER~1\...) against long
+    # children (C:\Users\runneradmin\...) shifts the slice and corrupts the reported relative path.
+    return (Get-Item -LiteralPath $Path).FullName
 }
 
 # Q_OS_WIN, Q_OS_MACOS, Q_PROCESSOR_ARM_64 and the rest are defined by Qt's own headers -- not by the

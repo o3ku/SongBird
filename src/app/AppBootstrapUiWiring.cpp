@@ -9,9 +9,13 @@
 #include <QWidget>
 
 #include "appcore/FunctionRuntimeAdapters.h"
+#include "appcore/ProxySession.h"
+#include "app/DefaultServerSwitchCoordinator.h"
 #include "appcore/IUserFeedback.h"
+#include "app/AutoSwitchCoordinator.h"
 #include "app/SpeedTestCoordinator.h"
 #include "common/DialogUtils.h"
+#include "common/ServerDisplayName.h"
 #include "common/LogFileWriter.h"
 #include "domain/models/Config.h"
 #include "services/ServerService.h"
@@ -147,4 +151,111 @@ void AppBootstrap::wireUiObjects()
         return promptRestartForDownloadedAppUpdate(path, parent);
     };
     objects_->userFeedback = std::move(userFeedback);
+
+    // Auto switch in group: constructed after the speed-test stack it borrows. The probe
+    // runner owns the BackgroundTaskCoordinator token and the SpeedTestController lifetime
+    // rules so the coordinator itself stays testable without cores (its ProbeRunner seam).
+    objects_->autoSwitchCoordinator = std::make_unique<AutoSwitchCoordinator>(
+        AutoSwitchCoordinator::Dependencies{
+            [this]() { return config_.ui().autoSwitchInGroup; },
+            [this]() { return config_.ui().mainSelectedLocationId; },
+            [this]() { return config_.currentIndexId; },
+            [this]() { return config_.collection().servers; },
+            [this]() {
+                return objects_->proxySession != nullptr && objects_->proxySession->isActive();
+            },
+            [this]() {
+                return objects_->proxySession != nullptr
+                    && (objects_->proxySession->isActive()
+                        || objects_->proxySession->isActivationInProgress());
+            },
+            [this](const QStringList& indexIds) {
+                // The same item building SpeedTestCoordinator does: launch-core resolution
+                // first, then the core info the worker needs to spawn the probe core.
+                QList<SpeedTestRequestItem> items;
+                items.reserve(indexIds.size());
+                for (const QString& indexId : indexIds) {
+                    const VmessItem* server = findServerById(indexId);
+                    if (server == nullptr) {
+                        continue;
+                    }
+                    const CoreType launchCore = resolveLaunchCoreType(*server);
+                    VmessItem runtimeServer = *server;
+                    runtimeServer.coreType = launchCore;
+                    items.append(SpeedTestRequestItem{
+                        server->indexId,
+                        serverDisplayName(*server),
+                        server->configType,
+                        runtimeServer,
+                        resolveCoreInfo(runtimeServer)});
+                }
+                return items;
+            },
+            [this](QObject* completionContext,
+                   const QList<SpeedTestRequestItem>& items,
+                   std::function<void()> onFinished) {
+                return runAutoSwitchProbe(completionContext, items, std::move(onFinished));
+            },
+            [this](const QString& indexId) {
+                if (objects_->defaultServerSwitchCoordinator != nullptr) {
+                    objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
+                }
+                startManagedProxyCoreInternal(false, false);
+            },
+            [this](const OperationResult& result) { appendResult(result); }},
+        objects_->mainWindow.get());
+    if (objects_->speedTestController != nullptr) {
+        // Every finished measurement refreshes the warm data -- the warm round's, the failover
+        // probe's, and the user's own "test servers" batch alike.
+        QObject::connect(
+            objects_->speedTestController.get(),
+            &SpeedTestController::testResultReady,
+            objects_->autoSwitchCoordinator.get(),
+            &AutoSwitchCoordinator::handleProbeResultReady);
+    }
+}
+
+// One auto-switch probe batch: a startup-scope BackgroundTaskCoordinator token (internal
+// bookkeeping, not a user action -- the startup scope is what keeps it from raising the
+// "blocked while the core starts" banner when the predicates would apply) plus the one
+// controller batch the token gates. Completion rides the controller's finished signal with the
+// coordinator as context, so a coordinator destroyed mid-batch simply never hears the end.
+bool AppBootstrap::runAutoSwitchProbe(
+    QObject* completionContext,
+    const QList<SpeedTestRequestItem>& items,
+    std::function<void()> onFinished)
+{
+    if (objects_->speedTestController == nullptr || objects_->backgroundTasks == nullptr) {
+        return false;
+    }
+    // The startup flow cancels background work, so a probe cannot run while a core is coming
+    // up or coming down; the user's own activation outranks ours.
+    if (objects_->proxySession != nullptr && objects_->proxySession->isActivationInProgress()) {
+        return false;
+    }
+    const BackgroundTaskCoordinator::Token token =
+        objects_->backgroundTasks->tryBeginStartupTask(BackgroundTaskCoordinator::Kind::SpeedTest);
+    if (!token.isValid()) {
+        return false;
+    }
+    const OperationResult started = objects_->speedTestController->start(config_, items);
+    if (!started.success) {
+        objects_->backgroundTasks->finish(token);
+        return false;
+    }
+
+    auto* connection = new QMetaObject::Connection;
+    *connection = QObject::connect(
+        objects_->speedTestController.get(),
+        &SpeedTestController::finished,
+        completionContext,
+        [this, token, onFinished = std::move(onFinished), connection](const QString&) {
+            QObject::disconnect(*connection);
+            delete connection;
+            if (objects_->backgroundTasks != nullptr) {
+                objects_->backgroundTasks->finish(token);
+            }
+            onFinished();
+        });
+    return true;
 }

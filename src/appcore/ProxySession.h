@@ -17,7 +17,7 @@
 #include "appcore/CoreStartupChecklist.h"
 #include "appcore/PostStopAction.h"
 #include "appcore/ProxyCrashRestartPolicy.h"
-#include "appcore/ProxyHealthWatchPolicy.h"
+#include "appcore/ProxyHealthWatchdog.h"
 #include "appcore/ProxyRuntimeInterfaces.h"
 #include "common/OperationResult.h"
 #include "common/SystemProxyMode.h"
@@ -40,6 +40,7 @@ class OutboundLivenessProbeService;
 class OutboundLocationProbeService;
 class QThread;
 class QTimer;
+class StartupResourceBroker;
 class ProxySession final : public QObject
 {
     Q_OBJECT
@@ -112,7 +113,7 @@ public:
     // The probe period. `intervalMs` is a parameter rather than a constant because the first probe
     // only fires after a full interval, so a test that cannot shorten it can never reach the watch
     // at all -- the same reason ThreadShutdownBudget is injectable. Production callers leave it.
-    static constexpr int kDefaultHealthWatchIntervalMs = 30000;
+    static constexpr int kDefaultHealthWatchIntervalMs = ProxyHealthWatchdog::kDefaultIntervalMs;
     void setAvailabilityCheck(
         AvailabilityCheck check,
         int intervalMs = kDefaultHealthWatchIntervalMs);
@@ -147,6 +148,8 @@ public:
     bool isActivationInProgress() const;
     bool isTransitioning() const;
     QString serverLocation() const;
+    // ISO country code of the current exit (from the display probe; empty when unknown).
+    QString serverCountryCode() const;
     QString serverWarning() const;
     // The short handle this activation's log lines carry. One activation interleaves its own gate,
     // location and core-output lines with the next one's, and the timestamp is the only thing that
@@ -189,7 +192,7 @@ signals:
     // Announced when the exit location is detected, which now happens after the session is already
     // up. Kept separate from activated() because the two facts arrive at two different times: a
     // session that cannot say where it exits is still a working session.
-    void serverLocationChanged(const QString& location);
+    void serverLocationChanged(const QString& location, const QString& countryCode);
     // The undo write itself failed: the registry still holds whatever it held, and the message
     // says what (if anything) will retry. The log line inside the undo says the same thing to
     // the log; this signal exists because a user offline behind a dead proxy cannot see the log.
@@ -262,6 +265,14 @@ private:
     void failStartup(const OperationResult& result);
     void cleanupAfterFailedStartup();
 
+    // Thin entries over StartupResourceBroker, the QObject child that owns the
+    // download-and-resume paths (geo files, sing-box rule sets, core binaries). The call sites
+    // inside startInternal/resolveStartupProfile keep their names; the broker supplies the
+    // workers, the progress posting and the shared finish handler, and hands the resume back
+    // through a hook whose body is startInternal(skipTunCleanup, true, showStartupOverlay).
+    // Phase writes stay here: the broker performs them through an injected callback, so the
+    // session remains the single writer of the phase machine. See StartupResourceBroker.h for
+    // the threading contract and the resume-generation analysis.
     void downloadMissingGeoFilesAndResume(
         const CoreInfo& coreInfo,
         const QString& geoValidationMessage,
@@ -279,23 +290,6 @@ private:
         const QString& downloadCoreStep,
         bool skipTunCleanup,
         bool showStartupOverlay);
-    void postStartupDownloadProgress(
-        const QString& step,
-        const QString& message,
-        const std::weak_ptr<char>& guard);
-    void postStartupDownloadProgress(
-        const QString& step,
-        const QString& message,
-        const BackgroundTaskCoordinator::Token& token,
-        const std::weak_ptr<char>& guard);
-    void handleStartupDownloadFinished(
-        const QString& step,
-        const OperationResult& result,
-        bool skipTunCleanup,
-        bool showStartupOverlay,
-        const QString& canceledMessage,
-        const QString& completedButCanceledMessage,
-        const std::function<void()>& successAction = {});
 
     void handleCoreStarted(const QString& serverIndexId);
     void validateCoreListeningAndHandleStarted(
@@ -325,17 +319,7 @@ private:
     void scheduleCoreRestart(const QString& reason, bool auxiliary, int delayMs = 3000);
     void cancelPendingCoreRestarts();
 
-    void scheduleHealthWatch();
-    void runHealthWatch();
-    void finishHealthWatch(const OperationResult& result);
-    void cancelHealthWatch();
-    // Re-probes direct connectivity while a warning that was caused by it is still on screen, and
-    // drops the warning once the machine can reach the probe hosts again. Bounded in the worker.
-    void recheckWaivedOutboundWarning();
-    void runDirectRecheck();
-    void finishDirectRecheck(bool directReachable);
-
-    void setServerLocation(QString location);
+    void setServerLocation(QString location, QString countryCode);
     void clearServerLocation();
 
     bool updateSystemProxyMode(SystemProxyMode mode) const;
@@ -352,6 +336,10 @@ private:
     StartRequest currentRequest_;
     VmessItem currentServer_;
     QString currentServerLocation_;
+    // ISO country code of the last location probe (empty when unknown). Kept beside the display
+    // string so the "fix location from exit" action can use the probe's answer without the UI
+    // parsing the formatted location text.
+    QString currentServerCountryCode_;
     QString currentServerWarning_;
     // Regenerated only when a fresh activation begins, so the resume paths that re-enter
     // startInternal mid-activation keep the id their earlier log lines were written under.
@@ -369,20 +357,21 @@ private:
     // The identity of the armed scheduleCoreStartAfterStop() lambda. Bumped by stopInternal() and
     // cleanupAfterFailedStartup() so a resume armed before either of them cannot run afterwards.
     quint64 pendingResumeId_ = 0;
-    QTimer* healthWatchTimer_ = nullptr;
+
+    // Every piece of health-watch state lives in this satellite object (two timers, the
+    // policy, the in-flight flags, the two injected probes). It is a QObject child of the
+    // session rather than a member of AppBootstrapObjects: the session outlives it by
+    // construction, so the load-bearing member order in AppBootstrapObjects.h does not gain
+    // a new entry, and it dies with the session in every teardown path.
+    ProxyHealthWatchdog* healthWatch_ = nullptr;
+    // The download-and-resume satellite (geo files, rule sets, core binaries). Same shape as
+    // healthWatch_: a QObject child of this session, so it dies with it in every teardown path
+    // and the AppBootstrapObjects member order gains nothing. It holds no state of its own --
+    // only the injected seams -- so there is no cancel()/arm() to call from the phase machine;
+    // an in-flight worker's continuation retires itself through the phase check in the finish
+    // handler (see StartupResourceBroker.h).
+    StartupResourceBroker* resourceBroker_ = nullptr;
     ProxyCrashRestartPolicy crashRestartPolicy_;
-    ProxyHealthWatchPolicy healthWatchPolicy_;
-    AvailabilityCheck availabilityCheck_;
-    DirectConnectivityCheck directConnectivityCheck_;
-    int healthWatchIntervalMs_ = kDefaultHealthWatchIntervalMs;
-    bool healthWatchInProgress_ = false;
-    // Set only while the status bar is showing the "cannot reach the probe hosts directly either"
-    // waiver. That sentence describes the local network, not the node, so nothing in the health
-    // watch ever retracts it -- it used to survive for the rest of the session even after the
-    // network came back.
-    bool waivedOutboundWarningShown_ = false;
-    bool directRecheckInProgress_ = false;
-    QTimer* directRecheckTimer_ = nullptr;
 
     CoreStartupChecklist checklist_;
 

@@ -101,6 +101,8 @@ void SettingsDialog::setConfig(const Config& config)
 
     if (subscriptionSettingsPage_ != nullptr) {
         subscriptionSettingsPage_->setSubscriptions(config.collection().subscriptions);
+        subscriptionSettingsPage_->setAutoUpdate(
+            config.subscriptionAutoUpdateEnabled, config.subscriptionAutoUpdateIntervalHours);
     }
 
     if (coreSettingsPage_ != nullptr) {
@@ -159,6 +161,8 @@ Config SettingsDialog::config() const
     }
     if (subscriptionSettingsPage_ != nullptr) {
         updated.collection().subscriptions = subscriptionSettingsPage_->subscriptions();
+        updated.subscriptionAutoUpdateEnabled = subscriptionSettingsPage_->autoUpdateEnabled();
+        updated.subscriptionAutoUpdateIntervalHours = subscriptionSettingsPage_->autoUpdateIntervalHours();
     }
     if (coreSettingsPage_ != nullptr) {
         updated.dns().enableCacheFile4Sbox = coreSettingsPage_->enableCacheFile4Sbox();

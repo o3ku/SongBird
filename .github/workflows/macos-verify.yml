@@ -196,11 +196,31 @@ jobs:
           # failure. --version is the probe: it constructs the QApplication, which is what
           # needs the plugin, and nothing else.
           platform=""
-          if ! run_with "" --version >/dev/null 2>&1; then
+          if ! run_with "" --version >/dev/null 2> /tmp/cocoa-probe.err; then
             echo "::warning::the default (cocoa) platform plugin could not start the app; retrying with offscreen"
+            # Keep the probe's stderr in the log: "environment problem vs product failure" is
+            # only decidable when the reason cocoa refused is visible somewhere.
+            sed 's/^/cocoa probe: /' /tmp/cocoa-probe.err || true
             mkdir -p "$app/Contents/PlugIns/platforms"
-            cp "$QT_PREFIX/plugins/platforms/libqoffscreen.dylib" "$app/Contents/PlugIns/platforms/"
-            codesign --force --sign - --timestamp=none "$app/Contents/PlugIns/platforms/libqoffscreen.dylib"
+            plugin="$app/Contents/PlugIns/platforms/libqoffscreen.dylib"
+            cp "$QT_PREFIX/plugins/platforms/libqoffscreen.dylib" "$plugin"
+            # The freshly copied plugin still points its loader paths at the Homebrew prefix,
+            # so dyld pulls a SECOND QtCore from the Cellar next to the bundle's own copy and
+            # the process dies with "Cannot move to target thread" before main() runs -- which
+            # is exactly what the arm64 runner did once its image stopped giving cocoa a GUI
+            # session and this fallback ran for the first time. Rewrite every Homebrew Qt
+            # reference to the bundled frameworks, repoint the plugin's rpaths at them, and
+            # re-sign everything install_name_tool touched.
+            otool -L "$plugin" |
+              sed -nE 's/^[[:space:]]*(\/(opt\/homebrew|usr\/local)\/.*(Qt[A-Za-z0-9]+\.framework\/Versions\/[0-9]+\/Qt[A-Za-z0-9]+))[[:space:]].*/\1 \3/p' |
+              while read -r dep rel; do
+                install_name_tool -change "$dep" "@loader_path/../../Frameworks/$rel" "$plugin"
+              done
+            while read -r rpath; do
+              install_name_tool -delete_rpath "$rpath" "$plugin" || true
+            done < <(otool -l "$plugin" | awk '/cmd LC_RPATH/{p=1; next} p && $1 == "path"{print $2; p=0}')
+            install_name_tool -add_rpath "@loader_path/../../Frameworks" "$plugin"
+            codesign --force --sign - --timestamp=none "$plugin"
             codesign --force --sign - --timestamp=none "$app"
             platform=offscreen
           fi

@@ -118,6 +118,17 @@ function Find-MatchingLines {
 $root = Resolve-Path $SourceRoot
 $violations = New-Object System.Collections.Generic.List[string]
 
+# Path normalization: `Get-ChildItem -Directory` below returns long Windows paths (the user's
+# full account name), but `Resolve-Path` on a deep temporary directory can return the 8.3 short
+# form (`C:\Users\ATOM~1.DEL\...`). A later `-contains` on those strings then compares two
+# spellings of one directory and answers False, and the coverage guard reports every front end
+# as uncovered. Normalizing both sides through the provider's canonical form closes that gap;
+# this was found by guard-equivalence running both halves against a temp-tree copy.
+function Resolve-CanonicalPath {
+    param([string]$Path)
+    return (Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue).FullName
+}
+
 $legacyBackendDirs = @(
     (Join-Path $root "runtime/core/xray"),
     (Join-Path $root "runtime/core/singbox")
@@ -139,7 +150,9 @@ $consumerDirs = @(
     (Join-Path $root "services"),
     (Join-Path $root "runtime")
 )
-$existingConsumerDirs = @($consumerDirs | Where-Object { Test-Path $_ })
+$existingConsumerDirs = @(
+    $consumerDirs | Where-Object { Test-Path $_ } | ForEach-Object { Resolve-CanonicalPath $_ }
+)
 if ($existingConsumerDirs.Count -eq 0) {
     Stop-CheckWithError "None of the consumer directories ($($consumerDirs -join ', ')) exist under '$SourceRoot'; the include rule would scan nothing. Refusing to report a pass."
 }

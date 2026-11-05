@@ -1,8 +1,11 @@
 #include "ui/dialogs/SubscriptionSettingsPageWidget.h"
 
+#include "common/SubscriptionAutoUpdateInterval.h"
+
 #include <algorithm>
 
 #include <QAction>
+#include <QCheckBox>
 #include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -10,6 +13,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QShowEvent>
@@ -138,6 +142,31 @@ SubscriptionSettingsPageWidget::SubscriptionSettingsPageWidget(QWidget* parent)
     table_->horizontalHeader()->setDefaultSectionSize(headerHeight);
     table_->horizontalHeader()->setMinimumSectionSize(headerHeight);
     AppTheme::applyServerTableStyle(table_);
+
+    // The scheduled-refresh row. Two fields, no more: the refresh itself is the manual update
+    // path on a timer, so there is nothing else to configure -- which is also why this stays a
+    // row on the table page rather than growing the table itself (a checkbox and an interval
+    // are facts about the whole list, not about any one subscription).
+    autoUpdateCheck_ = new QCheckBox(tr("Auto-update subscriptions every"), this);
+    autoUpdateIntervalSpin_ = new QSpinBox(this);
+    autoUpdateIntervalSpin_->setRange(
+        SubscriptionAutoUpdateInterval::kMinimumHours, SubscriptionAutoUpdateInterval::kMaximumHours);
+    autoUpdateIntervalSpin_->setSuffix(tr(" h"));
+    autoUpdateIntervalSpin_->setFixedWidth(72);
+    autoUpdateCheck_->setToolTip(tr(
+        "While enabled, subscriptions older than this interval are refreshed through the same "
+        "background path as a manual update (conditional requests, serial batches)."));
+    const auto syncAutoUpdateRow = [this]() {
+        autoUpdateIntervalSpin_->setEnabled(autoUpdateCheck_->isChecked());
+    };
+    connect(autoUpdateCheck_, &QCheckBox::toggled, this, syncAutoUpdateRow);
+    syncAutoUpdateRow();
+
+    auto* autoUpdateLayout = new QHBoxLayout();
+    autoUpdateLayout->addWidget(autoUpdateCheck_);
+    autoUpdateLayout->addWidget(autoUpdateIntervalSpin_);
+    autoUpdateLayout->addStretch(1);
+    layout->addLayout(autoUpdateLayout);
 
     addButton_ = new QPushButton(tr("Add"), this);
     removeButton_ = new QPushButton(tr("Remove"), this);
@@ -285,6 +314,27 @@ QList<int> SubscriptionSettingsPageWidget::selectedRows() const
 
     std::sort(rows.begin(), rows.end());
     return rows;
+}
+
+void SubscriptionSettingsPageWidget::setAutoUpdate(bool enabled, int intervalHours)
+{
+    if (autoUpdateCheck_ != nullptr) {
+        autoUpdateCheck_->setChecked(enabled);
+    }
+    if (autoUpdateIntervalSpin_ != nullptr) {
+        autoUpdateIntervalSpin_->setValue(SubscriptionAutoUpdateInterval::normalizedHours(intervalHours));
+    }
+}
+
+bool SubscriptionSettingsPageWidget::autoUpdateEnabled() const
+{
+    return autoUpdateCheck_ != nullptr && autoUpdateCheck_->isChecked();
+}
+
+int SubscriptionSettingsPageWidget::autoUpdateIntervalHours() const
+{
+    return SubscriptionAutoUpdateInterval::normalizedHours(
+        autoUpdateIntervalSpin_ == nullptr ? 0 : autoUpdateIntervalSpin_->value());
 }
 
 void SubscriptionSettingsPageWidget::reloadTable()

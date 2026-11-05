@@ -22,6 +22,7 @@
 
 #include "appcore/OutboundLivenessProbeService.h"
 #include "appcore/OutboundLocationProbeService.h"
+#include "appcore/StartupResourceBroker.h"
 #include "common/ServerDisplayName.h"
 #include "appcore/TunSettingsApplyDecision.h"
 #include "appcore/TunRuntimeState.h"
@@ -35,7 +36,6 @@
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 #include "services/CoreUpdateService.h"
-#include "services/GeoResourceUpdateService.h"
 
 namespace {
 
@@ -124,35 +124,8 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
     return missingTags;
 }
 
-QStringList normalizedUniqueTags(const QStringList& tags)
-{
-    QStringList normalizedTags;
-    QSet<QString> seenTags;
-    for (const QString& tag : tags) {
-        const QString normalizedTag = tag.trimmed().toLower();
-        if (normalizedTag.isEmpty() || seenTags.contains(normalizedTag)) {
-            continue;
-        }
-        seenTags.insert(normalizedTag);
-        normalizedTags.append(normalizedTag);
-    }
-    return normalizedTags;
-}
-
-OperationResult combineOperationResults(const QList<OperationResult>& results)
-{
-    bool success = true;
-    QStringList messages;
-    for (const OperationResult& result : results) {
-        success = success && result.success;
-        if (!result.message.trimmed().isEmpty()) {
-            messages.append(result.message.trimmed());
-        }
-    }
-
-    const QString message = messages.join(QChar('\n'));
-    return success ? OperationResult::ok(message) : OperationResult::fail(message);
-}
+// combineOperationResults and normalizedUniqueTags moved to StartupResourceBroker.cpp's
+// anonymous namespace: only the download-and-resume paths used them.
 
 bool waitForLocalTcpPortReady(int port, int timeoutMs)
 {
@@ -191,6 +164,118 @@ ProxySession::ProxySession(Dependencies deps, QObject* parent)
           [this](const QStringList& items) { emit checklistUpdated(items); },
           [this]() { emit checklistCleared(); })
 {
+    // The health watch is a satellite object, not inline state: it owns its timers and its
+    // policy, and its only outputs come back through these two signals. It is a QObject
+    // child of this session, so it is destroyed with it and never outlives a teardown path.
+    //
+    // The sentences and probes it cannot reach are handed over as providers: the .ts holds
+    // every sentence under the "ProxySession" context, and the split must not orphan them.
+    ProxyHealthWatchdog::SessionStrings sessionStrings;
+    sessionStrings.activationTag = [this]() { return activationTag(activationId_); };
+    sessionStrings.probeConfig = [this]() { return currentRequest_.config; };
+    sessionStrings.fallbackDirectProbe = [this](int timeoutMs) {
+        return deps_.livenessProbe.probeDirect(timeoutMs).reachable;
+    };
+    sessionStrings.recheckStillUnavailableSentence = [this]() {
+        return tr("Direct connectivity is still unavailable; keeping the outbound warning.")
+            + QStringLiteral(" | ") + activationTag(activationId_);
+    };
+    sessionStrings.recheckAvailableAgainSentence = [this]() {
+        return tr("Direct connectivity is available again; the outbound warning no longer applies.")
+            + QStringLiteral(" | ") + activationTag(activationId_);
+    };
+    healthWatch_ = new ProxyHealthWatchdog(
+        lifetimeGuard_,
+        std::move(sessionStrings),
+        [this](QThread* thread) { trackBackgroundThread(thread); },
+        this);
+    QObject::connect(healthWatch_, &ProxyHealthWatchdog::warningChanged, this, [this](const QString& warning) {
+        setServerWarning(warning);
+    });
+    QObject::connect(healthWatch_, &ProxyHealthWatchdog::logMessage, this, [this](const QString& message) {
+        emit logMessage(message);
+    });
+
+    // The download-and-resume satellite, same construction shape as the health watch above.
+    // Every sentence it emits comes back here as a provider so the tr() calls and the .ts's
+    // "ProxySession" context stay together; every phase write it needs goes through the
+    // setPhase hook so this class stays the single writer of the phase machine; and the resume
+    // it hands back is startInternal(skipTunCleanup, /*environmentAlreadyChecked=*/true,
+    // showStartupOverlay) -- the same single entry every other resume path uses.
+    StartupResourceBroker::SessionStrings brokerStrings;
+    brokerStrings.coreDataDirectoryEmptySentence = [this]() {
+        return tr("Core data directory is empty.");
+    };
+    brokerStrings.geoDownloadStartSentence = [this](const QString& nativeDirectory) {
+        return tr("Missing geo database files detected. Downloading to %1.").arg(nativeDirectory);
+    };
+    brokerStrings.geoCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while Geo files were updating.");
+    };
+    brokerStrings.geoCompletedButCanceledSentence = [this]() {
+        return tr("Geo files were updated, but proxy startup was canceled.");
+    };
+    brokerStrings.ruleSetDownloadStartSentence = [this](int count, const QString& nativeDirectory) {
+        return tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
+            .arg(count)
+            .arg(nativeDirectory);
+    };
+    brokerStrings.ruleSetCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while sing-box rule sets were updating.");
+    };
+    brokerStrings.ruleSetCompletedButCanceledSentence = [this]() {
+        return tr("sing-box rule sets were updated, but proxy startup was canceled.");
+    };
+    brokerStrings.coreDownloadStartSentence = [this](const QString& coreName, const QString& nativeDirectory) {
+        return tr("Missing %1 core detected. Downloading to %2.").arg(coreName, nativeDirectory);
+    };
+    brokerStrings.backgroundTaskBusySentence = [this]() {
+        return tr("Another background task is already running.");
+    };
+    brokerStrings.coreDownloadBusyFailSentence = [this](const QString& coreName) {
+        return tr("Cannot download %1 while another background task is running.").arg(coreName);
+    };
+    brokerStrings.coreCanceledSentence = [this]() {
+        return tr("Proxy startup was canceled while the core was downloading.");
+    };
+    brokerStrings.coreCompletedButCanceledSentence = [this]() {
+        return tr("The core was downloaded, but proxy startup was canceled.");
+    };
+
+    StartupResourceBroker::SessionHooks brokerHooks;
+    brokerHooks.setPhase = [this](Phase phase) { setPhase(phase); };
+    brokerHooks.setCheckpointStatus =
+        [this](CoreStartupCheckpointStatus status, const QString& step, const QString& detail) {
+            setCheckpointStatus(status, step, detail);
+        };
+    brokerHooks.keepChecklistForUserDismissal =
+        [this](const QString& step, const QString& detail) {
+            keepChecklistForUserDismissal(step, detail);
+        };
+    brokerHooks.cancelActivation = [this]() { cancelActivation(); };
+    brokerHooks.failStartup = [this](const OperationResult& result) { failStartup(result); };
+    brokerHooks.resumeStartup = [this](bool skipTunCleanup, bool showStartupOverlay) {
+        startInternal(skipTunCleanup, true, showStartupOverlay);
+    };
+    brokerHooks.isActivationInProgress = [this]() { return isActivationInProgress(); };
+    brokerHooks.shuttingDown = [this]() { return shuttingDown_.load(); };
+    brokerHooks.configuredSystemProxyMode = [this]() {
+        return normalizeSystemProxyMode(currentRequest_.config.sysProxyType);
+    };
+    brokerHooks.requestStatusSync = [this]() { emit statusSyncRequested(); };
+    brokerHooks.logMessage = [this](const QString& message) { emit logMessage(message); };
+    brokerHooks.trackThread = [this](QThread* thread) { trackBackgroundThread(thread); };
+
+    resourceBroker_ = new StartupResourceBroker(
+        lifetimeGuard_,
+        StartupResourceBroker::Dependencies{
+            deps_.profileResolver,
+            deps_.backgroundTasks,
+            deps_.activationCoordinator,
+        },
+        std::move(brokerStrings),
+        std::move(brokerHooks),
+        this);
 }
 
 ProxySession::~ProxySession()
@@ -218,22 +303,13 @@ void ProxySession::setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation
 
 void ProxySession::setAvailabilityCheck(AvailabilityCheck check, int intervalMs)
 {
-    availabilityCheck_ = std::move(check);
-    healthWatchIntervalMs_ = intervalMs > 0 ? intervalMs : kDefaultHealthWatchIntervalMs;
+    healthWatch_->setAvailabilityCheck(std::move(check));
+    healthWatch_->setIntervalMs(intervalMs);
 }
 
 void ProxySession::setDirectConnectivityCheck(DirectConnectivityCheck check)
 {
-    directConnectivityCheck_ = std::move(check);
-}
-
-bool ProxySession::directConnectivityReachable() const
-{
-    const int timeoutMs = OutboundLivenessProbeService::LivenessProbeDirectTimeoutMs;
-    if (directConnectivityCheck_) {
-        return directConnectivityCheck_(timeoutMs);
-    }
-    return deps_.livenessProbe.probeDirect(timeoutMs).reachable;
+    healthWatch_->setDirectConnectivityCheck(std::move(check));
 }
 
 void ProxySession::start(const StartRequest& request)
@@ -313,6 +389,11 @@ QString ProxySession::serverLocation() const
     return currentServerLocation_;
 }
 
+QString ProxySession::serverCountryCode() const
+{
+    return currentServerCountryCode_;
+}
+
 QString ProxySession::serverWarning() const
 {
     return currentServerWarning_;
@@ -375,18 +456,11 @@ void ProxySession::setPhase(Phase phase)
         // A fresh start supersedes whatever the previous attempt concluded: any warning that is up
         // describes a core that is no longer the one running. The policy is reset with it, so the
         // new watch has to earn its warning again from zero rather than inheriting a count.
-        healthWatchPolicy_.reset();
         setServerWarning(QString());
-        // A fresh start owns the status bar again: whatever the previous session concluded about
-        // the local network is replaced by this session's own gate.
-        waivedOutboundWarningShown_ = false;
-        directRecheckInProgress_ = false;
-        if (directRecheckTimer_ != nullptr) {
-            directRecheckTimer_->stop();
-        }
-        scheduleHealthWatch();
+        healthWatch_->notifyFreshActivation();
+        healthWatch_->arm();
     } else {
-        cancelHealthWatch();
+        healthWatch_->cancel();
     }
 
     emit phaseChanged(phase);
@@ -918,7 +992,13 @@ void ProxySession::cleanupAfterFailedStartup()
     emit statusSyncRequested();
 }
 
-// --- Download and resume ---
+// --- Download and resume -------------------------------------------------------
+// The bodies live in StartupResourceBroker (a QObject child of this session). The three
+// entries below keep their call sites' names and stay here because they read session state on
+// the GUI thread (the checklist step strings, the config snapshot for the core download) and
+// then hand everything the broker needs over as values -- a worker must never read a session
+// member. The tr() calls stay here for the same reason: the .ts holds every sentence under the
+// "ProxySession" context, and the broker receives them as finished strings.
 
 void ProxySession::downloadMissingGeoFilesAndResume(
     const CoreInfo& coreInfo,
@@ -927,60 +1007,12 @@ void ProxySession::downloadMissingGeoFilesAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const QString targetDirectory = coreGeoDirectory(coreInfo);
-    if (targetDirectory.trimmed().isEmpty()) {
-        failStartup(OperationResult::fail(QCoreApplication::translate("ProxySession", "Core data directory is empty.")));
-        return;
-    }
-
-    const QList<CoreGeoFileRequirement> requirements = coreGeoFileRequirementsFor(coreInfo);
-    if (requirements.isEmpty()) {
-        // Nothing to fetch after all; go straight on rather than stalling on an empty download.
-        startInternal(skipTunCleanup, true, showStartupOverlay);
-        return;
-    }
-
-    const QString startMessage = tr("Missing geo database files detected. Downloading to %1.")
-        .arg(QDir::toNativeSeparators(targetDirectory));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
-    emit logMessage(geoValidationMessage);
-
-    setPhase(Phase::ValidateRuntimeResources);
-
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread([this, targetDirectory, requirements, checkGeoStep,
-                                       skipTunCleanup, showStartupOverlay, guard]() {
-        const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            postStartupDownloadProgress(checkGeoStep, message, guard);
-        };
-
-        GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
-        QList<OperationResult> results;
-        for (const CoreGeoFileRequirement& requirement : requirements) {
-            // A file already on disk is not fetched again, so a retry after a canceled or failed
-            // download resumes instead of re-pulling everything the core needs.
-            if (coreGeoFileIsPresent(targetDirectory, requirement.fileName)) {
-                continue;
-            }
-            results.append(geoUpdateService.updateCoreGeoFile(requirement));
-        }
-        const OperationResult result = combineOperationResults(results);
-
-        QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
-                                         showStartupOverlay, guard]() {
-            if (guard.expired() || shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                checkGeoStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while Geo files were updating."),
-                tr("Geo files were updated, but proxy startup was canceled."));
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
+    resourceBroker_->downloadMissingGeoFilesAndResume(
+        coreInfo,
+        geoValidationMessage,
+        checkGeoStep,
+        skipTunCleanup,
+        showStartupOverlay);
 }
 
 void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
@@ -989,49 +1021,11 @@ void ProxySession::downloadMissingSingBoxRuleSetsAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const QStringList tags = normalizedUniqueTags(missingRuleSetTags);
-    if (tags.isEmpty()) {
-        startInternal(skipTunCleanup, true, showStartupOverlay);
-        return;
-    }
-
-    const QString targetDirectory = AppPaths::applicationDirectory();
-    const QString startMessage = tr("Missing sing-box rule sets detected. Downloading %1 file(s) to %2.")
-        .arg(tags.size())
-        .arg(QDir::toNativeSeparators(QDir(targetDirectory).filePath(SingBoxPaths::ruleSetDirectoryName())));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, checkGeoStep, startMessage);
-
-    setPhase(Phase::ValidateRuntimeResources);
-
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread([this, targetDirectory, tags, checkGeoStep, skipTunCleanup,
-                                       showStartupOverlay, guard]() {
-        const auto reportProgress = [this, checkGeoStep, guard](const QString& message) {
-            postStartupDownloadProgress(checkGeoStep, message, guard);
-        };
-
-        GeoResourceUpdateService geoUpdateService(targetDirectory, {}, reportProgress);
-        QList<OperationResult> results;
-        for (const QString& tag : tags) {
-            results.append(geoUpdateService.updateSingBoxRuleSet(tag));
-        }
-        const OperationResult result = combineOperationResults(results);
-
-        QMetaObject::invokeMethod(this, [this, result, checkGeoStep, skipTunCleanup,
-                                         showStartupOverlay, guard]() {
-            if (guard.expired() || shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                checkGeoStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while sing-box rule sets were updating."),
-                tr("sing-box rule sets were updated, but proxy startup was canceled."));
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
+    resourceBroker_->downloadMissingSingBoxRuleSetsAndResume(
+        missingRuleSetTags,
+        checkGeoStep,
+        skipTunCleanup,
+        showStartupOverlay);
 }
 
 void ProxySession::downloadMissingCoreAndResume(
@@ -1041,154 +1035,18 @@ void ProxySession::downloadMissingCoreAndResume(
     bool skipTunCleanup,
     bool showStartupOverlay)
 {
-    const CoreType runtimeCore = deps_.profileResolver.resolveRuntimeCoreType(coreType);
-    const QString installDirectory = deps_.profileResolver.resolveCoreInstallDirectory(runtimeCore);
-    if (runtimeCore == CoreType::Unknown || installDirectory.trimmed().isEmpty()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep, missingCoreResult.message);
-        failStartup(missingCoreResult);
-        return;
-    }
-
-    const QString startMessage = tr("Missing %1 core detected. Downloading to %2.")
-        .arg(coreTypeDisplayName(runtimeCore))
-        .arg(QDir::toNativeSeparators(installDirectory));
-    setCheckpointStatus(CoreStartupCheckpointStatus::Started, downloadCoreStep, startMessage);
-    emit logMessage(missingCoreResult.message);
-
-    const BackgroundTaskCoordinator::Token token =
-        deps_.backgroundTasks.tryBeginStartupTask(BackgroundTaskCoordinator::Kind::CoreUpdate);
-    if (!token.isValid()) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, downloadCoreStep,
-            tr("Another background task is already running."));
-        failStartup(OperationResult::fail(
-            tr("Cannot download %1 while another background task is running.")
-                .arg(coreTypeDisplayName(runtimeCore))));
-        return;
-    }
-
-    setPhase(Phase::ValidateCoreApplication);
-
+    // The config snapshot the core download reads, copied on the GUI thread before the worker
+    // launches -- the same seam-copy rule every worker in this class follows.
     const CoreUpdateConfig workerConfig{
         currentRequest_.config.checkPreReleaseUpdate,
         currentRequest_.config.ignoreGeoUpdateCore};
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-
-    QThread* thread = launchBackgroundThread([this, runtimeCore, workerConfig, installDirectory,
-                                       downloadCoreStep, skipTunCleanup,
-                                       showStartupOverlay, token, guard]() {
-        CoreUpdateService coreUpdateService;
-        CoreUpdateService::UpdateOptions options;
-        options.progressHandler = [this, downloadCoreStep, token, guard](const QString& message) {
-            postStartupDownloadProgress(downloadCoreStep, message, token, guard);
-        };
-        options.cancelCheck = [this]() {
-            QThread* currentThread = QThread::currentThread();
-            return shuttingDown_.load()
-                || (currentThread != nullptr && currentThread->isInterruptionRequested());
-        };
-        options.skipLocalVersionCheck = true;
-
-        const OperationResult result = coreUpdateService.update(
-            runtimeCore, workerConfig, installDirectory, options);
-
-        QMetaObject::invokeMethod(this, [this, downloadCoreStep, skipTunCleanup,
-                                         showStartupOverlay, token, result, guard]() {
-            if (guard.expired()) {
-                return;
-            }
-            if (!deps_.backgroundTasks.isCurrent(token)) {
-                return;
-            }
-            deps_.backgroundTasks.finish(token);
-            if (shuttingDown_.load()) {
-                return;
-            }
-            handleStartupDownloadFinished(
-                downloadCoreStep,
-                result,
-                skipTunCleanup,
-                showStartupOverlay,
-                tr("Proxy startup was canceled while the core was downloading."),
-                tr("The core was downloaded, but proxy startup was canceled."),
-                [this]() { deps_.activationCoordinator.refreshExistingCoreTypes(); });
-        }, Qt::QueuedConnection);
-    }, [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
-}
-
-void ProxySession::postStartupDownloadProgress(
-    const QString& step,
-    const QString& message,
-    const std::weak_ptr<char>& guard)
-{
-    if (message.trimmed().isEmpty()) {
-        return;
-    }
-
-    QMetaObject::invokeMethod(this, [this, step, message, guard]() {
-        if (guard.expired() || !isActivationInProgress()) {
-            return;
-        }
-        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
-    }, Qt::QueuedConnection);
-}
-
-void ProxySession::postStartupDownloadProgress(
-    const QString& step,
-    const QString& message,
-    const BackgroundTaskCoordinator::Token& token,
-    const std::weak_ptr<char>& guard)
-{
-    if (message.trimmed().isEmpty()) {
-        return;
-    }
-
-    QMetaObject::invokeMethod(this, [this, step, message, token, guard]() {
-        if (guard.expired()) {
-            return;
-        }
-        if (!deps_.backgroundTasks.isCurrent(token)) {
-            return;
-        }
-        if (!isActivationInProgress()) {
-            return;
-        }
-        setCheckpointStatus(CoreStartupCheckpointStatus::Started, step, message);
-    }, Qt::QueuedConnection);
-}
-
-void ProxySession::handleStartupDownloadFinished(
-    const QString& step,
-    const OperationResult& result,
-    bool skipTunCleanup,
-    bool showStartupOverlay,
-    const QString& canceledMessage,
-    const QString& completedButCanceledMessage,
-    const std::function<void()>& successAction)
-{
-    if (!isActivationInProgress()) {
-        keepChecklistForUserDismissal(step, canceledMessage);
-        cancelActivation();
-        emit statusSyncRequested();
-        return;
-    }
-    if (!result.success) {
-        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, step, result.message);
-        failStartup(result);
-        return;
-    }
-    if (normalizeSystemProxyMode(currentRequest_.config.sysProxyType) != SystemProxyMode::ForcedChange) {
-        keepChecklistForUserDismissal(step, completedButCanceledMessage);
-        cancelActivation();
-        emit statusSyncRequested();
-        return;
-    }
-
-    if (successAction) {
-        successAction();
-    }
-    setCheckpointStatus(CoreStartupCheckpointStatus::Passed, step, result.message);
-    startInternal(skipTunCleanup, true, showStartupOverlay);
+    resourceBroker_->downloadMissingCoreAndResume(
+        coreType,
+        missingCoreResult,
+        downloadCoreStep,
+        skipTunCleanup,
+        showStartupOverlay,
+        workerConfig);
 }
 // --- Core started/failed ---
 
@@ -1338,7 +1196,12 @@ void ProxySession::queryOutboundConnection(const QString& serverIndexId)
     const std::weak_ptr<char> guard = lifetimeGuard_;
     const QString activeServerId = serverIndexId.trimmed();
     const qint64 startTime = coreStartTime_;
-    QThread* thread = launchBackgroundThread([this, guard, activeServerId, httpPort, connectionStep, startTime]() {
+    // The seam is copied before the worker launches, so the worker never reads a member of an
+    // object it does not own. The watchdog holds both the injected check and the real-probe
+    // fallback, so this call answers "a test scripted it" and "use the real probe" without
+    // the session keeping its own copy of either.
+    const DirectConnectivityCheck directCheck = healthWatch_->directConnectivityCheckForGate();
+    QThread* thread = launchBackgroundThread([this, guard, activeServerId, httpPort, connectionStep, startTime, directCheck]() {
         const OutboundLivenessResult probeResult = deps_.livenessProbe.probe(httpPort);
         const bool reachable = probeResult.reachable;
         const QString lastError = probeResult.error;
@@ -1348,7 +1211,8 @@ void ProxySession::queryOutboundConnection(const QString& serverIndexId)
         // Only on the failure path, and unproxied on purpose: asking the same question through the
         // core would answer nothing new, and the only thing worth knowing once the gate says "no"
         // is whether this machine can get anywhere without it.
-        const bool directReachable = reachable ? true : directConnectivityReachable();
+        const bool directReachable = reachable ? true
+            : directCheck(OutboundLivenessProbeService::LivenessProbeDirectTimeoutMs);
         QMetaObject::invokeMethod(this, [this, guard, activeServerId, httpPort, reachable, lastError, failureShape,
                                          attemptedHosts, elapsedMs, directReachable, connectionStep, startTime]() {
             if (guard.expired() || shuttingDown_.load() || phase_ != Phase::CheckOutboundConnection) {
@@ -1394,8 +1258,7 @@ void ProxySession::queryOutboundConnection(const QString& serverIndexId)
                         // node, so only this branch arms the retraction. Nothing else in the session
                         // can retract it: the health watch speaks for the node, and its own clear is
                         // never reached now that the node is known to be fine.
-                        waivedOutboundWarningShown_ = true;
-                        recheckWaivedOutboundWarning();
+                        healthWatch_->notifyWaivedOutboundWarningShown();
                         clearChecklistAfterStableRun(CoreStartupCompletionOverlayDelayMs);
                         queryServerLocation(activeServerId);
                     }
@@ -1461,16 +1324,20 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
     const QString activeServerId = serverIndexId.trimmed();
     const qint64 startTime = coreStartTime_;
     QThread* thread = launchBackgroundThread([this, guard, activeServerId, httpPort, startTime]() {
-        const OutboundLocationProbeResult probeResult = deps_.locationProbe.probe(httpPort);
-        const QString location = probeResult.location;
-        const QString lastError = probeResult.error;
-        QMetaObject::invokeMethod(this, [this, guard, activeServerId, location, lastError, startTime]() {
+        // Structured rather than the formatted string: the country code is what the window's
+        // "fix location from exit" action needs, and re-parsing the emoji out of the display
+        // string is exactly the kind of coupling the structured probe exists to avoid.
+        const OutboundLocationDetails details = deps_.locationProbe.probeStructured(httpPort);
+        const QString location = details.location;
+        const QString countryCode = details.countryCode;
+        const QString lastError = details.error;
+        QMetaObject::invokeMethod(this, [this, guard, activeServerId, location, countryCode, lastError, startTime]() {
             if (guard.expired() || shuttingDown_.load() || phase_ != Phase::Proxying
                 || !deps_.mainCore.isRunning() || coreStartTime_ != startTime
                 || deps_.profileResolver.currentIndexId() != activeServerId) {
                 return; // A display result is never allowed to cancel an activation.
             }
-            setServerLocation(location);
+            setServerLocation(location, countryCode);
             // The location signal may synchronously stop or switch the session.
             if (phase_ != Phase::Proxying || coreStartTime_ != startTime
                 || deps_.profileResolver.currentIndexId() != activeServerId) {
@@ -1772,11 +1639,7 @@ void ProxySession::clearProxyStateAfterStopped()
     currentServer_ = {};
     currentServerLocation_.clear();
     currentServerWarning_.clear();
-    waivedOutboundWarningShown_ = false;
-    directRecheckInProgress_ = false;
-    if (directRecheckTimer_ != nullptr) {
-        directRecheckTimer_->stop();
-    }
+    healthWatch_->notifyFreshActivation();
 }
 // --- TUN cleanup ---
 
@@ -1874,191 +1737,20 @@ void ProxySession::cancelPendingCoreRestarts()
     }
 }
 
-// --- Node health watch ---
-//
-// Why this exists: the crash-restart policy above only reacts to the core *process* dying. A core
-// that is running perfectly while its active node has gone dark produced nothing at all -- in the
-// log that motivated this, an AnyTLS node was dead for 2 h 39 m and the only trace was 183 core
-// ERROR lines. This watch is the missing signal: it probes the local HTTP inbound (which is what
-// the node is actually reached through) and, after two consecutive failures, raises the same
-// server warning the rest of the app already renders in the status bar.
-//
-// It deliberately does NOT switch nodes. Switching stops and restarts the core, which would drop
-// every connection the user has open; deciding that on the user's behalf, silently, is worse than
-// telling them. SongBirdAuto makes the opposite trade because it is unattended by design.
-
-void ProxySession::scheduleHealthWatch()
-{
-    if (shuttingDown_.load() || phase_ != Phase::Proxying || !availabilityCheck_) {
-        return;
-    }
-    if (healthWatchTimer_ == nullptr) {
-        healthWatchTimer_ = new QTimer(this);
-        healthWatchTimer_->setSingleShot(true);
-        QObject::connect(healthWatchTimer_, &QTimer::timeout, this, [this]() { runHealthWatch(); });
-    }
-    healthWatchTimer_->start(healthWatchIntervalMs_);
-}
-
-// --- Waived outbound warning ------------------------------------------------
-//
-// The gate has one branch that comes up anyway: the node answered nothing *and* this machine cannot
-// reach the probe hosts directly, which makes the node innocent and the local network the suspect.
-// That branch raises a warning and lets the session run.
-//
-// Nothing used to retract it. The health watch only speaks for the node, and this sentence is about
-// the machine, so a user who fixed their network (joined a different Wi-Fi, restored a VPN) kept
-// reading "this machine cannot reach the probe hosts directly either" for the rest of the session
-// and had to restart the proxy to be told the truth. This is the retraction: while that specific
-// warning is up, the same unproxied probe runs again on the health watch's cadence, and the warning
-// is dropped the moment it answers.
-
-void ProxySession::recheckWaivedOutboundWarning()
-{
-    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || phase_ != Phase::Proxying) {
-        return;
-    }
-    if (directRecheckTimer_ == nullptr) {
-        directRecheckTimer_ = new QTimer(this);
-        directRecheckTimer_->setSingleShot(true);
-        QObject::connect(directRecheckTimer_, &QTimer::timeout, this, [this]() { runDirectRecheck(); });
-    }
-    directRecheckTimer_->start(healthWatchIntervalMs_);
-}
-
-void ProxySession::runDirectRecheck()
-{
-    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || phase_ != Phase::Proxying
-        || directRecheckInProgress_) {
-        return;
-    }
-
-    directRecheckInProgress_ = true;
-    const int timeoutMs = OutboundLivenessProbeService::LivenessProbeDirectTimeoutMs;
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread(
-        [this, guard, timeoutMs]() {
-            // Unproxied, and therefore independent of this object: the worker reads nothing but the
-            // timeout, so a session torn down mid-probe only loses the answer.
-            const bool directReachable = directConnectivityReachable();
-            QMetaObject::invokeMethod(this, [this, guard, directReachable]() {
-                if (guard.expired()) {
-                    return;
-                }
-                finishDirectRecheck(directReachable);
-            }, Qt::QueuedConnection);
-        },
-        [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
-}
-
-void ProxySession::finishDirectRecheck(bool directReachable)
-{
-    directRecheckInProgress_ = false;
-    if (shuttingDown_.load() || phase_ != Phase::Proxying || !waivedOutboundWarningShown_) {
-        return;
-    }
-
-    if (!directReachable) {
-        // Still no route without the core. The warning stays and the retraction keeps trying --
-        // a local outage is exactly the case the user expects to be told about once and then left
-        // alone until it ends.
-        emit logMessage(tr("Direct connectivity is still unavailable; keeping the outbound warning.")
-            + QStringLiteral(" | ") + activationTag(activationId_));
-        recheckWaivedOutboundWarning();
-        return;
-    }
-
-    // The sentence is no longer true, so it goes. Logged because a warning that disappears without
-    // a trace reads as a glitch.
-    const QString cleared = tr(
-        "Direct connectivity is available again; the outbound warning no longer applies.");
-    waivedOutboundWarningShown_ = false;
-    setServerWarning(QString());
-    emit logMessage(cleared + QStringLiteral(" | ") + activationTag(activationId_));
-}
-
-void ProxySession::runHealthWatch()
-{
-    if (shuttingDown_.load() || phase_ != Phase::Proxying || healthWatchInProgress_) {
-        return;
-    }
-
-    // Copy the seam before leaving the main thread: the worker must not read a member of an object
-    // it does not own, and the host may clear it at any time.
-    const AvailabilityCheck check = availabilityCheck_;
-    if (!check) {
-        return;
-    }
-
-    const Config config = currentRequest_.config;
-
-    healthWatchInProgress_ = true;
-    const std::weak_ptr<char> guard = lifetimeGuard_;
-    QThread* thread = launchBackgroundThread(
-        [this, guard, check, config]() {
-            const OperationResult result = check(config);
-            QMetaObject::invokeMethod(this, [this, result, guard]() {
-                if (guard.expired()) {
-                    return;
-                }
-                finishHealthWatch(result);
-            }, Qt::QueuedConnection);
-        },
-        [this](QThread* worker) { trackBackgroundThread(worker); });
-    thread->start();
-}
-
-void ProxySession::finishHealthWatch(const OperationResult& result)
-{
-    healthWatchInProgress_ = false;
-    if (shuttingDown_.load() || phase_ != Phase::Proxying) {
-        return;
-    }
-
-    // The probe's own message is the reason appended to the warning. It is already localized by the
-    // service that produced it, so the warning stays one language.
-    const ProxyHealthWatchPolicy::Decision decision =
-        healthWatchPolicy_.recordResult(result.success, result.message);
-
-    switch (decision.action) {
-    case ProxyHealthWatchPolicy::Action::Warn:
-        setServerWarning(decision.message);
-        emit logMessage(decision.message);
-        break;
-    case ProxyHealthWatchPolicy::Action::Clear:
-        // Clearing means the node answered again, so the warning the user is looking at is no
-        // longer true. The sentence still goes to the log, because a warning that disappears
-        // without a trace reads as a glitch.
-        setServerWarning(QString());
-        emit logMessage(decision.message);
-        break;
-    case ProxyHealthWatchPolicy::Action::None:
-        break;
-    }
-
-    scheduleHealthWatch();
-}
-
-void ProxySession::cancelHealthWatch()
-{
-    if (healthWatchTimer_ != nullptr) {
-        healthWatchTimer_->stop();
-    }
-    healthWatchInProgress_ = false;
-    healthWatchPolicy_.reset();
-}
+// --- Node health watch --- lives in ProxyHealthWatchdog (a QObject child of this session).
 
 // --- Server location ---
 
-void ProxySession::setServerLocation(QString location)
+void ProxySession::setServerLocation(QString location, QString countryCode)
 {
     location = location.trimmed();
-    if (currentServerLocation_ == location) {
+    countryCode = countryCode.trimmed().toUpper();
+    if (currentServerLocation_ == location && currentServerCountryCode_ == countryCode) {
         return;
     }
     currentServerLocation_ = std::move(location);
-    emit serverLocationChanged(currentServerLocation_);
+    currentServerCountryCode_ = std::move(countryCode);
+    emit serverLocationChanged(currentServerLocation_, currentServerCountryCode_);
     emit statusSyncRequested();
 }
 
@@ -2074,10 +1766,11 @@ void ProxySession::setServerWarning(QString warning)
 
 void ProxySession::clearServerLocation()
 {
-    if (currentServerLocation_.isEmpty() && currentServerWarning_.isEmpty()) {
+    if (currentServerLocation_.isEmpty() && currentServerCountryCode_.isEmpty() && currentServerWarning_.isEmpty()) {
         return;
     }
     currentServerLocation_.clear();
+    currentServerCountryCode_.clear();
     currentServerWarning_.clear();
     emit statusSyncRequested();
 }

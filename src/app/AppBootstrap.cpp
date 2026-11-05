@@ -2,6 +2,7 @@
 #include "app/AppBootstrapObjects.h"
 #include "app/UiThreadInvocation.h"
 #include "appcore/FunctionRuntimeAdapters.h"
+#include "app/AutoSwitchCoordinator.h"
 #include "app/AppUpdateInstallService.h"
 #include "app/AppUpdateCheckCoordinator.h"
 #include "app/ApplicationRestartCoordinator.h"
@@ -41,6 +42,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+
+#include "appcore/LocationCatalog.h"
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QDir>
@@ -51,6 +54,7 @@
 #include <QSessionManager>
 #include <QSysInfo>
 #include <QThread>
+#include <QDateTime>
 #include <QTimer>
 #include <QUrl>
 
@@ -65,6 +69,7 @@
 #include "app/SettingsDialogRunner.h"
 #include "app/SettingsWorkflowCoordinator.h"
 #include "app/SpeedTestCoordinator.h"
+#include "app/SubscriptionAutoUpdateLogic.h"
 #include "app/SystemProxyCoordinator.h"
 #include "app/TunModeCoordinator.h"
 #include "appcore/TunRuntimeState.h"
@@ -248,6 +253,7 @@ bool AppBootstrap::run()
     sequencer.addStep(QStringLiteral("present-main-window"), [this]() { presentMainWindowOnStartup(); });
     sequencer.addStep(QStringLiteral("offer-core-download-on-startup"), [this]() { offerCoreDownloadOnStartup(); });
     sequencer.addStep(QStringLiteral("schedule-app-update-checks"), [this]() { scheduleAppUpdateChecks(); });
+    sequencer.addStep(QStringLiteral("schedule-subscription-auto-update"), [this]() { scheduleSubscriptionAutoUpdate(); });
 
     return sequencer.runAll();
 }
@@ -339,6 +345,36 @@ void AppBootstrap::scheduleAppUpdateChecks()
         checkAppUpdates(false);
     });
     appUpdateTimer->start();
+}
+
+void AppBootstrap::scheduleSubscriptionAutoUpdate()
+{
+    // The tick reads the config and the clock every time, so an interval changed in settings
+    // takes effect on the next tick without re-arming anything. The refresh rides the manual
+    // update path (updateByIds): serial batches, conditional requests, failStreak back-off --
+    // and its token gate already makes a busy tick a silent no-op.
+    const auto runDueCheck = [this]() {
+        if (objects_->subscriptionWorkflowCoordinator == nullptr
+            || objects_->proxySession == nullptr
+            || objects_->proxySession->isActivationInProgress()) {
+            return;
+        }
+        const QStringList due = SubscriptionAutoUpdateLogic::dueSubscriptionIds(
+            config_, QDateTime::currentMSecsSinceEpoch());
+        if (due.isEmpty()) {
+            return;
+        }
+        objects_->subscriptionWorkflowCoordinator->updateByIds(
+            due,
+            false,
+            QCoreApplication::translate(
+                "AppBootstrap", "Auto-updating stale subscriptions in the background..."));
+    };
+    QTimer::singleShot(SubscriptionAutoUpdateLogic::kFirstCheckDelayMs, objects_->mainWindow.get(), runDueCheck);
+    auto* autoUpdateTimer = new QTimer(objects_->mainWindow.get());
+    autoUpdateTimer->setInterval(SubscriptionAutoUpdateLogic::kCheckIntervalMs);
+    QObject::connect(autoUpdateTimer, &QTimer::timeout, objects_->mainWindow.get(), runDueCheck);
+    autoUpdateTimer->start();
 }
 
 void AppBootstrap::offerCoreDownloadOnStartup()
@@ -862,6 +898,15 @@ void AppBootstrap::retryCoreStartup(bool showStartupOverlay)
 {
     if (objects_->systemProxyCoordinator != nullptr) {
         objects_->systemProxyCoordinator->retryStartup(showStartupOverlay);
+    }
+}
+
+void AppBootstrap::autoSwitchWithinGroupOnFailure()
+{
+    // The whole decision moved to AutoSwitchCoordinator (guards, warm data, probe round,
+    // round robin, exhaustion ceiling); this stays as the failed-signal's single named entry.
+    if (objects_->autoSwitchCoordinator != nullptr) {
+        objects_->autoSwitchCoordinator->handleSessionFailure();
     }
 }
 

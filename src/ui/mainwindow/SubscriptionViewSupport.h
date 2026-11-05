@@ -12,6 +12,8 @@ QSet<QString> enabledSubscriptionIds(const QList<SubItem>& subscriptions);
 QString tabKeyFromSelectionId(const QString& selectionId);
 QString persistedSelectionIdFromTabKey(const QString& tabKey);
 QString subscriptionIdFromTabKey(const QString& tabKey);
+QString tabKeyFromLocationId(const QString& locationId);
+QString locationIdFromTabKey(const QString& tabKey);
 QString subscriptionDisplayName(const SubItem& item);
 
 } // namespace SubscriptionViewSupport

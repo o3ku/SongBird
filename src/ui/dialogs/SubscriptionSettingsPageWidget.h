@@ -7,9 +7,11 @@
 #include "domain/models/SubItem.h"
 
 class QAction;
+class QCheckBox;
 class QPoint;
 class QPushButton;
 class QShowEvent;
+class QSpinBox;
 class QTableWidget;
 
 class SubscriptionSettingsPageWidget final : public QWidget
@@ -27,6 +29,13 @@ public:
     // address a different subscription. Ids survive the move, and a row added here has none yet --
     // which is the correct answer, since it has nothing to update.
     QStringList selectedSubscriptionIds() const;
+
+    // The scheduled-refresh row above the table. The dialog reads these on accept (the page is
+    // an edit buffer like every other field here) and the values reach the plan through
+    // SettingsDialogApplyPlan's general-field comparison.
+    void setAutoUpdate(bool enabled, int intervalHours);
+    bool autoUpdateEnabled() const;
+    int autoUpdateIntervalHours() const;
 
     static QString resolveUserAgent(const QString& storedValue);
 
@@ -63,6 +72,8 @@ private:
 
     QList<SubItem> items_;
     QTableWidget* table_ = nullptr;
+    QCheckBox* autoUpdateCheck_ = nullptr;
+    QSpinBox* autoUpdateIntervalSpin_ = nullptr;
     QPushButton* addButton_ = nullptr;
     QPushButton* removeButton_ = nullptr;
     QPushButton* updateButton_ = nullptr;

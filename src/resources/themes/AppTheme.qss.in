@@ -97,6 +97,44 @@ QTabBar#settingsTabBar, QTabBar#subscriptionTabBar, QTabWidget#routingCustomRule
 QTabBar QToolButton { padding: 0px; }
 QTabBar#settingsTabBar::tab, QTabBar#subscriptionTabBar::tab { background: transparent; color: @textMuted@; font-weight: 600; padding: 6px 18px; margin: 0px 0px 1px 0px; border: none; outline: none; }
 QTabBar#subscriptionTabBar::tab { background: @surface@; border: 1px solid @border@; padding: 5px 16px; margin: 0px 2px 0px 0px; }
+/* Location items: a flag icon plus a short code plus a count, up to nine of them, so the tab is
+   drawn as one tight flag+label token by LocationTabBar (the stylesheet tab layout's fixed
+   icon/text gap cannot produce the 2px the token needs). The token is 12px (flag) + 2px + label
+   wide and centered in the cell, so this padding is what keeps the token inside its own tab:
+   padding 13px leaves 5px on each side of the token, i.e. 4px of visual padding after the 1px
+   border. The property is set/cleared by the toggle's handler, so the subscription view keeps
+   its original look. */
+/* Location mode tints the whole bar container -- from the grouping toggle across the tabs to the
+   filter input -- so the grouped view reads as a different surface at a glance. The container is
+   a WA_StyledBackground QWidget, so the rule actually paints; the tab bar inside stays
+   transparent and lets the wash show through between and behind the tabs. The property is
+   set/cleared by ServerWorkspaceWidget::setGroupByLocationMode on the toggle and on restore. */
+/* Location mode keeps the subscription bar's neutral ground (no full-bar wash): the mode is
+   signalled by the toggle button's checked state and by the accent top edge of the server table
+   (the serverHeaderRow rule below), not by repainting the whole bar. */
+QWidget#subscriptionTabBarContainer[locationMode="true"] { border-bottom: 1px solid @accent@; }
+QTabBar#subscriptionTabBar[locationMode="true"]::tab { padding: 5px 13px; }
+/* Selected/hover in the location view read off the same accent family as the toggle button:
+   the selected item is the deep accent ground with white text (the same pairing as the toolbar's
+   checked START), and the hover is the pale step between the bar wash and the selected ground.
+   The bar wash itself is the container rule below. */
+QTabBar#subscriptionTabBar[locationMode="true"]::tab:selected { background: @navigationSelectedBackground@; border: 1px solid @navigationSelectedBorder@; color: @navigationSelectedText@; }
+QTabBar#subscriptionTabBar[locationMode="true"]::tab:hover:!selected { background: @accentHover@; color: @text@; }
+/* The grouping toggle sits left of the tabs and is built from the same box the tabs are: the
+   5px/1px structure is the tab's own, so the button's height matches the tab height exactly
+   (both derive it from the same font metrics -- the window sets the bar's bold compact font on
+   the button too). The checked look borrows the selected tab's palette so the button reads as
+   the mode switch the tabs to its right are currently rendered in. */
+/* The grouping toggle: same colours as the toolbar's START/STOP buttons (control / controlHover /
+   accentPressed / activeBackground+accent), no border, and a 16px glyph at toolbar-icon scale.
+   Unchecked is backgroundless so the button disappears into the bar the way the toolbar's own
+   icon buttons do; checked turns the accent ground on and the window swaps to the white glyph
+   (ServerWorkspaceWidget wires the icon swap -- QSS cannot change a QIcon). The height pinning
+   is in code too: QSS height rules do not reach QToolButton's size hint. */
+QToolButton#groupByLocationButton { background: transparent; border: none; padding: 5px; margin: 0px 2px 0px 0px; }
+QToolButton#groupByLocationButton:hover { background: @controlHover@; }
+QToolButton#groupByLocationButton:pressed { background: @accentPressed@; }
+QToolButton#groupByLocationButton:checked { background: @accent@; }
 QTabBar#settingsTabBar::tab:selected { background: @activeBackground@; color: @tabSelectedText@; }
 QTabBar#subscriptionTabBar::tab:selected { background: @navigationSelectedBackground@; border: 1px solid @navigationSelectedBorder@; color: @navigationSelectedText@; }
 QTabBar#settingsTabBar::tab:hover:!selected, QTabBar#subscriptionTabBar::tab:hover:!selected { background: @surfaceMuted@; color: @text@; }
@@ -112,6 +150,12 @@ QTabWidget#routingCustomRuleTabs QTabBar::tab:selected { color: @accent@; border
 QTabWidget#routingCustomRuleTabs QTabBar::tab:hover:!selected { color: @text@; border-bottom: 2px solid @inputBorderHover@; }
 #serverHeaderRow { background: @sectionHeader@; }
 #serverHeaderRow { border-bottom: 1px solid @border@; }
+/* In location mode the line between the tab bar and the server table turns accent green: this
+   is the mode's single persistent highlight (the container keeps the subscription ground). Both
+   the container (the visible line) and its parent header row carry the property, since the two
+   borders stack at the same edge. Properties are set/cleared by
+   ServerWorkspaceWidget::setGroupByLocationMode. */
+#serverHeaderRow[locationMode="true"] { border-bottom: 1px solid @accent@; }
 QLineEdit#serverFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 4px 8px; }
 QLineEdit#logFilterEdit { background: @surface@; border: 1px solid @border@; border-radius: 0px; padding: 2px 8px; }
 QLineEdit#serverFilterEdit:hover, QLineEdit#logFilterEdit:hover { background: @surface@; border: 1px solid @inputBorderHover@; }

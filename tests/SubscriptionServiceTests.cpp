@@ -72,6 +72,7 @@ private slots:
     void testReplaceSubscriptionServersKeepsDuplicateServers();
     void testReplaceSubscriptionServersClearsOldServers();
     void testReplaceSubscriptionServersReusesIndexIdForMatchingServer();
+    void testReplaceSubscriptionServersCarriesLocationStateAcrossRefresh();
     void testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings();
     void testReplaceSubscriptionServersKeepsCurrentIndexIdWhenMatchingServerStillExists();
     void testReplaceSubscriptionServersFallsBackCurrentIndexIdToFirstUpdatedServerWhenActiveServerRemoved();
@@ -481,6 +482,48 @@ void SubscriptionServiceTests::testReplaceSubscriptionServersReusesIndexIdForMat
     QVERIFY(result.success);
     QCOMPARE(config.collection().servers.size(), 1);
     QCOMPARE(config.collection().servers[0].indexId, QStringLiteral("old-1"));
+}
+
+void SubscriptionServiceTests::testReplaceSubscriptionServersCarriesLocationStateAcrossRefresh()
+{
+    // A hand-made location assignment rides the same reuse the test result does: the reuse key
+    // matched, so this is the same node the user grouped by hand, and a subscription refresh must
+    // not drop the assignment (or the favorite). A node whose parameters changed gets a new
+    // indexId and starts from the name inference -- the same boundary as a lost test result.
+    MockConfigRepository repo;
+    SubscriptionService service(repo);
+
+    Config config;
+    config.collection().subscriptions.append(makeSub(
+        QStringLiteral("sub-1"), QStringLiteral("Sub 1"),
+        QStringLiteral("https://a.com")));
+
+    VmessItem existing = makeVmessServer(
+        QStringLiteral("old-1"), QStringLiteral("sub-1"),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1"));
+    existing.testResult = QStringLiteral("42 ms");
+    existing.locationOverride = QStringLiteral("JP");
+    existing.favorite = true;
+    config.collection().servers.append(existing);
+
+    // Same endpoint (reuse key matches), renamed: the inference would now say US, but the manual
+    // override outranks it and survives.
+    QList<VmessItem> replacement;
+    VmessItem refreshed = makeVmessServer(
+        QString(), QString(),
+        QStringLiteral("example.com"), 443, QStringLiteral("uuid-1"));
+    refreshed.remarks = QStringLiteral("🇺🇸 Los Angeles 01");
+    replacement.append(refreshed);
+
+    auto result = service.replaceSubscriptionServers(
+        config, QStringLiteral("sub-1"), replacement);
+
+    QVERIFY(result.success);
+    QCOMPARE(config.collection().servers.size(), 1);
+    QCOMPARE(config.collection().servers[0].indexId, QStringLiteral("old-1"));
+    QCOMPARE(config.collection().servers[0].testResult, QStringLiteral("42 ms"));
+    QCOMPARE(config.collection().servers[0].locationOverride, QStringLiteral("JP"));
+    QVERIFY(config.collection().servers[0].favorite);
 }
 
 void SubscriptionServiceTests::testReplaceSubscriptionServersDoesNotDeduplicateDistinctTransportSettings()

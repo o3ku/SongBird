@@ -14,6 +14,7 @@ class QHBoxLayout;
 class QLineEdit;
 class QSplitter;
 class QTabBar;
+class QToolButton;
 class QVBoxLayout;
 class ServerFilterProxyModel;
 class ServerTableView;
@@ -33,6 +34,9 @@ public:
 
     ServerTableView* serverView() const;
     QTabBar* subscriptionTabBar() const;
+    // The checkable toggle to the left of the subscription tab bar. Checked = the tab bar shows
+    // location items instead of subscriptions. Exposed for signal wiring in MainWindow.
+    QToolButton* groupByLocationButton() const;
     QLineEdit* serverFilterEdit() const;
     SharePanelWidget* sharePanel() const;
     LogPanelWidget* logPanel() const;
@@ -55,6 +59,20 @@ public:
     // empty-state panel offers is one, so the button has to follow it -- and the answer
     // changes on paths that touch no model at all (a proxy activation, the startup
     // checklist), so it is pushed in rather than only read when the panel is rebuilt.
+    // The location mode's chrome: the server table's top edge turns accent green (the one
+    // persistent highlight -- the bar keeps the subscription ground), the tab bar gets the
+    // compact padding, and the toggle's icon follows the checked state (white glyph on the
+    // accent ground when checked, accent glyph on the transparent ground when not). Applied
+    // here rather than in a toggled handler because the restore path sets checked with signals
+    // blocked (a signal round-trip would rebuild the tabs mid-restore) -- the icon would then
+    // stay at its pre-restore face, an accent glyph on an accent ground, invisible. Called from
+    // the window on the toggle and on state restore, the two places that change the mode.
+    void setGroupByLocationMode(bool enabled);
+
+    // The window's answer to "may a background task start right now". The refresh the
+    // empty-state panel offers is one, so the button has to follow it -- and the answer
+    // changes on paths that touch no model at all (a proxy activation, the startup
+    // checklist), so it is pushed in rather than only read when the panel is rebuilt.
     void setEmptyStateCanStartBackgroundTask(std::function<bool()> predicate);
 
     // Why the last import produced nothing, or an empty string when none failed.
@@ -68,6 +86,11 @@ public:
     void syncCompactSections();
     void setCompactSelectionHandler(std::function<void(const QString&)> handler);
     void setCompactContextMenuHandler(std::function<void(const QString&, const QPoint&)> handler);
+    // The grouping toggle's own context menu (the auto-switch action lives here, not on the
+    // location items: the preference is about the mode, not about any one group). The window
+    // owns the preference and its persistence, so both halves are injected.
+    void setGroupByLocationContextMenu(std::function<bool()> autoSwitchChecked,
+                                        std::function<void(bool)> autoSwitchToggled);
 
 private:
     void rebuildCompactSections();
@@ -86,6 +109,7 @@ private:
     QSplitter* topSplitter_ = nullptr;
     QSplitter* rootSplitter_ = nullptr;
     QTabBar* subscriptionTabBar_ = nullptr;
+    QToolButton* groupByLocationButton_ = nullptr;
     QLineEdit* serverFilterEdit_ = nullptr;
     SharePanelWidget* sharePanel_ = nullptr;
     LogPanelWidget* logPanel_ = nullptr;
@@ -104,4 +128,6 @@ private:
     bool compactMode_ = false;
     std::function<void(const QString&)> compactSelectionHandler_;
     std::function<void(const QString&, const QPoint&)> compactContextMenuHandler_;
+    std::function<bool()> groupMenuAutoSwitchChecked_;
+    std::function<void(bool)> groupMenuAutoSwitchToggled_;
 };

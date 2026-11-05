@@ -13,6 +13,10 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/models/ServerTableModel.h"
 
+#include <algorithm>
+
+#include "appcore/LocationCatalog.h"
+
 namespace {
 
 void addViewShortcutAction(QTableView* view, QAction* action, const QKeySequence& shortcut)
@@ -47,12 +51,46 @@ void showPopupMenu(QMenu* menu, const QPoint& globalPosition)
     menu->popup(globalPosition);
 }
 
+// The location submenu shared by the single- and multi-select menus. Built here rather than as a
+// persistent QAction in Context: it lists the location catalog, which is data the controller
+// would otherwise hold a copy of, and every entry is a straight window signal.
+void addLocationMenu(QMenu* menu, MainWindow* window, const QStringList& selectedIds)
+{
+    if (menu == nullptr || window == nullptr || selectedIds.isEmpty()) {
+        return;
+    }
+
+    QMenu* locationMenu = menu->addMenu(QObject::tr("Move to group"));
+    locationMenu->setObjectName(QStringLiteral("moveServerLocationMenu"));
+    for (const LocationCatalog::Item& item : LocationCatalog::items()) {
+        // Favorite is listed as an entry rather than excluded: putting a node in Favorite is the
+        // same kind of hand-made assignment, and one menu is easier to find than two.
+        const QString label = item.id == QStringLiteral("FAVORITE")
+            ? QObject::tr("Favorite")
+            : LocationCatalog::displayName(item.id).isEmpty()
+                ? QObject::tr("Other")
+                : LocationCatalog::displayName(item.id);
+        QAction* action = locationMenu->addAction(
+            QIcon(QStringLiteral(":/flags/%1.svg").arg(item.id.toLower())), label);
+        const QString locationId = item.id;
+        QObject::connect(action, &QAction::triggered, locationMenu, [window, locationId, selectedIds]() {
+            emit window->setServersLocationRequested(selectedIds, locationId);
+        });
+    }
+
+    QAction* resetAction = locationMenu->addAction(QObject::tr("Automatic (from name)"));
+    QObject::connect(resetAction, &QAction::triggered, locationMenu, [window, selectedIds]() {
+        emit window->setServersLocationRequested(selectedIds, QString());
+    });
+}
+
 } // namespace
 
 ServerActionsController::ServerActionsController(
     const Context& context,
     std::function<QString()> selectedServerId,
     std::function<QStringList()> selectedServerIds,
+    std::function<bool()> anySelectedServerUnfavorited,
     std::function<bool()> isUngroupedSubscriptionTabSelected,
     std::function<bool()> canStartBackgroundTask,
     std::function<void()> updateActionState,
@@ -61,6 +99,7 @@ ServerActionsController::ServerActionsController(
     : context_(context)
     , selectedServerId_(std::move(selectedServerId))
     , selectedServerIds_(std::move(selectedServerIds))
+    , anySelectedServerUnfavorited_(std::move(anySelectedServerUnfavorited))
     , isUngroupedSubscriptionTabSelected_(std::move(isUngroupedSubscriptionTabSelected))
     , canStartBackgroundTask_(std::move(canStartBackgroundTask))
     , updateActionState_(std::move(updateActionState))
@@ -282,6 +321,9 @@ void ServerActionsController::showContextMenu(const QPoint& position)
     const bool ungroupedTabSelected = isUngroupedSubscriptionTabSelected_();
     const QModelIndex clickedIndex = context_.serverView->indexAt(position);
     if (!clickedIndex.isValid()) {
+        // A location tab is a grouping view, not the ungrouped scratch pad; adding a server from
+        // an empty location panel would hand it a subId the tab cannot answer for, so the add
+        // entry stays exclusive to the ungrouped tab as before.
         if (!ungroupedTabSelected || context_.addServerAction == nullptr) {
             return;
         }
@@ -304,8 +346,21 @@ void ServerActionsController::showContextMenu(const QPoint& position)
         return;
     }
 
+    // Favorite state drives the toggle's label: any selected row not yet favorited reads "add",
+    // otherwise "remove". The flag comes from the window because the rows live in its model.
+    const bool anyUnfavorited = anySelectedServerUnfavorited_ ? anySelectedServerUnfavorited_() : true;
+    auto* favoriteToggleAction = new QAction(
+        anyUnfavorited ? QObject::tr("Add to Favorite") : QObject::tr("Remove from Favorite"),
+        context_.serverView);
+    favoriteToggleAction->setObjectName(QStringLiteral("toggleServerFavoriteAction"));
+    QObject::connect(favoriteToggleAction, &QAction::triggered, context_.window, [this, selectedIds, anyUnfavorited]() {
+        emit context_.window->toggleServerFavoriteRequested(selectedIds, anyUnfavorited);
+    });
+
     const bool singleSelection = selectedIds.size() == 1;
     auto* menu = new QMenu(context_.serverView);
+    menu->addAction(favoriteToggleAction);
+    addLocationMenu(menu, context_.window, selectedIds);
 
     if (singleSelection) {
         menu->addAction(context_.setDefaultServerAction);

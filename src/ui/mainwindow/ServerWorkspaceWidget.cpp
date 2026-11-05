@@ -7,6 +7,8 @@
 #include <QIcon>
 #include <QLayoutItem>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMetaObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QSizePolicy>
@@ -19,6 +21,7 @@
 #include <QVBoxLayout>
 
 #include "common/TextElision.h"
+#include "ui/mainwindow/LocationTabBar.h"
 #include "ui/mainwindow/LogPanelWidget.h"
 #include "ui/mainwindow/ServerEmptyStatePolicy.h"
 #include "ui/mainwindow/ServerTableEmptyStateWidget.h"
@@ -199,8 +202,13 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
         serverView_->horizontalHeader()->resizeSection(index, defaultColumnWidths.at(index));
     }
 
-    subscriptionTabBar_ = new QTabBar(this);
+    subscriptionTabBar_ = new LocationTabBar(this);
     subscriptionTabBar_->setObjectName(QStringLiteral("subscriptionTabBar"));
+    // QSS backgrounds on a plain QWidget-derived class are skipped without this attribute (the
+    // style never paints the widget's own background); the location mode's accentSoft bar wash
+    // lives on exactly that background, so opt in explicitly. Tabs themselves need nothing --
+    // they are painted by the style regardless.
+    subscriptionTabBar_->setAttribute(Qt::WA_StyledBackground, true);
     AppTheme::applyCompactFont(subscriptionTabBar_);
     QFont subscriptionTabFont = subscriptionTabBar_->font();
     subscriptionTabFont.setBold(true);
@@ -218,6 +226,81 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     auto* subscriptionTabBarLayout = new QHBoxLayout(subscriptionTabBarContainer);
     subscriptionTabBarLayout->setContentsMargins(4, 4, 4, 4);
     subscriptionTabBarLayout->setSpacing(6);
+
+    // The grouping toggle, leftmost in the bar so it reads as acting on the tabs to its right.
+    // Checkable rather than two buttons: the state is "which mode am I in", and the checked look
+    // is what makes the current mode visible at a glance. The icon is a globe; the flag emoji are
+    // deliberately not used anywhere on this control (no regional-indicator glyphs on Windows).
+    groupByLocationButton_ = new QToolButton(subscriptionTabBarContainer);
+    groupByLocationButton_->setObjectName(QStringLiteral("groupByLocationButton"));
+    groupByLocationButton_->setCheckable(true);
+    // Toolbar-consistent rendering: the SVG is stroke-on-currentColor (same style as the
+    // toolbar icons) and themedSvgIcon resolves currentColor to the theme's icon colour, so
+    // light and dark themes both get a legible glyph for free. The checked face is a hard white
+    // stroke (it sits on the accent ground; see the QSS note) and is loaded directly, without
+    // the theme tint.
+    groupByLocationButton_->setIcon(AppTheme::accentSvgIcon(QStringLiteral(":/flags/group.svg")));
+    groupByLocationButton_->setToolTip(tr("Group servers"));
+    groupByLocationButton_->setStatusTip(tr("Group servers"));
+    // An accessible name, because the icon alone carries no text: screen readers and UI
+    // automation both address the button by this name (an icon-only control is otherwise
+    // invisible to both, which is also how it slipped past the runtime probe).
+    groupByLocationButton_->setAccessibleName(tr("Group servers"));
+    groupByLocationButton_->setAutoRaise(true);
+    groupByLocationButton_->setFocusPolicy(Qt::NoFocus);
+    // Same icon size as the location tabs' flags (the globe reads at the same scale), and same
+    // font as the tab bar (compact + bold): the button's height comes from these through the QSS
+    // padding/border/min-height box, so matching them is what makes the button and the tabs the
+    // same height (see the QSS note by the groupByLocationButton rules).
+    // Toolbar-scale globe (matches the toolbar icons' 16px; the location tabs' flags stay 12x8
+    // -- different surfaces, different scales). Height itself is pinned to the tabs' below.
+    // Toolbar-scale glyph (matches the toolbar icons' 16px; the location tabs' flags stay 12x8
+    // -- different surfaces, different scales). The checked/unchecked faces are swapped by
+    // setGroupByLocationMode, not here: the restore path sets checked with signals blocked, and
+    // an icon swap wired to toggled would never run for it.
+    groupByLocationButton_->setIconSize(QSize(16, 16));
+    groupByLocationButton_->setFont(subscriptionTabBar_->font());
+    // The toggle's context menu (the auto-switch preference): built on demand from the injected
+    // state/callback pair. Wired here rather than through a signal because the workspace owns the
+    // button; the window owns the preference.
+    connect(groupByLocationButton_, &QToolButton::customContextMenuRequested, this, [this](const QPoint& position) {
+        // Only in the grouped mode: unchecked means the subscription view is showing, and the
+        // preference would be adjusting a mode the user is not looking at.
+        if (groupMenuAutoSwitchChecked_ == nullptr || !groupByLocationButton_->isChecked()) {
+            return;
+        }
+        QMenu menu(groupByLocationButton_);
+        auto* autoSwitchAction = menu.addAction(tr("Auto Switch in Group on Failure"));
+        autoSwitchAction->setObjectName(QStringLiteral("autoSwitchInGroupAction"));
+        autoSwitchAction->setCheckable(true);
+        autoSwitchAction->setChecked(groupMenuAutoSwitchChecked_());
+        if (groupMenuAutoSwitchToggled_) {
+            connect(autoSwitchAction, &QAction::toggled, this, [this](bool checked) {
+                groupMenuAutoSwitchToggled_(checked);
+            });
+        }
+        menu.exec(groupByLocationButton_->mapToGlobal(position));
+    });
+    // Same height as the tabs: the tab bar's sizeHint is one tab's box (same vertical padding in
+    // both modes -- only the horizontal QSS differs), so pinning the button to it is exact and
+    // survives font changes, where a hard-coded pixel height would not. QSS height/min-height
+    // were tried first and QStyleSheetStyle ignores both for QToolButton's size hint. Deferred
+    // by an event-loop turn (the bar has no tabs yet, so the measurement is only meaningful once
+    // the style has been applied), and posted to this rather than the button: the continuation
+    // touches both widgets through this, so this is the owner the guard expects it posted to.
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            if (groupByLocationButton_ != nullptr && subscriptionTabBar_ != nullptr) {
+                const int tabHeight = subscriptionTabBar_->sizeHint().height();
+                if (tabHeight > 0) {
+                    groupByLocationButton_->setFixedHeight(tabHeight);
+                }
+            }
+        },
+        Qt::QueuedConnection);
+    subscriptionTabBarLayout->addWidget(groupByLocationButton_, 0, Qt::AlignVCenter);
+
     subscriptionTabBarLayout->addWidget(subscriptionTabBar_, 1, Qt::AlignVCenter);
 
     serverFilterEdit_ = new QLineEdit(this);
@@ -349,6 +432,11 @@ QTabBar* ServerWorkspaceWidget::subscriptionTabBar() const
     return subscriptionTabBar_;
 }
 
+QToolButton* ServerWorkspaceWidget::groupByLocationButton() const
+{
+    return groupByLocationButton_;
+}
+
 QLineEdit* ServerWorkspaceWidget::serverFilterEdit() const
 {
     return serverFilterEdit_;
@@ -467,6 +555,37 @@ void ServerWorkspaceWidget::syncEmptyStateVisibility()
     emptyState_->setVisible(!hasRows);
 }
 
+void ServerWorkspaceWidget::setGroupByLocationMode(bool enabled)
+{
+    if (subscriptionTabBarContainer_ == nullptr || groupByLocationButton_ == nullptr) {
+        return;
+    }
+    // The QSS half of the location mode: the container property keys the tab-bar-only rules
+    // (compact padding), the header row property turns the table's top edge accent green. Both
+    // need property + repolish, because a stylesheet only re-evaluates after the widget is told
+    // its style changed.
+    subscriptionTabBarContainer_->setProperty("locationMode", enabled ? QVariant(true) : QVariant());
+    subscriptionTabBarContainer_->style()->unpolish(subscriptionTabBarContainer_);
+    subscriptionTabBarContainer_->style()->polish(subscriptionTabBarContainer_);
+    if (serverHeaderRow_ != nullptr) {
+        serverHeaderRow_->setProperty("locationMode", enabled ? QVariant(true) : QVariant());
+        serverHeaderRow_->style()->unpolish(serverHeaderRow_);
+        serverHeaderRow_->style()->polish(serverHeaderRow_);
+    }
+
+    // The icon must match the checked state even when that state was set with signals blocked
+    // (the restore path): a checked button showing the unchecked glyph paints accent-on-accent,
+    // which reads as an empty button. setChecked is signal-blocked here because the mode change
+    // is this call's input, not an event to react to again.
+    if (groupByLocationButton_->isChecked() != enabled) {
+        const QSignalBlocker blocker(groupByLocationButton_);
+        groupByLocationButton_->setChecked(enabled);
+    }
+    groupByLocationButton_->setIcon(enabled
+        ? QIcon(QStringLiteral(":/flags/group-checked.svg"))
+        : AppTheme::accentSvgIcon(QStringLiteral(":/flags/group.svg")));
+}
+
 void ServerWorkspaceWidget::setEmptyStateCanStartBackgroundTask(std::function<bool()> predicate)
 {
     emptyStateCanStartBackgroundTask_ = std::move(predicate);
@@ -553,6 +672,17 @@ void ServerWorkspaceWidget::setCompactContextMenuHandler(std::function<void(cons
 void ServerWorkspaceWidget::setCompactSelectionHandler(std::function<void(const QString&)> handler)
 {
     compactSelectionHandler_ = std::move(handler);
+}
+
+void ServerWorkspaceWidget::setGroupByLocationContextMenu(
+    std::function<bool()> autoSwitchChecked,
+    std::function<void(bool)> autoSwitchToggled)
+{
+    groupMenuAutoSwitchChecked_ = std::move(autoSwitchChecked);
+    groupMenuAutoSwitchToggled_ = std::move(autoSwitchToggled);
+    if (groupByLocationButton_ != nullptr) {
+        groupByLocationButton_->setContextMenuPolicy(Qt::CustomContextMenu);
+    }
 }
 
 void ServerWorkspaceWidget::rebuildCompactSections()
