@@ -5,11 +5,11 @@
 
 #include "domain/models/Config.h"
 
-// The IE/WinINET bypass list, which both front ends write through ISystemProxyService::update().
+// The IE/WinINET bypass list, written through ISystemProxyService::update().
 //
-// Why it is here and not in either coordinator: SongBird.exe and SongBirdAuto.exe each carried a
-// byte-identical copy of the literal (174 characters, compared character by character), and the two
-// call sites then diverged -- the main app also merged the hosts the routing rules send direct,
+// Why it is here and not in a coordinator: two call sites used to carry a byte-identical copy
+// of the literal (174 characters, compared character by character), and then diverged -- one
+// also merged the hosts the routing rules send direct,
 // while Auto returned the literal untouched. So a `direct` rule bypassed the system proxy in one
 // front end and went through the proxy in the other, for the same config file. One list, one merge.
 namespace SystemProxyExceptions {

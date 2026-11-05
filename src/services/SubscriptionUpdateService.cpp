@@ -9,6 +9,7 @@
 #include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSet>
 #include <QSaveFile>
 #include <QThread>
 #include <QTimer>
@@ -56,7 +57,16 @@ QString buildRawBackupFileName(const SubItem& item)
 // and swallowed: archiving must never fail an update that otherwise succeeded, which
 // is also why this runs after the download loop but before parsing -- an unparseable
 // payload is the one a user is most likely to want the original bytes of.
-void writeRawSubscriptionBackup(const QString& directoryPath, const SubItem& item, const QString& content)
+//
+// The same pass retires orphaned archives. A raw file is named from the subscription's remarks
+// and id, so renaming or deleting a subscription leaves its old file behind forever; keeping
+// only the names the current config can still produce bounds the directory to the live
+// subscription set. liveNames is computed once per update from the config the caller holds.
+void writeRawSubscriptionBackup(
+    const QString& directoryPath,
+    const SubItem& item,
+    const QString& content,
+    const QSet<QString>& liveNames)
 {
     QDir directory(directoryPath);
     if (!directory.exists() && !QDir().mkpath(directoryPath)) {
@@ -64,7 +74,8 @@ void writeRawSubscriptionBackup(const QString& directoryPath, const SubItem& ite
         return;
     }
 
-    QSaveFile file(directory.filePath(buildRawBackupFileName(item)));
+    const QString fileName = buildRawBackupFileName(item);
+    QSaveFile file(directory.filePath(fileName));
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "SubscriptionUpdateService: cannot open raw backup file" << file.fileName();
         return;
@@ -72,7 +83,28 @@ void writeRawSubscriptionBackup(const QString& directoryPath, const SubItem& ite
     file.write(content.toUtf8());
     if (!file.commit()) {
         qWarning() << "SubscriptionUpdateService: failed to commit raw backup file" << file.fileName();
+        return;
     }
+
+    const QFileInfoList archives = directory.entryInfoList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    for (const QFileInfo& archive : archives) {
+        if (!liveNames.contains(archive.fileName())) {
+            QFile::remove(archive.absoluteFilePath());
+        }
+    }
+}
+
+// Every raw archive the current config would produce. A disabled or url-less subscription
+// keeps its archive: it may be re-enabled with the same identity, and the bytes are still
+// the last thing that URL answered.
+QSet<QString> rawBackupLiveNames(const Config& config)
+{
+    QSet<QString> names;
+    for (const SubItem& item : config.collection().subscriptions) {
+        names.insert(buildRawBackupFileName(item));
+    }
+    return names;
 }
 
 bool currentThreadInterruptionRequested()
@@ -451,7 +483,8 @@ OperationResult SubscriptionUpdateService::updateSingle(Config& config, const Su
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "%1 update cancelled.").arg(displayName));
     }
     if (!rawBackupDirectory_.trimmed().isEmpty() && !content.trimmed().isEmpty()) {
-        writeRawSubscriptionBackup(rawBackupDirectory_.trimmed(), item, content);
+        writeRawSubscriptionBackup(
+            rawBackupDirectory_.trimmed(), item, content, rawBackupLiveNames(config));
     }
 
     const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(content);

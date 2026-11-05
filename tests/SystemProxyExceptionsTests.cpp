@@ -4,9 +4,9 @@
 #include "domain/models/RoutingItem.h"
 #include "domain/models/RoutingRule.h"
 
-// The IE/WinINET bypass list is written by both front ends and was, until now, two copies of the
+// The IE/WinINET bypass list was, until now, two copies of the
 // same literal that then diverged: SongBird.exe merged the hosts its routing rules send direct,
-// SongBirdAuto.exe returned the literal untouched. Same config file, two different bypass lists --
+// One call site returned the literal untouched. Same config file, two different bypass lists --
 // a `direct` rule bypassed the proxy in one executable and went through it in the other. These
 // cases pin the shared resolver both call now.
 class SystemProxyExceptionsTests : public QObject {

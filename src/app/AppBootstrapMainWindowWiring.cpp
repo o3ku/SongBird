@@ -78,9 +78,8 @@ void AppBootstrap::wireProxySessionSignals()
                      });
     // A core writes into a pipe this process reads, so without a tag its lines
     // are indistinguishable from ours once they are in the panel -- the panel is
-    // where the two meet. SongBirdAuto has tagged its core lines "core | " since
-    // it grew a log view (SongBirdAutoCoordinator), so this follows that
-    // convention instead of inventing a second one. The level is read from the
+    // where the two meet. Core lines are tagged "core | " so the level can be
+    // read from the line itself rather than assigned, because the core is the one
     // line itself rather than assigned, because the core is the one that judged
     // it; the line is forwarded verbatim, so a line copied out of the panel still
     // matches the same line in the core's own log file.
@@ -132,7 +131,7 @@ void AppBootstrap::wireProxySessionSignals()
                      objects_->mainWindow.get(), [this]() {
                          setCurrentActivationPending_ = false;
                          // A working session is the one state in which the undo warning is
-                         // definitely stale -- the same rule SongBirdAuto uses.
+                         // definitely stale.
                          if (!systemProxyUndoWarning_.isEmpty()) {
                              systemProxyUndoWarning_.clear();
                              syncStatusIndicators();

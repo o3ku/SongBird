@@ -7,7 +7,7 @@
 // The local inbound ports, as a single pure policy. They used to be re-derived at every reader --
 // the system proxy wrote `localPort + 1`, four other services assumed the same, the backends
 // honoured `localHttpPort` when it was set, and the location probe settled it a third way. A
-// `localHttpPort` left over from an earlier run (the Auto front end persists one) then outlived the
+// `localHttpPort` left over from an earlier run then outlived the
 // `localPort` it was derived from, and the applied system proxy pointed at a port nothing listened
 // on. One function, called by every reader, is what keeps that from coming back.
 //

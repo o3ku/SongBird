@@ -6,10 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SongBird 是面向 Windows 的原生代理 GUI 客户端，使用 Qt5/C++20 开发，不依赖 .NET/Electron/WebView2。配置文件为 `songbird.json`。
 
-构建产出两个可执行文件：
+构建产出一个可执行文件：
 
-- `SongBird.exe`（target `songbird`）——主程序
-- `SongBirdAuto.exe`（target `songbird_auto`）——自动选路程序，源码在 [src/auto/](src/auto/)，有独立的 `main.cpp` 与主窗口
+- `SongBird.exe`（target `songbird`）——主程序，源码组合根在 [src/app/](src/app/)
 
 ## 构建命令
 
@@ -40,7 +39,7 @@ ctest --test-dir build -R subscription-parser --output-on-failure
 
 CTest 名称（权威列表在 [tests/CMakeLists.txt](tests/CMakeLists.txt)，搜 `songbird_add_qt_test`；增删测试时**同步更新本节**）：
 
-`backend-boundaries`、`appbootstrap-member-order`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`auto-country-selection`、`auto-country-inference`、`auto-runtime-defaults`、`auto-coordinator-logic`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
+`backend-boundaries`、`appbootstrap-member-order`、`backend-contract`、`share-url-transports`、`add-server-dialog-roundtrip`、`settings-dialog-download`、`tun-settings-apply-decision`、`settings-dialog-apply-plan`、`startup-admin-elevation`、`app-bootstrap-tun-runtime`、`proxy-session-state`、`core-update-coordinator`、`runtime-state`、`main-window-log-scroll`、`client-config-writer-tun-compat`、`tun-compat-core-requirement`、`json-config-repository-defaults`、`config-backup-state-document`、`proxy-availability-check`、`speed-test-service-internal`、`subscription-service`、`subscription-url-import-service`、`routing-service`、`system-proxy-mode`、`user-agent`、`app-update-service`、`app-update-check-coordinator`、`core-update-service`、`geo-resource-update-service`、`subscription-parser`、`server-service`、`protocol-core-compat`、`end-to-end-smoke`
 
 三个特殊测试（均非 QtTest，不需要编译、无 Qt 环境也能单独跑；PowerShell 版与 `scripts/python/` 下的 Python 移植版各一份，规则相同）：
 
@@ -79,11 +78,11 @@ macOS 的两半仍然用 Homebrew `qt@5`，Linux 的 CNB 用发行版 Qt5，都�
 
 [.codex/skills/songbird-release/SKILL.md](.codex/skills/songbird-release/SKILL.md) 记录了发布流程的约定：版本确认、翻译校验、以及「构建/测试失败不得打 tag 或发布」。该文档以 CI 为唯一正式发布路径——推 `main` 过门禁，推 `v*` tag 由 CI 构建并发布；本机构建只作为 CI 不可用时的备案路径。
 
-发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件），`SongBirdAuto.exe` 目前不随 Release 分发。
+发布资产只包含 `SongBird.exe`（CI 只 stage 这一个可执行文件）。
 
 `workflow` token scope 只在**走 HTTPS + token** 推送时才是必需的：这个限制由 OAuth App 机制施加，而 SSH 密钥没有 scope 概念，所以走 SSH 推送新增或修改 `.github/workflows/` 不受限制。本仓库 origin 即 SSH，并通过 `~/.ssh/config` 将 `github.com` 重定向到 `ssh.github.com:443`，以绕过对 22 端口的封锁。若改用 HTTPS，缺失该 scope 时用 `gh auth refresh -h github.com -s workflow` 补授权（补完还需 `gh auth setup-git`）。
 
-版本号权威源是根 [CMakeLists.txt](CMakeLists.txt) 的 `project(SongBird VERSION x.y.z)`，经 `src/CMakeLists.txt` 以 `SONGBIRD_APP_VERSION` 宏注入两个 target。两个 `main.cpp` 里的 `#ifndef SONGBIRD_APP_VERSION` fallback 在正常构建中不可达（宏总是被定义），仅为避免源码中出现互相矛盾的版本数字而保持同步。
+版本号权威源是根 [CMakeLists.txt](CMakeLists.txt) 的 `project(SongBird VERSION x.y.z)`，经 `src/CMakeLists.txt` 以 `SONGBIRD_APP_VERSION` 宏注入该 target。`main.cpp` 里的 `#ifndef SONGBIRD_APP_VERSION` fallback 在正常构建中不可达（宏总是被定义），仅为避免源码中出现互相矛盾的版本数字而保持同步。
 
 ## 架构
 
@@ -92,8 +91,7 @@ macOS 的两半仍然用 Homebrew `qt@5`，Linux 的 CNB 用发行版 Qt5，都�
 | 层 | 目录 | 角色 |
 |----|------|------|
 | App | [app/](src/app/) | 组合根（`AppBootstrap`）、入口、启动逻辑、songbird 专用协调器 |
-| AppCore | [appcore/](src/appcore/) | 两个前端共享的应用服务：`ProxySession`、核心发现/清理、TUN 运行时、后台任务协调、运行时解析 |
-| Auto | [auto/](src/auto/) | `SongBirdAuto.exe` 的独立实现：自动选路协调器、国家推断/选择 |
+| AppCore | [appcore/](src/appcore/) | 应用与测试共享的服务：`ProxySession`、核心发现/清理、TUN 运行时、后台任务协调、运行时解析 |
 | UI | [ui/](src/ui/) | Qt 控件；`mainwindow/` 按控制器拆分，`dialogs/` 中 `SettingsDialog` 按页面拆分 |
 | Services | [services/](src/services/) | 业务逻辑：服务器、订阅、测速、路由、策略组、配置备份、应用/核心/Geo 资源更新 |
 | Runtime | [runtime/](src/runtime/) | 核心进程生命周期、配置写入器、核心目录与描述符注册表（`runtime/core/`） |
@@ -108,23 +106,21 @@ macOS 的两半仍然用 Homebrew `qt@5`，Linux 的 CNB 用发行版 Qt5，都�
 
 违反会导致测试失败，不是风格建议：
 
-1. `app/`、`appcore/`、`auto/`、`ui/`、`services/`、`runtime/` **不得** `#include "backends/..."` —— 只能通过 `runtime/core/ICoreBackend.h` 抽象访问内核
+1. `app/`、`appcore/`、`ui/`、`services/`、`runtime/` **不得** `#include "backends/..."` —— 只能通过 `runtime/core/ICoreBackend.h` 抽象访问内核
 2. `backends/` **不得** `#include "(app|appcore|ui|services|platform)/..."`
 3. `runtime/core/xray`、`runtime/core/singbox` 目录不得存在（旧结构，内核实现已移至 `backends/`）
-4. **每个含 `main.cpp` 的目录都必须在消费者名单里**。这条守卫是补的：`auto/` 曾因「目录没被列进脚本」而**静默逃过第 1 条**，自己手工拼 sing-box 的 TUN 配置（还因此拼出了 sing-box 拒绝加载的 `"outbounds": [[...]]` 嵌套数组）。新增前端 = 加进脚本的消费者名单，否则测试失败。
-5. **前端是依赖顺序的顶**：含 `main.cpp` 的目录（现为 `app/`、`auto/`）**不得被下层 include**。这条规则是补的：`appcore/` 曾向上 include `app/` 的三个头文件，于是**共享层依赖了某个可执行文件的代码**，且任何 `appcore/` 消费者都**传递性**继承该依赖（「`auto/` 对 `app/` 依赖 = 0」当时只在**直接 include** 层面成立）。判据是「目录里有没有 `main.cpp`」，所以新增前端自动纳入。
+4. **每个含 `main.cpp` 的目录都必须在消费者名单里**。这条守卫是补的：历史上有一个前端因「目录没被列进脚本」而**静默逃过第 1 条**，自己手工拼 sing-box 的 TUN 配置。新增前端 = 加进脚本的消费者名单，否则测试失败。
+5. **前端是依赖顺序的顶**：含 `main.cpp` 的目录（现为 `app/`）**不得被下层 include**。这条规则是补的：`appcore/` 曾向上 include `app/` 的三个头文件，于是**共享层依赖了某个可执行文件的代码**，且任何 `appcore/` 消费者都**传递性**继承该依赖。判据是「目录里有没有 `main.cpp`」，所以新增前端自动纳入。
 
 前端要拿「内核专属配置」时走运行时层的窄入口，而不是 include 后端。TUN 设备是**独立内核进程**创建的，其配置就是内核产物：入口是 `runtime/AuxiliaryTunConfig.h` 的 `AuxiliaryTunConfig::buildRoot(coreType, config, routing)`，由 `ICoreBackend::buildAuxiliaryTunClientRoot(config, routing)` 实现（`AuxiliaryTunRouting::RelayToLocalProxy` 中继进本地代理 / `DirectOnly` 只走直连，用于代理会话停止后保住网卡不重建）。
 
 安装目录下的路径名有唯一入口，不要在调用点就地拼：`AppPaths::applicationDirectory()` / `AppPaths::runtimeDirectory()`、`SingBoxPaths::ruleSetDirectoryName()`；各自「为什么不能私有」的理由写在头文件注释里。⚠️ 测试里若出现同一路径的**独立副本**（`ClientConfigWriterTests`、`GeoResourceUpdateServiceTests` 各自拼了 `rule-set`），那是**故意的** —— 正是它让改错常量会变红。⚠️ `GitHubUrls::singRuleSetDownloadUrl` 里的 `rule-set` **不是**同一概念：那是上游 sing-geosite/sing-geoip 仓库的**分支名**，只是恰好同名，合并会把本地布局绑死在别人的分支名上。
 
-### 本地化与 English surface（由 `localization-coverage` 测试强制）
+### 本地化（由 `localization-coverage` 测试强制）
 
-**只有 SongBird.exe 是可本地化的产物**：生成的 `translations.qrc` 只被追加进 `SONGBIRD_SOURCES`，所以 `.qm` 只嵌进 SongBird.exe。`translations/SongBird_zh_CN.ts` 手工维护（无 `location`、无 lupdate 构建目标），编译产物提交在 `translations/compiled/`；改过 `.ts` 必须跑 `scripts/check-translations-fresh.ps1 -Update` 重新生成 `.qm` 与 sha256 清单。
+生成的 `translations.qrc` 追加进 `SONGBIRD_SOURCES`，`.qm` 嵌进 `SongBird.exe`。`translations/SongBird_zh_CN.ts` 手工维护（无 `location`、无 lupdate 构建目标），编译产物提交在 `translations/compiled/`；改过 `.ts` 必须跑 `scripts/check-translations-fresh.ps1 -Update` 重新生成 `.qm` 与 sha256 清单。
 
-**`src/auto/` 是 English surface**：SongBirdAuto 按产品决定保持英文 —— `src/auto/main.cpp` 不装 `QTranslator`，该目标也不嵌任何 `.qm`。因此该目录下的字符串必须是裸 `QStringLiteral`，**不得**出现 `tr()` / `QCoreApplication::translate()` / `QT_TR_*`；检查脚本的 Check E 会因此失败（`-EnglishSurfaceRoots`，默认 `src/auto`）。
-
-判据是「链接它的**每个**可执行文件都是英文」，不是「文件提到 SongBirdAuto」：`src/services/`、`src/appcore/` 等共享代码保留 `translate()` —— SongBird 链接它们并渲染中文，而 SongBirdAuto 下因为没装 translator 自然保持英文。
+所有源码都在可本地化的产物里，用户可见字符串一律走 `tr()` / `QCoreApplication::translate()` / 运行时翻译助手，并登记进 `.ts`；检查脚本的 A / A2 / C / D 四道会拦住裸英文文案。（更早版本曾有一个 English-only 的第二个前端，其 `src/auto/` 目录触发反向的 Check E；该前端已删除，反向规则也一并移除。）
 
 ### 内核后端
 

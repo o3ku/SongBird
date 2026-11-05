@@ -101,8 +101,7 @@ $cases = @(
         Break = {
             param($tree)
             # A new front end that is not in the guard's consumer list. Without the
-            # coverage rule this directory would simply be skipped, which is exactly
-            # how `auto/` escaped the concrete-backend rule once.
+            # coverage rule this directory would simply be skipped.
             $frontEnd = Join-Path $tree "selftestfrontend"
             New-Item -ItemType Directory -Path $frontEnd -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $frontEnd "main.cpp") -Value 'int main() { return 0; }' -Encoding UTF8
@@ -248,11 +247,9 @@ try {
     # The front-end sources too, because one case below mutates main.cpp. They were missing when that
     # case was written, so Get-Content threw "Cannot find path" and the whole self-test died before it
     # reached the assertion -- a case that could not pass, guarding a rule nobody could verify.
-    foreach ($frontEnd in @("app", "auto")) {
-        New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "src\$frontEnd") -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $repoRoot "src\$frontEnd\main.cpp") `
-            -Destination (Join-Path $versionTempRoot "src\$frontEnd")
-    }
+    New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "src\app") -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot "src\app\main.cpp") `
+        -Destination (Join-Path $versionTempRoot "src\app")
     New-Item -ItemType Directory -Path (Join-Path $versionTempRoot "scripts") -Force | Out-Null
 
     $versionCases = @(

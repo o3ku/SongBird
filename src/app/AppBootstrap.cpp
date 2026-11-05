@@ -342,6 +342,11 @@ void AppBootstrap::scheduleAppUpdateChecks()
     auto* appUpdateTimer = new QTimer(objects_->mainWindow.get());
     appUpdateTimer->setInterval(AppUpdateCheckIntervalMs);
     QObject::connect(appUpdateTimer, &QTimer::timeout, objects_->mainWindow.get(), [this]() {
+        // A 24 h timer can fire in the shutdown window; do not pull a worker into a process
+        // that is already tearing its background tasks down.
+        if (shuttingDown_.load()) {
+            return;
+        }
         checkAppUpdates(false);
     });
     appUpdateTimer->start();
@@ -350,8 +355,9 @@ void AppBootstrap::scheduleAppUpdateChecks()
 void AppBootstrap::scheduleSubscriptionAutoUpdate()
 {
     // The tick reads the config and the clock every time, so an interval changed in settings
-    // takes effect on the next tick without re-arming anything. The refresh rides the manual
-    // update path (updateByIds): serial batches, conditional requests, failStreak back-off --
+    // takes effect on the next tick without re-arming anything. The due computation applies an
+    // exponential failStreak back-off so a dead URL is not retried every tick; the refresh
+    // itself rides the manual update path (updateByIds): serial batches, conditional requests --
     // and its token gate already makes a busy tick a silent no-op.
     const auto runDueCheck = [this]() {
         if (objects_->subscriptionWorkflowCoordinator == nullptr

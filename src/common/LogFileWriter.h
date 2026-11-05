@@ -37,10 +37,8 @@ QString fileName(const QString& prefix, const QDate& date, int index);
 // `keepFiles`, oldest first.
 //
 // Names that do not parse are ignored, and so is anything belonging to another
-// prefix -- including a prefix that this one is itself a prefix of. "songbird"
-// must not collect "songbird-auto-....log": both front-ends keep their logs in
-// the same directory, and a rule that matched on `startsWith` would have each of
-// them delete the other's history.
+// prefix -- including a prefix that this one is itself a prefix of. A rule that matched on
+// `startsWith` would let one log prefix collect another's files in the same directory.
 QStringList filesBeyondRetention(const QStringList& existingNames, const QString& prefix, int keepFiles);
 
 } // namespace LogFileNaming
@@ -55,8 +53,8 @@ QStringList filesBeyondRetention(const QStringList& existingNames, const QString
 //
 // Deliberately not a QObject and not a singleton. It is constructed with the
 // directory it writes to, so a test points it at a temporary directory instead of
-// the real application data directory, and nothing is shared between the two
-// front-ends. The clock is injectable for the same reason: rotation and retention
+// the real application data directory, and nothing is shared between instances.
+// The clock is injectable for the same reason: rotation and retention
 // are decisions about dates and sizes, and a test that has to wait for midnight
 // exercises nothing.
 class LogFileWriter {

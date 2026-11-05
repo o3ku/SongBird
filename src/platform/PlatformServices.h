@@ -2,10 +2,9 @@
 
 // The concrete platform services, named once.
 //
-// Three composition roots -- AppBootstrapServiceWiring, AppBootstrap and
-// SongBirdAutoCoordinator -- construct the auto-run and system-proxy services, and each of
-// them has to name a concrete class that only exists on one platform. Selecting it here
-// instead keeps those three sites free of a conditional that would otherwise have to be
+// The composition roots that construct the auto-run and system-proxy services have to name
+// a concrete class that only exists on one platform. Selecting it here instead keeps those
+// sites free of a conditional that would otherwise have to be
 // kept in step by hand, and gives the choice a single place to be documented.
 //
 // The interfaces (IAutoRunService, ISystemProxyService) stay platform-neutral: this header
@@ -33,7 +32,7 @@ using PlatformThemePreferenceService = NullThemePreferenceService;
 
 #else
 
-// Every other platform: the interfaces are still satisfied, because the front-ends construct
+// Every other platform: the interfaces are still satisfied, because the composition root constructs
 // these unconditionally. Linux is the reason this branch is no longer only a theme stand-in --
 // it builds the full application (see .cnb.yml) while the proxy and auto-run mechanisms here
 // are Windows-only, so the two side effects degrade to stand-ins that report "not applied"

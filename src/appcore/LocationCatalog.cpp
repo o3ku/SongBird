@@ -80,9 +80,9 @@ bool LocationCatalog::isCountryLocationId(const QString& locationId)
 
 QString LocationCatalog::displayName(const QString& locationId)
 {
-    // English-only on purpose, matching the rest of the catalog (auto/AutoCountrySupport made the
-    // same call): the tab label is the item id's own name and the ui layer owns translation of the
-    // two specials, which are the only strings here.
+    // English-only on purpose, matching the rest of the catalog: the tab label is the item id's
+    // own name and the ui layer owns translation of the two specials, which are the only strings
+    // here.
     static const QHash<QString, QString> names{
         {QStringLiteral("US"), QStringLiteral("United States")},
         {QStringLiteral("SG"), QStringLiteral("Singapore")},

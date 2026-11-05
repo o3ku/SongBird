@@ -16,8 +16,7 @@ namespace TextElision {
 // maximumWidth is deliberately not guarded against non-positive values. Qt's
 // elidedText() collapses to an ellipsis at width 0, which is the desired
 // result inside a paint call that got a degenerate rect; callers that can run
-// before the first layout pass must check the width themselves (see
-// SongBirdAutoWindow::refreshLogStatusLabel).
+// before the first layout pass must check the width themselves.
 inline QString elideRight(const QFontMetrics& fontMetrics, const QString& text, int maximumWidth)
 {
     return fontMetrics.elidedText(text, Qt::ElideRight, maximumWidth);

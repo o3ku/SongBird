@@ -58,7 +58,7 @@ def _backend_upward_leak(tree: Path) -> None:
 
 def _unlisted_front_end(tree: Path) -> None:
     # A new front end that is not in the guard's consumer list. Without the coverage rule this
-    # directory would simply be skipped, which is exactly how `auto/` escaped the rule once.
+    # directory would simply be skipped.
     front_end = tree / "selftestfrontend"
     front_end.mkdir()
     (front_end / "main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
@@ -125,13 +125,6 @@ def _bare_sink_literal(tree: Path) -> None:
     (tree / "services/SelftestLocalizationLeak.cpp").write_text(
         "OperationResult f() {\n    return OperationResult::fail(QStringLiteral(\"the update failed \"\n"
         "        \"for an unknown reason\"));\n}\n",
-        encoding="utf-8",
-    )
-
-
-def _wrapper_on_english_surface(tree: Path) -> None:
-    (tree / "auto/SelftestLocalizedSurface.cpp").write_text(
-        "QString f() {\n    return QCoreApplication::translate(\"main\", \"Switch Server\");\n}\n",
         encoding="utf-8",
     )
 
@@ -225,7 +218,6 @@ GREEN_SOURCE_TREE_CASES = [
 
 LOCALIZATION_CASES = [
     ("localization-coverage: a bare prose literal at a message sink", _bare_sink_literal),
-    ("localization-coverage: a translate() wrapper on an English surface", _wrapper_on_english_surface),
 ]
 
 Q_OS_CASES = [
@@ -299,8 +291,6 @@ def main(argv) -> int:
                     str(tree),
                     "--translation-file",
                     str(REPO_ROOT / "translations/SongBird_zh_CN.ts"),
-                    "--english-surface-root",
-                    str(tree / "auto"),
                 ],
             )
             if exit_code == 0:
@@ -317,8 +307,6 @@ def main(argv) -> int:
                     str(clean_localization_tree),
                     "--translation-file",
                     str(REPO_ROOT / "translations/SongBird_zh_CN.ts"),
-                    "--english-surface-root",
-                    str(clean_localization_tree / "auto"),
                 ],
             )
             != 0
@@ -349,8 +337,6 @@ def main(argv) -> int:
             shutil.copy(REPO_ROOT / "CMakeLists.txt", tree / "CMakeLists.txt")
             shutil.copytree(REPO_ROOT / "src", tree / "src")
             (tree / "scripts").mkdir()
-            for front_end in ("app", "auto"):
-                (tree / "src" / front_end).mkdir(exist_ok=True)
             mutation(tree)
             exit_code = run_guard("check_version_consistency.py", ["--repo-root", str(tree), *extra])
             if exit_code == 0:

@@ -22,7 +22,6 @@ from guardlib.common import (  # noqa: E402
 # let a new file opt out by being named helpfully.
 ALLOWED_FILES = {
     "src/ui/theme/AppThemePalette.cpp",
-    "src/auto/AutoWindowPalette.cpp",
 }
 
 STRING_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')

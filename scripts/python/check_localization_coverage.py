@@ -10,9 +10,8 @@ English. This checks five things:
   B   every string lupdate can extract is present in the .ts (needs lupdate)
   C   strings passed to a runtime-translate helper exist in the .ts under its context
   D   no bare prose literal returned from any other function
-  E   an English surface carries no translation machinery at all
 
-Checks A, A2, C, D and E are self-contained; B needs lupdate and says so loudly when it is
+Checks A, A2, C and D are self-contained; B needs lupdate and says so loudly when it is
 missing rather than passing quietly. The Allowlist is the record of every literal that was
 reviewed and deliberately left English -- read the PowerShell original for the reasoning
 behind each entry; it is not duplicated here.
@@ -270,18 +269,10 @@ def main(argv) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", default=str(repo_root / "src"))
     parser.add_argument("--translation-file", default=str(repo_root / "translations/SongBird_zh_CN.ts"))
-    parser.add_argument(
-        "--english-surface-root",
-        action="append",
-        default=None,
-        help="Trees whose every consumer is English-only; strings there must be bare literals.",
-    )
     args = parser.parse_args(argv[1:])
 
     source_root = Path(args.source_root)
     translation_file = Path(args.translation_file)
-    english_roots_arg = args.english_surface_root or [str(repo_root / "src/auto")]
-
     if not source_root.exists():
         fail(f"Source root '{source_root}' does not exist; refusing to report a pass.")
     root = source_root.resolve()
@@ -290,61 +281,12 @@ def main(argv) -> int:
     if not all_sources:
         fail(f"No C++ sources found under '{source_root}'; refusing to report a pass.")
 
-    english_roots: list[Path] = []
-    for surface in english_roots_arg:
-        candidate = Path(surface)
-        if not candidate.is_absolute():
-            candidate = repo_root / candidate
-        if not candidate.exists():
-            fail(
-                f"English-surface root '{surface}' does not exist (looked for '{candidate}'). Fix "
-                "the path rather than dropping it: a missing root turns Check E into a no-op."
-            )
-        english_roots.append(candidate.resolve())
-
-    def is_english_surface(path: Path) -> bool:
-        return any(path.is_relative_to(surface) for surface in english_roots)
-
-    english_files = [p for p in all_sources if is_english_surface(p)]
-    source_files = [p for p in all_sources if not is_english_surface(p)]
-    if not english_files:
-        fail(
-            f"English-surface roots ({', '.join(map(str, english_roots))}) contain no C++ "
-            "sources, so Check E would scan nothing; refusing to report a pass."
-        )
-    if not source_files:
-        fail(
-            f"No C++ sources remain under '{source_root}' once the English surface(s) are "
-            "removed; refusing to report a pass."
-        )
+    source_files = all_sources
 
     def relative(path: Path) -> str:
         return path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else str(path)
 
     violations: list[str] = []
-
-    # --- Check E: an English surface must carry no translation machinery ---------------
-    helper_alternation = "|".join(re.escape(name) for name in sorted(LOCALIZING_HELPERS))
-    english_patterns = [
-        (re.compile(r"QCoreApplication::translate\s*\("), "QCoreApplication::translate()"),
-        (re.compile(r"(?<![\w])tr\s*\("), "tr()"),
-        (re.compile(r"\bQT_TR[A-Z0-9_]*\s*\("), "a QT_TR_* macro"),
-        (re.compile(rf"(?<![\w.])(?:{helper_alternation})\s*\("), "a runtime-translate helper"),
-    ]
-    english_call_count = 0
-    for path in english_files:
-        _, masked = scan_views(read_text(path))
-        for pattern, what in english_patterns:
-            for match in pattern.finditer(masked):
-                english_call_count += 1
-                violations.append(
-                    f"{relative(path)}:{line_of(masked, match.start())} calls {what}, but this "
-                    f"file is on an English surface ({', '.join(map(str, english_roots))}): every "
-                    "executable that links it is English-only, so the wrapper asks for a "
-                    "translation nothing can load. Use QStringLiteral(...) instead -- or, if this "
-                    "tree is no longer English-only, remove it from the English-surface list in "
-                    "the ctest registration and re-wrap its strings."
-                )
 
     # --- Check A: bare prose literals passed to a message sink ------------------------
     call_site_count = 0
@@ -492,7 +434,6 @@ def main(argv) -> int:
     elif translation_file.is_file():
         with tempfile.TemporaryDirectory() as scratch_dir:
             scratch = Path(scratch_dir) / "lupdate.ts"
-            surface_scratch = Path(scratch_dir) / "lupdate-surface.ts"
             result = subprocess.run(
                 [lupdate, str(source_root), "-ts", str(scratch), "-no-obsolete"],
                 capture_output=True,
@@ -504,28 +445,6 @@ def main(argv) -> int:
             else:
                 extracted = translation_pairs(scratch)
                 known = translation_pairs(translation_file)
-
-                # Subtract what the English surfaces contribute on their own, so a wrapper
-                # re-added there is reported by Check E ("remove the wrapper") rather than here
-                # ("add it to the .ts"), which would be the opposite advice.
-                surface_result = subprocess.run(
-                    [lupdate, *[str(p) for p in english_roots], "-ts", str(surface_scratch), "-no-obsolete"],
-                    capture_output=True,
-                    check=False,
-                    text=True,
-                )
-                if surface_result.returncode != 0:
-                    violations.append(
-                        f"lupdate failed with exit code {surface_result.returncode} while reading "
-                        f"the English surface(s) {', '.join(map(str, english_roots))}"
-                    )
-                else:
-                    for context in translation_pairs(surface_scratch).items():
-                        name, surface_strings = context
-                        if name in extracted:
-                            extracted[name] -= surface_strings
-                            if not extracted[name]:
-                                del extracted[name]
 
                 extracted_count = sum(len(v) for v in extracted.values())
                 if extracted_count == 0:
@@ -550,9 +469,8 @@ def main(argv) -> int:
         f"Localization coverage: A scanned {call_site_count} message-sink call site(s); "
         f"A2 inspected {message_helper_count} message helper(s); D scanned {return_count} "
         f"unregistered 'return' statement(s) ({return_literal_count} literal(s) read); C checked "
-        f"{helper_call_site_count} localizing-helper call site(s); E checked "
-        f"{english_call_count} translation call(s) across {len(english_files)} English-surface "
-        f"file(s); B compared {extracted_count} lupdate-extracted string(s)."
+        f"{helper_call_site_count} localizing-helper call site(s); "
+        f"B compared {extracted_count} lupdate-extracted string(s)."
     )
     print("Localization coverage check passed.")
     return 0

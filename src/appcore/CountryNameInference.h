@@ -2,11 +2,10 @@
 
 #include <QString>
 
-// Pure country-code inference from a node's display name. Lives in appcore/ because two front
-// ends need the same answer: the main window's location-grouped server list and SongBirdAuto's
-// country items. It used to be auto/AutoCountryInference (an auto/-only helper), and moving the
-// pure half up -- rather than letting ui/ include auto/ -- is what keeps a front end from
-// including another front end.
+// Pure country-code inference from a node's display name, shared by the main window's
+// location-grouped server list and the runtime's location reporting. Keeping the pure half in
+// appcore/ -- rather than under a front end -- is what keeps ui/ free of a lower layer's
+// dependency direction.
 //
 // The inference walks three levels, first match wins:
 //   1. a regional-indicator flag emoji anywhere in the name ("🇺🇸" -> US)

@@ -20,9 +20,9 @@ showing English. Follow all five steps; skipping the last two is how a string sh
   than substituting it into a `%1` slot, so the translator owns a complete sentence.
 - One complete sentence per message. Do **not** glue a subject fragment and a verb fragment into a
   shared `"%1 %2"` template -- Chinese word order cannot reorder a template's slots.
-- **`src/auto/` is an English surface.** Bare `QStringLiteral` only; `tr()`/`translate()`/
-  `QT_TR_*` there is a Check E violation. `src/services/`, `src/appcore/`, `src/ui/` keep
-  `translate()`.
+- Every source tree ships in the localizable binary: wrap user-visible strings in
+  `tr()`/`QCoreApplication::translate()`/`QT_TR_*` (or a registered runtime-translate helper).
+  There is no English-only surface any more.
 - There is no `%n` plural form anywhere in this repo. If the count can be 1, rephrase so the plural
   reads correctly, or make the branch that emits it impossible with a count of 1.
 

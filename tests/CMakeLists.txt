@@ -118,8 +118,7 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
 
     # Colours live in a palette file and nowhere else. A hex in a stylesheet branch that a runtime
     # probe never builds is exactly the case no test can observe, so this is the only check that
-    # can catch it. src/auto/AutoWindowPalette.cpp is the second palette: that window deliberately
-    # has its own blue accent instead of the main app's green.
+    # can catch it.
     add_test(
         NAME hardcoded-colors
         COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
@@ -170,8 +169,7 @@ if(Python3_Interpreter_FOUND)
         --test-root ${CMAKE_CURRENT_SOURCE_DIR})
     songbird_add_python_guard(py-localization-coverage check_localization_coverage.py
         --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
-        --translation-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
-        --english-surface-root ${SONGBIRD_PYTHON_SOURCE_ROOT}/auto)
+        --translation-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts)
     songbird_add_python_guard(py-versions-consistent check_version_consistency.py
         --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/..)
     songbird_add_python_guard(py-readme-assets check_readme_assets.py
@@ -414,19 +412,6 @@ songbird_add_qt_test(songbird_ui_presentation_logic_tests ui-presentation-logic
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-# The SongBirdAuto window has a palette of its own (blue accent) rather than the main window's
-# (green), and this pins that the separation is deliberate. AutoWindowPalette.cpp lives in
-# SONGBIRD_AUTO_SOURCES, not songbird_shared_objs, so it is compiled into this target explicitly.
-songbird_add_qt_test(songbird_auto_window_palette_tests auto-window-palette
-    SOURCES
-        AutoWindowPaletteTests.cpp
-        ../src/auto/AutoWindowPalette.h
-        ../src/auto/AutoWindowPalette.cpp
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Gui
-)
-
 set(SONGBIRD_TUN_SETTINGS_APPLY_DECISION_TEST_SOURCES
     TunSettingsApplyDecisionTests.cpp
 )
@@ -590,8 +575,8 @@ songbird_add_qt_test(songbird_tab_bar_scroll_button_tests tab-bar-scroll-buttons
         Qt${QT_VERSION_MAJOR}::Svg
 )
 
-# The bypass list both front ends write through ISystemProxyService::update(). Shared because the
-# two copies drifted apart; this target is what keeps the shared resolver honest on its own, without
+# The bypass list written through ISystemProxyService::update(). Shared because the two copies
+# drifted apart; this target is what keeps the shared resolver honest on its own, without
 # standing up a coordinator or a fake service.
 #
 # No production sources are listed here. `SystemProxyExceptions::resolve()` does read the routing
@@ -698,11 +683,9 @@ songbird_add_qt_test(songbird_thread_shutdown_tests thread-shutdown
         Qt${QT_VERSION_MAJOR}::Test
 )
 
-# The single-instance guard both front ends take at startup. SongBirdAuto's startup proxy
-# recovery is only sound while a second instance is refused, which makes the guard's own
-# semantics -- same key collides, different keys coexist, release unblocks the next taker --
-# worth pinning independently of the decision helpers in StartupAdminElevationTests. Those
-# tests stub the acquire lambda out, so they cannot reach this object at all.
+# The single-instance guard the app takes at startup: same key collides, different keys
+# coexist, release unblocks the next taker. Pinned independently of the decision helpers in
+# StartupAdminElevationTests, which stub the acquire lambda out and cannot reach this object.
 songbird_add_qt_test(songbird_single_instance_guard_tests single-instance-guard
     SOURCES
         SingleInstanceGuardTests.cpp
@@ -1392,129 +1375,6 @@ set(SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES
 songbird_add_qt_test(songbird_routing_score_policy_tests routing-score-policy
     SOURCES
         ${SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-set(SONGBIRD_AUTO_COUNTRY_SELECTION_TEST_SOURCES
-    AutoCountrySelectionTests.cpp
-    ../src/auto/AutoCountrySelection.h
-    ../src/auto/AutoCountrySelection.cpp
-    ../src/auto/AutoCountrySupport.h
-    ../src/auto/AutoCountrySupport.cpp
-    ../src/auto/AutoTypes.h
-)
-
-songbird_add_qt_test(songbird_auto_country_selection_tests auto-country-selection
-    SOURCES
-        ${SONGBIRD_AUTO_COUNTRY_SELECTION_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-set(SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES
-    AutoCountryInferenceTests.cpp
-    ../src/auto/AutoCountryInference.h
-    ../src/auto/AutoCountryInference.cpp
-    ../src/auto/AutoCountrySupport.h
-    ../src/auto/AutoCountrySupport.cpp
-    ../src/auto/AutoTypes.h
-)
-
-songbird_add_qt_test(songbird_auto_country_inference_tests auto-country-inference
-    SOURCES
-        ${SONGBIRD_AUTO_COUNTRY_INFERENCE_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-set(SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES
-    AutoRuntimeDefaultsTests.cpp
-    ../src/auto/AutoRuntimeDefaults.h
-    ../src/auto/AutoRuntimeDefaults.cpp
-)
-
-songbird_add_qt_test(songbird_auto_runtime_defaults_tests auto-runtime-defaults
-    SOURCES
-        ${SONGBIRD_AUTO_RUNTIME_DEFAULTS_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-set(SONGBIRD_AUTO_COORDINATOR_LOGIC_TEST_SOURCES
-    AutoCoordinatorLogicTests.cpp
-    ../src/auto/AutoCoordinatorLogic.h
-    ../src/auto/AutoCoordinatorLogic.cpp
-    ../src/auto/AutoTypes.h
-)
-
-songbird_add_qt_test(songbird_auto_coordinator_logic_tests auto-coordinator-logic
-    SOURCES
-        ${SONGBIRD_AUTO_COORDINATOR_LOGIC_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-# The scoring half of SongBirdAutoCoordinator, extracted so the probe-feeding rules, the ranking
-# map the single selection loop consumes, and the switch-gate wrapper are testable without the
-# coordinator's config file, core process or UI wiring. RoutingScorePolicy itself stays frozen and
-# pinned by its own suite; this one covers the engine that owns the per-node state.
-set(SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES
-    AutoSelectionEngineTests.cpp
-    ../src/auto/AutoSelectionEngine.h
-    ../src/auto/AutoSelectionEngine.cpp
-    ../src/auto/AutoCoordinatorLogic.h
-    ../src/auto/AutoCoordinatorLogic.cpp
-    ../src/auto/AutoCountrySelection.h
-    ../src/auto/AutoCountrySelection.cpp
-    ../src/auto/AutoCountrySupport.h
-    ../src/auto/AutoCountrySupport.cpp
-    ../src/auto/AutoTypes.h
-)
-
-songbird_add_qt_test(songbird_auto_selection_engine_tests auto-selection-engine
-    SOURCES
-        ${SONGBIRD_AUTO_SELECTION_ENGINE_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
-# The coordinator itself, not a pure helper: this suite exists because issue #12's deletion had no
-# coverage -- the mutation check (put the ForcedClear back) left every suite green, since
-# ProxySessionTests drives a session that cannot see the coordinator. It links the production
-# coordinator and injects a recording ISystemProxyService.
-set(SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES
-    SongBirdAutoCoordinatorStopTests.cpp
-    ../src/auto/SongBirdAutoCoordinator.h
-    ../src/auto/SongBirdAutoCoordinator.cpp
-    ../src/auto/AutoCoordinatorLogic.h
-    ../src/auto/AutoCoordinatorLogic.cpp
-    ../src/auto/AutoCountryInference.h
-    ../src/auto/AutoCountryInference.cpp
-    ../src/auto/AutoCountrySelection.h
-    ../src/auto/AutoCountrySelection.cpp
-    ../src/auto/AutoCountrySupport.h
-    ../src/auto/AutoCountrySupport.cpp
-    ../src/auto/AutoNodeEvaluationService.h
-    ../src/auto/AutoNodeEvaluationService.cpp
-    ../src/auto/AutoSelectionEngine.h
-    ../src/auto/AutoSelectionEngine.cpp
-    ../src/auto/AutoTunRuntime.h
-    ../src/auto/AutoTunRuntime.cpp
-    ../src/auto/AutoRuntimeDefaults.h
-    ../src/auto/AutoRuntimeDefaults.cpp
-    ../src/auto/AutoTypes.h
-)
-
-songbird_add_qt_test(songbird_auto_coordinator_stop_tests auto-coordinator-stop
-    SOURCES
-        ${SONGBIRD_AUTO_COORDINATOR_STOP_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

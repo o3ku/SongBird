@@ -48,7 +48,7 @@ What CI guarantees that a local build does not:
      macOS bundle's two human-readable fields use. Bumping a beta is the one suffix line; a
      final release is that line emptied. `CFBundleVersion` deliberately keeps the numeric
      `PROJECT_VERSION`, because macOS compares it as a sequence of integers.
-   - `src/app/main.cpp` and `src/auto/main.cpp` each carry an `#ifndef SONGBIRD_APP_VERSION`
+   - `src/app/main.cpp` carries an `#ifndef SONGBIRD_APP_VERSION`
      fallback that is bumped by hand, and it must match the display version exactly. Check
      the result rather than trusting it: `build/msvc-release/src/SongBird.exe --version`
      prints the string the application will report.
@@ -96,9 +96,9 @@ What CI guarantees that a local build does not:
      cmake --build build/msvc-tests --parallel
      ctest --test-dir build/msvc-tests --output-on-failure
      ```
-   - A full build of a fresh MSVC tree used to stop at `SongBird.exe` / `SongBirdAuto.exe`
-     with `mt.exe : command line error c10100a7`. That is fixed: the two Windows executables
-     are linked with `LINKER:/INCREMENTAL:NO`, because `/MANIFESTINPUT:` together with
+   - A full build of a fresh MSVC tree used to stop at `SongBird.exe`
+     with `mt.exe : command line error c10100a7`. That is fixed: the Windows executable
+     is linked with `LINKER:/INCREMENTAL:NO`, because `/MANIFESTINPUT:` together with
      `/MANIFEST:EMBED` is incompatible with the `/INCREMENTAL` MSVC passes by default for
      Debug and RelWithDebInfo. A recurrence means that flag was dropped, not that the tree is
      fine.
@@ -196,5 +196,5 @@ explicitly when reporting the release.
 - Do not run `gh release create` or `gh release upload` on the normal path. CI creates the release, and a hand-made release skips the test gate.
 - Do not include local config files, generated runtime configs, secrets, subscriptions, or user state files in the commit.
 - Use non-interactive git commands where possible.
-- Do not claim `SongBirdAuto.exe` was published. The release asset is `SongBird.exe` only.
+- The release asset is `SongBird.exe` only.
 - After publishing, report the version, tag, commit hash, release asset, and verification commands that passed.

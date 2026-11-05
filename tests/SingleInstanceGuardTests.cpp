@@ -6,11 +6,11 @@
 #include <QString>
 #include <QStringList>
 
-// SingleInstanceGuard is the lock both front ends take at startup. Until now it had no test of
+// SingleInstanceGuard is the lock the app takes at startup. Until now it had no test of
 // its own: the main app exercised it only through tryAcquireStartupSingleInstance() with a
 // lambda the StartupAdminElevationTests suite stubbed out, so the guard's own semantics --
 // what a second instance of the SAME key sees, and what an unrelated key never sees --
-// were pinned by nothing. SongBirdAuto now takes the same guard, which is what made the gap
+// were pinned by nothing. The app takes the same guard, which is what made the gap
 // worth closing: the startup proxy recovery that guard protects is only sound while the
 // second instance is refused.
 class SingleInstanceGuardTests : public QObject {
@@ -56,13 +56,12 @@ void SingleInstanceGuardTests::refusesASecondHolderOfTheSameKey()
 
 void SingleInstanceGuardTests::allowsDifferentKeysSideBySide()
 {
-    // The main app and SongBirdAuto run side by side on one machine, each guarding its own
-    // kind. That arrangement is only sound if one key never interferes with the other, which
-    // is also what makes the two executables' keys deliberately different.
+    // Two instances run side by side on one machine, each guarding its own key.
+    // That arrangement is only sound if one key never interferes with the other.
     SingleInstanceGuard mainApp(QStringLiteral("SongBird-test-front-end-a"));
-    SingleInstanceGuard autoApp(QStringLiteral("SongBird-test-front-end-b"));
+    SingleInstanceGuard secondApp(QStringLiteral("SongBird-test-front-end-b"));
     QVERIFY(mainApp.tryAcquire());
-    QVERIFY(autoApp.tryAcquire());
+    QVERIFY(secondApp.tryAcquire());
 }
 
 void SingleInstanceGuardTests::secondHolderCanAcquireAfterTheFirstReleases()

@@ -16,7 +16,7 @@
 //   * the TUN sidecar core is built with AuxiliaryTunRouting::RelayToLocalProxy
 //     (ClientConfigWriter::generateClientConfigs), i.e. it relays *into* that inbound, so the
 //     inbound cannot be absent while TUN is on;
-//   * SongBirdAutoCoordinator worked around the guard by hardcoding `tunEnabled = false` -- a
+//   * A caller used to work around the guard by hardcoding `tunEnabled = false` -- a
 //     caller lying to the service, which is what made the guard look load-bearing.
 //
 // So there is no longer any "TUN mode is rejected" behaviour to pin. Do not re-add that case: it

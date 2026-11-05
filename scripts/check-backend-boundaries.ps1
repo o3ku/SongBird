@@ -139,13 +139,11 @@ foreach ($dir in $legacyBackendDirs) {
     }
 }
 
-# Every layer that consumes a core but must not know which one. `auto` is here for the same reason
-# `app` is: it is a front end that links a core through the runtime layer. It used to be missing,
-# which meant the rule below silently did not apply to it -- see the coverage guard underneath.
+# Every layer that consumes a core but must not know which one. The front end (`app`) is here
+# for the same reason as the layers below it: it links a core through the runtime layer.
 $consumerDirs = @(
     (Join-Path $root "app"),
     (Join-Path $root "appcore"),
-    (Join-Path $root "auto"),
     (Join-Path $root "ui"),
     (Join-Path $root "services"),
     (Join-Path $root "runtime")
@@ -158,8 +156,7 @@ if ($existingConsumerDirs.Count -eq 0) {
 }
 
 # A directory with a main.cpp is a front-end executable, and every front end has to obey the rule.
-# Without this guard a new front end escapes it by simply not being listed above -- which is exactly
-# how `auto` came to include a concrete backend unnoticed.
+# Without this guard a new front end escapes it by simply not being listed above.
 $frontEndDirs = @(
     Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path (Join-Path $_.FullName "main.cpp") }
@@ -181,8 +178,7 @@ foreach ($match in $matches) {
 
 # A front end is a top of the dependency order: nothing below it may include it. Without this rule
 # `appcore/` reached up into `app/` for three headers, so the shared layer depended on one
-# executable's code and every `appcore/` consumer inherited that dependency transitively -- the
-# reason `auto/`'s "no dependency on app/" claim only held for direct includes.
+# executable's code and every `appcore/` consumer inherited that dependency transitively.
 $frontEndPaths = @($frontEndDirs | ForEach-Object { $_.FullName })
 $nonFrontEndDirs = @(
     Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |

@@ -168,7 +168,7 @@ void SystemProxyCoordinatorTests::updateModePassesTheLocalPortPairToTheService()
     QVERIFY(!systemProxyService.lastProxyExceptions_.trimmed().isEmpty());
 }
 
-// Covers the routing-derived half of the bypass list, now shared with SongBirdAuto through
+// Covers the routing-derived half of the bypass list, now shared through
 // common/SystemProxyExceptions and reachable here through buildExceptions(). The system proxy needs
 // a bypass entry for every host the user routed *directly*, and needs none for the hosts routed
 // through the proxy -- a wrong direction here silently sends proxied traffic straight out.

@@ -3,7 +3,7 @@
 #include "common/LocalInboundPorts.h"
 
 // The local inbound ports used to be settled independently by every reader, and a config that
-// carried a `localHttpPort` override (the Auto front end persists one) had the core bound to one
+// carried a `localHttpPort` override had the core bound to one
 // port while the system proxy, the health check and the subscription updater all dialled another.
 // These cases pin the resolution and the reconciliation that keeps a stale override from surviving
 // a `localPort` change.
@@ -90,7 +90,7 @@ void LocalInboundPortsTests::derivesBothPortsFromTheEffectiveBasePort()
 
 void LocalInboundPortsTests::rejectsAnOverrideDerivedFromTheWrongDefault()
 {
-    // The Auto front end used to persist `10808 + 1` next to a `localPort` of 0 -- the same number,
+    // An older build used to persist `10808 + 1` next to a `localPort` of 0 -- the same number,
     // written before the base port was normalised. It is stale for the same reason any other
     // mismatch is: it was derived, not chosen.
     Config config;

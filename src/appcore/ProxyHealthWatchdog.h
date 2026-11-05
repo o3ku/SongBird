@@ -39,10 +39,9 @@ class ProxyHealthWatchdog final : public QObject
     Q_OBJECT
 
 public:
-    // Runs the node-availability probe. Injected rather than constructed here for the same
-    // reasons ProxySession documented: a host can leave it unset, which is how the auto front
-    // end opts out (it already runs its own health check and must not get a second one), and a
-    // test can supply a scripted answer without standing up a proxy.
+    // Runs the node-availability probe. Injected rather than constructed here so a test can
+    // supply a scripted answer without standing up a proxy, and a host that leaves it unset
+    // gets no watch at all.
     //
     // Called on a background thread, so the implementation must not touch this object.
     using AvailabilityCheck = std::function<OperationResult(const Config& config)>;
@@ -71,6 +70,11 @@ public:
         // the .ts's "ProxySession" context; a tr() here would orphan the existing entries.
         std::function<QString()> recheckStillUnavailableSentence;
         std::function<QString()> recheckAvailableAgainSentence;
+        // The session owns the shutdown state. Injecting the read (rather than keeping a
+        // second atomic here) is what makes "no new probe or timer during teardown" true:
+        // there is no independent flag that can be left false while the session is going down.
+        // Read on the GUI thread only, so a plain predicate is enough.
+        std::function<bool()> isShuttingDown;
     };
 
     ProxyHealthWatchdog(
@@ -135,6 +139,10 @@ private:
     void runDirectRecheck();
     void finishDirectRecheck(bool directReachable);
     Config currentProbeConfig() const;
+    bool isShuttingDown() const
+    {
+        return sessionStrings_.isShuttingDown && sessionStrings_.isShuttingDown();
+    }
 
     std::weak_ptr<char> sessionLifetimeGuard_;
     SessionStrings sessionStrings_;
@@ -157,5 +165,4 @@ private:
     // listening says nothing about the node, and after the session leaves Proxying the
     // core-exit path owns the reporting.
     std::atomic_bool active_{false};
-    std::atomic_bool shuttingDown_{false};
 };

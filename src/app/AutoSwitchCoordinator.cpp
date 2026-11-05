@@ -256,8 +256,13 @@ void AutoSwitchCoordinator::runWarmRound()
             rankableIds.append(id);
         }
     }
+    const qint64 now = nowMs();
+    // Prune against the whole group, not just the probe-rankable subset: a Custom node can
+    // still carry a measurement from the user's own test batch, and that knowledge should
+    // survive as long as the node is in the group.
+    AutoSwitchGroupLogic::pruneWarmResults(warm_, scan.memberIds, now);
     const QStringList candidates = AutoSwitchGroupLogic::pickWarmProbeCandidates(
-        rankableIds, warm_, nowMs());
+        rankableIds, warm_, now);
     if (candidates.isEmpty()) {
         return;
     }
@@ -281,12 +286,13 @@ void AutoSwitchCoordinator::noteSessionActivated()
 
 void AutoSwitchCoordinator::handleProbeResultReady(const QString& indexId, const QString& result)
 {
-    // Entries are keyed by indexId and bounded by the TTL, but a subscription update can
-    // recycle an indexId for a different server; the inherited latency dies with the TTL at
-    // worst. This is the same recycling hazard AutoSelectionEngine::reset documents; here the
-    // bound is time rather than an explicit clear because the warm data is advisory, never a
-    // persisted decision.
-    AutoSwitchGroupLogic::harvestProbeResult(warm_, indexId, result, nowMs());
+    // The map is bounded, not just its decisions: stale entries are dropped on every harvest,
+    // and runWarmRound() also drops keys that no longer belong to the current group. A
+    // subscription update can recycle an indexId for a different server; the inherited latency
+    // dies with the TTL at worst, and the key leaves the hash on the next warm round.
+    const qint64 now = nowMs();
+    AutoSwitchGroupLogic::pruneWarmResults(warm_, {}, now);
+    AutoSwitchGroupLogic::harvestProbeResult(warm_, indexId, result, now);
 }
 
 void AutoSwitchCoordinator::executeSwitch(const QString& indexId, const QString& reason)
