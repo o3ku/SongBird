@@ -35,8 +35,6 @@ COMMANDS = [
             str(REPO_ROOT / "src"),
             "--translation-file",
             str(REPO_ROOT / "translations/SongBird_zh_CN.ts"),
-            "--english-surface-root",
-            str(REPO_ROOT / "src/auto"),
         ],
     ),
     ("versions-consistent", "check_version_consistency.py", ["--repo-root", str(REPO_ROOT)]),

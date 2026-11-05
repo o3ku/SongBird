@@ -7,8 +7,7 @@
 // Why it exists: SongBird.exe could not tell that the running core was alive while its active node
 // had gone dark. In the log that motivated this, an AnyTLS node was dead for 2 h 39 m and the app
 // showed nothing at all -- 183 core ERROR lines were the only trace, and the user had no way to
-// know the node, rather than the site, was the problem. SongBirdAuto has health-checked its active
-// node since it was written (SongBirdAutoCoordinator), but the main app never did.
+// know the node, rather than the site, was the problem.
 //
 // This class holds no timer, no thread and no I/O. It turns a stream of probe results into
 // "show a warning" / "clear the warning" decisions, so the ProxySession wiring stays thin and the

@@ -13,8 +13,8 @@
 /// apart: some tracked the thread unconditionally, some only when a tracker had been
 /// injected, and the ones with no fallback leaked the QThread object whenever no tracker
 /// was present. Every tracker in this codebase already deletes the thread on `finished`
-/// (BackgroundThreadTracker::track, ProxySession::trackBackgroundThread,
-/// SongBirdAutoCoordinator::trackThread), so routing the decision through one place only
+/// (BackgroundThreadTracker::track, ProxySession::trackBackgroundThread), so routing the
+/// decision through one place only
 /// adds the missing branch -- it does not change what happens when a tracker exists.
 template <typename Task>
 QThread* launchBackgroundThread(Task&& task, const std::function<void(QThread*)>& track)

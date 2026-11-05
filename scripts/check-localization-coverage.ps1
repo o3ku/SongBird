@@ -1,9 +1,6 @@
 param(
     [string]$SourceRoot = "src",
-    [string]$TranslationFile = "translations/SongBird_zh_CN.ts",
-    # Trees whose every consumer is English-only, so their strings must be bare literals
-    # rather than tr()/translate() calls. See "English surfaces" at the top of this file.
-    [string[]]$EnglishSurfaceRoots = @("src/auto")
+    [string]$TranslationFile = "translations/SongBird_zh_CN.ts"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,26 +42,8 @@ function Stop-CheckWithError {
 #      watches sinks can see them, and a registration list only covers the helpers somebody
 #      remembered. Check D is the generic net over every `return` in the tree.
 #
-# This script checks all of them. Checks A, A2, C, D and E are self-contained; Check B needs
+# This script checks all of them. Checks A, A2, C and D are self-contained; Check B needs
 # lupdate, which is an optional Qt component, so it is skipped loudly rather than silently.
-#
-# English surfaces
-# ----------------
-# A source tree is an "English surface" when *every* executable that links it is English-only.
-# src/auto is one, and it is the only one: it is built into SongBirdAuto.exe alone, that
-# executable installs no QTranslator, and it embeds no compiled translation at all -- the
-# generated translations.qrc is appended to SONGBIRD_SOURCES, which builds SongBird.exe by
-# itself. Keeping SongBirdAuto English is a product decision, so on those files the rule
-# inverts: a bare literal is correct, and a tr()/translate() wrapper is the defect, because
-# it promises a translation that no binary can ever load. Check E enforces the inversion, and
-# the trees named by -EnglishSurfaceRoots are excluded from A, A2, C and D, which would
-# otherwise demand exactly the wrappers Check E forbids.
-#
-# The boundary is "every binary that links it", not "the file mentions SongBirdAuto". Shared
-# code under src/services, src/appcore and so on keeps its translate() calls: SongBird.exe
-# links it and renders Chinese, and under SongBirdAuto those same calls are inert because no
-# translator is installed there. Only a tree SongBird.exe does not link can be an English
-# surface, which is why this is a parameter rather than a rule pinned to one path.
 #
 # It is a net, not a proof: only literals that read like prose are reported (see the blind
 # spot note on Test-ProseLiteral), so a pass means "nothing the scan can see is untranslated",
@@ -198,12 +177,8 @@ $allowlist = @{
 # to catch. (saveFailureResult's `context` parameter is documented in
 # persistence/IConfigRepository.h as describing what the app was doing, and it becomes
 # the failure message verbatim when the repository has no extra detail to append.
-# SongBirdAutoCoordinator's log() emits logMessage, which the SongBirdAuto window shows
-# in its Logs dialog; setStatus() writes the status bar.
-# AutoNodeEvaluationService's unavailableResult(item, error) writes `error` straight into
-# AutoNodeEvaluation::error, which SongBirdAutoWindow::availabilityText() and
-# AutoCoordinatorLogic::evaluationStateText() then render as the node's state column --
-# so its argument is user-visible prose, not a diagnostic.)
+# log()/setStatus()/unavailableResult() forward their argument into a user-visible log,
+# status or result cell, so it is prose rather than a diagnostic.)
 $callPattern = [regex](
     '(?:OperationResult::(?:ok|fail|cancel)|saveFailureResult' +
     '|(?<![\w.>])(?:log|setStatus|unavailableResult))\s*\('
@@ -262,17 +237,11 @@ $messageHelpers = @(
     @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'restartingMessage' }
     @{ File = 'src/appcore/ProxyCrashRestartPolicy.cpp'; Function = 'decide' }
 
-    # The speed-test / auto-node result vocabulary. These are the "result" text a node row
-    # shows when a probe fails or is skipped, so they are user-visible prose rather than
-    # diagnostics -- the same values unavailableResult() is registered for above.
+    # The speed-test result vocabulary. These are the "result" text a node row shows when a
+    # probe fails or is skipped, so they are user-visible prose rather than diagnostics --
+    # the same values unavailableResult() is registered for above.
     #   runUrlTest()            -> SpeedTestWorker collects it into the result cell
     #   formatUrlProbeResult()  -> decides what that cell says for a finished probe
-    # SongBirdAuto renders that same vocabulary through availabilityText()
-    # (src/auto/SongBirdAutoWindow.cpp) and evaluationStateText()
-    # (src/auto/AutoCoordinatorLogic.cpp). Neither is registered, because both sit on the
-    # src/auto English surface: registering them would make A2 tell their author to wrap a
-    # string in translate() that Check E forbids wrapping. They return bare literals by
-    # design, and the vocabulary they render is already localized where SongBird produces it.
     # The one-word members of that vocabulary ("Failed", "Cancelled", "Unsupported",
     # "Timeout", "Blocked", "Pending", "OK") are invisible to Check A2 -- see the note on
     # Test-ProseLiteral below -- and were reviewed and localized by hand instead.
@@ -459,8 +428,8 @@ function Test-ProseLiteral {
     # KNOWN BLIND SPOT: the whitespace requirement also hides every one-word message, so a
     # bare QStringLiteral("Cancelled") / ("Failed") / ("Unsupported") / ("Timeout") /
     # ("Blocked") / ("Pending") / ("OK") at a registered sink passes this check unnoticed.
-    # Those are real user-visible values -- the speed-test and auto-node result columns are
-    # made of exactly them -- so they cannot be left to the scan. Do NOT relax the requirement
+    # Those are real user-visible values -- the speed-test result column is made of exactly
+    # them -- so they cannot be left to the scan. Do NOT relax the requirement
     # to `[A-Za-z]` to reach them: that also flags every enum-ish literal at a sink ("http",
     # "socks", "domain", "ip", "crash", "exit") and buries the signal. Instead, when you touch
     # a result pipeline, grep it for single-word literals by hand. The vocabulary listed above
@@ -502,108 +471,11 @@ if (-not $allSourceFiles) {
 }
 
 # ---------------------------------------------------------------------------
-# Split the tree into the localizable part and the English surfaces
+# The source set the localization checks read
 # ---------------------------------------------------------------------------
 
-# PowerShell variable names are case-insensitive, so the local below must not be called
-# $EnglishSurfaceRoots: that would overwrite the parameter and leave the loop iterating an
-# empty array. That is why its name is deliberately different.
-#
-# Relative roots resolve against the repository root, not the working directory: ctest runs
-# this script with build/<tree>/tests as the cwd, where a relative "src/auto" does not exist.
-# The mismatch is not hypothetical -- it is how the first ctest run of this check failed,
-# loudly, instead of silently scanning nothing.
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$englishSurfaceRootPaths = @()
-foreach ($surfaceRoot in $EnglishSurfaceRoots) {
-    $candidate = if ([System.IO.Path]::IsPathRooted($surfaceRoot)) {
-        $surfaceRoot
-    } else {
-        Join-Path $repositoryRoot $surfaceRoot
-    }
-    if (-not (Test-Path -LiteralPath $candidate)) {
-        # A renamed tree would silently shrink the surface to nothing, and Check E would then
-        # pass without having inspected anything.
-        Stop-CheckWithError ("English-surface root '$surfaceRoot' does not exist (looked for " +
-            "'$candidate'). Fix the path rather than dropping it: a missing root turns Check E " +
-            "into a no-op.")
-    }
-    $englishSurfaceRootPaths += (Resolve-Path -LiteralPath $candidate).Path
-}
-
-function Test-IsEnglishSurface {
-    param([string]$Path)
-
-    foreach ($surfaceRoot in $englishSurfaceRootPaths) {
-        $prefix = $surfaceRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-        if ($Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return $true
-        }
-    }
-    return $false
-}
-
-$englishSurfaceFiles = @($allSourceFiles | Where-Object { Test-IsEnglishSurface $_.FullName })
-$sourceFiles = @($allSourceFiles | Where-Object { -not (Test-IsEnglishSurface $_.FullName) })
-
-if (-not $englishSurfaceFiles) {
-    Stop-CheckWithError ("English-surface roots ($($englishSurfaceRootPaths -join ', ')) contain no " +
-        "C++ sources, so Check E would scan nothing; refusing to report a pass.")
-}
-if (-not $sourceFiles) {
-    Stop-CheckWithError ("No C++ sources remain under '$SourceRoot' once the English surface(s) " +
-        "$($englishSurfaceRootPaths -join ', ') are removed; refusing to report a pass.")
-}
-
-# ---------------------------------------------------------------------------
-# Check E: an English surface must carry no translation machinery
-# ---------------------------------------------------------------------------
-#
-# The inverse of every other check here. On an English surface the wrapper is the defect, not
-# the bare literal: it asks for a translation that nothing linking this tree can load, and it
-# is precisely how the two halves drifted apart before -- 114 fully translated strings once sat
-# in the .ts for a surface that never installed a translator. Stating the rule once, here,
-# means the next reader of src/auto does not have to re-derive it.
-#
-# Matched against the Masked view (comments blanked, string bodies blanked) so neither a
-# comment nor a message that merely mentions tr() can trip it.
-
-$englishSurfaceCallCount = 0
-$englishSurfacePatterns = @(
-    @{ Regex = [regex]'QCoreApplication::translate\s*\('; What = 'QCoreApplication::translate()' }
-    # Any tr(): bare inside a Q_OBJECT class, QObject::tr(), or obj->tr() / obj.tr(). A
-    # preceding word character is excluded so an identifier that merely ends in "tr" is not a
-    # false positive.
-    @{ Regex = [regex]'(?<![\w])tr\s*\(';               What = 'tr()' }
-    @{ Regex = [regex]'\bQT_TR[A-Z0-9_]*\s*\(';          What = 'a QT_TR_* macro' }
-)
-if ($localizingHelpers.Count -gt 0) {
-    $helperAlternation = ($localizingHelpers.Keys | Sort-Object | ForEach-Object { [regex]::Escape($_) }) -join '|'
-    $englishSurfacePatterns += @{
-        Regex = [regex]"(?<![\w.])(?:$helperAlternation)\s*\("
-        What  = 'a runtime-translate helper'
-    }
-}
-
-foreach ($file in $englishSurfaceFiles) {
-    $masked = (Get-ScanViews -Text ([System.IO.File]::ReadAllText($file.FullName))).Masked
-    $relative = Resolve-Path -Relative $file.FullName
-
-    foreach ($pattern in $englishSurfacePatterns) {
-        foreach ($match in $pattern.Regex.Matches($masked)) {
-            $englishSurfaceCallCount++
-            $line = ($masked.Substring(0, $match.Index) -split "`n").Count
-            $violations.Add(
-                "${relative}:${line} calls $($pattern.What), but this file is on an English " +
-                "surface ($($englishSurfaceRootPaths -join ', ')): every executable that links it is " +
-                "English-only, so the wrapper asks for a translation nothing can load. Use " +
-                "QStringLiteral(...) instead -- or, if this tree is no longer English-only, " +
-                "remove it from -EnglishSurfaceRoots in the ctest registration and re-wrap its " +
-                "strings."
-            )
-        }
-    }
-}
+$sourceFiles = $allSourceFiles
 
 # ---------------------------------------------------------------------------
 # Check A: bare prose literals passed to OperationResult::{ok,fail,cancel}
@@ -647,7 +519,7 @@ if ($callSiteCount -eq 0) {
 # Check A2: bare prose literals returned by a registered message helper
 # ---------------------------------------------------------------------------
 
-# $repositoryRoot is resolved once, above the English-surface split, and reused here.
+# $repositoryRoot is resolved once, above, and reused here.
 $messageHelperCount = 0
 
 # Body ranges of the registered helpers, keyed by absolute path. Check D scans every `return`
@@ -908,16 +780,12 @@ if (-not $lupdate) {
 } elseif (-not (Test-Path -LiteralPath $TranslationFile)) {
     # Already reported above; nothing further to add here.
 } else {
-    # Both scratch files must end in .ts: lupdate refuses any other extension with
-    # "has no recognized extension", so a suffix like "<guid>.ts.surface" fails the run.
+    # The scratch file must end in .ts: lupdate refuses any other extension with
+    # "has no recognized extension".
     $scratchToken = [System.Guid]::NewGuid().ToString('N')
     $scratch = [System.IO.Path]::Combine(
         [System.IO.Path]::GetTempPath(),
         "songbird-lupdate-$scratchToken.ts"
-    )
-    $surfaceScratch = [System.IO.Path]::Combine(
-        [System.IO.Path]::GetTempPath(),
-        "songbird-lupdate-surface-$scratchToken.ts"
     )
     try {
         $null = & $lupdate $SourceRoot -ts $scratch -no-obsolete 2>&1
@@ -926,36 +794,6 @@ if (-not $lupdate) {
         } else {
             $extracted = Get-TranslationPairs -Path $scratch
             $knownPairs = Get-TranslationPairs -Path $TranslationFile
-
-            # Subtract what the English surfaces contribute on their own, so a wrapper re-added
-            # there is reported by Check E ("remove the wrapper") and not by this check ("add it
-            # to the .ts"), which would be the opposite advice. lupdate is run twice rather than
-            # handed an explicit file list: the list is 459 paths, ~24 KB of command line, and
-            # Windows caps that at 32 KB -- too close, with an opaque failure mode.
-            #
-            # Subtracting can only hide a string that an English surface also produces, and in
-            # exactly that situation Check E has already failed the run, so nothing goes
-            # unnoticed on a green one.
-            if ($englishSurfaceRootPaths.Count -gt 0) {
-                $null = & $lupdate @englishSurfaceRootPaths -ts $surfaceScratch -no-obsolete 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    $violations.Add(
-                        "lupdate failed with exit code $LASTEXITCODE while reading the English " +
-                        "surface(s) $($englishSurfaceRootPaths -join ', ')"
-                    )
-                } else {
-                    $surfacePairs = Get-TranslationPairs -Path $surfaceScratch
-                    foreach ($contextName in @($surfacePairs.Keys)) {
-                        if (-not $extracted.ContainsKey($contextName)) { continue }
-                        foreach ($source in @($surfacePairs[$contextName])) {
-                            [void]$extracted[$contextName].Remove($source)
-                        }
-                        if ($extracted[$contextName].Count -eq 0) {
-                            $extracted.Remove($contextName)
-                        }
-                    }
-                }
-            }
 
             # If lupdate extracted nothing the comparison below is vacuous -- the same
             # silent-pass hazard as the empty-scan guard above.
@@ -983,7 +821,7 @@ if (-not $lupdate) {
             }
         }
     } finally {
-        foreach ($leftover in @($scratch, $surfaceScratch)) {
+        foreach ($leftover in @($scratch)) {
             if (Test-Path -LiteralPath $leftover) {
                 Remove-Item -LiteralPath $leftover -Force
             }
@@ -1011,7 +849,5 @@ Write-Host ("Localization coverage: A scanned $(Get-ScanCount 'callSiteCount') m
             "D scanned $(Get-ScanCount 'returnCount') unregistered 'return' statement(s) " +
             "($(Get-ScanCount 'returnLiteralCount') literal(s) read); " +
             "C checked $(Get-ScanCount 'helperCallSiteCount') localizing-helper call site(s); " +
-            "E checked $(Get-ScanCount 'englishSurfaceCallCount') translation call(s) across " +
-            "$($englishSurfaceFiles.Count) English-surface file(s); " +
             "B compared $(Get-ScanCount 'extractedCount') lupdate-extracted string(s).")
 Write-Host "Localization coverage check passed."

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -12,7 +13,7 @@
 // AutoSwitchCoordinator): which servers belong to the selected location group, which of them a
 // probe batch can rank, what a finished probe says, and which member the failure path should
 // switch to. Kept free of QObject, timer and I/O so a test needs neither a config file nor a
-// core -- the same discipline as SpeedTestCoordinatorLogic and AutoCoordinatorLogic.
+// core -- the same discipline as SpeedTestCoordinatorLogic.
 
 namespace AutoSwitchGroupLogic {
 
@@ -97,6 +98,33 @@ inline void harvestProbeResult(
         latencyMs = -1;
     }
     warm.insert(id, WarmProbe{latencyMs, nowMs});
+}
+
+// Drops entries that can no longer describe a usable measurement: anything older than the TTL,
+// and, when activeIds is non-empty, anything whose key is not a member of the current set. The
+// second half is what bounds the container over a long-lived process: a subscription refresh
+// recycles indexIds and a group change leaves the old group's keys behind, and neither ever
+// comes back through this hash. Call it once per warm round (and on every harvest for the time
+// half) so the map stays proportional to the group rather than to the session's whole history.
+inline void pruneWarmResults(
+    WarmProbeMap& warm,
+    const QStringList& activeIds,
+    qint64 nowMs,
+    qint64 ttlMs = kWarmResultTtlMs)
+{
+    QSet<QString> active;
+    for (const QString& id : activeIds) {
+        active.insert(id);
+    }
+    for (auto it = warm.begin(); it != warm.end(); ) {
+        const bool stale = nowMs - it->measuredAtMs > ttlMs;
+        const bool orphan = !active.isEmpty() && !active.contains(it.key());
+        if (stale || orphan) {
+            it = warm.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 // The failure path's first choice: the freshest-measured, reachable member with the lowest

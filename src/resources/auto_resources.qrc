@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/auto">
-        <file alias="urls.txt">urls.txt</file>
-    </qresource>
-</RCC>

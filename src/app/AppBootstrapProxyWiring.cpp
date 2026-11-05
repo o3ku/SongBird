@@ -40,9 +40,8 @@ void AppBootstrap::wireProxyStack()
     });
 
     // ProxySession owns *when* to probe but not *how*: appcore/ must not pick a probe for itself,
-    // so the composition root supplies the real availability check. The auto front end deliberately
-    // leaves this unset -- it already runs its own health check every 60 s and would otherwise
-    // probe the same node twice.
+    // so the composition root supplies the real availability check. A host that leaves it unset
+    // gets no watch at all.
     objects_->proxySession->setAvailabilityCheck(
         [](const Config& sessionConfig) {
             ProxyAvailabilityCheckConfig checkConfig;

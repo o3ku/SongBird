@@ -102,6 +102,7 @@ private slots:
     void groupScanResolvesFavoriteAndLocationGroups();
     void customConfigsAreNotProbeRankable();
     void harvestRecordsLatencyAndUnreachableAnswers();
+    void pruneWarmResultsBoundsTheMapOverTime();
     void pickWarmSwitchTargetPrefersFreshLowestLatency();
     void pickWarmProbeCandidatesRankFreshReachableThenCap();
     void roundRobinAndCeilingArithmetic();
@@ -176,6 +177,34 @@ void AutoSwitchGroupTests::harvestRecordsLatencyAndUnreachableAnswers()
     QVERIFY(warm.value(QStringLiteral("blocked")).latencyMs < 0);
     // Both answers carry a timestamp: probed-and-unreachable is knowledge, not absence.
     QCOMPARE(warm.value(QStringLiteral("timeout")).measuredAtMs, now);
+}
+
+void AutoSwitchGroupTests::pruneWarmResultsBoundsTheMapOverTime()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 ttl = AutoSwitchGroupLogic::kWarmResultTtlMs;
+    AutoSwitchGroupLogic::WarmProbeMap warm;
+
+    // A long-lived session keeps harvesting recycled ids: the map must not grow without bound.
+    warm.insert(QStringLiteral("fresh-in-group"), {80.0, now});
+    warm.insert(QStringLiteral("stale-in-group"), {100.0, now - ttl - 1000});
+    warm.insert(QStringLiteral("fresh-orphan"), {50.0, now});
+    warm.insert(QStringLiteral("stale-orphan"), {60.0, now - ttl - 1000});
+
+    const QStringList active{QStringLiteral("fresh-in-group"), QStringLiteral("stale-in-group")};
+    AutoSwitchGroupLogic::pruneWarmResults(warm, active, now);
+
+    QCOMPARE(warm.size(), 1);
+    QVERIFY(warm.contains(QStringLiteral("fresh-in-group")));
+
+    // With no member set (the harvest-time call) only the time bound applies, so a key that is
+    // still fresh survives until the next warm round names the group's real members.
+    warm.clear();
+    warm.insert(QStringLiteral("fresh"), {80.0, now});
+    warm.insert(QStringLiteral("old"), {100.0, now - ttl - 1000});
+    AutoSwitchGroupLogic::pruneWarmResults(warm, {}, now);
+    QCOMPARE(warm.size(), 1);
+    QVERIFY(warm.contains(QStringLiteral("fresh")));
 }
 
 void AutoSwitchGroupTests::pickWarmSwitchTargetPrefersFreshLowestLatency()

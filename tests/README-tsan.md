@@ -1,8 +1,8 @@
 # Running the test suite under ThreadSanitizer
 
-Two tests (`tests/ProxySessionTests.cpp`, `tests/SongBirdAutoCoordinatorStopTests.cpp`) reason about
-what a background worker may touch after the object that owns it is gone. This file is how to check
-that reasoning with a sanitizer instead of re-reading it.
+The proxy-session suite (`tests/ProxySessionTests.cpp`) reasons about what a background worker
+may touch after the object that owns it is gone. This file is how to check that reasoning with a
+sanitizer instead of re-reading it.
 
 ## Build
 
@@ -15,13 +15,11 @@ cmake --build build-tsan --parallel "$(nproc)"
 
 ## Run
 
-Only the two binaries that drive the crash-restart and queued-result paths, to keep the noise down:
+Only the binary that drives the crash-restart and queued-result paths, to keep the noise down:
 
 ```sh
 TSAN_OPTIONS="second_deadlock_stack=1" QT_QPA_PLATFORM=offscreen \
   ./build-tsan/tests/songbird_proxy_session_tests 2>&1 | tee tsan.log
-TSAN_OPTIONS="second_deadlock_stack=1" QT_QPA_PLATFORM=offscreen \
-  ./build-tsan/tests/songbird_auto_coordinator_stop_tests 2>&1 | tee -a tsan.log
 grep -c "WARNING: ThreadSanitizer" tsan.log
 ```
 

@@ -63,10 +63,6 @@ private slots:
     void stopDuringTunCleanupCancelsStartupResume();
     void stopClearsAdoptedManagedSystemProxy();
     void stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails();
-    void abortedStartupUndoClearsAProxyTheSessionOwns();
-    void abortedStartupUndoLeavesAProxyItDoesNotOwnAlone();
-    void abortedStartupUndoKeepsTheFlagWhenTheClearFails();
-    void wiredSnapshotRestoresInsteadOfClearingOnAbortedStartup();
     void stopRestoresThroughTheCapturedSnapshotWhenWired();
     void stopOnAnIdleSessionLeavesAnUnownedProxyAlone();
     void plainStopForgetsOwnershipEvenWhenTheUndoWriteFails();
@@ -488,7 +484,7 @@ struct ProxySessionHarness final
 
 
     // The snapshot trio, defaulted to the "host does not manage the system proxy" shape the
-    // interface documents. Wiring them on in a test is the Auto-after-issue-#10 shape.
+    // interface documents. Wiring them on in a test is the app's shape.
     SystemProxySnapshot capturedSystemProxySnapshot() const override
     {
         return snapshotsWired ? snapshot : SystemProxySnapshot{};
@@ -1431,77 +1427,6 @@ void ProxySessionTests::stopForCoreUpdateKeepsManagedProxyFlagWhenTheClearFails(
     QVERIFY(logSpy.last().at(0).toString().contains(QStringLiteral("Failed to disable")));
 }
 
-// undoManagedSystemProxyAfterAbortedStartup() is what SongBirdAuto's TUN-failure branch calls
-// (issue #8): the start is aborted before ProxySession::start() runs, so this -- not a failed
-// startup -- is the only thing that can undo a proxy an earlier round of this session applied.
-// The harness wires no snapshot capture, exactly like Auto, so the ownership decision can only
-// land on Clear; what these cases pin is that the decision is made at all, and by ownership.
-void ProxySessionTests::abortedStartupUndoClearsAProxyTheSessionOwns()
-{
-    ProxySessionHarness harness;
-    harness.systemProxyEnabled = true;
-    harness.session->adoptManagedSystemProxy(true);
-
-    harness.session->undoManagedSystemProxyAfterAbortedStartup();
-
-    QCOMPARE(harness.proxyUpdateCount, 1);
-    QCOMPARE(static_cast<int>(harness.lastProxyMode), static_cast<int>(SystemProxyMode::ForcedClear));
-    QVERIFY(!harness.session->isManagedProxyActive());
-    QVERIFY(!harness.systemProxyEnabled);
-}
-
-void ProxySessionTests::abortedStartupUndoLeavesAProxyItDoesNotOwnAlone()
-{
-    ProxySessionHarness harness;
-    // The registry is on, but this session never wrote it: the user's own proxy. The ownership
-    // rule says LeaveAlone -- "no live port" is not evidence of "we wrote this".
-    harness.systemProxyEnabled = true;
-
-    harness.session->undoManagedSystemProxyAfterAbortedStartup();
-
-    QCOMPARE(harness.proxyUpdateCount, 0);
-    QVERIFY(harness.systemProxyEnabled);
-}
-
-void ProxySessionTests::abortedStartupUndoKeepsTheFlagWhenTheClearFails()
-{
-    ProxySessionHarness harness;
-    harness.systemProxyEnabled = true;
-    harness.session->adoptManagedSystemProxy(true);
-    harness.proxyUpdateSucceeds = false;
-
-    harness.session->undoManagedSystemProxyAfterAbortedStartup();
-
-    // Same rule as stopForCoreUpdate: a failed write must not make the session forget it owns
-    // the registry -- a later stop would then leave the dead values in place for good.
-    QCOMPARE(harness.proxyUpdateCount, 1);
-    QVERIFY(harness.session->isManagedProxyActive());
-}
-
-// The two issue-#10 pins: a host that wires the snapshot trio gets the user's own proxy put
-// back on every undo, including the aborted-startup entry and a plain stop, instead of the
-// ForcedClear a snapshotless host (Auto before the wiring, and every other test here) pays.
-void ProxySessionTests::wiredSnapshotRestoresInsteadOfClearingOnAbortedStartup()
-{
-    ProxySessionHarness harness;
-    harness.snapshotsWired = true;
-    harness.systemProxyEnabled = true;
-    harness.session->adoptManagedSystemProxy(true);
-    harness.snapshot.valid = true;
-    harness.snapshot.enabled = true;
-    harness.snapshot.server = QStringLiteral("user-proxy.example:8080");
-
-    harness.session->undoManagedSystemProxyAfterAbortedStartup();
-
-    // Restore, not clear: the registry write goes through restoreSystemProxySnapshot, and no
-    // ForcedClear may run for a host that can put the user's values back.
-    QCOMPARE(harness.restoreCount, 1);
-    QCOMPARE(harness.lastRestoredServer, QStringLiteral("user-proxy.example:8080"));
-    QCOMPARE(harness.proxyUpdateCount, 0);
-    QVERIFY(!harness.session->isManagedProxyActive());
-    QVERIFY(!harness.snapshot.valid);
-}
-
 void ProxySessionTests::stopRestoresThroughTheCapturedSnapshotWhenWired()
 {
     ProxySessionHarness harness;
@@ -1526,11 +1451,9 @@ void ProxySessionTests::stopRestoresThroughTheCapturedSnapshotWhenWired()
     QCOMPARE(harness.restoreCount, 1);
 }
 
-// The idle-session shapes SongBirdAutoCoordinator::stop() relies on since the unconditional
-// ForcedClear was removed (issue #12): a session that never wrote the registry must leave a
-// proxy it does not own alone even when the registry is on, and a plain stop drops the
-// ownership flag on a failed undo write while leaving the snapshot valid -- spent only by a
-// successful restore, whatever retries on it later.
+// A session that never wrote the registry must leave a proxy it does not own alone even when
+// the registry is on, and a plain stop drops the ownership flag on a failed undo write while
+// leaving the snapshot valid -- spent only by a successful restore, whatever retries on it later.
 void ProxySessionTests::stopOnAnIdleSessionLeavesAnUnownedProxyAlone()
 {
     ProxySessionHarness harness;
@@ -1576,14 +1499,9 @@ void ProxySessionTests::plainStopForgetsOwnershipEvenWhenTheUndoWriteFails()
     QVERIFY(!harness.session->isManagedProxyActive());
 }
 
-// The session-level half of the issue-#12 pin: the coordinator's immediate path (the
-// destructor's exit) used to fire an unconditional ForcedClear after stop(true) returned, and
-// what this case covers is that nothing *inside* the session does the same -- an immediate stop
-// performs exactly one registry operation, and a failed restore is not retried with a Clear.
-// The coordinator half is pinned directly in SongBirdAutoCoordinatorStopTests, now that the
-// coordinator takes its ISystemProxyService by constructor and createProxySession() can be built
-// without initialize(). Neither case alone would have caught the deletion: this one cannot see
-// the coordinator, and that one does not reach a failed restore.
+// An immediate stop performs exactly one registry operation, and a failed restore is not
+// retried with a Clear. Nothing *inside* the session may add a second undo after stop(true)
+// returns.
 void ProxySessionTests::immediateStopStaysSingleLayeredWhenTheRestoreFails()
 {
     ProxySessionHarness harness;
@@ -1656,9 +1574,8 @@ void ProxySessionTests::stopEmitsUndoFailedWhenTheClearBranchFails()
 }
 
 // The failed-startup intent, pinned where the ledger asked for it: a dead session forgets the
-// claim even when the undo write failed -- unlike a plain stop, which also drops it, and unlike
-// undoManagedSystemProxyAfterAbortedStartup(), which keeps it -- and the failure is announced
-// through the item-A channel while it happens. Driven through the real failStartup() entry:
+// claim even when the undo write failed -- and the failure is announced through the item-A
+// channel while it happens. Driven through the real failStartup() entry:
 // no active server fails profile resolution on the synchronous half of start().
 void ProxySessionTests::failedStartupForgetsOwnershipEvenWhenTheClearFails()
 {
@@ -1749,7 +1666,7 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot()
     // did, so the injected check stays empty on purpose: the crash loop is the subject.
     QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
     QSignalSpy stoppedSpy(harness.session.get(), SIGNAL(stopped()));
-    // The spent budget announces itself through `failed` rather than `stopped`: Auto only acts on
+    // The spent budget announces itself through `failed` rather than `stopped`: the UI only acts on
     // `stopped` while it is stopping, so the old emit reached nobody. The counter below is the
     // proof the plain-stop branch did not run -- a `stopped` here would be that branch.
     QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
@@ -1796,10 +1713,8 @@ void ProxySessionTests::aDeadCoreForgetsOwnershipWithoutClearingTheSnapshot()
     QVERIFY(!harness.snapshot.valid);
 }
 
-// The same branch with the undo write failing: the forget is the caller's intent, not a consequence
-// of the write succeeding. That contrast is the whole difference between this branch and
-// undoManagedSystemProxyAfterAbortedStartup, whose session stays alive and therefore keeps the
-// claim when the write fails.
+// The same branch with the undo write failing: the forget is the caller's intent, not a
+// consequence of the write succeeding.
 void ProxySessionTests::aDeadCoreForgetsOwnershipEvenWhenTheUndoWriteFails()
 {
     ProxySessionHarness harness;
@@ -2096,9 +2011,8 @@ void ProxySessionTests::healthWatchClearsTheWarningWhenTheNodeAnswersAgain()
 
 void ProxySessionTests::healthWatchDoesNotRunWithoutAnInjectedCheck()
 {
-    // This is the auto front end's opt-out, and it is load-bearing: SongBirdAuto already runs its
-    // own health check every 60 s, so a second watch inside ProxySession would probe the same node
-    // twice and could raise a warning that window does not render.
+    // Without an injected check no watch arms at all: a host that does not supply the probe
+    // gets no health watch, and no warning can be raised from one.
     ProxySessionHarness harness;
 
     QVERIFY2(driveToProxying(harness), "session did not reach Proxying");

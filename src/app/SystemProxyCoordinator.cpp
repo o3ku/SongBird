@@ -235,9 +235,9 @@ bool SystemProxyCoordinator::updateMode(SystemProxyMode mode) const
 
 QString SystemProxyCoordinator::buildExceptions() const
 {
-    // Resolved by common/SystemProxyExceptions, which SongBirdAuto calls too. The two front ends
-    // used to hold identical copies of the default list and then diverged over whether the routing
-    // rules' direct hosts were merged -- so the same config bypassed the proxy differently
+    // Resolved by common/SystemProxyExceptions. Two call sites used to hold identical copies
+    // of the default list and then diverged over whether the routing rules' direct hosts were
+    // merged -- so the same config bypassed the proxy differently
     // depending on which executable was in front of it.
     return SystemProxyExceptions::resolve(deps_.config);
 }

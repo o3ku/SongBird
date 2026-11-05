@@ -318,7 +318,7 @@ set(SONGBIRD_SHARED_SOURCES
     resources/location_icons.qrc
 )
 
-# The platform services both front-ends construct. Only the implementation is
+# The platform services the composition root constructs. Only the implementation is
 # platform-specific -- ISystemProxyService itself is not -- so the shared object library
 # receives exactly one of them and the composition root can name the interface alone.
 if(WIN32)
@@ -542,11 +542,10 @@ set(SONGBIRD_SOURCES
     ui/tray/TrayMenuSupport.cpp
 )
 
-# The remaining platform services. They sit in the per-front-end list rather than the shared
-# one only because SongBirdAuto does not construct them. The UWP loopback exemption has no
-# macOS counterpart -- it exists because Windows sandboxes packaged apps away from the
-# loopback interface, which no other platform does -- so the composition root gates it on
-# Q_OS_WIN instead of an implementation existing here.
+# The remaining platform services. The UWP loopback exemption has no macOS counterpart -- it
+# exists because Windows sandboxes packaged apps away from the loopback interface, which no
+# other platform does -- so the composition root gates it on Q_OS_WIN instead of an
+# implementation existing here.
 if(WIN32)
     list(APPEND SONGBIRD_SOURCES
         platform/windows/WindowsAutoRunService.h
@@ -572,45 +571,6 @@ endif()
 set(SONGBIRD_TRANSLATION_TS_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts
 )
-
-set(SONGBIRD_AUTO_SOURCES
-    auto/main.cpp
-    auto/AutoTypes.h
-    auto/AutoCountrySelection.h
-    auto/AutoCountrySelection.cpp
-    auto/AutoCountrySupport.h
-    auto/AutoCountrySupport.cpp
-    auto/AutoCoordinatorLogic.h
-    auto/AutoCoordinatorLogic.cpp
-    auto/AutoCountryInference.h
-    auto/AutoCountryInference.cpp
-    auto/AutoRuntimeDefaults.h
-    auto/AutoRuntimeDefaults.cpp
-    auto/AutoNodeEvaluationService.h
-    auto/AutoNodeEvaluationService.cpp
-    auto/AutoSelectionEngine.h
-    auto/AutoSelectionEngine.cpp
-    auto/AutoTunRuntime.h
-    auto/AutoTunRuntime.cpp
-    auto/SongBirdAutoCoordinator.h
-    auto/SongBirdAutoCoordinator.cpp
-    auto/SongBirdAutoWindow.h
-    auto/SongBirdAutoWindow.cpp
-    auto/AutoWindowPalette.h
-    auto/AutoWindowPalette.cpp
-    common/DialogUtils.h
-    common/CorePidFile.h
-    domain/models/TunModeItem.h
-    runtime/TunCompatCoreRequirement.h
-    services/SpeedTestServiceInternal.h
-    resources/auto_resources.qrc
-)
-
-if(WIN32)
-    list(APPEND SONGBIRD_AUTO_SOURCES
-        resources/SongBirdAuto.rc
-    )
-endif()
 
 set(SONGBIRD_QT_TRANSLATION_QM_FILES)
 if(TARGET Qt${QT_VERSION_MAJOR}::qmake)
@@ -734,10 +694,9 @@ if(MSVC)
     target_compile_options(songbird_core_descriptors PRIVATE /Z7)
 endif()
 
-# Code shared by the SongBird and SongBird-Auto front-ends. It is compiled once
-# and linked into both executables (and into the test targets), so a new shared
-# source only has to be registered in SONGBIRD_SHARED_SOURCES instead of being
-# repeated in two hand-maintained lists.
+# Code shared by the application and the test targets. It is compiled once
+# into one object library and linked into the executable and the tests, so a new
+# shared source only has to be registered in SONGBIRD_SHARED_SOURCES.
 add_library(songbird_shared_objs OBJECT
     ${SONGBIRD_SHARED_SOURCES}
 )
@@ -770,32 +729,12 @@ else()
     add_executable(songbird WIN32 ${SONGBIRD_SOURCES})
 endif()
 
-if(QT_VERSION_MAJOR GREATER_EQUAL 6)
-    qt_add_executable(songbird_auto
-        MANUAL_FINALIZATION
-        WIN32
-        ${SONGBIRD_AUTO_SOURCES}
-    )
-else()
-    add_executable(songbird_auto WIN32 ${SONGBIRD_AUTO_SOURCES})
-endif()
-
 target_include_directories(songbird
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_include_directories(songbird_auto
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
 target_compile_definitions(songbird
-    PRIVATE
-        SONGBIRD_APP_VERSION="${SONGBIRD_DISPLAY_VERSION}"
-)
-
-target_compile_definitions(songbird_auto
     PRIVATE
         SONGBIRD_APP_VERSION="${SONGBIRD_DISPLAY_VERSION}"
 )
@@ -811,23 +750,8 @@ target_link_libraries(songbird
         Qt${QT_VERSION_MAJOR}::Svg
 )
 
-target_link_libraries(songbird_auto
-    PRIVATE
-        songbird_core_descriptors
-        songbird_shared_objs
-        Qt${QT_VERSION_MAJOR}::Core
-        Qt${QT_VERSION_MAJOR}::Gui
-        Qt${QT_VERSION_MAJOR}::Widgets
-        Qt${QT_VERSION_MAJOR}::Network
-        Qt${QT_VERSION_MAJOR}::Svg
-)
-
 set_target_properties(songbird PROPERTIES
     OUTPUT_NAME "SongBird"
-)
-
-set_target_properties(songbird_auto PROPERTIES
-    OUTPUT_NAME "SongBirdAuto"
 )
 
 if(APPLE)
@@ -836,9 +760,6 @@ if(APPLE)
     # application instead of a background one. The MACOSX_BUNDLE keyword is deliberately
     # not added to add_executable above -- it is a Windows-only keyword there -- so the
     # property is set here, where it applies to whichever branch created the target.
-    #
-    # SongBirdAuto is left as a plain executable on purpose: it is not part of the macOS
-    # release, and a bundle would only move its artifact behind a path nothing reads.
     set_target_properties(songbird PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "SongBird"
@@ -876,17 +797,10 @@ endif()
 
 if(TARGET songbird_translations)
     add_dependencies(songbird songbird_translations)
-    # Deliberately NOT songbird_auto. The generated translations.qrc above is appended to
-    # SONGBIRD_SOURCES, so SongBirdAuto.exe embeds no .qm at all and is English-only by product
-    # decision -- src/auto/main.cpp installs no QTranslator for the same reason, and
-    # ctest localization-coverage enforces it (Check E: no translate()/tr() under src/auto).
-    # Re-adding this dependency without also giving that target a .qrc would only make it wait
-    # for a translation it never loads.
 endif()
 
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_finalize_executable(songbird)
-    qt_finalize_executable(songbird_auto)
 endif()
 
 if(WIN32)
@@ -896,7 +810,6 @@ if(WIN32)
     # reach every consumer — including the test targets that link it.
     target_link_libraries(songbird_shared_objs PUBLIC Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
     target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
-    target_link_libraries(songbird_auto PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
 endif()
 
 if(WIN32)
@@ -927,10 +840,6 @@ if(WIN32)
         LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBird.exe.manifest
         LINKER:/MANIFEST:EMBED
         LINKER:/INCREMENTAL:NO)
-    target_link_options(songbird_auto PRIVATE
-        LINKER:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/resources/SongBirdAuto.exe.manifest
-        LINKER:/MANIFEST:EMBED
-        LINKER:/INCREMENTAL:NO)
 endif()
 
 # QtNetwork's TLS backend on Windows loads OpenSSL DLLs from beside the
@@ -959,20 +868,18 @@ if(WIN32)
         set(SONGBIRD_OPENSSL_DLLS
             "${SONGBIRD_OPENSSL_DLL_DIR}/libssl-1_1-x64.dll"
             "${SONGBIRD_OPENSSL_DLL_DIR}/libcrypto-1_1-x64.dll")
-        foreach(SONGBIRD_OPENSSL_TARGET IN ITEMS songbird songbird_auto)
-            add_custom_command(TARGET ${SONGBIRD_OPENSSL_TARGET} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    ${SONGBIRD_OPENSSL_DLLS}
-                    "$<TARGET_FILE_DIR:${SONGBIRD_OPENSSL_TARGET}>"
-                COMMENT "Deploying OpenSSL DLLs for ${SONGBIRD_OPENSSL_TARGET}"
-                VERBATIM)
-        endforeach()
+        add_custom_command(TARGET songbird POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${SONGBIRD_OPENSSL_DLLS}
+                "$<TARGET_FILE_DIR:songbird>"
+            COMMENT "Deploying OpenSSL DLLs for songbird"
+            VERBATIM)
     else()
         message(WARNING "OpenSSL DLLs not found next to SongBird executables. HTTPS downloads will fail with 'TLS initialization failed' until SONGBIRD_OPENSSL_DLL_DIR is set.")
     endif()
 endif()
 
-install(TARGETS songbird songbird_auto
+install(TARGETS songbird
     RUNTIME DESTINATION .
     BUNDLE DESTINATION .
 )

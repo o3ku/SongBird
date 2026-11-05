@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Change: the SongBirdAuto front end is removed. `src/auto/` and its executable, resources, tests, CMake target, guard allowlists and the second-front-end seams it needed in `ProxySession` are gone; the project builds one application now. Historical entries below still name it where they describe past releases.
+- Fix (review): `ProxyHealthWatchdog::shuttingDown_` was declared and read in six guards but never written, so its "no new probe during teardown" defence was inert. It now reads `ProxySession::shuttingDown_` through `SessionStrings::isShuttingDown()`, so the guards are live.
+- Fix (review): `AutoSwitchCoordinator`'s warm probe map grew without bound -- the TTL only bounded decisions, not the container, so recycled `indexId`s accumulated for the life of the process. `pruneWarmResults()` now drops stale keys on every harvest and keys outside the current group on every warm round.
+- Fix (review): a permanently failing subscription was retried on every 5-minute tick with no back-off, despite `failStreak` being persisted. `SubscriptionAutoUpdateLogic::dueSubscriptionIds()` now retries a failing subscription on every 2^min(failStreak, 6)-th tick, capped at ~5 h, so a dead URL costs one round per few hours instead of 288 per day.
+- Fix (review): raw subscription backups (`.raw`) had no retention policy -- renaming or deleting a subscription left an orphan file in `backups/` forever. Writing a new archive now prunes `.raw` files whose name no subscription in the current config can produce.
+- Fix (review): the 24-hour app-update timer now skips its network check while the process is shutting down.
+
 - Fix: a Clash subscription served as JSON no longer imports as "returned no supported servers". `ClashSubscriptionParser::parseContent()` tried the YAML line walker first, and JSON is valid YAML — so the walker read it partly, produced nothing, and the JSON fallback that would have saved it was only reached when the document had no `proxy-groups:` / `rules:` block. A document that parses as JSON is now read as JSON, and the walker is for everything else.
 - Fix: block-style fields under a malformed flow-style entry no longer become a node of their own. `- { name: broken, type: trojan` is a fragment, and the `server:`/`port:`/`password:` lines after it were being glued onto it, producing a node assembled from two list items. The broken entry is still reported as `(malformed flow item)`, once.
 - Fix: a `:` inside a quoted value no longer splits the field. `splitKeyValue()` now only splits at a `:` outside a quoted scalar that is followed by whitespace, so `name: "a: b"` and `server: "[2001:db8::1]:443"` keep their values instead of losing the part behind the colon.

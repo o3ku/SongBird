@@ -48,7 +48,7 @@ def main(argv) -> int:
         if legacy.exists():
             violations.append(f"Legacy concrete backend directory must stay out of runtime: {legacy}")
 
-    consumer_names = ["app", "appcore", "auto", "ui", "services", "runtime"]
+    consumer_names = ["app", "appcore", "ui", "services", "runtime"]
     consumers = [root / name for name in consumer_names if (root / name).is_dir()]
     if not consumers:
         fail(

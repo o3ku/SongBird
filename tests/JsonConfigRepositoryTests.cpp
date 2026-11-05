@@ -677,8 +677,8 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
     QVERIFY(RoutingProfiles::routingItems(config.collection()).size() >= 3);
 }
 
-// `localHttpPort` / `localLocationProbePort` are derived, not stored. The Auto front end computes
-// `localPort + 1` and `localPort + 103` on every start (applyAutoRuntimeDefaults) but never writes
+// `localHttpPort` / `localLocationProbePort` are derived, not stored. The app computes
+// `localPort + 1` and `localPort + 103` on every start but never writes
 // them: JsonConfigRootSerialization reads and writes only `localPort`, so a value saved into the
 // inbound block by anyone else is dropped on load. This case exists to keep that story true in both
 // directions -- the keys are ignored on read and absent on write.
@@ -689,7 +689,7 @@ void JsonConfigRepositoryTests::loadIgnoresLegacyOnlyFields()
 // path does not converge.
 //
 // What it means for the stale-override defence: `clearStaleOverrides()` still matters, because
-// `applyAutoRuntimeDefaults()` and the settings dialog can both leave a stale override in memory for
+// a runtime start and the settings dialog can both leave a stale override in memory for
 // the rest of the session. It is not protecting the file -- nothing can write the field there.
 void JsonConfigRepositoryTests::loadDropsPortOverridesThatDisagreeWithTheLocalPort()
 {

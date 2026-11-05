@@ -278,7 +278,7 @@ void LogFileWriterTests::retentionIgnoresAForeignPrefixThatStartsWithItsOwn()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
 
-    // Both front-ends keep their logs in the same directory, and "songbird" is a
+    // Logs live in the same directory, and "songbird" is a
     // prefix of "songbird-auto". A rule that matched on startsWith() would have
     // each of them delete the other's history -- and only when a user happened to
     // run both, which is the sort of thing no amount of manual testing finds.

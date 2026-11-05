@@ -340,7 +340,7 @@ void BackendContractTests::dnsDomainStrategyMapsUiVocabularyToSingBoxValues()
 void BackendContractTests::auxiliaryTunRootIsUsableInBothRoutingModes()
 {
     // The TUN device is created by a core process of its own, so its root is a core artifact and is
-    // built by the core backend. It used to be assembled by hand in the auto front end, where the
+    // built by the core backend. It used to be assembled by hand in a front end, where the
     // outbound list was appended as a whole array instead of element by element -- producing
     // "outbounds": [[...]] and a file sing-box refuses to load ("cannot unmarshal array into Go
     // struct field _Options.outbounds of type option._Outbound").

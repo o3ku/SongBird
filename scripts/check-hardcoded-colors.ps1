@@ -40,8 +40,7 @@ $sourcePath = (Get-Item -LiteralPath $SourceRoot).FullName
 # The only files allowed to name a colour. Kept as a small list rather than a naming rule: a rule
 # like "*Palette*" would let a new file opt out by being named helpfully.
 $allowedFiles = @(
-    "src/ui/theme/AppThemePalette.cpp",
-    "src/auto/AutoWindowPalette.cpp"
+    "src/ui/theme/AppThemePalette.cpp"
 )
 
 # Strips // and /* */ comments, replacing them with whitespace of the same length so the reported

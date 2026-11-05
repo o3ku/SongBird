@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QNetworkAccessManager>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -190,6 +191,7 @@ private slots:
     void successfulDownloadWritesRawBackupFile();
     void rawBackupIsOverwrittenOnSecondUpdate();
     void rawBackupNotWrittenWhenNotModified();
+    void orphanedRawBackupsArePruned();
 };
 
 // ---- helpers shared across slots ----------------------------------------
@@ -717,5 +719,37 @@ void SubscriptionUpdateServiceTests::rawBackupNotWrittenWhenNotModified()
     QVERIFY(rawFile.open(QIODevice::ReadOnly));
     QCOMPARE(rawFile.readAll(), kVmessPayload);
 }
+void SubscriptionUpdateServiceTests::orphanedRawBackupsArePruned()
+{
+    Harness h;
+    QTemporaryDir rawDir;
+    h.updateService.setRawBackupDirectory(rawDir.path());
+
+    // A file left by a subscription that no longer exists (renamed remarks, or removed from
+    // the config). Without a retention pass this never goes away.
+    QFile orphan(QDir(rawDir.path()).filePath(QStringLiteral("old-remarks_deadbeef.raw")));
+    QVERIFY(orphan.open(QIODevice::WriteOnly));
+    orphan.write("stale bytes");
+    orphan.close();
+
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+    QVERIFY2(h.update().success, "update");
+
+    const QStringList entries = QDir(rawDir.path()).entryList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    QCOMPARE(entries.size(), 1);
+    QVERIFY(entries.first().endsWith(QStringLiteral("_sub-1.raw")));
+    QVERIFY(!QFileInfo::exists(orphan.fileName()));
+
+    // Renaming the live subscription on the next update retires the previous name too.
+    h.repo.config_.collection().subscriptions.first().remarks = QStringLiteral("renamed");
+    h.server.setNextResponse(makeHttpResponse(200, kVmessPayload));
+    QVERIFY2(h.update().success, "second update after rename");
+    const QStringList afterRename = QDir(rawDir.path()).entryList(
+        QStringList{QStringLiteral("*.raw")}, QDir::Files | QDir::NoDotAndDotDot);
+    QCOMPARE(afterRename.size(), 1);
+    QVERIFY(afterRename.first().startsWith(QStringLiteral("renamed_")));
+}
+
 QTEST_MAIN(SubscriptionUpdateServiceTests)
 #include "SubscriptionUpdateServiceTests.moc"

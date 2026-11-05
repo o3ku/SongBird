@@ -184,6 +184,7 @@ ProxySession::ProxySession(Dependencies deps, QObject* parent)
         return tr("Direct connectivity is available again; the outbound warning no longer applies.")
             + QStringLiteral(" | ") + activationTag(activationId_);
     };
+    sessionStrings.isShuttingDown = [this]() { return shuttingDown_.load(); };
     healthWatch_ = new ProxyHealthWatchdog(
         lifetimeGuard_,
         std::move(sessionStrings),
@@ -288,9 +289,9 @@ ProxySession::~ProxySession()
         // workers call QMetaObject::invokeMethod(this, ...) from their own thread, which
         // dereferences `this`. This destructor may therefore neither complete (that frees what the
         // worker is about to touch) nor keep waiting (that is the unbounded hang being fixed).
-        // Every production ProxySession lives for the whole process -- AppBootstrapObjects and
-        // SongBirdAutoCoordinator each own exactly one, created once and never reset -- so the
-        // only honest remaining action is to end the process without unwinding.
+        // Every production ProxySession lives for the whole process -- AppBootstrapObjects owns
+        // exactly one, created once and never reset -- so the only honest remaining action is to
+        // end the process without unwinding.
         abandonProcessAfterStuckThread(
             QStringLiteral("ProxySession was destroyed with a background thread still running"));
     }
@@ -913,39 +914,6 @@ void ProxySession::failStartup(const OperationResult& result)
     emit failed(result.message);
 }
 
-void ProxySession::undoManagedSystemProxyAfterAbortedStartup()
-{
-    // The proxy half of cleanupAfterFailedStartup(), with one deliberate difference: the flag
-    // is dropped only when the undo write succeeded, like stopForCoreUpdate and unlike a failed
-    // startup (which forgets the claim outright -- its session is dead and nothing there is
-    // ever coming back to retry). Here the session stays alive, and a later
-    // stop() must still be able to redo this undo, so a failed write must not erase the claim.
-    //
-    // Both front ends capture a snapshot now (the main app in AppBootstrapServiceWiring, SongBirdAuto
-    // in its coordinator's activation-coordinator wiring), so the decision below is live rather than
-    // a constant: a valid snapshot routes to Restore, and only the snapshot-less case lands on Clear
-    // -- the documented fallback for "ours, and the port is dead". Do not restate here which front
-    // end wires what; this comment once did, and it went stale the moment SongBirdAuto gained its
-    // capture -- the code was already correct when the text said otherwise.
-    const bool snapshotRestorable =
-        isRestorableSystemProxySnapshot(deps_.activationCoordinator.capturedSystemProxySnapshot());
-    switch (decideFailedStartupProxyAction(managedSystemProxyActive_, snapshotRestorable)) {
-    case FailedStartupProxyAction::LeaveAlone:
-        break;
-    case FailedStartupProxyAction::Restore:
-    case FailedStartupProxyAction::Clear:
-        if (undoSystemProxyChange(SystemProxyUndoTrigger::StartupFailed)) {
-            managedSystemProxyActive_ = false;
-        }
-        break;
-    }
-    // The registry may have changed, so the state sync the two sibling undo paths end with
-    // (:1517, cleanupAfterFailedStartup) belongs here too. Auto does not connect this signal
-    // today -- its UI is session-driven, not registry-driven -- but symmetry is the contract:
-    // an undo path that changes the registry and stays silent is how #8 was found.
-    emit statusSyncRequested();
-}
-
 void ProxySession::cleanupAfterFailedStartup()
 {
     cancelPendingCoreRestarts();
@@ -973,8 +941,8 @@ void ProxySession::cleanupAfterFailedStartup()
         break;
     }
     // Forget, and say so here rather than in state cleanup: this session is dead and nothing
-    // retries, unlike undoManagedSystemProxyAfterAbortedStartup(), whose session lives on and
-    // must keep the claim when the write fails. The undo above has already run.
+    // retries, so a failed undo write cannot leave a claim for a later stop to act on. The undo
+    // above has already run.
     managedSystemProxyActive_ = false;
     clearProxyStateAfterStopped();
     if (deps_.mainCore.isRunning()) {

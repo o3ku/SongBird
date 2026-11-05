@@ -87,7 +87,7 @@ void ProxyHealthWatchdog::notifyFreshActivation()
 
 void ProxyHealthWatchdog::scheduleWatch()
 {
-    if (shuttingDown_.load() || !active_.load() || !availabilityCheck_) {
+    if (isShuttingDown() || !active_.load() || !availabilityCheck_) {
         return;
     }
     if (watchTimer_ == nullptr) {
@@ -124,7 +124,7 @@ Config ProxyHealthWatchdog::currentProbeConfig() const
 
 void ProxyHealthWatchdog::scheduleDirectRecheck()
 {
-    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || !active_.load()) {
+    if (!waivedOutboundWarningShown_ || isShuttingDown() || !active_.load()) {
         return;
     }
     if (directRecheckTimer_ == nullptr) {
@@ -137,7 +137,7 @@ void ProxyHealthWatchdog::scheduleDirectRecheck()
 
 void ProxyHealthWatchdog::runWatch()
 {
-    if (shuttingDown_.load() || !active_.load() || watchInProgress_) {
+    if (isShuttingDown() || !active_.load() || watchInProgress_) {
         return;
     }
 
@@ -172,7 +172,7 @@ void ProxyHealthWatchdog::runWatch()
 void ProxyHealthWatchdog::finishWatch(const OperationResult& result)
 {
     watchInProgress_ = false;
-    if (shuttingDown_.load() || !active_.load()) {
+    if (isShuttingDown() || !active_.load()) {
         return;
     }
 
@@ -202,7 +202,7 @@ void ProxyHealthWatchdog::finishWatch(const OperationResult& result)
 
 void ProxyHealthWatchdog::runDirectRecheck()
 {
-    if (!waivedOutboundWarningShown_ || shuttingDown_.load() || !active_.load()
+    if (!waivedOutboundWarningShown_ || isShuttingDown() || !active_.load()
         || directRecheckInProgress_) {
         return;
     }
@@ -239,7 +239,7 @@ void ProxyHealthWatchdog::runDirectRecheck()
 void ProxyHealthWatchdog::finishDirectRecheck(bool directReachable)
 {
     directRecheckInProgress_ = false;
-    if (shuttingDown_.load() || !active_.load() || !waivedOutboundWarningShown_) {
+    if (isShuttingDown() || !active_.load() || !waivedOutboundWarningShown_) {
         return;
     }
 

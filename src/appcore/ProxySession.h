@@ -91,8 +91,8 @@ public:
     };
 
     // Asks the user whether to launch a protocol on a core other than the one
-    // stored in settings. Returning false aborts the startup. Headless hosts
-    // leave this unset, which accepts the switch without prompting.
+    // stored in settings. Returning false aborts the startup. A host that leaves
+    // this unset accepts the switch without prompting.
     using CoreSwitchConfirmation = std::function<bool(const CoreLaunchCompatDecision&)>;
 
     explicit ProxySession(Dependencies deps, QObject* parent = nullptr);
@@ -100,10 +100,9 @@ public:
 
     void setCoreSwitchConfirmation(CoreSwitchConfirmation confirmation);
 
-    // Runs the node-availability probe. Injected rather than constructed in here for two reasons:
-    // a host can leave it unset, which is how the auto front end opts out (it already runs its own
-    // health check and must not get a second one), and a test can supply a scripted answer without
-    // standing up a proxy.
+    // Runs the node-availability probe. Injected rather than constructed in here so a test can
+    // supply a scripted answer without standing up a proxy, and a host that leaves it unset gets
+    // no watch at all.
     //
     // Called on a background thread, so the implementation must not touch this object. It gets the
     // whole config rather than a `localPort + 1` computed here: resolving the HTTP inbound is
@@ -130,13 +129,6 @@ public:
     void setDirectConnectivityCheck(DirectConnectivityCheck check);
 
     void start(const StartRequest& request);
-    // Issue #8: SongBirdAuto owns its TUN runtime and starts it before the session, so a TUN
-    // failure can abort a start without ProxySession::start() ever running -- while the
-    // registry still holds a proxy an earlier round of this session applied. This entry runs
-    // the ownership decision a failed startup would have run (decideFailedStartupProxyAction,
-    // undo) without touching the core or the checklist: there is no core to stop.
-    void undoManagedSystemProxyAfterAbortedStartup();
-
     void stop(bool immediate = false);
     void restartIfRunning(const StartRequest& request);
     void switchServer(const QString& indexId, bool enableTun, bool showOverlay = false);

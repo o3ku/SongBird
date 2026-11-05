@@ -9,7 +9,7 @@
 // Access to the core-specific configuration of a TUN device.
 //
 // A TUN device is created by a core process of its own, so the JSON that describes it is a core
-// artifact. Front ends ask this layer for it instead of assembling core JSON themselves, which is
+// artifact. The app asks this layer for it instead of assembling core JSON itself, which is
 // what keeps them from having to include a concrete backend.
 namespace AuxiliaryTunConfig {
 

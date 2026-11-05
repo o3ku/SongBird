@@ -6,6 +6,8 @@
 > **分析状态**: 已完成（含对仓库内 `todo.md` 原 15 项的逐项核验）  
 > **总体健康度**: 8.2/10 (架构与测试基础扎实，存在少量真实功能缺陷与工程化缺口)
 
+> **注意**：本文件是 2026-10-30 的架构分析快照。此后 `SongBirdAuto` 前端（`src/auto/`）已整体删除，文中所有涉及 Auto、English surface、`SongBirdAutoCoordinator`、`AutoNodeEvaluationService` 等条目描述的都是当时的状态，不再代表当前代码；相关守卫与端点已随删除一并移除。请以当前 `AGENTS.md` / `CLAUDE.md` / 源码为准。
+
 ---
 
 ## 0. 本机验证结果
@@ -102,7 +104,7 @@
 
 #### 原 #15 国际化（不成立）
 - 唯一的硬编码中文在 `common/DialogUtils.h`，且全部受 `UiLanguage::isChinese()` 门控。
-- `src/auto/` 是刻意的英文-only 表面，守卫已排除。
+- （历史）`src/auto/` 曾是刻意的英文-only 表面，守卫已排除；该前端已删除。
 
 ---
 
@@ -203,7 +205,7 @@
 
 #### N15. 国际化守卫盲区（低）
 - **文件**: `scripts/check-localization-coverage.ps1`
-- **现象**: `src/auto/` 被视为英文-only 表面；若未来在那里加入用户可见字符串，守卫不会提醒。
+- **现象（历史）**: `src/auto/` 曾被视为英文-only 表面；该前端已删除，相关守卫规则也已移除。
 - **修复方向**: 仅在需要时调整 allowlist；当前无缺陷。
 
 ---
