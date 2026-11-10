@@ -3,11 +3,10 @@
 #include <utility>
 
 #include <QMetaObject>
-#include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 
 #include "appcore/OutboundLivenessProbeService.h"
-#include "common/BackgroundThreadLaunch.h"
 #include "domain/models/Config.h"
 
 // Translation context: every sentence the watchdog emits already exists in the .ts under the
@@ -21,13 +20,64 @@
 ProxyHealthWatchdog::ProxyHealthWatchdog(
     std::weak_ptr<char> sessionLifetimeGuard,
     SessionStrings sessionStrings,
-    ThreadTracker trackThread,
     QObject* parent)
     : QObject(parent)
     , sessionLifetimeGuard_(std::move(sessionLifetimeGuard))
     , sessionStrings_(std::move(sessionStrings))
-    , trackThread_(std::move(trackThread))
 {
+}
+
+ProxyHealthWatchdog::~ProxyHealthWatchdog()
+{
+    releaseWatchPool();
+}
+
+// One pooled thread, kept for the life of the watch.
+//
+// The watch used to launch a fresh QThread per probe: every 30 s a thread was
+// created, ran one socket probe against the core, and exited. On the static
+// Qt 5.15 build the app ships, that cycle retained memory in the
+// network/threads layer at up to ~40 MB/hour while a node was down (and
+// ~1-2 MB/hour with a healthy node), measured on the shipped binary over
+// staged live runs -- while a local dynamic-Qt build of the same code stayed
+// flat, which is what pins the retention to the shipped stack's per-thread
+// lifecycle. A node that is down is exactly the state in which the watch
+// probes hardest, so the growth was fastest when the user was already worst
+// off; a multi-day run against a flaky node reached the 300 MB class of
+// growth. Pooling pins the per-thread cost to once per process.
+QThreadPool* ProxyHealthWatchdog::watchPool()
+{
+    if (watchPool_ == nullptr) {
+        watchPool_ = new QThreadPool();
+        watchPool_->setMaxThreadCount(1);
+        // Never expire: an expired thread is destroyed on the next run, which
+        // recreates the create/destroy cycle this pool exists to avoid. The
+        // watch and the direct recheck queue onto the same thread by design --
+        // neither is allowed to overlap itself, and a recheck queued behind one
+        // 30 s availability probe is a delay the retraction cadence tolerates.
+        watchPool_->setExpiryTimeout(-1);
+    }
+    return watchPool_;
+}
+
+void ProxyHealthWatchdog::releaseWatchPool()
+{
+    if (watchPool_ == nullptr) {
+        return;
+    }
+    watchPool_->clear();
+    if (watchPool_->waitForDone(kPoolDrainTimeoutMs)) {
+        delete watchPool_;
+        watchPool_ = nullptr;
+        return;
+    }
+    // A probe is still running. Deleting the pool would block on it (its
+    // destructor waits unbounded), so the pool is abandoned: its thread is let
+    // expire, the object leaks until process exit, and the probe's queued
+    // answer is dropped by the lifetime guard. The same trade the session's
+    // tracker makes when a worker ignores its interruption budget.
+    watchPool_->setExpiryTimeout(kPoolDrainTimeoutMs);
+    watchPool_ = nullptr;
 }
 
 void ProxyHealthWatchdog::setAvailabilityCheck(AvailabilityCheck check)
@@ -150,23 +200,18 @@ void ProxyHealthWatchdog::runWatch()
 
     const Config config = currentProbeConfig();
 
-    watchInProgress_ = true;    const std::weak_ptr<char> guard = sessionLifetimeGuard_;
-    QThread* thread = launchBackgroundThread(
-        [this, guard, check, config]() {
-            const OperationResult result = check(config);
-            QMetaObject::invokeMethod(this, [this, result, guard]() {
-                if (guard.expired()) {
-                    return;
-                }
-                finishWatch(result);
-            }, Qt::QueuedConnection);
-        },
-        [this](QThread* worker) {
-            if (trackThread_) {
-                trackThread_(worker);
+    watchInProgress_ = true;
+    const std::weak_ptr<char> guard = sessionLifetimeGuard_;
+    // The pooled thread, not a fresh one per probe: see watchPool().
+    watchPool()->start([this, guard, check, config]() {
+        const OperationResult result = check(config);
+        QMetaObject::invokeMethod(this, [this, result, guard]() {
+            if (guard.expired()) {
+                return;
             }
-        });
-    thread->start();
+            finishWatch(result);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void ProxyHealthWatchdog::finishWatch(const OperationResult& result)
@@ -215,25 +260,19 @@ void ProxyHealthWatchdog::runDirectRecheck()
 
     directRecheckInProgress_ = true;
     const std::weak_ptr<char> guard = sessionLifetimeGuard_;
-    QThread* thread = launchBackgroundThread(
-        [this, guard, check, fallback, timeoutMs]() {
-            // Unproxied, and therefore independent of this object: the worker reads nothing but
-            // the copied checks and the timeout, so a watchdog torn down mid-probe only loses
-            // the answer.
-            const bool directReachable = check ? check(timeoutMs) : fallback(timeoutMs);
-            QMetaObject::invokeMethod(this, [this, guard, directReachable]() {
-                if (guard.expired()) {
-                    return;
-                }
-                finishDirectRecheck(directReachable);
-            }, Qt::QueuedConnection);
-        },
-        [this](QThread* worker) {
-            if (trackThread_) {
-                trackThread_(worker);
+    // The pooled thread, not a fresh one per probe: see watchPool().
+    watchPool()->start([this, guard, check, fallback, timeoutMs]() {
+        // Unproxied, and therefore independent of this object: the worker reads nothing but
+        // the copied checks and the timeout, so a watchdog torn down mid-probe only loses
+        // the answer.
+        const bool directReachable = check ? check(timeoutMs) : fallback(timeoutMs);
+        QMetaObject::invokeMethod(this, [this, guard, directReachable]() {
+            if (guard.expired()) {
+                return;
             }
-        });
-    thread->start();
+            finishDirectRecheck(directReachable);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void ProxyHealthWatchdog::finishDirectRecheck(bool directReachable)

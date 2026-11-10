@@ -12,12 +12,17 @@
 // AuxiliaryTunRouting::RelayToLocalProxy -- it relays *into* that very inbound, so it cannot exist
 // without it. The guard made the check unusable in TUN mode for no reason.
 //
-// `httpPort` is resolved, not derived: `localPort + 1` used to be spelled out here as well, and a
-// config carrying a `localHttpPort` override had the core bound to one port and this check
+// `httpPort` is resolved, not derived: `localPort + 1` used to be spelled out here as well, and
+// a config carrying a `localHttpPort` override had the core bound to one port and this check
 // dialling another.
+//
+// `timeoutMs` is injectable for the same reason every other timing constant in the probe services
+// is: the production value is 30 s, and a memory/regression soak that has to wait it out thousands
+// of times cannot exist. Non-positive keeps the production default.
 struct ProxyAvailabilityCheckConfig {
     int httpPort = 0;
     QString speedPingTestUrl;
+    int timeoutMs = 0;
 };
 
 class ProxyAvailabilityCheckService {

@@ -10,7 +10,7 @@
 #include "appcore/ProxyHealthWatchPolicy.h"
 #include "common/OperationResult.h"
 
-class QThread;
+class QThreadPool;
 class QTimer;
 struct Config;
 class ProxySession;
@@ -55,9 +55,6 @@ public:
     // Called on a background thread, so the implementation must not touch this object.
     using DirectConnectivityCheck = std::function<bool(int timeoutMs)>;
 
-    // How a started worker thread is registered with whoever tracks background threads.
-    using ThreadTracker = std::function<void(QThread*)>;
-
     // Supplies what only the session knows, read on the GUI thread before a worker launches.
     struct SessionStrings {
         // The short handle this activation's log lines carry, e.g. "id=a1b2".
@@ -77,12 +74,24 @@ public:
         std::function<bool()> isShuttingDown;
     };
 
+    // How the watch's probes are dispatched. There is deliberately no thread tracker
+    // any more: every probe runs on one pooled thread the watch owns and drains
+    // itself (see watchPool()), so the session's tracker has nothing to wait for.
     ProxyHealthWatchdog(
         std::weak_ptr<char> sessionLifetimeGuard,
         SessionStrings sessionStrings,
-        ThreadTracker trackThread,
         QObject* parent);
 
+    // Drains the probe pool within kPoolDrainTimeoutMs; a probe still running is
+    // abandoned (its queued answer is dropped by the lifetime guard) rather than
+    // waited out, keeping the session's bounded shutdown intact.
+    ~ProxyHealthWatchdog() override;
+
+    // Test hooks, not API: the pool's existence (the "one reused thread" property
+    // is pinned by ProxyHealthWatchdogTests) and whether a probe is in flight.
+    // Both are read-only observations no production caller needs.
+    QThreadPool* watchPoolHandleForTest() const { return watchPool_; }
+    bool probeRunningForTest() const { return watchInProgress_; }
     void setAvailabilityCheck(AvailabilityCheck check);
     void setDirectConnectivityCheck(DirectConnectivityCheck check);
 
@@ -144,16 +153,29 @@ private:
         return sessionStrings_.isShuttingDown && sessionStrings_.isShuttingDown();
     }
 
+    // The one thread every probe of this watch runs on, created on first use and
+    // never expired. See the watchPool() definition for why it must not be a
+    // thread per check.
+    QThreadPool* watchPool();
+    void releaseWatchPool();
+
     std::weak_ptr<char> sessionLifetimeGuard_;
     SessionStrings sessionStrings_;
-    ThreadTracker trackThread_;
     AvailabilityCheck availabilityCheck_;
     DirectConnectivityCheck directConnectivityCheck_;
     ProxyHealthWatchPolicy policy_;
     int intervalMs_ = kDefaultIntervalMs;
 
+    // Null until the first probe; one pooled thread that never expires.
+    QThreadPool* watchPool_ = nullptr;
+
     QTimer* watchTimer_ = nullptr;
     QTimer* directRecheckTimer_ = nullptr;
+    // The shutdown budget for draining the probe pool: bounded on purpose (the
+    // session's ladder is bounded), and a probe still running past it is
+    // abandoned rather than waited out -- the same escape the session's
+    // BackgroundThreadTracker has.
+    static constexpr int kPoolDrainTimeoutMs = 1500;
     bool watchInProgress_ = false;
     bool directRecheckInProgress_ = false;
     // Set only while the status bar shows the "cannot reach the probe hosts directly either"

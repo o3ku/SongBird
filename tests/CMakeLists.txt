@@ -1356,6 +1356,24 @@ set(SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES
     ProxyHealthWatchPolicyTests.cpp
 )
 
+# The health watch's dispatch contract. Its cases pin the pooled-probe-thread
+# property that the 24-hour memory investigation made load-bearing: a fresh
+# thread per 30 s probe retained memory at up to ~40 MB/hour against a dead
+# node on the shipped static-Qt build, so the one-thread-for-the-watch
+# shape is now part of the class's contract rather than an implementation
+# detail.
+set(SONGBIRD_PROXY_HEALTH_WATCHDOG_TEST_SOURCES
+    ProxyHealthWatchdogTests.cpp
+)
+
+songbird_add_qt_test(songbird_proxy_health_watchdog_tests proxy-health-watchdog
+    SOURCES
+        ${SONGBIRD_PROXY_HEALTH_WATCHDOG_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Network
+)
+
 songbird_add_qt_test(songbird_proxy_health_watch_policy_tests proxy-health-watch-policy
     SOURCES
         ${SONGBIRD_PROXY_HEALTH_WATCH_POLICY_TEST_SOURCES}
@@ -1539,6 +1557,120 @@ songbird_add_qt_test(songbird_end_to_end_smoke_tests end-to-end-smoke
     TEST_ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}\;QTEST_FUNCTION_TIMEOUT=7200000"
 )
 
+
+# The long-uptime memory soak: each case drives one of the app's periodic
+# workloads (log append, core output, table refresh, runtime-state apply,
+# probe-style QNetworkAccessManager churn, config serialization, subscription
+# parse, themed icons) in a tight loop and reports committed growth between
+# warmup and end, failing only when retention scales with iterations.
+#
+# Smoke-labelled for the same reason as the end-to-end suite -- the PR gate's
+# `ctest -LE smoke` skips it -- but unlike that one it needs no network and no
+# cores; run it manually when a 24-hour memory report lands.
+set(SONGBIRD_MEMORY_SOAK_TEST_SOURCES
+    MemorySoakTests.cpp
+    ../src/subscription/ShareUrlBuilder.h
+    ../src/subscription/ShareUrlBuilder.cpp
+    ../src/subscription/ShareUrlProtocolBuilders.h
+    ../src/subscription/ShareUrlProtocolBuilders.cpp
+    ../src/subscription/ShareUrlBuilderSupport.h
+    ../src/subscription/ShareUrlBuilderSupport.cpp
+    ../src/third_party/qrcodegen/qrcodegen.hpp
+    ../src/third_party/qrcodegen/qrcodegen.cpp
+    ../src/ui/mainwindow/MainWindow.h
+    ../src/ui/mainwindow/MainWindow.cpp
+    ../src/ui/mainwindow/LogPanelWidget.h
+    ../src/ui/mainwindow/LogPanelWidget.cpp
+    ../src/ui/mainwindow/LogPanelSupport.h
+    ../src/ui/mainwindow/LogPanelSupport.cpp
+    ../src/ui/mainwindow/BackgroundTaskActionsController.h
+    ../src/ui/mainwindow/BackgroundTaskActionsController.cpp
+    ../src/ui/mainwindow/RoutingModeController.h
+    ../src/ui/mainwindow/RoutingModeController.cpp
+    ../src/ui/mainwindow/SubscriptionViewSupport.h
+    ../src/ui/mainwindow/SubscriptionViewSupport.cpp
+    ../src/ui/mainwindow/SubscriptionViewController.h
+    ../src/ui/mainwindow/SubscriptionViewController.cpp
+    ../src/ui/mainwindow/LocationTabBar.h
+    ../src/ui/mainwindow/LocationTabBar.cpp
+    ../src/ui/mainwindow/ServerWorkspaceWidget.h
+    ../src/ui/mainwindow/ServerWorkspaceWidget.cpp
+    ../src/ui/mainwindow/ServerEmptyStatePolicy.h
+    ../src/ui/mainwindow/ServerTableEmptyStateWidget.h
+    ../src/ui/mainwindow/ServerTableEmptyStateWidget.cpp
+    ../src/ui/mainwindow/MainWindowShortcutController.h
+    ../src/ui/mainwindow/MainWindowShortcutController.cpp
+    ../src/ui/mainwindow/MainWindowTitleSupport.h
+    ../src/ui/mainwindow/MainWindowTitleSupport.cpp
+    ../src/ui/mainwindow/MainWindowToolbarActions.h
+    ../src/ui/mainwindow/MainWindowToolbarActions.cpp
+    ../src/ui/dialogs/ShortcutsCheatSheetDialog.h
+    ../src/ui/dialogs/ShortcutsCheatSheetDialog.cpp
+    ../src/ui/mainwindow/MainWindowConfigState.h
+    ../src/ui/mainwindow/MainWindowConfigState.cpp
+    ../src/ui/mainwindow/MainWindowServerSelectionSupport.h
+    ../src/ui/mainwindow/MainWindowServerSelectionSupport.cpp
+    ../src/ui/mainwindow/WindowLayoutStateSupport.h
+    ../src/ui/mainwindow/WindowLayoutStateSupport.cpp
+    ../src/ui/mainwindow/WindowLayoutStateController.h
+    ../src/ui/mainwindow/WindowLayoutStateController.cpp
+    ../src/ui/mainwindow/ServerListController.h
+    ../src/ui/mainwindow/ServerListController.cpp
+    ../src/ui/mainwindow/SharePanelWidget.h
+    ../src/ui/mainwindow/SharePanelWidget.cpp
+    ../src/ui/mainwindow/StartupOverlayWidget.h
+    ../src/ui/mainwindow/StartupOverlayWidget.cpp
+    ../src/ui/mainwindow/ProxyToolbarController.h
+    ../src/ui/mainwindow/ProxyToolbarController.cpp
+    ../src/ui/mainwindow/ServerSelectionController.h
+    ../src/ui/mainwindow/ServerSelectionController.cpp
+    ../src/ui/mainwindow/ServerActionsController.h
+    ../src/ui/mainwindow/ServerActionsController.cpp
+    ../src/ui/mainwindow/StatusBarSupport.h
+    ../src/ui/mainwindow/StatusBarSupport.cpp
+    ../src/ui/mainwindow/StatusBarController.h
+    ../src/ui/mainwindow/StatusBarController.cpp
+    ../src/ui/mainwindow/ToolbarWidgets.h
+    ../src/ui/mainwindow/ToolbarWidgets.cpp
+    ../src/ui/mainwindow/LogItemDelegate.h
+    ../src/ui/mainwindow/LogItemDelegate.cpp
+    ../src/ui/mainwindow/ServerTableView.h
+    ../src/ui/mainwindow/ServerTableView.cpp
+    ../src/ui/tray/TrayMenuSupport.h
+    ../src/ui/tray/TrayMenuSupport.cpp
+    ../src/ui/models/LogFilterProxyModel.h
+    ../src/ui/models/LogFilterProxyModel.cpp
+    ../src/ui/models/LogListModel.h
+    ../src/ui/models/LogListModel.cpp
+    ../src/ui/models/ServerFilterProxyModel.h
+    ../src/ui/models/ServerFilterProxyModel.cpp
+    ../src/ui/models/ServerTableModel.h
+    ../src/ui/models/ServerTableModel.cpp
+    ../src/ui/models/ServerTableResultStyle.h
+    ../src/ui/qr/QrCodeRenderer.h
+    ../src/ui/qr/QrCodeRenderer.cpp
+    ../src/resources/toolbar_icons.qrc
+)
+
+songbird_add_qt_test(songbird_memory_soak_tests memory-soak
+    SOURCES
+        ${SONGBIRD_MEMORY_SOAK_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+        Qt${QT_VERSION_MAJOR}::Network
+        Qt${QT_VERSION_MAJOR}::Svg
+    TEST_LABELS "smoke"
+    TEST_TIMEOUT 3600
+    TEST_ENVIRONMENT "QT_QPA_PLATFORM=${SONGBIRD_TEST_QPA_PLATFORM}\;QTEST_FUNCTION_TIMEOUT=3600000"
+)
+
+if(WIN32)
+    target_link_libraries(songbird_memory_soak_tests
+        PRIVATE
+            psapi
+    )
+endif()
 if(WIN32)
     target_link_libraries(songbird_end_to_end_smoke_tests
         PRIVATE

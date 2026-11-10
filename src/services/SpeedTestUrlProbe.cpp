@@ -76,7 +76,17 @@ SpeedTestServiceInternal::UrlProbeResult probeProxiedUrl(
 
     const QString errorText = reply->errorString();
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    reply->deleteLater();
+    // Deleted here, not deleteLater'd: this probe runs both on the speed-test
+    // worker thread (whose loop would process it) and on bare std::async pool
+    // threads (whose loops never run again -- the deferred delete is dropped and
+    // the reply, its connection-cache entry and its buffers are retained for the
+    // rest of the process). Same guarded-delete shape as the outbound probe
+    // services.
+    QObject::disconnect(reply, nullptr, nullptr, nullptr);
+    if (!reply->isFinished()) {
+        reply->abort();
+    }
+    delete reply;
 
     const bool successFromHeaders = !timedOut && headersObserved && (headerStatusCode == 200 || headerStatusCode == 204);
     const bool successFromFinishedReply = !timedOut && (statusCode == 200 || statusCode == 204);

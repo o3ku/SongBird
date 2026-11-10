@@ -29,6 +29,25 @@ constexpr int kSubscriptionDownloadTimeoutMs = ServiceTimeouts::kDefaultNetworkT
 constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 
+
+// Deletes a finished (or abandoned) reply on the calling thread.
+//
+// download() runs on a fresh worker thread per subscription update. A
+// deleteLater() posted there is dropped when the thread exits without spinning
+// its event loop again, and the reply -- header buffer, connection-cache entry
+// and body -- is retained. The guarded-delete shape the outbound probe services
+// already use.
+void disposeReply(QNetworkReply* reply)
+{
+    if (reply == nullptr) {
+        return;
+    }
+    QObject::disconnect(reply, nullptr, nullptr, nullptr);
+    if (!reply->isFinished()) {
+        reply->abort();
+    }
+    delete reply;
+}
 // Filename-safe form of the subscription identity for the raw backup: Windows-invalid
 // characters collapse to '_', the id suffix keeps two subscriptions whose remarks
 // collide from overwriting each other's archive.
@@ -610,20 +629,20 @@ OperationResult SubscriptionUpdateService::downloadText(
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (cancelled) {
         networkAccessManager_.setProxy(previousProxy);
-        reply->deleteLater();
+        disposeReply(reply);
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download cancelled."));
     }
 
     if (timedOut) {
         networkAccessManager_.setProxy(previousProxy);
-        reply->deleteLater();
+        disposeReply(reply);
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download timed out."));
     }
 
     if (reply->error() != QNetworkReply::NoError) {
         const QString error = reply->errorString();
         networkAccessManager_.setProxy(previousProxy);
-        reply->deleteLater();
+        disposeReply(reply);
         return statusCode > 0
             ? OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1: %2").arg(statusCode).arg(error))
             : OperationResult::fail(error);
@@ -643,7 +662,7 @@ OperationResult SubscriptionUpdateService::downloadText(
     // 304 Not Modified: body is intentionally empty; this is a success path.
     if (statusCode == 304) {
         networkAccessManager_.setProxy(previousProxy);
-        reply->deleteLater();
+        disposeReply(reply);
         if (outNotModified != nullptr) {
             *outNotModified = true;
         }
@@ -655,7 +674,7 @@ OperationResult SubscriptionUpdateService::downloadText(
 
     *content = QString::fromUtf8(reply->readAll()).trimmed();
     networkAccessManager_.setProxy(previousProxy);
-    reply->deleteLater();
+    disposeReply(reply);
 
     if (statusCode >= 400) {
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1").arg(statusCode));

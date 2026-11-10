@@ -15,10 +15,14 @@
 #include "common/UserAgent.h"
 
 namespace {
-
 constexpr int kAvailabilityTimeoutMs = 30000;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 const QString kDefaultSpeedPingUrl = QStringLiteral("https://www.google.com/generate_204");
+
+int resolveAvailabilityTimeoutMs(int configuredMs)
+{
+    return configuredMs > 0 ? configuredMs : kAvailabilityTimeoutMs;
+}
 
 QString formatAvailabilityMessage(qint64 elapsedMs)
 {
@@ -26,13 +30,13 @@ QString formatAvailabilityMessage(qint64 elapsedMs)
         .arg(elapsedMs >= 0 ? elapsedMs : -1);
 }
 
-OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
+OperationResult checkViaHttpProxy(const QUrl& url, int httpPort, int timeoutMs)
 {
     QTcpSocket socket;
     socket.connectToHost(kLoopbackAddress, httpPort);
     QElapsedTimer connectTimer;
     connectTimer.start();
-    while (socket.state() != QAbstractSocket::ConnectedState && connectTimer.elapsed() < kAvailabilityTimeoutMs) {
+    while (socket.state() != QAbstractSocket::ConnectedState && connectTimer.elapsed() < timeoutMs) {
         socket.waitForConnected(50);
     }
 
@@ -63,7 +67,7 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
         return OperationResult::fail(formatAvailabilityMessage(-1));
     }
 
-    while (socket.bytesToWrite() > 0 && timer.elapsed() < kAvailabilityTimeoutMs) {
+    while (socket.bytesToWrite() > 0 && timer.elapsed() < timeoutMs) {
         socket.waitForBytesWritten(50);
     }
     if (socket.bytesToWrite() > 0) {
@@ -71,7 +75,7 @@ OperationResult checkViaHttpProxy(const QUrl& url, int httpPort)
     }
 
     QByteArray response;
-    while (timer.elapsed() < kAvailabilityTimeoutMs) {
+    while (timer.elapsed() < timeoutMs) {
         if (socket.bytesAvailable() > 0 || socket.waitForReadyRead(100)) {
             response.append(socket.readAll());
             if (response.contains("\r\n\r\n")) {
@@ -117,7 +121,7 @@ OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityChec
     }
 
     if (url.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
-        return checkViaHttpProxy(url, httpPort);
+        return checkViaHttpProxy(url, httpPort, resolveAvailabilityTimeoutMs(config.timeoutMs));
     }
 
     QNetworkAccessManager manager;
@@ -142,7 +146,7 @@ OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityChec
         reply->abort();
         loop.quit();
     });
-    timeoutTimer.start(kAvailabilityTimeoutMs);
+    timeoutTimer.start(resolveAvailabilityTimeoutMs(config.timeoutMs));
     loop.exec();
     timeoutTimer.stop();
 
@@ -151,7 +155,16 @@ OperationResult ProxyAvailabilityCheckService::check(const ProxyAvailabilityChec
         : -1;
     const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const QNetworkReply::NetworkError error = reply->error();
-    reply->deleteLater();
+    // Deleted here, not deleteLater'd: this check runs on the health watch's
+    // probe thread, and a deferred delete posted to a thread that never spins
+    // its event loop again is dropped -- the reply, with the half-open proxy
+    // connection still attached, is then retained for the process lifetime.
+    // The same guarded-delete shape the outbound probe services already use.
+    QObject::disconnect(reply, nullptr, nullptr, nullptr);
+    if (!reply->isFinished()) {
+        reply->abort();
+    }
+    delete reply;
 
     if (!timedOut && error == QNetworkReply::NoError && (statusCode == 200 || statusCode == 204)) {
         return OperationResult::ok(formatAvailabilityMessage(elapsedMs));

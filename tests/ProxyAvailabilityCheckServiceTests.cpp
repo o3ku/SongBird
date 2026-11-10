@@ -1,6 +1,8 @@
 #include <QtTest>
 
 #include <QElapsedTimer>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 #include "services/ProxyAvailabilityCheckService.h"
 
@@ -39,6 +41,7 @@ private slots:
     void failsImmediatelyForANonPositiveHttpPort();
     void failsImmediatelyWhenTheHttpPortOverflows();
     void reportsTheAvailabilityMessageWhenItFails();
+    void injectedTimeoutBoundsTheWaitAgainstASilentProxy();
 };
 
 void ProxyAvailabilityCheckServiceTests::failsImmediatelyForANonPositiveHttpPort()
@@ -94,6 +97,49 @@ void ProxyAvailabilityCheckServiceTests::reportsTheAvailabilityMessageWhenItFail
     QVERIFY(result.message.contains(QStringLiteral("Availability check")));
 }
 
+
+// The timeout field exists so a test (and the memory soak) can drive the
+// wait-for-a-response path in milliseconds; the production default stays 30 s.
+// A silent "proxy" -- one that accepts the TCP connection and then says
+// nothing -- is the state the health watch sees against a dead node, and this
+// case pins both that the wait is bounded by the injected value and that the
+// result is the availability failure rather than an exception-shaped error.
+void ProxyAvailabilityCheckServiceTests::injectedTimeoutBoundsTheWaitAgainstASilentProxy()
+{
+    QTcpServer silentProxy;
+    QVERIFY(silentProxy.listen(QHostAddress::LocalHost, 0));
+    QList<QTcpSocket*> swallowed;
+    QObject::connect(&silentProxy, &QTcpServer::newConnection, &silentProxy, [&]() {
+        while (silentProxy.hasPendingConnections()) {
+            QTcpSocket* socket = silentProxy.nextPendingConnection();
+            swallowed.append(socket);
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
+                socket->readAll(); // accept and swallow, never answer
+            });
+        }
+    });
+
+    ProxyAvailabilityCheckConfig config;
+    config.httpPort = silentProxy.serverPort();
+    config.speedPingTestUrl = QStringLiteral("http://www.google.com/generate_204");
+    config.timeoutMs = 250;
+
+    const ProxyAvailabilityCheckService service;
+    QElapsedTimer timer;
+    timer.start();
+    const OperationResult result = service.check(config);
+    const qint64 elapsedMs = timer.elapsed();
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("Availability check")));
+    QVERIFY2(elapsedMs >= 200 && elapsedMs < 5000,
+             qPrintable(QStringLiteral("took %1 ms").arg(elapsedMs)));
+
+    for (QTcpSocket* socket : swallowed) {
+        socket->abort();
+        delete socket;
+    }
+}
 QTEST_MAIN(ProxyAvailabilityCheckServiceTests)
 
 #include "ProxyAvailabilityCheckServiceTests.moc"

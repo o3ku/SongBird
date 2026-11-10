@@ -188,7 +188,6 @@ ProxySession::ProxySession(Dependencies deps, QObject* parent)
     healthWatch_ = new ProxyHealthWatchdog(
         lifetimeGuard_,
         std::move(sessionStrings),
-        [this](QThread* thread) { trackBackgroundThread(thread); },
         this);
     QObject::connect(healthWatch_, &ProxyHealthWatchdog::warningChanged, this, [this](const QString& warning) {
         setServerWarning(warning);
