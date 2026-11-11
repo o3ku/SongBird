@@ -295,6 +295,15 @@ private:
     void validateCoreListeningAndHandleStarted(
         const QString& serverIndexId,
         bool customServer);
+
+    // True while the activation that captured serverIndexId is still the session's own. The
+    // identity of an activation is the server the session resolved itself -- for a group
+    // start that is the anchor member (re-resolved when the writer drops foreign-core
+    // members), which config.currentIndexId does not track: after a restart restore or a
+    // switch into another group it may still name a node outside the group. Comparing the
+    // async guards against the resolver's single-node id misread every such activation as
+    // stale and stopped its core right after the port opened.
+    bool activationStillOwns(const QString& serverIndexId) const;
     void handleCoreStartFailed(const QString& message);
     void handleMainCoreOutput(const QString& line);
 

@@ -38,6 +38,7 @@ private slots:
     void startFailsWhenNoActiveServer();
     void groupStartWritesAutoSelectConfigAndReachesProxying();
     void groupStartFailsWhenTheGroupHasNoEmbeddableMember();
+    void groupStartReachesProxyingWhenTheCurrentNodeIsOutsideTheGroup();
     void startReachesProxyingWhenCoreListensAndLocationResolves();
     void startFailsWhenTheOutboundNeverAnswers();
     void skipOutboundCheckAppliesTheProxyWithoutProbing();
@@ -731,6 +732,39 @@ void ProxySessionTests::groupStartWritesAutoSelectConfigAndReachesProxying()
     harness.session->stop(true);
 }
 
+// A restart restore (and a switch into a group the active node does not belong to) starts a
+// group session while config.currentIndexId still names a node outside the group. The async
+// staleness guards must compare against the session's own activation identity (the anchor),
+// not the resolver's single-node id -- otherwise the core is stopped as "stale" right after
+// its port opens.
+void ProxySessionTests::groupStartReachesProxyingWhenTheCurrentNodeIsOutsideTheGroup()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    QVERIFY(harness.proxyServer.listen());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+
+    VmessItem first = harness.launchableServer();
+    VmessItem second = harness.launchableServer();
+    second.indexId = QStringLiteral("server-2");
+    second.address = QStringLiteral("second.example.com");
+    harness.groupServers = {first, second};
+    harness.currentServerIndexId = QStringLiteral("node-outside-the-group");
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.ui().activeLocationGroupId = QStringLiteral("US");
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+    QCOMPARE(failedSpy.count(), 0);
+
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+    QTRY_COMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Proxying));
+
+    harness.session->stop(true);
+}
 void ProxySessionTests::groupStartFailsWhenTheGroupHasNoEmbeddableMember()
 {
     ProxySessionHarness harness;

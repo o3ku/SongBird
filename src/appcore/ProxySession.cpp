@@ -693,7 +693,9 @@ void ProxySession::startInternal(
     CoreInfo launchCoreInfo = coreInfo;
     launchCoreInfo.asyncStart = true;
 
-    const QString serverIndexId = server.indexId;
+    // The activation identity is post-write truth: for a group start the writer may drop the
+    // resolved anchor (foreign core) and currentServer_ then names the first embedded member.
+    const QString serverIndexId = currentServer_.indexId;
     const bool customServer = (server.configType == ConfigType::Custom);
 
     setPhase(Phase::StartCoreProcess);
@@ -1100,6 +1102,14 @@ void ProxySession::downloadMissingCoreAndResume(
 }
 // --- Core started/failed ---
 
+bool ProxySession::activationStillOwns(const QString& serverIndexId) const
+{
+    // Single-node starts resolve currentServer_ from config.currentIndexId, so this keeps the
+    // old mid-flight-switch protection too: a newer activation replaces currentServer_
+    // synchronously on the GUI thread, before any older queued callback can run.
+    return currentServer_.indexId == serverIndexId;
+}
+
 void ProxySession::handleCoreStarted(const QString& serverIndexId)
 {
     if (phase_ != Phase::StartCoreProcess || !deps_.mainCore.isRunning()) {
@@ -1142,7 +1152,7 @@ void ProxySession::validateCoreListeningAndHandleStarted(
             if (guard.expired()) {
                 return;
             }
-            if (coreStartTime_ != startTime || deps_.profileResolver.currentIndexId() != activeServerId) {
+            if (coreStartTime_ != startTime || !activationStillOwns(activeServerId)) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Skipped, startCoreStep,
                     QCoreApplication::translate("ProxySession", "Core listening validation result is stale."));
                 if (coreStartTime_ == startTime && deps_.mainCore.isRunning() && phase_ != Phase::Stopping) {
@@ -1271,7 +1281,7 @@ void ProxySession::queryOutboundConnection(const QString& serverIndexId)
             if (coreStartTime_ != startTime) {
                 return; // Never overwrite the checklist belonging to a newer activation.
             }
-            if (!deps_.mainCore.isRunning() || deps_.profileResolver.currentIndexId() != activeServerId) {
+            if (!deps_.mainCore.isRunning() || !activationStillOwns(activeServerId)) {
                 setCheckpointStatus(CoreStartupCheckpointStatus::Skipped, connectionStep,
                     tr("Outbound connection check result is stale."));
                 stop(false);
@@ -1384,13 +1394,13 @@ void ProxySession::queryServerLocation(const QString& serverIndexId)
         QMetaObject::invokeMethod(this, [this, guard, activeServerId, location, countryCode, lastError, startTime]() {
             if (guard.expired() || shuttingDown_.load() || phase_ != Phase::Proxying
                 || !deps_.mainCore.isRunning() || coreStartTime_ != startTime
-                || deps_.profileResolver.currentIndexId() != activeServerId) {
+                || !activationStillOwns(activeServerId)) {
                 return; // A display result is never allowed to cancel an activation.
             }
             setServerLocation(location, countryCode);
             // The location signal may synchronously stop or switch the session.
             if (phase_ != Phase::Proxying || coreStartTime_ != startTime
-                || deps_.profileResolver.currentIndexId() != activeServerId) {
+                || !activationStillOwns(activeServerId)) {
                 return;
             }
             if (currentServerLocation_.isEmpty()) {
