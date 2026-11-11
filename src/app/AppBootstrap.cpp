@@ -613,7 +613,11 @@ void AppBootstrap::applyStartupSystemProxyPreference()
             appendResult(OperationResult::ok(QCoreApplication::translate(
                 "AppBootstrap", "Startup core checks skipped by command line.")));
         }
-        enableSystemProxy();
+        // Startup restore activates the same RuntimePhase machine as a manual connect, and
+        // while it runs the background task coordinator holds subscriptions, speed tests and
+        // imports. Show the startup overlay so the gate is visible, and a failed restore
+        // surfaces as the overlay's failed checklist (retry/close) instead of a silent stop.
+        enableSystemProxy(true);
         return;
     }
 
