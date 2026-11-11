@@ -1,5 +1,4 @@
 #include "common/ServerDisplayName.h"
-#include "services/ProxyGroupStatusPoller.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "app/ServerActivationGestureLogic.h"
 #include "app/AppBootstrap.h"
@@ -56,22 +55,10 @@ void AppBootstrap::wireProxyStack()
 
     objects_->runtimeState = std::make_unique<RuntimeState>();
 
-    // Group activation: follows which member the core's auto-select group is on.
-    // syncStatusIndicators() starts and retargets it against the session's endpoint; this
-    // connection only translates the answer into the display name the snapshot carries.
-    objects_->proxyGroupStatusPoller = std::make_unique<ProxyGroupStatusPoller>(objects_->mainWindow.get());
-    QObject::connect(
-        objects_->proxyGroupStatusPoller.get(),
-        &ProxyGroupStatusPoller::currentMemberChanged,
-        objects_->mainWindow.get(),
-        [this](const QString& indexId) {
-            const std::optional<VmessItem> server = indexId.trimmed().isEmpty()
-                ? std::nullopt
-                : findServerSnapshotById(indexId);
-            currentInCoreServerId_ = indexId.trimmed();
-            currentInCoreServerName_ = server.has_value() ? serverDisplayName(*server) : QString();
-            syncStatusIndicators();
-        });
+    // Group activation's status poller is created in wireProxySessionSignals() (main-window
+    // wiring), not here: its documented contract is the main window as parent, and the
+    // proxy stack is wired before the window exists -- a connect made with a null window
+    // never delivered currentMemberChanged, so the group display stayed member-blind.
     SystemProxyCoordinator::Callbacks systemProxyCallbacks;
     systemProxyCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
     systemProxyCallbacks.syncStatusIndicators = [this]() { syncStatusIndicators(); };

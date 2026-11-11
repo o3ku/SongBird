@@ -19,11 +19,13 @@
 #include "common/DialogUtils.h"
 #include "common/LogSeverity.h"
 #include "common/OperationResult.h"
+#include "common/ServerDisplayName.h"
 #include "common/SubscriptionOrder.h"
 #include "domain/models/Config.h"
 #include "domain/models/CoreTypeItem.h"
 #include "domain/models/RuntimeState.h"
 #include "runtime/CoreLaunchCompatDecision.h"
+#include "services/ProxyGroupStatusPoller.h"
 #include "services/RoutingService.h"
 #include "services/ServerService.h"
 #include "ui/mainwindow/MainWindow.h"
@@ -63,6 +65,25 @@ void AppBootstrap::wireMainWindow()
 
 void AppBootstrap::wireProxySessionSignals()
 {
+    // Group activation: follows which member the core's auto-select group is on.
+    // syncStatusIndicators() starts and retargets it against the session's endpoint; this
+    // connection only translates the answer into the display name the snapshot carries.
+    // Created here, not in wireProxyStack(), because the poller's contract is the main
+    // window as parent (AppBootstrapObjects) and the proxy stack is wired before the
+    // window exists -- connecting against a null window never delivered the signal.
+    objects_->proxyGroupStatusPoller = std::make_unique<ProxyGroupStatusPoller>(objects_->mainWindow.get());
+    QObject::connect(
+        objects_->proxyGroupStatusPoller.get(),
+        &ProxyGroupStatusPoller::currentMemberChanged,
+        objects_->mainWindow.get(),
+        [this](const QString& indexId) {
+            const std::optional<VmessItem> server = indexId.trimmed().isEmpty()
+                ? std::nullopt
+                : findServerSnapshotById(indexId);
+            currentInCoreServerId_ = indexId.trimmed();
+            currentInCoreServerName_ = server.has_value() ? serverDisplayName(*server) : QString();
+            syncStatusIndicators();
+        });
     QObject::connect(objects_->proxySession.get(), &ProxySession::phaseChanged,
                      objects_->mainWindow.get(), [this](ProxySession::Phase phase) {
                          Q_UNUSED(phase);
