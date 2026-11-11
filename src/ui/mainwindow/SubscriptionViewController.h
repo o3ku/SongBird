@@ -36,6 +36,8 @@ public:
         std::function<void(const QString&, SubscriptionOrder::MoveOperation)> moveSubscription;
         std::function<void(const QList<SubItem>&)> reorderSubscriptions;
         std::function<void()> openSubscriptionManagement;
+        // Group activation from a location item's context menu.
+        std::function<void(const QString& locationId)> connectLocationGroup;
     };
 
     SubscriptionViewController(

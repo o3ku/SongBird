@@ -16,6 +16,7 @@ public:
     QString extractVersionFromOutput(const QString& output) const override;
     OperationResult validateServer(const VmessItem& server) const override;
     QJsonObject buildClientRoot(const Config& config, const VmessItem& server) const override;
+    QJsonObject buildClientGroupRoot(const Config& config, const QList<VmessItem>& members) const override;
     QUrl releasesApiUrl() const override;
     CoreUpdateAssetPolicy updateAssetPolicy(CoreAssetPlatform platform) const override;
     int scoreReleaseAssetName(const QString& assetName, CoreAssetPlatform platform) const override;

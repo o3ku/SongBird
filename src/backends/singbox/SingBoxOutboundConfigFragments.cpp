@@ -10,10 +10,10 @@
 
 namespace OutboundSupport = SingBoxOutboundConfigSupport;
 
-QJsonObject SingBoxOutboundConfigFragments::buildPrimaryOutbound(const Config& config, const VmessItem& server)
+QJsonObject SingBoxOutboundConfigFragments::buildPrimaryOutbound(const Config& config, const VmessItem& server, const QString& tag)
 {
     QJsonObject outbound;
-    outbound.insert(QStringLiteral("tag"), QStringLiteral("proxy"));
+    outbound.insert(QStringLiteral("tag"), tag);
     outbound.insert(QStringLiteral("type"), ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType));
     outbound.insert(QStringLiteral("server"), server.address);
     outbound.insert(QStringLiteral("server_port"), server.port);
@@ -256,5 +256,22 @@ QJsonObject SingBoxOutboundConfigFragments::buildSocksOutbound(
     if (udpOverTcp) {
         outbound.insert(QStringLiteral("udp_over_tcp"), true);
     }
+    return outbound;
+}
+
+QJsonObject SingBoxOutboundConfigFragments::buildUrlTestOutbound(const QStringList& memberTags)
+{
+    QJsonArray memberTagArray;
+    for (const QString& memberTag : memberTags) {
+        memberTagArray.append(memberTag);
+    }
+
+    // The group takes over the "proxy" tag the route already names, so no route rewrite is
+    // needed. url, interval and tolerance stay unset: the core defaults (generate_204 / 3m /
+    // 50ms) are the agreed product behavior and the app exposes no settings for them.
+    QJsonObject outbound;
+    outbound.insert(QStringLiteral("type"), QStringLiteral("urltest"));
+    outbound.insert(QStringLiteral("tag"), QStringLiteral("proxy"));
+    outbound.insert(QStringLiteral("outbounds"), memberTagArray);
     return outbound;
 }

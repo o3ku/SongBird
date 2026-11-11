@@ -26,9 +26,25 @@ void AppBootstrap::wireServerCoordinators()
     defaultServerCallbacks.uiContext = [this]() -> QObject* { return objects_->mainWindow.get(); };
     defaultServerCallbacks.lifetimeGuard = [this]() { return std::weak_ptr<char>(lifetimeGuard_); };
     defaultServerCallbacks.setDefaultServer = [this](const QString& indexId) {
-        return objects_->serverService != nullptr
-            ? objects_->serverService->setDefaultServer(config_, indexId)
-            : OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Server service is unavailable."));
+        if (objects_->serverService == nullptr) {
+            return OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Server service is unavailable."));
+        }
+        // Activating a single node always exits group mode: the save below persists the whole
+        // config, so the cleared target travels with it and a restart restores the node session.
+        config_.ui().activeLocationGroupId.clear();
+        return objects_->serverService->setDefaultServer(config_, indexId);
+    };
+    defaultServerCallbacks.activeLocationGroupId = [this]() { return config_.ui().activeLocationGroupId; };
+    defaultServerCallbacks.setActiveLocationGroup = [this](const QString& locationId) {
+        config_.ui().activeLocationGroupId = locationId.trimmed();
+        if (objects_->serverService == nullptr) {
+            return OperationResult::fail(QCoreApplication::translate("AppBootstrap", "Server service is unavailable."));
+        }
+        const OperationResult saveResult = objects_->serverService->save(config_);
+        return saveResult.success
+            ? OperationResult::ok(QCoreApplication::translate(
+                "AppBootstrap", "Location group '%1' set as the activation target.").arg(locationId))
+            : saveResult;
     };
     defaultServerCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
     defaultServerCallbacks.syncWindow = [this]() { syncWindow(); };

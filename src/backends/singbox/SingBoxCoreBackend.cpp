@@ -14,6 +14,7 @@
 #include "runtime/ProtocolConfigMapper.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "runtime/core/CoreBackendRegistry.h"
+#include "runtime/ProxyGroupTags.h"
 #include "backends/singbox/SingBoxCoreDescriptor.h"
 #include "backends/singbox/SingBoxConfigFragments.h"
 #include "backends/singbox/SingBoxRoutingConfigFragments.h"
@@ -183,10 +184,23 @@ OperationResult SingBoxCoreBackend::validateServer(const VmessItem& server) cons
 
 QJsonObject SingBoxCoreBackend::buildClientRoot(const Config& config, const VmessItem& server) const
 {
+    return assembleClientRoot(config, buildOutbounds(config, server));
+}
+
+QJsonObject SingBoxCoreBackend::buildClientGroupRoot(const Config& config, const QList<VmessItem>& members) const
+{
+    if (members.isEmpty()) {
+        return {};
+    }
+    return assembleClientRoot(config, buildGroupOutbounds(config, members));
+}
+
+QJsonObject SingBoxCoreBackend::assembleClientRoot(const Config& config, const QJsonArray& outbounds)
+{
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildLog(config, true));
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
-    root.insert(QStringLiteral("outbounds"), buildOutbounds(config, server));
+    root.insert(QStringLiteral("outbounds"), outbounds);
     const std::optional<RoutingItem> selectedRouting = RoutingConfigFragments::resolveSelectedRouting(config);
     const RoutingItem* selectedRoutingPtr = selectedRouting.has_value() ? &*selectedRouting : nullptr;
 
@@ -351,6 +365,20 @@ QJsonObject SingBoxCoreBackend::buildExperimental(const Config& config)
         experimental.insert(QStringLiteral("cache_file"), cacheFile);
     }
 
+    // Group activation only: the session's Clash API endpoint, so the front end can poll
+    // which member the urltest group is currently using. Single-node runs leave the port at
+    // zero and expose nothing.
+    if (config.clashApiPort > 0) {
+        QJsonObject clashApi;
+        clashApi.insert(
+            QStringLiteral("external_controller"),
+            QStringLiteral("127.0.0.1:%1").arg(config.clashApiPort));
+        if (!config.clashApiSecret.trimmed().isEmpty()) {
+            clashApi.insert(QStringLiteral("secret"), config.clashApiSecret);
+        }
+        experimental.insert(QStringLiteral("clash_api"), clashApi);
+    }
+
     return experimental;
 }
 
@@ -378,7 +406,27 @@ QJsonArray SingBoxCoreBackend::buildInbounds(const Config& config)
 QJsonArray SingBoxCoreBackend::buildOutbounds(const Config& config, const VmessItem& server)
 {
     QJsonArray outbounds;
-    outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, server));
+    outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, server, QStringLiteral("proxy")));
+    outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
+    outbounds.append(SingBoxConfigFragments::buildBlockOutbound());
+    return outbounds;
+}
+
+QJsonArray SingBoxCoreBackend::buildGroupOutbounds(const Config& config, const QList<VmessItem>& members)
+{
+    // The urltest group takes over the "proxy" tag the route names, and every member becomes
+    // its own tagged outbound the group references; direct/block stay last exactly as in a
+    // single-node start.
+    QStringList memberTags;
+    for (int i = 0; i < members.size(); ++i) {
+        memberTags.append(proxyGroupMemberTag(i + 1));
+    }
+
+    QJsonArray outbounds;
+    outbounds.append(SingBoxConfigFragments::buildUrlTestOutbound(memberTags));
+    for (int i = 0; i < members.size(); ++i) {
+        outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, members.at(i), memberTags.at(i)));
+    }
     outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
     outbounds.append(SingBoxConfigFragments::buildBlockOutbound());
     return outbounds;

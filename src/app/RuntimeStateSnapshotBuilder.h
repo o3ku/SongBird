@@ -16,6 +16,12 @@ public:
         QString currentServerName;
         QString currentServerLocation;
         QString currentServerWarning;
+        // Group activation state; an empty group id means a single-node session and the trio
+        // is ignored.
+        QString activeLocationGroupId;
+        int activeLocationGroupMemberCount = 0;
+        QString currentInCoreServerId;
+        QString currentInCoreServerName;
         QString systemProxyUndoWarning;
         QString proxyPhaseName;
         SystemProxyMode systemProxyMode = SystemProxyMode::ForcedClear;
@@ -39,6 +45,8 @@ public:
 
     RuntimeStateSnapshot buildSnapshot(const Inputs& inputs);
 
+private:
+    QString displayServerName(const Inputs& inputs) const;
 private:
     QString buildRoutingSummaryText(const Config& config) const;
     QString buildListenSummaryText(const Config& config) const;

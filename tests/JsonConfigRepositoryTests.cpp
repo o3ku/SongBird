@@ -311,6 +311,7 @@ private slots:
     void subscriptionFetchFailureNamesTheProtocolsItCouldNotUse();
     void healthStripRoundTripsThroughTheStateFile();
     void locationStateRoundTripsThroughTheStateFile();
+    void groupActivationTargetRoundTripsThroughTheStateFile();
     void subscriptionLastUpdatedRoundTripsAndDefaultsToNever();
     void loadDropsAHealthStripThePolicyCannotRead();
     void saveReportsPrimaryConfigWriteFailure();
@@ -815,6 +816,40 @@ void JsonConfigRepositoryTests::healthStripRoundTripsThroughTheStateFile()
     const Config reloaded = repository.load();
     QCOMPARE(reloaded.collection().servers.size(), 1);
     QCOMPARE(reloaded.collection().servers[0].healthStrip, strip);
+}
+
+void JsonConfigRepositoryTests::groupActivationTargetRoundTripsThroughTheStateFile()
+{
+    // The group activation target is session state like mainProxyEnabled: it lives in the
+    // state file so a restart restores the group session, and never leaks into the primary
+    // config.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    Config config;
+    config.collection().servers = {makeServer()};
+    config.ui().mainProxyEnabled = true;
+    config.ui().activeLocationGroupId = QStringLiteral("US");
+
+    JsonConfigRepository repository(makeConfigPath(tempDir));
+    QVERIFY(repository.save(config));
+
+    const QJsonObject stateUi = readJsonFile(makeStatePath(tempDir)).value(QStringLiteral("ui")).toObject();
+    QCOMPARE(stateUi.value(QStringLiteral("activeLocationGroupId")).toString(), QStringLiteral("US"));
+    QVERIFY(!QJsonDocument(readJsonFile(makeConfigPath(tempDir))).toJson().contains("activeLocationGroupId"));
+
+    const Config reloaded = repository.load();
+    QCOMPARE(reloaded.ui().activeLocationGroupId, QStringLiteral("US"));
+
+    // Clearing the target (single-node activation) removes the key, so a stale group id can
+    // never resurrect group mode after the user switched back to a node.
+    Config cleared = reloaded;
+    cleared.ui().activeLocationGroupId.clear();
+    QVERIFY(repository.save(cleared));
+    QVERIFY(!readJsonFile(makeStatePath(tempDir))
+                 .value(QStringLiteral("ui"))
+                 .toObject()
+                 .contains(QStringLiteral("activeLocationGroupId")));
 }
 
 void JsonConfigRepositoryTests::locationStateRoundTripsThroughTheStateFile()

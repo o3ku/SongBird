@@ -13,12 +13,36 @@ RuntimeStateSnapshotBuilder::RuntimeStateSnapshotBuilder(Callbacks callbacks)
 {
 }
 
+// In group mode the segment the window, tray and status bar show is the group and the node
+// the core currently uses, not the anchor the config records. Until the first Clash-API
+// answer arrives the group is still named, so a group session never displays as a bare node.
+QString RuntimeStateSnapshotBuilder::displayServerName(const Inputs& inputs) const
+{
+    if (inputs.activeLocationGroupId.trimmed().isEmpty()) {
+        return inputs.currentServerName;
+    }
+
+    const QString groupName = inputs.activeLocationGroupId == QLatin1String("FAVORITE")
+        ? QCoreApplication::translate("AppBootstrap", "Favorite")
+        : inputs.activeLocationGroupId;
+    const QString withGroup = QCoreApplication::translate("AppBootstrap", "%1 group, %2 node(s)")
+        .arg(groupName)
+        .arg(inputs.activeLocationGroupMemberCount);
+    return inputs.currentInCoreServerName.trimmed().isEmpty()
+        ? withGroup
+        : QStringLiteral("%1 | %2").arg(withGroup, inputs.currentInCoreServerName);
+}
+
 RuntimeStateSnapshot RuntimeStateSnapshotBuilder::buildSnapshot(const Inputs& inputs)
 {
     RuntimeStateSnapshot snapshot;
-    snapshot.currentServerName = inputs.currentServerName;
+    snapshot.currentServerName = displayServerName(inputs);
     snapshot.currentServerLocation = inputs.currentServerLocation;
     snapshot.currentServerWarning = inputs.currentServerWarning;
+    snapshot.activeLocationGroupId = inputs.activeLocationGroupId;
+    snapshot.activeLocationGroupMemberCount = inputs.activeLocationGroupMemberCount;
+    snapshot.currentInCoreServerId = inputs.currentInCoreServerId;
+    snapshot.currentInCoreServerName = inputs.currentInCoreServerName;
     snapshot.systemProxyUndoWarning = inputs.systemProxyUndoWarning;
     if (inputs.config != nullptr) {
         snapshot.routingSummary = buildRoutingSummaryText(*inputs.config);

@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QEvent>
+#include <QFile>
 #include <QHash>
 #include <QHostAddress>
 #include <QJsonDocument>
@@ -35,6 +36,8 @@ class ProxySessionTests : public QObject
 
 private slots:
     void startFailsWhenNoActiveServer();
+    void groupStartWritesAutoSelectConfigAndReachesProxying();
+    void groupStartFailsWhenTheGroupHasNoEmbeddableMember();
     void startReachesProxyingWhenCoreListensAndLocationResolves();
     void startFailsWhenTheOutboundNeverAnswers();
     void skipOutboundCheckAppliesTheProxyWithoutProbing();
@@ -399,6 +402,11 @@ struct ProxySessionHarness final
         return activeServer;
     }
 
+    QList<VmessItem> resolveGroupServers(const QString&) const override
+    {
+        return groupServers;
+    }
+
     CoreType resolveLaunchCoreType(const VmessItem& server) const override
     {
         return ::resolveRuntimeCoreType(server.coreType);
@@ -558,6 +566,8 @@ struct ProxySessionHarness final
     }
 
     QTemporaryDir tempDir;
+    // Group-activation members the resolver answers with; empty unless a test sets it.
+    QList<VmessItem> groupServers;
     FakeHttpProxyServer proxyServer;
     FakeCoreProcessHost mainCore;
     FakeCoreProcessHost auxiliaryCore;
@@ -673,6 +683,71 @@ void ProxySessionTests::startFailsWhenNoActiveServer()
     QVERIFY(!harness.session->isActive());
     QVERIFY(!harness.session->isActivationInProgress());
     QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+void ProxySessionTests::groupStartWritesAutoSelectConfigAndReachesProxying()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    QVERIFY(harness.proxyServer.listen());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+
+    VmessItem first = harness.launchableServer();
+    VmessItem second = harness.launchableServer();
+    second.indexId = QStringLiteral("server-2");
+    second.address = QStringLiteral("second.example.com");
+    harness.groupServers = {first, second};
+    harness.currentServerIndexId = first.indexId;
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.ui().activeLocationGroupId = QStringLiteral("US");
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+    QCOMPARE(failedSpy.count(), 0);
+
+    harness.mainCore.triggerStarted(QStringLiteral("core is up"));
+    QTRY_COMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Proxying));
+
+    // The runtime config the core was handed carries the urltest group over the "proxy" tag.
+    QFile runtimeConfig(harness.tempDir.filePath(QStringLiteral("runtime.json")));
+    QVERIFY(runtimeConfig.open(QIODevice::ReadOnly));
+    const QJsonObject root = QJsonDocument::fromJson(runtimeConfig.readAll()).object();
+    runtimeConfig.close();
+    bool sawGroup = false;
+    const QJsonArray outbounds = root.value(QStringLiteral("outbounds")).toArray();
+    for (const QJsonValue& value : outbounds) {
+        const QJsonObject outbound = value.toObject();
+        if (outbound.value(QStringLiteral("tag")).toString() == QStringLiteral("proxy")) {
+            sawGroup = true;
+            QCOMPARE(outbound.value(QStringLiteral("type")).toString(), QStringLiteral("urltest"));
+            QCOMPARE(outbound.value(QStringLiteral("outbounds")).toArray().size(), 2);
+        }
+    }
+    QVERIFY(sawGroup);
+
+    harness.session->stop(true);
+}
+
+void ProxySessionTests::groupStartFailsWhenTheGroupHasNoEmbeddableMember()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.ui().activeLocationGroupId = QStringLiteral("US");
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+    QCOMPARE(harness.mainCore.startCount, 0);
 }
 
 void ProxySessionTests::startReachesProxyingWhenCoreListensAndLocationResolves()

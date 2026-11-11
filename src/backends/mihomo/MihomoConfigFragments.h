@@ -8,6 +8,7 @@
 namespace MihomoConfigFragments {
 
 QJsonObject buildClientRoot(const Config& config, const VmessItem& server);
+QJsonObject buildClientGroupRoot(const Config& config, const QList<VmessItem>& members);
 QJsonObject buildPrimaryProxy(const Config& config, const VmessItem& server, const QString& name);
 
 } // namespace MihomoConfigFragments

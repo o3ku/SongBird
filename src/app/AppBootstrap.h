@@ -96,6 +96,16 @@ private:
     void wireBackgroundTaskSignals();
     void wireMainWindowCommands();
     void wireTraySignals();
+    // What a user's server click means right now (single node, group switch, or nothing) --
+    // shared by the main window's and the tray's server-selection entries so the two stay in
+    // step. Deliberately NOT inside DefaultServerSwitchCoordinator: the auto-switch failure
+    // fallback switches to a specific node on purpose, even inside the group it came from.
+    void routeServerActivationGesture(const QString& indexId);
+    // Group activation display state, owned by the poller connection: the member the core's
+    // auto-select group is currently on ("" while the core has not answered or a single-node
+    // session runs).
+    QString currentInCoreServerId_;
+    QString currentInCoreServerName_;
     void wireWorkflowCoordinators(const std::function<void(QThread*)>& trackBackgroundThread);
 
     // Startup steps, run in this order by run() through StartupSequencer. They

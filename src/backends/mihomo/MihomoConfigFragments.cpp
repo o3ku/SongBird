@@ -8,6 +8,7 @@
 #include "common/LocalInboundPorts.h"
 #include "common/RoutingValuePattern.h"
 #include "runtime/ProtocolConfigMapper.h"
+#include "runtime/ProxyGroupTags.h"
 #include "runtime/RoutingConfigFragments.h"
 #include "runtime/TunAdapterNames.h"
 
@@ -366,7 +367,48 @@ void appendRoutingRules(QJsonArray& rules, const Config& config)
 
 namespace MihomoConfigFragments {
 
+QJsonObject buildBaseClientRoot(const Config& config);
+void appendRules(QJsonObject& root, const Config& config);
+
 QJsonObject buildClientRoot(const Config& config, const VmessItem& server)
+{
+    QJsonObject root = buildBaseClientRoot(config);
+    root.insert(QStringLiteral("proxies"), QJsonArray{buildPrimaryProxy(config, server, kPrimaryProxyName)});
+    root.insert(QStringLiteral("proxy-groups"), QJsonArray{buildProxyGroup()});
+    appendRules(root, config);
+    return root;
+}
+
+QJsonObject buildClientGroupRoot(const Config& config, const QList<VmessItem>& members)
+{
+    if (members.isEmpty()) {
+        return {};
+    }
+
+    // The url-test group takes over the "proxy" group name the rules already reference; every
+    // member becomes its own named proxy. url/interval/tolerance stay unset so mihomo's
+    // defaults apply (generate_204 / 300s / none), matching sing-box's group behavior.
+    QJsonArray proxies;
+    QJsonArray memberNames;
+    for (int i = 0; i < members.size(); ++i) {
+        const QString memberName = proxyGroupMemberTag(i + 1);
+        memberNames.append(memberName);
+        proxies.append(buildPrimaryProxy(config, members.at(i), memberName));
+    }
+
+    QJsonObject group;
+    group.insert(QStringLiteral("name"), kProxyGroupName);
+    group.insert(QStringLiteral("type"), QStringLiteral("url-test"));
+    group.insert(QStringLiteral("proxies"), memberNames);
+
+    QJsonObject root = buildBaseClientRoot(config);
+    root.insert(QStringLiteral("proxies"), proxies);
+    root.insert(QStringLiteral("proxy-groups"), QJsonArray{group});
+    appendRules(root, config);
+    return root;
+}
+
+QJsonObject buildBaseClientRoot(const Config& config)
 {
     QJsonObject root;
     root.insert(QStringLiteral("log-level"), normalizedLogLevel(config.logLevel));
@@ -402,13 +444,24 @@ QJsonObject buildClientRoot(const Config& config, const VmessItem& server)
         root.insert(QStringLiteral("dns"), buildDns(config));
     }
 
-    root.insert(QStringLiteral("proxies"), QJsonArray{buildPrimaryProxy(config, server, kPrimaryProxyName)});
-    root.insert(QStringLiteral("proxy-groups"), QJsonArray{buildProxyGroup()});
+    // Group activation only: the session's Clash API endpoint, so the front end can poll
+    // which member the url-test group is currently using.
+    if (config.clashApiPort > 0) {
+        root.insert(QStringLiteral("external-controller"),
+            QStringLiteral("127.0.0.1:%1").arg(config.clashApiPort));
+        if (!config.clashApiSecret.trimmed().isEmpty()) {
+            root.insert(QStringLiteral("secret"), config.clashApiSecret);
+        }
+    }
 
+    return root;
+}
+
+void appendRules(QJsonObject& root, const Config& config)
+{
     QJsonArray rules;
     appendRoutingRules(rules, config);
     root.insert(QStringLiteral("rules"), rules);
-    return root;
 }
 
 QJsonObject buildPrimaryProxy(const Config& config, const VmessItem& server, const QString& name)

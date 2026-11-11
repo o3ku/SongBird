@@ -487,6 +487,14 @@ void MainWindow::clearAvailableAppUpdateVersion()
 void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
 {
     currentServerName_ = snapshot.currentServerName.trimmed();
+    activeLocationGroupId_ = snapshot.activeLocationGroupId.trimmed();
+    currentInCoreServerId_ = snapshot.currentInCoreServerId.trimmed();
+    // While a group session runs, the highlighted row is the member the core actually uses
+    // (it moves as the auto-select group switches), not the anchor the config records.
+    if (serverModel_ != nullptr) {
+        serverModel_->setActiveIndexId(
+            activeLocationGroupId_.isEmpty() ? currentIndexId_ : currentInCoreServerId_);
+    }
     currentServerLocation_ = snapshot.currentServerLocation.trimmed();
     currentServerWarning_ = snapshot.currentServerWarning.trimmed();
     systemProxyUndoWarning_ = snapshot.systemProxyUndoWarning.trimmed();
@@ -734,7 +742,12 @@ void MainWindow::updateSelectionForVisibleRows()
 
 void MainWindow::showCurrentServerInTable()
 {
-    if (currentIndexId_.trimmed().isEmpty()) {
+    // A group session's "current" row is the member the core actually uses; the anchor is the
+    // fallback while the core has not answered the poll yet.
+    const QString revealId = activeLocationGroupId_.isEmpty() || currentInCoreServerId_.isEmpty()
+        ? currentIndexId_
+        : currentInCoreServerId_;
+    if (revealId.trimmed().isEmpty()) {
         return;
     }
     if (serverModel_ == nullptr
@@ -744,7 +757,7 @@ void MainWindow::showCurrentServerInTable()
         return;
     }
 
-    const ServerTableRow* currentServer = serverModel_->itemByIndexId(currentIndexId_);
+    const ServerTableRow* currentServer = serverModel_->itemByIndexId(revealId);
     if (currentServer == nullptr) {
         return;
     }
@@ -761,7 +774,7 @@ void MainWindow::showCurrentServerInTable()
     const QModelIndex targetIndex = ServerSelection::visibleProxyIndexForServer(
         serverFilterModel_,
         serverModel_,
-        currentIndexId_);
+        revealId);
     if (!targetIndex.isValid()) {
         return;
     }
@@ -1192,7 +1205,8 @@ void MainWindow::setupSubscriptionViewController()
                 }
                 emit reorderSubscriptionsRequested(orderedIds);
             },
-            [this]() { emit openSettingsAtSubscriptionsTabRequested(); }});
+            [this]() { emit openSettingsAtSubscriptionsTabRequested(); },
+            [this](const QString& locationId) { emit connectLocationGroupRequested(locationId); }});
     if (serverWorkspace_ != nullptr) {
         serverWorkspace_->setCompactSelectionHandler([this](const QString&) {
             if (serverListController_ != nullptr) {
@@ -1215,7 +1229,8 @@ void MainWindow::setupSubscriptionViewController()
             [this](bool enabled) {
                 autoSwitchInGroup_ = enabled;
                 emit autoSwitchInGroupChanged(enabled);
-            });
+            },
+            [this]() { return activeLocationGroupId_.isEmpty(); });
     }
 }
 

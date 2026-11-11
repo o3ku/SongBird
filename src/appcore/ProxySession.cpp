@@ -16,6 +16,7 @@
 #include <QJsonValue>
 #include <QRandomGenerator>
 #include <QSet>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
@@ -389,6 +390,38 @@ QString ProxySession::serverLocation() const
     return currentServerLocation_;
 }
 
+QString ProxySession::currentGroupLocationId() const
+{
+    return currentGroupLocationId_;
+}
+
+// One free loopback port, bound and released. The core binds its own listener microseconds
+// later; a local race is possible in principle and harmless in practice (the poller fails and
+// retries against whatever port this activation actually owns).
+int ProxySession::pickFreeLoopbackPort()
+{
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 0)) {
+        return 0;
+    }
+    return probe.serverPort();
+}
+
+QList<VmessItem> ProxySession::currentGroupMembers() const
+{
+    return currentGroupMembers_;
+}
+
+int ProxySession::clashApiPort() const
+{
+    return currentRequest_.config.clashApiPort;
+}
+
+QString ProxySession::clashApiSecret() const
+{
+    return currentRequest_.config.clashApiSecret;
+}
+
 QString ProxySession::serverCountryCode() const
 {
     return currentServerCountryCode_;
@@ -508,8 +541,20 @@ void ProxySession::startInternal(
     QStringList auxiliaryConfigPaths;
     deps_.configWriter.setExistingCoreTypes(currentRequest_.existingCoreTypes);
     deps_.configWriter.setRuntimeCoreInfo(coreInfo);
-    const OperationResult writeResult = deps_.configWriter.writeClientConfigs(
-        currentRequest_.config, server, coreConfigPath, &auxiliaryConfigPaths);
+    OperationResult writeResult;
+    if (currentGroupMembers_.isEmpty()) {
+        writeResult = deps_.configWriter.writeClientConfigs(
+            currentRequest_.config, server, coreConfigPath, &auxiliaryConfigPaths);
+    } else {
+        // The writer drops members the launch core cannot embed; taking the embedded list
+        // back keeps the tag order (member-1..N) in step with what the core actually runs.
+        writeResult = deps_.configWriter.writeClientGroupConfigs(
+            currentRequest_.config, currentGroupMembers_, coreConfigPath,
+            &auxiliaryConfigPaths, &currentGroupMembers_);
+        if (!currentGroupMembers_.isEmpty()) {
+            currentServer_ = currentGroupMembers_.first();
+        }
+    }
     if (!writeResult.success) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, validateConfigStep, writeResult.message);
         failStartup(writeResult);
@@ -523,8 +568,15 @@ void ProxySession::startInternal(
         QStringLiteral("tun=%1").arg(currentRequest_.config.tun().tunModeItem.enableTun
             ? QStringLiteral("on") : QStringLiteral("off")),
         QStringLiteral("routing=%1").arg(currentRequest_.config.collection().routingModeId)};
+    const QString activationTarget = currentGroupMembers_.isEmpty()
+        ? serverDisplayName(server)
+        : tr("%1 group (%2 nodes, auto-select)")
+              .arg(currentGroupLocationId_ == QLatin1String("FAVORITE")
+                       ? tr("Favorite")
+                       : currentGroupLocationId_)
+              .arg(currentGroupMembers_.size());
     emit logMessage(tr("Activating %1 | %2")
-        .arg(serverDisplayName(server), activationContext.join(QStringLiteral(" | "))));
+        .arg(activationTarget, activationContext.join(QStringLiteral(" | "))));
 
     setPhase(Phase::ValidateRuntimeResources);
     if (launchCore == CoreType::SingBox) {
@@ -785,7 +837,36 @@ bool ProxySession::ensureTunCleanupCompleted(const StartupContext& context)
 std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(const StartupContext& context)
 {
     setPhase(Phase::ValidateCoreApplication);
-    const std::optional<VmessItem> server = deps_.profileResolver.resolveActiveServer();
+
+    // A group activation names its target in the request's config; the members come fresh
+    // from the resolver every (re)start, so a subscription update between restarts can change
+    // the member set without any extra bookkeeping. The anchor (first member) drives core
+    // resolution, probes and display exactly like a single-node start's active server.
+    currentGroupLocationId_ = currentRequest_.config.ui().activeLocationGroupId.trimmed();
+    currentGroupMembers_.clear();
+    // The endpoint is per-activation: a fresh port and secret each group start, so a stale
+    // poller can never read a new core's answers, and a restarted core cannot be mistaken for
+    // the old one. Single-node starts leave it unset, which the generators read as "no API".
+    currentRequest_.config.clashApiPort = 0;
+    currentRequest_.config.clashApiSecret.clear();
+    if (!currentGroupLocationId_.isEmpty()) {
+        currentGroupMembers_ = deps_.profileResolver.resolveGroupServers(currentGroupLocationId_);
+        currentRequest_.config.clashApiPort = pickFreeLoopbackPort();
+        currentRequest_.config.clashApiSecret = QStringLiteral("%1").arg(
+            QRandomGenerator::global()->generate64(), 16, 16, QLatin1Char('0'));
+        if (currentGroupMembers_.isEmpty()) {
+            const QString message = QCoreApplication::translate(
+                "ProxySession", "Location group '%1' has no server this core can embed in an auto-select group.")
+                .arg(currentGroupLocationId_);
+            setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig, message);
+            failStartup(OperationResult::fail(message));
+            return std::nullopt;
+        }
+    }
+
+    const std::optional<VmessItem> server = currentGroupMembers_.isEmpty()
+        ? deps_.profileResolver.resolveActiveServer()
+        : std::optional<VmessItem>(currentGroupMembers_.first());
     if (!server.has_value()) {
         setCheckpointStatus(CoreStartupCheckpointStatus::Failed, context.steps.validateConfig,
             QCoreApplication::translate("ProxySession", "No active server."));
@@ -921,6 +1002,8 @@ void ProxySession::cleanupAfterFailedStartup()
     // This is the second half of the same rule -- no resume may outlive the attempt that armed it.
     ++pendingResumeId_;
     currentServer_ = {};
+    currentGroupLocationId_.clear();
+    currentGroupMembers_.clear();
 
     // Ownership, not configuration. This used to clear the proxy whenever the config asked for it
     // OR the registry happened to be enabled -- and both are true for a user who was running
@@ -1604,6 +1687,8 @@ void ProxySession::clearProxyStateAfterStopped()
     // state-cleanup helper must not be the place where that decision hides.
     outboundReachable_ = false;
     currentServer_ = {};
+    currentGroupLocationId_.clear();
+    currentGroupMembers_.clear();
     currentServerLocation_.clear();
     currentServerWarning_.clear();
     healthWatch_->notifyFreshActivation();

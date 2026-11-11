@@ -131,6 +131,7 @@ signals:
     void moveSubscriptionsRequested(const QStringList& subscriptionIds, int operation);
     void reorderSubscriptionsRequested(const QStringList& orderedSubscriptionIds);
     void setDefaultServerRequested(const QString& indexId);
+    void connectLocationGroupRequested(const QString& locationId);
     void setDefaultServerWithTunRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);
     // Batch export. The window owns the selection and the file dialog; the composition root owns
@@ -338,6 +339,10 @@ private:
     // menu reads it to draw its checkmark, toggling it updates the member and emits
     // autoSwitchInGroupChanged, and the composition root persists the value.
     bool autoSwitchInGroup_ = false;
+    // Group activation state from the runtime snapshot: the running group target ("" for
+    // single-node sessions) and the member the core's auto-select currently uses.
+    QString activeLocationGroupId_;
+    QString currentInCoreServerId_;
     QHash<QString, QString> subscriptionUpdateFailures_;
     std::function<QString(const QString&)> shareUrlResolver_;
     std::function<QString(const QStringList&)> shareLinksExportProvider_;

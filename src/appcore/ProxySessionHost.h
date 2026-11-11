@@ -49,6 +49,20 @@
 //      cleaned by a resume path. All three are set by the app's composition root.
 //      Boundary:      StartRequest fields.
 //
+//  StartRequest::config.ui().activeLocationGroupId + config.clashApiPort/clashApiSecret
+//      Group activation: a non-empty group id makes the primary outbound the core's native
+//      auto-select group over resolveGroupServers()'s members (anchor first, tag "member-N"
+//      by order); the transient Clash API endpoint is picked per group start so the app's
+//      ProxyGroupStatusPoller can follow which member the core is on. Both live in the
+//      request's config copy and are never serialized from here.
+//      Boundary:      request-carried config fields.
+//
+//  IRuntimeProfileResolver::resolveGroupServers(locationId)
+//      Serves:        the group activation member list (app: LocationGroupScan over the
+//                     config, custom configs excluded, capped; headless tests: default
+//                     "no member" so a group start fails early instead of half-starting).
+//      Boundary:      injected resolver call.
+//
 //  Dependencies (all nine members)
 //      Every member is constructed by the app (AppBootstrapServiceWiring.cpp) and by the
 //      headless test harness. The difference between hosts lives in the implementations

@@ -305,3 +305,140 @@ QString ClientConfigWriter::resolveCustomConfigPath(const QString& address) cons
     return trimmed;
 }
 
+
+ClientConfigWriter::GroupGeneration ClientConfigWriter::generateClientGroupConfigs(
+    const Config& config,
+    const QList<VmessItem>& members) const
+{
+    GroupGeneration generation;
+    generation.generated.primary.fileName = QStringLiteral("config.generated.json");
+
+    if (members.isEmpty()) {
+        generation.generated.result = OperationResult::fail(
+            QCoreApplication::translate("ClientConfigWriter", "Cannot generate a group config without members."));
+        return generation;
+    }
+
+    // The anchor (first member) drives the launch core exactly as the single-node path does;
+    // members that cannot run on it are dropped below rather than failing the group.
+    const VmessItem& anchor = members.first();
+    if (anchor.address.trimmed().isEmpty()) {
+        generation.generated.result = OperationResult::fail(
+            QCoreApplication::translate("ClientConfigWriter", "Cannot generate config for an empty server address."));
+        return generation;
+    }
+
+    const CoreType launchCore = resolveSelectedCoreType(config, anchor, effectiveExistingCoreTypes());
+    const ICoreBackend* backend = coreBackend(launchCore);
+    if (backend == nullptr) {
+        generation.generated.result = OperationResult::fail(
+            QCoreApplication::translate("ClientConfigWriter", "Unsupported core type: %1.").arg(coreTypeDisplayName(launchCore)));
+        return generation;
+    }
+
+    for (const VmessItem& member : members) {
+        const bool embeddable = member.configType != ConfigType::Custom
+            && !member.address.trimmed().isEmpty()
+            && resolveSelectedCoreType(config, member, effectiveExistingCoreTypes()) == launchCore
+            && validateServer(config, member).success;
+        if (embeddable) {
+            generation.embeddedMembers.append(member);
+            continue;
+        }
+        generation.droppedMemberNames.append(member.remarks.trimmed().isEmpty()
+            ? member.address : member.remarks);
+    }
+
+    if (generation.embeddedMembers.isEmpty()) {
+        generation.generated.result = OperationResult::fail(
+            QCoreApplication::translate("ClientConfigWriter", "No member of the group can run on %1.")
+                .arg(coreTypeDisplayName(launchCore)));
+        return generation;
+    }
+
+    generation.generated.primary.root = backend->buildClientGroupRoot(config, generation.embeddedMembers);
+    if (generation.generated.primary.root.isEmpty()) {
+        generation.generated.result = OperationResult::fail(
+            QCoreApplication::translate("ClientConfigWriter", "%1 cannot generate an auto-select group for these servers.")
+                .arg(coreTypeDisplayName(launchCore)));
+        return generation;
+    }
+
+    // Group roots never run on Xray (Xray has no native auto-select group), so the
+    // XrayTlsCompatibility adaptation of the single-node path does not apply here.
+    const QList<CoreType> auxiliaryCoreTypes =
+        resolveAuxiliaryTunCompatCoreTypes(config, generation.embeddedMembers.first(), effectiveExistingCoreTypes());
+    for (const CoreType auxiliaryCoreType : auxiliaryCoreTypes) {
+        // The local rewrite has not split upstream's non-legacy Xray TUN relay path yet.
+        // Keep emitting the sing-box sidecar whenever Xray runs with TUN so the TUN adapter
+        // can still be created instead of silently starting Xray alone with no TUN inbound.
+        const ICoreBackend* auxiliaryBackend = coreBackend(auxiliaryCoreType);
+        if (auxiliaryBackend == nullptr) {
+            continue;
+        }
+        GeneratedConfig compat;
+        compat.fileName = QStringLiteral("tun-singbox-compat.json");
+        compat.root = auxiliaryBackend->buildAuxiliaryTunClientRoot(config, AuxiliaryTunRouting::RelayToLocalProxy);
+        if (compat.root.isEmpty()) {
+            continue;
+        }
+        generation.generated.auxiliary.append(compat);
+    }
+
+    return generation;
+}
+
+OperationResult ClientConfigWriter::writeClientGroupConfigs(
+    const Config& config,
+    const QList<VmessItem>& members,
+    const QString& filePath,
+    QStringList* auxiliaryPaths,
+    QList<VmessItem>* embeddedMembers) const
+{
+    if (filePath.trimmed().isEmpty()) {
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Runtime config path is empty."));
+    }
+
+    const QFileInfo fileInfo(filePath);
+    if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
+        return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Failed to create runtime config directory."));
+    }
+
+    const GroupGeneration generation = generateClientGroupConfigs(config, members);
+    if (!generation.generated.result.success) {
+        return generation.generated.result;
+    }
+
+    const OperationResult primaryWriteResult = writeGeneratedConfig(generation.generated.primary, filePath);
+    if (!primaryWriteResult.success) {
+        return primaryWriteResult;
+    }
+
+    if (auxiliaryPaths != nullptr) {
+        auxiliaryPaths->clear();
+    }
+    if (embeddedMembers != nullptr) {
+        *embeddedMembers = generation.embeddedMembers;
+    }
+
+    const QDir outputDirectory = fileInfo.dir();
+    for (const GeneratedConfig& auxiliaryConfig : generation.generated.auxiliary) {
+        const QString auxiliaryPath = outputDirectory.filePath(auxiliaryConfig.fileName);
+        const OperationResult auxiliaryWriteResult = writeGeneratedConfig(auxiliaryConfig, auxiliaryPath);
+        if (!auxiliaryWriteResult.success) {
+            return auxiliaryWriteResult;
+        }
+        if (auxiliaryPaths != nullptr) {
+            auxiliaryPaths->append(auxiliaryPath);
+        }
+    }
+
+    if (generation.droppedMemberNames.isEmpty()) {
+        return primaryWriteResult;
+    }
+    return OperationResult::ok(QStringLiteral("%1 %2").arg(
+        primaryWriteResult.message,
+        QCoreApplication::translate("ClientConfigWriter", "Skipped %1 member(s) not supported by the core: %2.")
+            .arg(QString::number(generation.droppedMemberNames.size()),
+                 generation.droppedMemberNames.join(QStringLiteral(", ")))));
+}

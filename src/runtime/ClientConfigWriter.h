@@ -21,6 +21,17 @@ public:
         OperationResult result = OperationResult::ok();
     };
 
+    // A group activation's generation outcome: the config set plus the members it actually
+    // embeds, anchor first (the member tags are "member-1..N" over this order). Members that
+    // cannot run on the launch core -- the protocol belongs to another core, or the core's
+    // generator rejects the transport -- are dropped rather than failing the whole group, and
+    // their display names come back for the log line.
+    struct GroupGeneration {
+        GeneratedConfigSet generated;
+        QList<VmessItem> embeddedMembers;
+        QStringList droppedMemberNames;
+    };
+
     explicit ClientConfigWriter(QString customConfigDirectory = {});
 
     void setExistingCoreTypes(const QList<CoreType>& existingCoreTypes);
@@ -37,9 +48,24 @@ public:
         const QString& filePath,
         QStringList* auxiliaryPaths) const;
 
+    // Group activation: the primary outbound becomes the core's native auto-select group over
+    // the members. members must be non-empty and ordered (first = anchor, which drives the
+    // launch core exactly like the single-node path). embeddedMembers, when not null, receives
+    // the members the written config actually embeds.
+    OperationResult writeClientGroupConfigs(
+        const Config& config,
+        const QList<VmessItem>& members,
+        const QString& filePath,
+        QStringList* auxiliaryPaths,
+        QList<VmessItem>* embeddedMembers = nullptr) const;
+
     GeneratedConfigSet generateClientConfigs(
         const Config& config,
         const VmessItem& server) const;
+
+    GroupGeneration generateClientGroupConfigs(
+        const Config& config,
+        const QList<VmessItem>& members) const;
 
 private:
     OperationResult writeCustomConfig(const VmessItem& server, const QString& filePath) const;

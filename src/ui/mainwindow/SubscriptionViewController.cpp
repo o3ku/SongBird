@@ -1,3 +1,4 @@
+#include "appcore/LocationGroupScan.h"
 #include "ui/mainwindow/SubscriptionViewController.h"
 
 #include <QAction>
@@ -860,10 +861,25 @@ void SubscriptionViewController::showContextMenu(const QString& tabKey, const QP
         return;
     }
 
-    // Location items carry no menu of their own: the grouping mode's one preference (auto
-    // switch) belongs to the toggle button, not to any one group, and subscriptions are edited
-    // from the subscription view. An empty group menu would only be a dead click.
+    // Location items carry exactly one command: connect the group as the core's auto-select.
+    // The grouping mode's other preference (auto switch) belongs to the toggle button, and
+    // subscriptions are edited from the subscription view.
     if (groupByLocation_) {
+        const QString locationId = SubscriptionViewSupport::locationIdFromTabKey(tabKey);
+        if (!locationId.isEmpty()) {
+            auto* connectGroupAction = menu.addAction(QObject::tr("Connect as Auto-Select Group"));
+            connectGroupAction->setObjectName(QStringLiteral("connectLocationGroupAction"));
+            // A group with no embeddable member cannot be activated; custom configs are the
+            // usual reason (a whole-file config cannot become one outbound of a group).
+            connectGroupAction->setEnabled(
+                !LocationGroupScan::embeddableMembers(servers_, locationId).isEmpty());
+            QObject::connect(connectGroupAction, &QAction::triggered, &menu, [this, locationId]() {
+                if (callbacks_.connectLocationGroup) {
+                    callbacks_.connectLocationGroup(locationId);
+                }
+            });
+            menu.exec(globalPosition);
+        }
         return;
     }
 

@@ -30,6 +30,7 @@ public:
     QString resolveCustomConfigDirectory() const;
     QString resolveCustomConfigPath(const QString& address) const;
     QString resolveRuntimeConfigPath(const VmessItem& server) const override;
+    QList<VmessItem> resolveGroupServers(const QString& locationId) const override;
     CoreType resolveEffectiveCoreType(const VmessItem& server) const;
     CoreType resolveLaunchCoreType(const VmessItem& server) const override;
     CoreInfo resolveCoreInfo(const VmessItem& server) const override;

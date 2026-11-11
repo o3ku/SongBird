@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "services/ProxyGroupStatusPoller.h"
+
 class AppRuntimeResolver;
 class AppUpdateCheckCoordinator;
 class AppUpdateInstallService;
@@ -14,6 +16,7 @@ class ConfigBackupService;
 class CoreDiscoveryService;
 class CoreProcessCleanupService;
 class CoreUpdateCoordinator;
+class ProxyGroupStatusPoller;
 class DefaultServerSwitchCoordinator;
 class GeoResourceUpdateCoordinator;
 class GeoResourceUpdateService;
@@ -126,4 +129,7 @@ struct AppBootstrapObjects {
     // AppBootstrap lambdas, so it must be destroyed before them -- see the ordering note at the
     // top of this struct.
     std::unique_ptr<AutoSwitchCoordinator> autoSwitchCoordinator;
+    // Appended last, after autoSwitchCoordinator: it borrows nothing but the main window as
+    // parent, and AppBootstrap drives its lifecycle from syncStatusIndicators().
+    std::unique_ptr<ProxyGroupStatusPoller> proxyGroupStatusPoller;
 };

@@ -1,5 +1,7 @@
 #include "appcore/AppRuntimeResolver.h"
 
+#include "appcore/LocationGroupScan.h"
+
 #include <utility>
 
 #include <QDir>
@@ -42,6 +44,30 @@ const VmessItem* AppRuntimeResolver::resolveActiveServerPointer() const
     }
 
     return findServerById(currentIndexId);
+}
+
+// Group activation: the embeddable members in config list order, with the current node moved
+// to the front so it becomes the anchor (continuity: activating a group keeps the node the
+// user was on). Capped so a large subscription cannot turn one generated config into
+// hundreds of outbounds and a probe storm inside the core.
+QList<VmessItem> AppRuntimeResolver::resolveGroupServers(const QString& locationId) const
+{
+    constexpr int kMaxGroupMembers = 20;
+
+    QList<VmessItem> members = LocationGroupScan::embeddableMembers(
+        config_.collection().servers, locationId);
+
+    const QString currentId = config_.currentIndexId.trimmed();
+    for (int i = 1; i < members.size(); ++i) {
+        if (members.at(i).indexId == currentId) {
+            members.move(i, 0);
+            break;
+        }
+    }
+    if (members.size() > kMaxGroupMembers) {
+        members.erase(members.begin() + kMaxGroupMembers, members.end());
+    }
+    return members;
 }
 
 std::optional<VmessItem> AppRuntimeResolver::resolveActiveServerSnapshot() const

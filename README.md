@@ -40,6 +40,7 @@ Download the build for your platform from the [latest release](https://github.co
 - Add, edit, delete, reorder and filter servers, grouped by subscription.
 - Reorder subscriptions by dragging their tabs; the built-in *Ungrouped* tab stays pinned last.
 - Group servers by exit location instead — flag tabs with live per-location counts — and toggle between the two views at any time.
+- **Connect a whole location group as a latency-based auto-select group** (sing-box `urltest` / Mihomo `url-test`): the core picks the fastest member itself and switches without dropping connections, while the title bar, status bar, tray and the highlighted table row follow the node the core is actually using. Clicking a server in another group switches the auto-select there; clicking a custom config or activating from stopped keeps the single-node behavior. Xray has no native auto-select group, so group activation runs on sing-box or Mihomo.
 - Import servers from the clipboard or from share links; copy a share link and preview its QR code.
 - Update subscriptions, and run URL tests and latency (speed) tests.
 - Show the outbound location the running proxy actually exits from, so a node that is up but not working is visible as such.
@@ -73,6 +74,7 @@ Three cores are interchangeable, and SongBird picks a default per protocol. Not 
 - AnyTLS, Naive and TUIC are sing-box only, so servers using them require the sing-box core.
 - Mihomo does not support WireGuard.
 - When more than one core can run a protocol, sing-box is preferred, then Mihomo, then Xray.
+- Location-group auto-select activation uses the core's native group (sing-box `urltest`, Mihomo `url-test`) and is therefore unavailable on Xray; members whose protocol runs on another core are dropped from the group config, and custom configs cannot join a group at all.
 - The generated sing-box config loads on **sing-box 1.13.x and 1.14.x** alike. sing-box 1.14 removed the `strategy` DNS rule action option and introduced `preferred_by` in its place, so the generator emits neither: the per-rule strategies collapse into the global `dns.strategy`, and the hosts table is reached through a plain exact-domain rule list. `independent_cache` is dropped too, since 1.14 deprecates it and 1.16 removes it.
 
 ## macOS

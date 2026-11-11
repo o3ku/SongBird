@@ -57,6 +57,27 @@ void ServerTableModel::setItems(const QList<VmessItem>& items, QString currentIn
     endResetModel();
 }
 
+void ServerTableModel::setActiveIndexId(const QString& indexId)
+{
+    const QString trimmedId = indexId.trimmed();
+    if (trimmedId == currentIndexId_) {
+        return;
+    }
+
+    const int previousRow = rowByIndexId_.value(currentIndexId_, -1);
+    const int nextRow = rowByIndexId_.value(trimmedId, -1);
+    currentIndexId_ = trimmedId;
+
+    const int firstRow = previousRow >= 0 ? previousRow : nextRow;
+    const int lastRow = previousRow >= nextRow ? previousRow : nextRow;
+    if (firstRow >= 0) {
+        emit dataChanged(
+            index(firstRow, 0),
+            index(lastRow, static_cast<int>(Column::ColumnCount) - 1),
+            {Qt::DisplayRole});
+    }
+}
+
 bool ServerTableModel::updateTestResult(const QString& indexId, const QString& result)
 {
     const QString trimmedId = indexId.trimmed();

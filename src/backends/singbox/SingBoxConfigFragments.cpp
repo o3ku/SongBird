@@ -111,9 +111,14 @@ QJsonObject SingBoxConfigFragments::buildHttpInboundWithTag(const Config& config
     return inbound;
 }
 
-QJsonObject SingBoxConfigFragments::buildPrimaryOutbound(const Config& config, const VmessItem& server)
+QJsonObject SingBoxConfigFragments::buildPrimaryOutbound(const Config& config, const VmessItem& server, const QString& tag)
 {
-    return SingBoxOutboundConfigFragments::buildPrimaryOutbound(config, server);
+    return SingBoxOutboundConfigFragments::buildPrimaryOutbound(config, server, tag);
+}
+
+QJsonObject SingBoxConfigFragments::buildUrlTestOutbound(const QStringList& memberTags)
+{
+    return SingBoxOutboundConfigFragments::buildUrlTestOutbound(memberTags);
 }
 
 QJsonObject SingBoxConfigFragments::buildTls(const Config& config, const VmessItem& server)

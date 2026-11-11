@@ -1,3 +1,7 @@
+#include "common/ServerDisplayName.h"
+#include "services/ProxyGroupStatusPoller.h"
+#include "app/DefaultServerSwitchCoordinator.h"
+#include "app/ServerActivationGestureLogic.h"
 #include "app/AppBootstrap.h"
 #include "app/AppBootstrapObjects.h"
 
@@ -51,6 +55,23 @@ void AppBootstrap::wireProxyStack()
         });
 
     objects_->runtimeState = std::make_unique<RuntimeState>();
+
+    // Group activation: follows which member the core's auto-select group is on.
+    // syncStatusIndicators() starts and retargets it against the session's endpoint; this
+    // connection only translates the answer into the display name the snapshot carries.
+    objects_->proxyGroupStatusPoller = std::make_unique<ProxyGroupStatusPoller>(objects_->mainWindow.get());
+    QObject::connect(
+        objects_->proxyGroupStatusPoller.get(),
+        &ProxyGroupStatusPoller::currentMemberChanged,
+        objects_->mainWindow.get(),
+        [this](const QString& indexId) {
+            const std::optional<VmessItem> server = indexId.trimmed().isEmpty()
+                ? std::nullopt
+                : findServerSnapshotById(indexId);
+            currentInCoreServerId_ = indexId.trimmed();
+            currentInCoreServerName_ = server.has_value() ? serverDisplayName(*server) : QString();
+            syncStatusIndicators();
+        });
     SystemProxyCoordinator::Callbacks systemProxyCallbacks;
     systemProxyCallbacks.appendResult = [this](const OperationResult& result) { appendResult(result); };
     systemProxyCallbacks.syncStatusIndicators = [this]() { syncStatusIndicators(); };
@@ -101,4 +122,31 @@ void AppBootstrap::wireProxyStack()
                 QCoreApplication::translate("AppBootstrap", "%1 is already running. Please wait for it to finish.")
                     .arg(description)));
         });
+}
+
+// What a server click means depends on the running session: with a group session active,
+// clicking a node of the same group is a no-op and a node of another group switches the
+// auto-select to that group (ServerActivationGestureLogic); every other case keeps the
+// single-node behavior the app always had.
+void AppBootstrap::routeServerActivationGesture(const QString& indexId)
+{
+    if (objects_->defaultServerSwitchCoordinator == nullptr) {
+        return;
+    }
+
+    const auto gesture = ServerActivationGestureLogic::resolveServerActivationGesture(
+        isCoreRunning(),
+        config_.ui().activeLocationGroupId,
+        config_.collection().servers,
+        indexId);
+    switch (gesture.kind) {
+    case ServerActivationGestureLogic::ActivationGesture::Kind::ActivateNode:
+        objects_->defaultServerSwitchCoordinator->setDefaultServer(gesture.indexId);
+        return;
+    case ServerActivationGestureLogic::ActivationGesture::Kind::ActivateGroup:
+        objects_->defaultServerSwitchCoordinator->activateLocationGroup(gesture.locationId);
+        return;
+    case ServerActivationGestureLogic::ActivationGesture::Kind::NoOp:
+        return;
+    }
 }

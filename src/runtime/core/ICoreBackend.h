@@ -59,6 +59,17 @@ public:
         Q_UNUSED(routing)
         return {};
     }
+    // Root whose primary outbound is the core's native latency-based auto-select group over
+    // the ordered members (members.first() is the anchor the session resolved -- it drives
+    // nothing here, the group picks the live node). The route keeps pointing at the primary
+    // tag; only the primary outbound becomes the group. Returns an empty object when the core
+    // has no native auto-select group (Xray), which the writer reports as a failed generation.
+    virtual QJsonObject buildClientGroupRoot(const Config& config, const QList<VmessItem>& members) const
+    {
+        Q_UNUSED(config)
+        Q_UNUSED(members)
+        return {};
+    }
     virtual QUrl releasesApiUrl() const = 0;
     // Which release asset to fetch, and what to fall back to when GitHub's release lookup is
     // unavailable. Both are functions of the target platform because every vendor names its

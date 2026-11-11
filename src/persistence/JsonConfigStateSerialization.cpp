@@ -72,6 +72,9 @@ QJsonObject toUiStateObject(const Config& config)
     writeIfTrue(ui, QStringLiteral("mainGroupByLocation"), config.ui().mainGroupByLocation);
     writeIfNotEmpty(ui, QStringLiteral("mainSelectedLocationId"), config.ui().mainSelectedLocationId);
     writeIfTrue(ui, QStringLiteral("autoSwitchInGroup"), config.ui().autoSwitchInGroup);
+    // The group activation target rides the state file so a restart restores the group
+    // session the way mainProxyEnabled restores proxying itself.
+    writeIfNotEmpty(ui, QStringLiteral("activeLocationGroupId"), config.ui().activeLocationGroupId);
     writeIfNotEmpty(ui, QStringLiteral("settingsRoutingRuleTabKey"), config.ui().settingsRoutingRuleTabKey);
     writeIfNotDefault(ui, QStringLiteral("mainServerLogSplitPercent"), config.ui().mainServerLogSplitPercent, 60);
     writeIfNotDefault(ui, QStringLiteral("mainServerQrSplitPercent"), config.ui().mainServerQrSplitPercent, 78);
@@ -153,6 +156,9 @@ void read(const QJsonObject& root, Config& config)
         }
         config.ui().autoSwitchInGroup =
             readBool(ui, QStringLiteral("autoSwitchInGroup"), config.ui().autoSwitchInGroup);
+        if (ui.contains(QStringLiteral("activeLocationGroupId"))) {
+            config.ui().activeLocationGroupId = readString(ui, QStringLiteral("activeLocationGroupId"));
+        }
         if (ui.contains(QStringLiteral("settingsRoutingRuleTabKey"))) {
             config.ui().settingsRoutingRuleTabKey = readString(ui, QStringLiteral("settingsRoutingRuleTabKey"));
         }

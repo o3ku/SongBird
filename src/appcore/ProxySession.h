@@ -140,6 +140,13 @@ public:
     bool isActivationInProgress() const;
     bool isTransitioning() const;
     QString serverLocation() const;
+    // Group activation: the location group the current (or starting) session targets, and the
+    // members the written config actually embeds, anchor first -- empty list for single-node
+    // runs. The Clash API endpoint is only set while a group session is (starting to be) live.
+    QString currentGroupLocationId() const;
+    QList<VmessItem> currentGroupMembers() const;
+    int clashApiPort() const;
+    QString clashApiSecret() const;
     // ISO country code of the current exit (from the display probe; empty when unknown).
     QString serverCountryCode() const;
     QString serverWarning() const;
@@ -230,6 +237,7 @@ private:
     };
 
     static StartupSteps startupSteps();
+    static int pickFreeLoopbackPort();
 
     void setPhase(Phase phase);
     void startInternal(
@@ -327,6 +335,11 @@ private:
 
     StartRequest currentRequest_;
     VmessItem currentServer_;
+    // Group activation state for the running (or starting) session: the location group the
+    // request's config named and the members the written config actually embeds, anchor first
+    // (member tag "member-N" maps back over this order). Both stay empty for single-node runs.
+    QString currentGroupLocationId_;
+    QList<VmessItem> currentGroupMembers_;
     QString currentServerLocation_;
     // ISO country code of the last location probe (empty when unknown). Kept beside the display
     // string so the "fix location from exit" action can use the probe's answer without the UI

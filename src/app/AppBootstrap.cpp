@@ -542,6 +542,29 @@ void AppBootstrap::syncStatusIndicators()
     const QString currentServerLocation = objects_->proxySession != nullptr ? objects_->proxySession->serverLocation() : QString();
     const QString currentServerWarning = objects_->proxySession != nullptr ? objects_->proxySession->serverWarning() : QString();
 
+    // Group activation: while a group session lives, the poller tracks which member the core's
+    // auto-select group is on. Started and retargeted here because syncStatusIndicators() is
+    // the one place every session transition already funnels through.
+    const QList<VmessItem> groupMembers = objects_->proxySession != nullptr
+        ? objects_->proxySession->currentGroupMembers()
+        : QList<VmessItem>{};
+    const int clashApiPort = objects_->proxySession != nullptr ? objects_->proxySession->clashApiPort() : 0;
+    const bool groupSessionLive = !groupMembers.isEmpty() && clashApiPort > 0;
+    if (objects_->proxyGroupStatusPoller != nullptr) {
+        if (groupSessionLive) {
+            QStringList memberIds;
+            memberIds.reserve(groupMembers.size());
+            for (const VmessItem& member : groupMembers) {
+                memberIds.append(member.indexId);
+            }
+            objects_->proxyGroupStatusPoller->start(clashApiPort, objects_->proxySession->clashApiSecret(), memberIds);
+        } else {
+            objects_->proxyGroupStatusPoller->stop();
+            currentInCoreServerId_.clear();
+            currentInCoreServerName_.clear();
+        }
+    }
+
     if (objects_->mainWindow != nullptr) {
         objects_->mainWindow->setExistingCoreTypes(existingCoreTypes_);
     }
@@ -556,6 +579,12 @@ void AppBootstrap::syncStatusIndicators()
         inputs.currentServerName = currentServerName;
         inputs.currentServerLocation = currentServerLocation;
         inputs.currentServerWarning = currentServerWarning;
+        inputs.activeLocationGroupId = groupSessionLive
+            ? objects_->proxySession->currentGroupLocationId()
+            : QString();
+        inputs.activeLocationGroupMemberCount = groupMembers.size();
+        inputs.currentInCoreServerId = currentInCoreServerId_;
+        inputs.currentInCoreServerName = currentInCoreServerName_;
         inputs.systemProxyUndoWarning = systemProxyUndoWarning_;
         inputs.proxyPhaseName = objects_->proxySession != nullptr ? proxySessionPhaseName(objects_->proxySession->phase()) : QStringLiteral("Stopped");
         inputs.systemProxyMode = systemProxyMode_;

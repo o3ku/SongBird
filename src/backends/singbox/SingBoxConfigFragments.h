@@ -15,7 +15,8 @@ public:
     static QJsonObject buildSocksInbound(const Config& config, bool allowLan, int offset);
     static QJsonObject buildHttpInbound(const Config& config, bool allowLan, int offset);
     static QJsonObject buildHttpInboundWithTag(const Config& config, const QString& tag, int offset);
-    static QJsonObject buildPrimaryOutbound(const Config& config, const VmessItem& server);
+    static QJsonObject buildPrimaryOutbound(const Config& config, const VmessItem& server, const QString& tag);
+    static QJsonObject buildUrlTestOutbound(const QStringList& memberTags);
     static QJsonObject buildTls(const Config& config, const VmessItem& server);
     static QJsonObject buildTransport(const VmessItem& server);
     static QJsonObject buildSocksOutbound(

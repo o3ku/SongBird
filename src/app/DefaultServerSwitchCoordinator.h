@@ -18,6 +18,9 @@ public:
         std::function<QObject*()> uiContext;
         std::function<std::weak_ptr<char>()> lifetimeGuard;
         std::function<OperationResult(const QString&)> setDefaultServer;
+        // Group activation target on the running config ("" = single-node session).
+        std::function<QString()> activeLocationGroupId;
+        std::function<OperationResult(const QString&)> setActiveLocationGroup;
         std::function<void(const OperationResult&)> appendResult;
         std::function<void()> syncWindow;
         std::function<void()> clearServerWarning;
@@ -33,6 +36,7 @@ public:
 
     void setDefaultServer(const QString& indexId);
     void setDefaultServerWithTun(const QString& indexId);
+    void activateLocationGroup(const QString& locationId);
     bool requestSwitchAfterCoreStop(const QString& indexId, bool enableTun);
     void scheduleSwitchAfterCoreStopped(const QString& indexId, bool enableTun, bool showStartupOverlay);
     void switchAfterCoreStopped(const QString& indexId, bool enableTun, bool showStartupOverlay);
@@ -45,6 +49,7 @@ private:
     QObject* resolvedUiContext() const;
     std::weak_ptr<char> resolvedLifetimeGuard() const;
     OperationResult setDefaultServerOnConfig(const QString& indexId) const;
+    QString activeLocationGroupId() const;
     void appendResult(const OperationResult& result) const;
     void syncWindow() const;
     void clearServerWarning() const;

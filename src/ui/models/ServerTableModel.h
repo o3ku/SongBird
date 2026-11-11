@@ -45,6 +45,10 @@ public:
     explicit ServerTableModel(QObject* parent = nullptr);
 
     void setItems(const QList<VmessItem>& items, QString currentIndexId = {});
+    // Moves the active-row mark without a model reset: a group session's in-core member
+    // changes while the server list itself does not, and re-running setItems would cost the
+    // view its selection and scroll position for a one-row highlight change.
+    void setActiveIndexId(const QString& indexId);
     bool updateTestResult(const QString& indexId, const QString& result);
     const ServerTableRow* itemAt(int row) const;
     const ServerTableRow* itemByIndexId(const QString& indexId) const;

@@ -25,6 +25,14 @@ public:
     virtual QString currentIndexId() const = 0;
     virtual CoreType resolveRuntimeCoreType(CoreType coreType) const = 0;
     virtual QString resolveCoreInstallDirectory(CoreType coreType) const = 0;
+    // Group activation: the embeddable members of a location group, config list order, anchor
+    // (currentIndexId when it is a member) first. The default serves hosts with no location
+    // catalog -- headless tests get "no member" and the session fails the group start early.
+    virtual QList<VmessItem> resolveGroupServers(const QString& locationId) const
+    {
+        Q_UNUSED(locationId)
+        return {};
+    }
 };
 
 class IRuntimeEnvironment

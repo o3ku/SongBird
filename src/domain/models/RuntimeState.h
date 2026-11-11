@@ -16,6 +16,14 @@ struct RuntimeStateSnapshot {
     QString currentServerName;
     QString currentServerLocation;
     QString currentServerWarning;
+    // Group activation: the location group the session runs ("" = single-node), how many
+    // members its config embeds, and the member the core's auto-select group is currently on
+    // (empty until the Clash-API poll answers). currentServerName already carries the composed
+    // "GROUP ×N · node" display; the id is for marking the row the core is actually using.
+    QString activeLocationGroupId;
+    int activeLocationGroupMemberCount = 0;
+    QString currentInCoreServerId;
+    QString currentInCoreServerName;
     // Set when the session could not undo its registry write (display only, like the
     // OutboundLocationProbe warning): non-empty means the user must act or wait for the
     // next launch's recovery. Cleared when a new activation succeeds.

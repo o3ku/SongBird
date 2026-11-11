@@ -714,6 +714,22 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>切换默认服务器后正在重启核心。</translation>
     </message>
     <message>
+        <source>Reloading core after switching the location group.</source>
+        <translation>切换位置分组后重新加载核心。</translation>
+    </message>
+    <message>
+        <source>Location group &apos;%1&apos; set as the activation target.</source>
+        <translation>位置分组“%1”已设为激活目标。</translation>
+    </message>
+    <message>
+        <source>%1 group, %2 node(s)</source>
+        <translation>%1 分组，%2 个节点</translation>
+    </message>
+    <message>
+        <source>Favorite</source>
+        <translation>收藏</translation>
+    </message>
+    <message>
         <source>Reloading core after removing the active server.</source>
         <translation>移除当前服务器后正在重启核心。</translation>
     </message>
@@ -1037,6 +1053,22 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>%1 cannot generate a runtime config for %2 servers.</source>
         <translation>%1 无法为 %2 服务器生成运行时配置。</translation>
+    </message>
+    <message>
+        <source>Cannot generate a group config without members.</source>
+        <translation>没有成员，无法生成分组配置。</translation>
+    </message>
+    <message>
+        <source>No member of the group can run on %1.</source>
+        <translation>分组中没有任何成员能在 %1 上运行。</translation>
+    </message>
+    <message>
+        <source>%1 cannot generate an auto-select group for these servers.</source>
+        <translation>%1 无法为这些服务器生成自动选择分组。</translation>
+    </message>
+    <message>
+        <source>Skipped %1 member(s) not supported by the core: %2.</source>
+        <translation>已跳过 %1 个核心不支持的成员：%2。</translation>
     </message>
     <message>
         <source>Cannot generate config for an empty server address.</source>
@@ -2279,6 +2311,18 @@ The running core will be stopped before installation if needed.</source>
         <translation>已跳过出站检查</translation>
     </message>
     <message>
+        <source>Location group &apos;%1&apos; has no server this core can embed in an auto-select group.</source>
+        <translation>位置分组“%1”没有任何可嵌入自动选择分组的服务器。</translation>
+    </message>
+    <message>
+        <source>%1 group (%2 nodes, auto-select)</source>
+        <translation>%1 分组（%2 个节点，自动选择）</translation>
+    </message>
+    <message>
+        <source>Favorite</source>
+        <translation>收藏</translation>
+    </message>
+    <message>
         <source>Outbound check passed</source>
         <translation>出站检查通过</translation>
     </message>
@@ -2914,6 +2958,10 @@ Switch this protocol to %3?</source>
         <translation>复制订阅 URL</translation>
     </message>
     <message>
+        <source>Connect as Auto-Select Group</source>
+        <translation>作为自动选择分组连接</translation>
+    </message>
+    <message>
         <source>Test servers</source>
         <translation>测试服务器</translation>
     </message>
@@ -3457,6 +3505,9 @@ Switch this protocol to %3?</source>
         <source>skipped %1 node(s): %2</source>
         <translation>已跳过 %1 个节点：%2</translation>
     </message>
+</context>
+<context>
+    <name>SubscriptionContentParser</name>
     <message>
         <source>(no type)</source>
         <translation>（无类型）</translation>

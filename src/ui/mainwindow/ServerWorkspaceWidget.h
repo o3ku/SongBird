@@ -90,7 +90,8 @@ public:
     // location items: the preference is about the mode, not about any one group). The window
     // owns the preference and its persistence, so both halves are injected.
     void setGroupByLocationContextMenu(std::function<bool()> autoSwitchChecked,
-                                        std::function<void(bool)> autoSwitchToggled);
+                                        std::function<void(bool)> autoSwitchToggled,
+                                        std::function<bool()> autoSwitchAvailable = {});
 
 private:
     void rebuildCompactSections();
@@ -129,5 +130,6 @@ private:
     std::function<void(const QString&)> compactSelectionHandler_;
     std::function<void(const QString&, const QPoint&)> compactContextMenuHandler_;
     std::function<bool()> groupMenuAutoSwitchChecked_;
+    std::function<bool()> groupMenuAutoSwitchAvailable_;
     std::function<void(bool)> groupMenuAutoSwitchToggled_;
 };

@@ -900,6 +900,15 @@ set(SONGBIRD_CLIENT_CONFIG_WRITER_TEST_SOURCES
     ${SONGBIRD_BACKEND_STACK_SOURCES}
 )
 
+set(SONGBIRD_PROXY_GROUP_CONFIG_WRITER_TEST_SOURCES
+    ProxyGroupConfigWriterTests.cpp
+    ${SONGBIRD_BACKEND_STACK_SOURCES}
+)
+
+set(SONGBIRD_PROXY_GROUP_STATUS_POLLER_TEST_SOURCES
+    ProxyGroupStatusPollerTests.cpp
+)
+
 set(SONGBIRD_BACKEND_CONTRACT_TEST_SOURCES
     BackendContractTests.cpp
     ${SONGBIRD_BACKEND_STACK_SOURCES}
@@ -911,6 +920,22 @@ songbird_add_qt_test(songbird_client_config_writer_tests client-config-writer-tu
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+songbird_add_qt_test(songbird_proxy_group_config_writer_tests proxy-group-config-writer
+    SOURCES
+        ${SONGBIRD_PROXY_GROUP_CONFIG_WRITER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+songbird_add_qt_test(songbird_proxy_group_status_poller_tests proxy-group-status-poller
+    SOURCES
+        ${SONGBIRD_PROXY_GROUP_STATUS_POLLER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Network
 )
 
 songbird_add_qt_test(songbird_xray_tls_compatibility_tests xray-tls-compatibility

@@ -8,6 +8,8 @@
 
 #include "app/AutoSwitchCoordinator.h"
 #include "app/AutoSwitchGroupLogic.h"
+#include "app/ServerActivationGestureLogic.h"
+#include "appcore/LocationGroupScan.h"
 
 namespace {
 
@@ -106,7 +108,11 @@ private slots:
     void pickWarmSwitchTargetPrefersFreshLowestLatency();
     void pickWarmProbeCandidatesRankFreshReachableThenCap();
     void roundRobinAndCeilingArithmetic();
+    void locationGroupScanEmbedsOnlyNonCustomMembers();
+    void activationGestureFromStoppedActivatesTheNode();
+    void activationGestureInGroupSessionSwitchesNoOpsAndFallsBack();
 
+    // Coordinator
     // Coordinator
     void failureIsIgnoredWhenPreferenceOff();
     void failureOutsideTheGroupDoesNotSwitch();
@@ -271,6 +277,85 @@ void AutoSwitchGroupTests::roundRobinAndCeilingArithmetic()
     QVERIFY(AutoSwitchGroupLogic::reachedSwitchCeiling(2, 3));
     QVERIFY(!AutoSwitchGroupLogic::reachedSwitchCeiling(8, 10));
     QVERIFY(AutoSwitchGroupLogic::reachedSwitchCeiling(9, 10));
+}
+
+void AutoSwitchGroupTests::locationGroupScanEmbedsOnlyNonCustomMembers()
+{
+    const QList<VmessItem> servers{
+        makeServer(QStringLiteral("us-1"), QStringLiteral("us 1"), QStringLiteral("US")),
+        makeServer(QStringLiteral("custom"), QStringLiteral("custom"), QStringLiteral("US"), false, ConfigType::Custom),
+        makeServer(QStringLiteral("jp-1"), QStringLiteral("jp 1"), QStringLiteral("JP")),
+        makeServer(QStringLiteral("fav-1"), QStringLiteral("fav 1"), QStringLiteral("JP"), true),
+    };
+
+    const QList<VmessItem> us = LocationGroupScan::embeddableMembers(servers, QStringLiteral("US"));
+    QCOMPARE(us.size(), 1);
+    QCOMPARE(us.first().indexId, QStringLiteral("us-1"));
+
+    const QList<VmessItem> favorite = LocationGroupScan::embeddableMembers(servers, QStringLiteral("FAVORITE"));
+    QCOMPARE(favorite.size(), 1);
+    QCOMPARE(favorite.first().indexId, QStringLiteral("fav-1"));
+
+    QCOMPARE(LocationGroupScan::locationIdOfServer(servers.first()), QStringLiteral("US"));
+    QCOMPARE(LocationGroupScan::locationIdOfServer(servers.last()), QStringLiteral("FAVORITE"));
+}
+
+void AutoSwitchGroupTests::activationGestureFromStoppedActivatesTheNode()
+{
+    const QList<VmessItem> servers{
+        makeServer(QStringLiteral("us-1"), QStringLiteral("us 1"), QStringLiteral("US")),
+        makeServer(QStringLiteral("jp-1"), QStringLiteral("jp 1"), QStringLiteral("JP")),
+    };
+
+    // Nothing runs, and a stale group target must not turn the click into a group switch:
+    // activation from stopped keeps the user's node.
+    const auto stopped = ServerActivationGestureLogic::resolveServerActivationGesture(
+        false, QStringLiteral("US"), servers, QStringLiteral("jp-1"));
+    QCOMPARE(static_cast<int>(stopped.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateNode));
+    QCOMPARE(stopped.indexId, QStringLiteral("jp-1"));
+
+    // Unknown and empty clicks do nothing.
+    const auto unknown = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("US"), servers, QStringLiteral("nope"));
+    QCOMPARE(static_cast<int>(unknown.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::NoOp));
+}
+
+void AutoSwitchGroupTests::activationGestureInGroupSessionSwitchesNoOpsAndFallsBack()
+{
+    const QList<VmessItem> servers{
+        makeServer(QStringLiteral("us-1"), QStringLiteral("us 1"), QStringLiteral("US")),
+        makeServer(QStringLiteral("us-2"), QStringLiteral("us 2"), QStringLiteral("US")),
+        makeServer(QStringLiteral("jp-1"), QStringLiteral("jp 1"), QStringLiteral("JP")),
+        makeServer(QStringLiteral("custom"), QStringLiteral("custom"), QStringLiteral("JP"), false, ConfigType::Custom),
+    };
+
+    // Same group: a no-op, so the running session is not restarted for nothing.
+    const auto sameGroup = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("US"), servers, QStringLiteral("us-2"));
+    QCOMPARE(static_cast<int>(sameGroup.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::NoOp));
+
+    // Another group while a group session runs: switch the auto-select to that group.
+    const auto otherGroup = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("US"), servers, QStringLiteral("jp-1"));
+    QCOMPARE(static_cast<int>(otherGroup.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateGroup));
+    QCOMPARE(otherGroup.locationId, QStringLiteral("JP"));
+
+    // A custom config can never join a group, so clicking one is a single-node activation.
+    const auto custom = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("JP"), servers, QStringLiteral("custom"));
+    QCOMPARE(static_cast<int>(custom.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateNode));
+    QCOMPARE(custom.indexId, QStringLiteral("custom"));
+
+    // A single-node session (no group target) keeps the pre-group behavior on every click.
+    const auto plain = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QString(), servers, QStringLiteral("jp-1"));
+    QCOMPARE(static_cast<int>(plain.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateNode));
 }
 
 void AutoSwitchGroupTests::failureIsIgnoredWhenPreferenceOff()

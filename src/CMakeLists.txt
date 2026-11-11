@@ -206,6 +206,8 @@ set(SONGBIRD_SHARED_SOURCES
     services/ConfigBackupStateDocument.cpp
     services/ServerService.h
     services/ServerService.cpp
+    services/ProxyGroupStatusPoller.h
+    services/ProxyGroupStatusPoller.cpp
     services/ServerCustomConfigStore.h
     services/ServerCustomConfigStore.cpp
     services/ServerListOperations.h

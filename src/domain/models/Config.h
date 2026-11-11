@@ -97,6 +97,12 @@ struct UiConfigState {
     // could not bring it back), the composition root restarts the proxy on the next node in the
     // same location group. Session-wide preference, persisted with the rest of the ui state.
     bool autoSwitchInGroup = false;
+    // Group activation target: when non-empty at session start, the primary outbound becomes
+    // the core's native latency-based auto-select group over this location group's members
+    // (currentIndexId keeps the anchor node for display and single-node fallback). Persisted
+    // in the .state.json so a restart restores the group session; cleared whenever the user
+    // activates a single node.
+    QString activeLocationGroupId;
     QString settingsRoutingRuleTabKey;
     int mainServerLogSplitPercent = 60;
     int mainServerQrSplitPercent = 78;
@@ -150,6 +156,12 @@ struct RootConfigState {
     // counts as due, so enabling the feature baselines every subscription once.
     bool subscriptionAutoUpdateEnabled = false;
     int subscriptionAutoUpdateIntervalHours = 6;
+    // Group activation's Clash API endpoint -- transient per-activation state, deliberately
+    // never serialized: the session picks a free loopback port and a random secret at each
+    // group start so the front end can poll which member the core's auto-select group is on.
+    // Port 0 (or an empty secret) means "no endpoint" -- single-node runs stay unwired.
+    int clashApiPort = 0;
+    QString clashApiSecret;
 };
 
 struct CollectionConfigState {

@@ -83,6 +83,44 @@ void DefaultServerSwitchCoordinator::setDefaultServerWithTun(const QString& inde
     }
 }
 
+// Group activation: set the location group as the session's target and start (or reload) the
+// core on it. Mirrors setDefaultServer's shape -- stop-before-switch when a core runs, plain
+// enable otherwise -- and leaves the node target (currentIndexId) untouched for the anchor.
+void DefaultServerSwitchCoordinator::activateLocationGroup(const QString& locationId)
+{
+    const QString trimmedLocationId = locationId.trimmed();
+    if (trimmedLocationId.isEmpty()) {
+        return;
+    }
+
+    if (isCoreRunning()) {
+        if (activeLocationGroupId() == trimmedLocationId) {
+            return;
+        }
+        setCurrentActivationPending(true);
+        if (callbacks_.setActiveLocationGroup) {
+            appendResult(callbacks_.setActiveLocationGroup(trimmedLocationId));
+        }
+        syncWindow();
+        if (callbacks_.restartCoreIfRunning) {
+            callbacks_.restartCoreIfRunning(QCoreApplication::translate(
+                "AppBootstrap", "Reloading core after switching the location group."),
+                true);
+        }
+        return;
+    }
+
+    setCurrentActivationPending(true);
+    if (callbacks_.setActiveLocationGroup) {
+        appendResult(callbacks_.setActiveLocationGroup(trimmedLocationId));
+    }
+    syncWindow();
+    clearServerWarning();
+    if (callbacks_.enableSystemProxy) {
+        callbacks_.enableSystemProxy(true);
+    }
+}
+
 bool DefaultServerSwitchCoordinator::requestSwitchAfterCoreStop(const QString& indexId, bool enableTun)
 {
     const QString trimmedId = indexId.trimmed();
@@ -197,6 +235,11 @@ std::weak_ptr<char> DefaultServerSwitchCoordinator::resolvedLifetimeGuard() cons
 
     static const std::shared_ptr<char> fallbackGuard = std::make_shared<char>();
     return fallbackGuard;
+}
+
+QString DefaultServerSwitchCoordinator::activeLocationGroupId() const
+{
+    return callbacks_.activeLocationGroupId ? callbacks_.activeLocationGroupId() : QString();
 }
 
 OperationResult DefaultServerSwitchCoordinator::setDefaultServerOnConfig(const QString& indexId) const

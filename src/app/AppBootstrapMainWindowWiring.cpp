@@ -444,8 +444,11 @@ void AppBootstrap::wireMainWindowCommands()
     });
 
     QObject::connect(objects_->mainWindow.get(), &MainWindow::setDefaultServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
+        routeServerActivationGesture(indexId);
+    });
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::connectLocationGroupRequested, objects_->mainWindow.get(), [this](const QString& locationId) {
         if (objects_->defaultServerSwitchCoordinator != nullptr) {
-            objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
+            objects_->defaultServerSwitchCoordinator->activateLocationGroup(locationId);
         }
     });
     QObject::connect(objects_->mainWindow.get(), &MainWindow::setDefaultServerWithTunRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
@@ -467,9 +470,7 @@ void AppBootstrap::wireMainWindowCommands()
 void AppBootstrap::wireTraySignals()
 {
     QObject::connect(objects_->trayController.get(), &TrayController::defaultServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
-        if (objects_->defaultServerSwitchCoordinator != nullptr) {
-            objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
-        }
+        routeServerActivationGesture(indexId);
     });
 
     QObject::connect(objects_->trayController.get(), &TrayController::routingRequested, objects_->mainWindow.get(), [this](const QString& routingModeId) {

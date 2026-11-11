@@ -266,7 +266,11 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     connect(groupByLocationButton_, &QToolButton::customContextMenuRequested, this, [this](const QPoint& position) {
         // Only in the grouped mode: unchecked means the subscription view is showing, and the
         // preference would be adjusting a mode the user is not looking at.
-        if (groupMenuAutoSwitchChecked_ == nullptr || !groupByLocationButton_->isChecked()) {
+        // While a group session runs, the core's auto-select owns in-group switching; the
+        // app-level failure fallback menu would only promise a second, competing mechanism.
+        const bool autoSwitchSuperseded = groupMenuAutoSwitchAvailable_ != nullptr
+            && !groupMenuAutoSwitchAvailable_();
+        if (groupMenuAutoSwitchChecked_ == nullptr || !groupByLocationButton_->isChecked() || autoSwitchSuperseded) {
             return;
         }
         QMenu menu(groupByLocationButton_);
@@ -676,10 +680,12 @@ void ServerWorkspaceWidget::setCompactSelectionHandler(std::function<void(const 
 
 void ServerWorkspaceWidget::setGroupByLocationContextMenu(
     std::function<bool()> autoSwitchChecked,
-    std::function<void(bool)> autoSwitchToggled)
+    std::function<void(bool)> autoSwitchToggled,
+    std::function<bool()> autoSwitchAvailable)
 {
     groupMenuAutoSwitchChecked_ = std::move(autoSwitchChecked);
     groupMenuAutoSwitchToggled_ = std::move(autoSwitchToggled);
+    groupMenuAutoSwitchAvailable_ = std::move(autoSwitchAvailable);
     if (groupByLocationButton_ != nullptr) {
         groupByLocationButton_->setContextMenuPolicy(Qt::CustomContextMenu);
     }

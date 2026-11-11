@@ -157,6 +157,11 @@ QJsonObject MihomoCoreBackend::buildClientRoot(const Config& config, const Vmess
     return MihomoConfigFragments::buildClientRoot(config, server);
 }
 
+QJsonObject MihomoCoreBackend::buildClientGroupRoot(const Config& config, const QList<VmessItem>& members) const
+{
+    return MihomoConfigFragments::buildClientGroupRoot(config, members);
+}
+
 QUrl MihomoCoreBackend::releasesApiUrl() const
 {
     return githubReleasesApiUrl(mihomoRepositoryPath(), 20);
