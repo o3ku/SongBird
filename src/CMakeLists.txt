@@ -563,8 +563,19 @@ elseif(APPLE)
 endif()
 
 if(WIN32 AND MSVC)
+    # The Windows resource script is generated so the version stamp in VERSIONINFO comes
+    # from project(VERSION) (through SONGBIRD_DISPLAY_VERSION) instead of a second literal
+    # in the tree; check-version-consistency guards that single source.
+    set(SONGBIRD_RC_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/resources/logo.ico")
+    set(SONGBIRD_RC_FILEVERSION "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+    set(SONGBIRD_RC_FILEVERSION_STRING "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}.0")
+    configure_file(
+        resources/SongBird.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/SongBird.rc
+        @ONLY
+    )
     list(APPEND SONGBIRD_SOURCES
-        resources/SongBird.rc
+        ${CMAKE_CURRENT_BINARY_DIR}/SongBird.rc
     )
 endif()
 
