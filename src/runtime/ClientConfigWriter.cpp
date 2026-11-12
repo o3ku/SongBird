@@ -319,20 +319,43 @@ ClientConfigWriter::GroupGeneration ClientConfigWriter::generateClientGroupConfi
         return generation;
     }
 
-    // The anchor (first member) drives the launch core exactly as the single-node path does;
-    // members that cannot run on it are dropped below rather than failing the group.
-    const VmessItem& anchor = members.first();
-    if (anchor.address.trimmed().isEmpty()) {
-        generation.generated.result = OperationResult::fail(
-            QCoreApplication::translate("ClientConfigWriter", "Cannot generate config for an empty server address."));
-        return generation;
+    // The launch core: the anchor (first member) when it can run on a core with a native
+    // auto-select group, otherwise the first member that can. A mixed-core group anchored on a
+    // core without one (Xray) used to fail outright even though its other members were perfectly
+    // embeddable; re-anchoring keeps the group alive and drops only the foreign members.
+    CoreType launchCore = CoreType::Unknown;
+    const ICoreBackend* backend = nullptr;
+    QStringList grouplessCores;
+    for (const VmessItem& member : members) {
+        if (member.configType == ConfigType::Custom || member.address.trimmed().isEmpty()) {
+            continue;
+        }
+        const CoreType memberCore = resolveSelectedCoreType(config, member, effectiveExistingCoreTypes());
+        const ICoreBackend* memberBackend = coreBackend(memberCore);
+        if (memberBackend == nullptr) {
+            continue;
+        }
+        if (!memberBackend->hasNativeAutoSelectGroup()) {
+            if (!grouplessCores.contains(coreTypeDisplayName(memberCore))) {
+                grouplessCores.append(coreTypeDisplayName(memberCore));
+            }
+            continue;
+        }
+        if (!validateServer(config, member).success) {
+            continue;
+        }
+        launchCore = memberCore;
+        backend = memberBackend;
+        break;
     }
-
-    const CoreType launchCore = resolveSelectedCoreType(config, anchor, effectiveExistingCoreTypes());
-    const ICoreBackend* backend = coreBackend(launchCore);
     if (backend == nullptr) {
         generation.generated.result = OperationResult::fail(
-            QCoreApplication::translate("ClientConfigWriter", "Unsupported core type: %1.").arg(coreTypeDisplayName(launchCore)));
+            grouplessCores.isEmpty()
+                ? QCoreApplication::translate(
+                    "ClientConfigWriter", "No member of the group can run on a core with a native auto-select group.")
+                : QCoreApplication::translate(
+                    "ClientConfigWriter", "No member of the group can run on a core with a native auto-select group (%1).")
+                    .arg(grouplessCores.join(QStringLiteral(", "))));
         return generation;
     }
 
@@ -350,9 +373,11 @@ ClientConfigWriter::GroupGeneration ClientConfigWriter::generateClientGroupConfi
     }
 
     if (generation.embeddedMembers.isEmpty()) {
+        // Unreachable in practice (the launch-core search above validated the anchor it found),
+        // kept as a guard so the invariant "a generated group embeds at least one member" holds.
         generation.generated.result = OperationResult::fail(
-            QCoreApplication::translate("ClientConfigWriter", "No member of the group can run on %1.")
-                .arg(coreTypeDisplayName(launchCore)));
+            QCoreApplication::translate(
+                "ClientConfigWriter", "No member of the group can run on a core with a native auto-select group."));
         return generation;
     }
 

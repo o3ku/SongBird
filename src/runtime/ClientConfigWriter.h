@@ -49,9 +49,11 @@ public:
         QStringList* auxiliaryPaths) const;
 
     // Group activation: the primary outbound becomes the core's native auto-select group over
-    // the members. members must be non-empty and ordered (first = anchor, which drives the
-    // launch core exactly like the single-node path). embeddedMembers, when not null, receives
-    // the members the written config actually embeds.
+    // the members. members must be non-empty and ordered (first = anchor, preferred as the
+    // launch core). When the anchor cannot run on a core with a native auto-select group, the
+    // first member that can takes over the launch core and the anchor is dropped with the other
+    // foreign members. embeddedMembers, when not null, receives the members the written config
+    // actually embeds.
     OperationResult writeClientGroupConfigs(
         const Config& config,
         const QList<VmessItem>& members,

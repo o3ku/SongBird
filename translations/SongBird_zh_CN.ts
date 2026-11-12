@@ -752,6 +752,10 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>切换位置分组后重新加载核心。</translation>
     </message>
     <message>
+        <source>The proxy is starting; the selection will be applied once it finishes.</source>
+        <translation>代理正在启动；所选目标将在启动完成后应用。</translation>
+    </message>
+    <message>
         <source>Location group &apos;%1&apos; set as the activation target.</source>
         <translation>位置分组“%1”已设为激活目标。</translation>
     </message>
@@ -1099,6 +1103,14 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>No member of the group can run on %1.</source>
         <translation>分组中没有任何成员能在 %1 上运行。</translation>
+    </message>
+    <message>
+        <source>No member of the group can run on a core with a native auto-select group.</source>
+        <translation>分组中没有任何成员能在具备原生自动选择组的核心上运行。</translation>
+    </message>
+    <message>
+        <source>No member of the group can run on a core with a native auto-select group (%1).</source>
+        <translation>分组中没有任何成员能在具备原生自动选择组的核心上运行（%1）。</translation>
     </message>
     <message>
         <source>%1 cannot generate an auto-select group for these servers.</source>
@@ -2417,6 +2429,14 @@ The running core will be stopped before installation if needed.</source>
         <translation>正在激活 %1 | %2</translation>
     </message>
     <message>
+        <source>Location group &apos;%1&apos; has %2 server(s); the auto-select group is capped at %3.</source>
+        <translation>位置分组“%1”共 %2 个服务器；自动选择组上限为 %3。</translation>
+    </message>
+    <message>
+        <source>Could not reserve a local port for the group status API; the member in use will not be shown.</source>
+        <translation>无法为分组状态 API 保留本地端口；将不显示当前使用的成员。</translation>
+    </message>
+    <message>
         <source>Environment cleanup</source>
         <translation>清理启动环境</translation>
     </message>
@@ -3400,6 +3420,12 @@ Switch this protocol to %3?</source>
     <message>
         <source>Auto Switch in Group on Failure</source>
         <translation>失败时在分组内自动切换</translation>
+    </message>
+    <message>
+        <source>In-group switching is handled by the auto-select group while it runs.
+This setting still controls the fallback when the whole group fails.</source>
+        <translation>组内切换由运行中的自动选择组负责。
+本设置仍控制整组失败后的回退。</translation>
     </message>
 </context>
 <context>

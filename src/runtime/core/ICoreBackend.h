@@ -70,6 +70,13 @@ public:
         Q_UNUSED(members)
         return {};
     }
+    // Whether buildClientGroupRoot() can produce anything for this core (sing-box urltest,
+    // Mihomo url-test: yes; Xray: no). The capability question without the cost of a probe
+    // generation -- the writer asks it while picking a group's launch core.
+    virtual bool hasNativeAutoSelectGroup() const
+    {
+        return false;
+    }
     virtual QUrl releasesApiUrl() const = 0;
     // Which release asset to fetch, and what to fall back to when GitHub's release lookup is
     // unavailable. Both are functions of the target platform because every vendor names its

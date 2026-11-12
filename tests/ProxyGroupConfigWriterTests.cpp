@@ -67,6 +67,7 @@ private slots:
     void generateClientGroupConfigsFailsWhenNoMemberCanRunOnTheLaunchCore();
     void writeClientGroupConfigsWritesPrimaryAndReportsDroppedMembers();
     void writeClientGroupConfigsFlagsGenerationFailuresAsTargetUnusable();
+    void generateClientGroupConfigsReAnchorsWhenTheAnchorCoreHasNoGroup();
     void writeClientGroupConfigsLeavesPlumbingFailuresTargetUsable();
 };
 
@@ -196,6 +197,41 @@ void ProxyGroupConfigWriterTests::generateClientGroupConfigsFailsWhenNoMemberCan
     QVERIFY(generation.generated.primary.root.isEmpty());
     QVERIFY2(generation.generated.result.message.contains(QStringLiteral("Xray")),
              qPrintable(generation.generated.result.message));
+}
+
+// A mixed-core group anchored on the core without a native auto-select group (Xray): the first
+// member that can run on a group-capable core takes over the launch core instead of failing the
+// whole group; the foreign anchor is dropped with the other foreign members.
+void ProxyGroupConfigWriterTests::generateClientGroupConfigsReAnchorsWhenTheAnchorCoreHasNoGroup()
+{
+    Config config = groupBaseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::Xray);
+    setProtocolCore(config, ConfigType::Trojan, CoreType::SingBox);
+
+    const QList<VmessItem> members{
+        groupMember(ConfigType::VMess, QStringLiteral("xray-anchor.example.com"), QStringLiteral("xray-anchor")),
+        groupMember(ConfigType::Trojan, QStringLiteral("t.example.com"), QStringLiteral("t")),
+    };
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GroupGeneration generation = writer.generateClientGroupConfigs(config, members);
+    QVERIFY2(generation.generated.result.success, qPrintable(generation.generated.result.message));
+
+    QCOMPARE(generation.embeddedMembers.size(), 1);
+    QCOMPARE(generation.embeddedMembers.first().address, QStringLiteral("t.example.com"));
+    QCOMPARE(generation.droppedMemberNames, QStringList{QStringLiteral("xray-anchor")});
+
+    const QJsonArray outbounds = generation.generated.primary.root.value(QStringLiteral("outbounds")).toArray();
+    bool sawGroup = false;
+    for (const QJsonValue& value : outbounds) {
+        const QJsonObject outbound = value.toObject();
+        if (outbound.value(QStringLiteral("tag")).toString() == QStringLiteral("proxy")) {
+            sawGroup = true;
+            QCOMPARE(outbound.value(QStringLiteral("type")).toString(), QStringLiteral("urltest"));
+            QCOMPARE(outbound.value(QStringLiteral("outbounds")).toArray().size(), 1);
+        }
+    }
+    QVERIFY(sawGroup);
 }
 
 void ProxyGroupConfigWriterTests::writeClientGroupConfigsWritesPrimaryAndReportsDroppedMembers()
