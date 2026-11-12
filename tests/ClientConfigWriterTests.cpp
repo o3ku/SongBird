@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QCoreApplication>
 #include <QDir>
@@ -133,6 +134,7 @@ private slots:
     void generateClientConfigsSplitsMihomoRoutingProcessNameAndPathRules();
     void generateClientConfigsMapsMihomoRoutingDomainPrefixes();
     void generateClientConfigsMapsSingBoxRoutingDomainPrefixes();
+    void generateClientConfigsDropsRulesWhoseOnlyConditionsAreUnpublishedRuleSets();
     void generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute();
     void generateClientConfigsUsesCustomDirectDomainsForSingBoxDnsRules();
     void generateClientConfigsDoesNotCreateTunCompatRelayForSingBoxCore();
@@ -3538,6 +3540,57 @@ void ClientConfigWriterTests::generateClientConfigsMapsSingBoxRoutingDomainPrefi
     QVERIFY(foundKeyword);
     QVERIFY(foundGeosite);
     QVERIFY(foundRegex);
+}
+
+void ClientConfigWriterTests::generateClientConfigsDropsRulesWhoseOnlyConditionsAreUnpublishedRuleSets()
+{
+    // "geosite:gfw" has no file upstream, so the migration drops the value. A rule that named
+    // nothing else therefore ends up with no condition at all, and a conditionless sing-box rule
+    // matches everything -- it would shadow every rule after it. Such a rule must be removed, while
+    // a rule that still has a real condition keeps it and simply carries no rule_set.
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    config.sniffingEnabled = false;
+    setProtocolCore(config, ConfigType::VMess, CoreType::SingBox);
+    config.collection().customRoutingItems = {
+        createRoutingItem({
+            createRoutingRule(QStringLiteral("block"), QStringList{QStringLiteral("geosite:gfw")}),
+            createRoutingRule(
+                QStringLiteral("proxy"),
+                QStringList{QStringLiteral("domain:keep.example"), QStringLiteral("geosite:gfw")})})};
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonArray rules = generated.primary.root.value(QStringLiteral("route")).toObject().value(QStringLiteral("rules")).toArray();
+
+    bool foundKeptCondition = false;
+    for (const QJsonValue& value : rules) {
+        const QJsonObject rule = value.toObject();
+        // The dropped rule's value must not appear anywhere: it has no file and cannot be fetched.
+        QVERIFY(!jsonArrayContainsString(rule.value(QStringLiteral("rule_set")).toArray(), QStringLiteral("geosite-gfw")));
+        QVERIFY(!rule.contains(QStringLiteral("geosite")));
+
+        if (jsonArrayContainsString(rule.value(QStringLiteral("domain_suffix")).toArray(), QStringLiteral("keep.example"))) {
+            foundKeptCondition = true;
+            // The surviving rule keeps its real condition and is not handed an empty rule_set.
+            QVERIFY(rule.value(QStringLiteral("rule_set")).toArray().isEmpty());
+        }
+
+        // No generated rule may be conditionless: only the action keys are allowed to stand alone.
+        bool conditional = false;
+        for (auto it = rule.constBegin(); it != rule.constEnd(); ++it) {
+            const QString key = it.key();
+            if (key != QLatin1String("action") && key != QLatin1String("outbound") && key != QLatin1String("type")) {
+                conditional = true;
+                break;
+            }
+        }
+        QVERIFY2(conditional, qPrintable(QString::fromUtf8(QJsonDocument(rule).toJson(QJsonDocument::Compact))));
+    }
+    QVERIFY(foundKeptCondition);
 }
 
 void ClientConfigWriterTests::generateClientConfigsMergesCustomRulesBeforeSelectedBaseRoute()

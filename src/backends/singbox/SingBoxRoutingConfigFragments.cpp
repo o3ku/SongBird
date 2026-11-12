@@ -32,6 +32,24 @@ QString resolveLocalSingBoxRuleSetPath(const QString& tag)
         : QString();
 }
 
+// Whether a rule still carries a field that can match traffic. Only the action keys are not
+// conditions: everything else the mapper emits -- domain/domain_*/ip_cidr/ip_is_private/port/
+// network/protocol/inbound/process_*/clash_mode/rule_set -- selects what the rule applies to.
+bool ruleHasMatchCondition(const QJsonObject& rule)
+{
+    static const QSet<QString> nonConditionKeys = {
+        QStringLiteral("action"),
+        QStringLiteral("outbound"),
+        QStringLiteral("type"),
+    };
+    for (auto it = rule.constBegin(); it != rule.constEnd(); ++it) {
+        if (!nonConditionKeys.contains(it.key())) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 QJsonObject SingBoxRoutingConfigFragments::buildRoute(
@@ -136,8 +154,9 @@ void SingBoxRoutingConfigFragments::migrateGeoToRuleSet(QJsonObject& root)
     QSet<QString> allRuleSetTags;
 
     auto processRules = [&allRuleSetTags](QJsonArray& rules) {
-        for (int i = 0; i < rules.size(); ++i) {
-            QJsonObject rule = rules[i].toObject();
+        QJsonArray processed;
+        for (const QJsonValue& value : rules) {
+            QJsonObject rule = value.toObject();
             QJsonArray ruleSetTags = rule.take(QStringLiteral("rule_set")).toArray();
             bool modified = false;
 
@@ -167,11 +186,24 @@ void SingBoxRoutingConfigFragments::migrateGeoToRuleSet(QJsonObject& root)
                 modified = true;
             }
 
-            if (modified) {
-                rule.insert(QStringLiteral("rule_set"), ruleSetTags);
-                rules[i] = rule;
+            if (!modified) {
+                // No geosite/geoip: the rule is untouched (its own rule_set, if any, is intact in
+                // `value`, which is what gets appended).
+                processed.append(value);
+                continue;
             }
+
+            if (!ruleSetTags.isEmpty()) {
+                rule.insert(QStringLiteral("rule_set"), ruleSetTags);
+            } else if (!ruleHasMatchCondition(rule)) {
+                // Every condition was an unpublished rule-set, so nothing is left to match. Kept
+                // as-is the rule would be unconditional and shadow every rule after it, so it is
+                // dropped rather than allowed to become a catch-all.
+                continue;
+            }
+            processed.append(rule);
         }
+        rules = processed;
     };
 
     if (root.contains(QStringLiteral("dns"))) {
