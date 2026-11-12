@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include <QObject>
 #include <QString>
@@ -14,6 +15,10 @@ public:
         std::function<QString()> currentIndexId;
         std::function<bool()> isCoreRunning;
         std::function<bool()> isTunEnabled;
+        // True while the session is between "start requested" and "settled" (activated/failed/
+        // stopped): the start channel is owned by the in-flight activation, so a switch asked
+        // for now must queue (see resumePendingActivationSwitch()).
+        std::function<bool()> isActivationInProgress;
         std::function<bool()> isShuttingDown;
         std::function<QObject*()> uiContext;
         std::function<std::weak_ptr<char>()> lifetimeGuard;
@@ -37,6 +42,11 @@ public:
     void setDefaultServer(const QString& indexId);
     void setDefaultServerWithTun(const QString& indexId);
     void activateLocationGroup(const QString& locationId);
+    // Applies the switch queued while an activation was in flight, if any. Called by the host
+    // exactly when a session settles: after activated() and after failed(). A plain stopped()
+    // (the user's own stop) should discardPendingActivationSwitch() instead.
+    void resumePendingActivationSwitch();
+    void discardPendingActivationSwitch();
     bool requestSwitchAfterCoreStop(const QString& indexId, bool enableTun);
     void scheduleSwitchAfterCoreStopped(const QString& indexId, bool enableTun, bool showStartupOverlay);
     void switchAfterCoreStopped(const QString& indexId, bool enableTun, bool showStartupOverlay);
@@ -44,6 +54,7 @@ public:
 private:
     QString currentIndexId() const;
     bool isCoreRunning() const;
+    bool isActivationInProgress() const;
     bool isTunEnabled() const;
     bool isShuttingDown() const;
     QObject* resolvedUiContext() const;
@@ -54,6 +65,17 @@ private:
     void syncWindow() const;
     void clearServerWarning() const;
     void setCurrentActivationPending(bool pending) const;
+    // A switch asked for while an activation was in flight. The intent is recorded, not
+    // applied: writing the config early would desync it from whatever the in-flight start is
+    // about to run, so the queue holds the whole gesture and replays it as if freshly clicked.
+    struct PendingSwitch {
+        enum class Kind { Node, Group };
+        Kind kind = Kind::Node;
+        QString id;
+        bool enableTun = false;
+    };
+    bool queueSwitchUntilActivationSettles(PendingSwitch pending);
 
     Callbacks callbacks_;
+    std::optional<PendingSwitch> pendingSwitch_;
 };

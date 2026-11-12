@@ -22,6 +22,9 @@ void AppBootstrap::wireServerCoordinators()
     DefaultServerSwitchCoordinator::Callbacks defaultServerCallbacks;
     defaultServerCallbacks.currentIndexId = [this]() { return config_.currentIndexId; };
     defaultServerCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
+    defaultServerCallbacks.isActivationInProgress = [this]() {
+        return objects_->proxySession != nullptr && objects_->proxySession->isActivationInProgress();
+    };
     defaultServerCallbacks.isTunEnabled = [this]() { return config_.tun().tunModeItem.enableTun; };
     defaultServerCallbacks.isShuttingDown = [this]() { return shuttingDown_.load(); };
     defaultServerCallbacks.uiContext = [this]() -> QObject* { return objects_->mainWindow.get(); };

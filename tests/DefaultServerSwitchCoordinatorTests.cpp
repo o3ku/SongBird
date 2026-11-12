@@ -56,6 +56,7 @@ public:
         DefaultServerSwitchCoordinator::Callbacks callbacks;
         callbacks.currentIndexId = [&config]() { return config.currentIndexId; };
         callbacks.isCoreRunning = [this]() { return coreRunning; };
+        callbacks.isActivationInProgress = [this]() { return activationInProgress; };
         callbacks.isTunEnabled = [&config]() { return config.tun().tunModeItem.enableTun; };
         callbacks.isShuttingDown = []() { return false; };
         callbacks.uiContext = []() { return QCoreApplication::instance(); };
@@ -94,6 +95,8 @@ public:
 
     std::shared_ptr<char> lifetimeGuard = std::make_shared<char>();
     bool coreRunning = true;
+    bool activationInProgress = false;
+    QString log() const { return messages.join(QChar('\n')); }
     QStringList messages;
     QStringList restartReasons;
     int syncWindowCalls = 0;
@@ -123,6 +126,11 @@ private slots:
     void switchingToAnotherServerWhileProxyingStopsAndSwitches();
     void reselectingTheSingleNodeWhileProxyingIsStillANoOp();
     void selectingAServerWhileStoppedStartsTheProxy();
+    void queuesASwitchWhileAnActivationIsInFlightAndAppliesItOnSettle();
+    void theLatestQueuedSwitchWins();
+    void aQueuedGroupSwitchAppliesOnSettle();
+    void aUsersStopDiscardsAQueuedSwitch();
+    void resumeWithoutAQueuedSwitchDoesNothing();
 };
 
 void DefaultServerSwitchCoordinatorTests::leavingAGroupSessionOnTheAnchorReloadsTheCore()
@@ -219,6 +227,110 @@ void DefaultServerSwitchCoordinatorTests::selectingAServerWhileStoppedStartsTheP
     QVERIFY(config.ui().activeLocationGroupId.isEmpty());
     QCOMPARE(recorder.enableProxyCalls, 1);
     QCOMPARE(recorder.restartCoreCalls, 0);
+}
+
+// While an activation is in flight (a start between "requested" and "settled"), the start
+// channel belongs to it: a switch asked for now used to fall into the enable path and be
+// rejected as an overlapping start, leaving the persisted target desynced from the running
+// session until some later restart. The intent is queued and replayed on settle instead.
+void DefaultServerSwitchCoordinatorTests::queuesASwitchWhileAnActivationIsInFlightAndAppliesItOnSettle()
+{
+    Config config = makeGroupSessionConfig();
+    SwitchRecorder recorder;
+    recorder.coreRunning = false;
+    recorder.activationInProgress = true;
+
+    DefaultServerSwitchCoordinator coordinator(recorder.callbacks(config));
+
+    // Nothing may be written or started while the activation owns the channel.
+    coordinator.setDefaultServer(QStringLiteral("member-1"));
+    QCOMPARE(config.currentIndexId, QStringLiteral("member-0"));
+    QVERIFY(!config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.enableProxyCalls, 0);
+    QCOMPARE(recorder.switchCoreCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+    QVERIFY(recorder.log().contains(QStringLiteral("applied once it finishes")));
+
+    // The in-flight activation settled (it failed here): the queued switch replays as a fresh
+    // click against a stopped session -- write, then start.
+    recorder.activationInProgress = false;
+    coordinator.resumePendingActivationSwitch();
+    QCOMPARE(config.currentIndexId, QStringLiteral("member-1"));
+    QVERIFY(config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.enableProxyCalls, 1);
+}
+
+void DefaultServerSwitchCoordinatorTests::theLatestQueuedSwitchWins()
+{
+    Config config = makeGroupSessionConfig();
+    SwitchRecorder recorder;
+    recorder.coreRunning = false;
+    recorder.activationInProgress = true;
+
+    DefaultServerSwitchCoordinator coordinator(recorder.callbacks(config));
+
+    coordinator.setDefaultServer(QStringLiteral("member-1"));
+    coordinator.setDefaultServer(QStringLiteral("member-0"));
+    recorder.activationInProgress = false;
+    coordinator.resumePendingActivationSwitch();
+
+    // The second ask replaced the first: the config ends on member-0, exactly one start.
+    QCOMPARE(config.currentIndexId, QStringLiteral("member-0"));
+    QCOMPARE(recorder.enableProxyCalls, 1);
+}
+
+void DefaultServerSwitchCoordinatorTests::aQueuedGroupSwitchAppliesOnSettle()
+{
+    Config config = makeSingleNodeConfig();
+    SwitchRecorder recorder;
+    recorder.coreRunning = false;
+    recorder.activationInProgress = true;
+
+    DefaultServerSwitchCoordinator coordinator(recorder.callbacks(config));
+
+    coordinator.activateLocationGroup(QStringLiteral("JP"));
+    QCOMPARE(config.ui().activeLocationGroupId, QString());
+
+    recorder.activationInProgress = false;
+    coordinator.resumePendingActivationSwitch();
+    QCOMPARE(config.ui().activeLocationGroupId, QStringLiteral("JP"));
+    QCOMPARE(recorder.enableProxyCalls, 1);
+}
+
+void DefaultServerSwitchCoordinatorTests::aUsersStopDiscardsAQueuedSwitch()
+{
+    Config config = makeGroupSessionConfig();
+    SwitchRecorder recorder;
+    recorder.coreRunning = false;
+    recorder.activationInProgress = true;
+
+    DefaultServerSwitchCoordinator coordinator(recorder.callbacks(config));
+
+    coordinator.setDefaultServer(QStringLiteral("member-1"));
+    // The user's own stop outranks the queued intent: replaying it would start the proxy they
+    // just asked to have off. The later settle must therefore find nothing to apply.
+    coordinator.discardPendingActivationSwitch();
+    recorder.activationInProgress = false;
+    coordinator.resumePendingActivationSwitch();
+
+    QCOMPARE(config.currentIndexId, QStringLiteral("member-0"));
+    QCOMPARE(recorder.enableProxyCalls, 0);
+}
+
+void DefaultServerSwitchCoordinatorTests::resumeWithoutAQueuedSwitchDoesNothing()
+{
+    Config config = makeGroupSessionConfig();
+    SwitchRecorder recorder;
+
+    DefaultServerSwitchCoordinator coordinator(recorder.callbacks(config));
+
+    coordinator.resumePendingActivationSwitch();
+    coordinator.discardPendingActivationSwitch();
+
+    QCOMPARE(config.currentIndexId, QStringLiteral("member-0"));
+    QCOMPARE(recorder.enableProxyCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+    QCOMPARE(recorder.switchCoreCalls, 0);
 }
 
 QTEST_MAIN(DefaultServerSwitchCoordinatorTests)

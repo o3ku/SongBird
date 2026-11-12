@@ -14,6 +14,9 @@ DefaultServerSwitchCoordinator::DefaultServerSwitchCoordinator(Callbacks callbac
 
 void DefaultServerSwitchCoordinator::setDefaultServer(const QString& indexId)
 {
+    if (queueSwitchUntilActivationSettles(PendingSwitch{PendingSwitch::Kind::Node, indexId, false})) {
+        return;
+    }
     if (requestSwitchAfterCoreStop(indexId, false)) {
         return;
     }
@@ -53,6 +56,9 @@ void DefaultServerSwitchCoordinator::setDefaultServer(const QString& indexId)
 
 void DefaultServerSwitchCoordinator::setDefaultServerWithTun(const QString& indexId)
 {
+    if (queueSwitchUntilActivationSettles(PendingSwitch{PendingSwitch::Kind::Node, indexId, true})) {
+        return;
+    }
     if (requestSwitchAfterCoreStop(indexId, true)) {
         return;
     }
@@ -101,6 +107,9 @@ void DefaultServerSwitchCoordinator::activateLocationGroup(const QString& locati
     if (trimmedLocationId.isEmpty()) {
         return;
     }
+    if (queueSwitchUntilActivationSettles(PendingSwitch{PendingSwitch::Kind::Group, trimmedLocationId, false})) {
+        return;
+    }
 
     if (isCoreRunning()) {
         if (activeLocationGroupId() == trimmedLocationId) {
@@ -144,6 +153,55 @@ bool DefaultServerSwitchCoordinator::requestSwitchAfterCoreStop(const QString& i
         callbacks_.switchRunningCoreToServer(trimmedId, enableTun);
     }
     return true;
+}
+
+// A switch asked for while an activation is in flight. The start channel belongs to that
+// activation until it settles: enabling now would only be rejected as an overlapping start
+// (leaving the persisted target desynced from the running session until some later restart),
+// and stopping what has not started is not possible either. So the whole gesture is recorded
+// and replayed the moment the session settles -- as if freshly clicked, which keeps every
+// existing decision path (stop-and-switch, restart, group no-op) intact. The latest ask wins.
+bool DefaultServerSwitchCoordinator::queueSwitchUntilActivationSettles(PendingSwitch pending)
+{
+    if (!isActivationInProgress()) {
+        return false;
+    }
+    pendingSwitch_ = std::move(pending);
+    setCurrentActivationPending(true);
+    appendResult(OperationResult::ok(QCoreApplication::translate(
+        "AppBootstrap", "The proxy is starting; the selection will be applied once it finishes.")));
+    return true;
+}
+
+void DefaultServerSwitchCoordinator::resumePendingActivationSwitch()
+{
+    if (!pendingSwitch_.has_value()) {
+        return;
+    }
+    const PendingSwitch pending = *pendingSwitch_;
+    pendingSwitch_.reset();
+    if (isShuttingDown()) {
+        setCurrentActivationPending(false);
+        return;
+    }
+    if (pending.kind == PendingSwitch::Kind::Group) {
+        activateLocationGroup(pending.id);
+        return;
+    }
+    if (pending.enableTun) {
+        setDefaultServerWithTun(pending.id);
+        return;
+    }
+    setDefaultServer(pending.id);
+}
+
+void DefaultServerSwitchCoordinator::discardPendingActivationSwitch()
+{
+    if (!pendingSwitch_.has_value()) {
+        return;
+    }
+    pendingSwitch_.reset();
+    setCurrentActivationPending(false);
 }
 
 void DefaultServerSwitchCoordinator::scheduleSwitchAfterCoreStopped(
@@ -213,6 +271,11 @@ QString DefaultServerSwitchCoordinator::currentIndexId() const
 bool DefaultServerSwitchCoordinator::isCoreRunning() const
 {
     return callbacks_.isCoreRunning ? callbacks_.isCoreRunning() : false;
+}
+
+bool DefaultServerSwitchCoordinator::isActivationInProgress() const
+{
+    return callbacks_.isActivationInProgress && callbacks_.isActivationInProgress();
 }
 
 bool DefaultServerSwitchCoordinator::isTunEnabled() const

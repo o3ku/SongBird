@@ -144,8 +144,16 @@ void AppBootstrap::wireProxySessionSignals()
                          syncStatusIndicators();
                          // The auto-switch decision runs after the teardown above is done: the
                          // session is stopped by the time failed arrives, so this handler is
+                         // The auto-switch decision runs after the teardown above is done: the
+                         // session is stopped by the time failed arrives, so this handler is
                          // already the post-teardown path and the switch is a plain "write the
-                         // next node, start the proxy".
+                         // next node, start the proxy". A switch the user queued while this
+                         // activation was in flight replays first: their choice outranks the
+                         // automatic one, and the start it begins makes proxyOccupied() true,
+                         // which is exactly what suppresses the auto-switch below.
+                         if (objects_->defaultServerSwitchCoordinator != nullptr) {
+                             objects_->defaultServerSwitchCoordinator->resumePendingActivationSwitch();
+                         }
                          autoSwitchWithinGroupOnFailure();
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::activated,
@@ -163,6 +171,12 @@ void AppBootstrap::wireProxySessionSignals()
                          if (objects_->autoSwitchCoordinator != nullptr) {
                              objects_->autoSwitchCoordinator->noteSessionActivated();
                          }
+                         // A switch queued while this activation was in flight replays now, as a
+                         // fresh click against the settled session (stop-and-switch when a core
+                         // runs, plain enable otherwise).
+                         if (objects_->defaultServerSwitchCoordinator != nullptr) {
+                             objects_->defaultServerSwitchCoordinator->resumePendingActivationSwitch();
+                         }
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::systemProxyUndoFailed,
                      objects_->mainWindow.get(), [this](const QString& warning) {
@@ -178,6 +192,12 @@ void AppBootstrap::wireProxySessionSignals()
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::stopped,
                      objects_->mainWindow.get(), [this]() {
+                         // The user's own stop outranks any switch queued while an activation
+                         // was in flight: replaying it would start the proxy they just asked
+                         // to have off. (A failed startup does not land here; it resumes.)
+                         if (objects_->defaultServerSwitchCoordinator != nullptr) {
+                             objects_->defaultServerSwitchCoordinator->discardPendingActivationSwitch();
+                         }
                          syncStatusIndicators();
                      });
     QObject::connect(objects_->proxySession.get(), &ProxySession::logMessage,
