@@ -92,6 +92,7 @@ ServerActionsController::ServerActionsController(
     std::function<QStringList()> selectedServerIds,
     std::function<bool()> anySelectedServerUnfavorited,
     std::function<bool()> isUngroupedSubscriptionTabSelected,
+    std::function<bool()> locationGroupSessionActive,
     std::function<bool()> canStartBackgroundTask,
     std::function<void()> updateActionState,
     std::function<void(const QString&)> appendLog,
@@ -101,6 +102,7 @@ ServerActionsController::ServerActionsController(
     , selectedServerIds_(std::move(selectedServerIds))
     , anySelectedServerUnfavorited_(std::move(anySelectedServerUnfavorited))
     , isUngroupedSubscriptionTabSelected_(std::move(isUngroupedSubscriptionTabSelected))
+    , locationGroupSessionActive_(std::move(locationGroupSessionActive))
     , canStartBackgroundTask_(std::move(canStartBackgroundTask))
     , updateActionState_(std::move(updateActionState))
     , appendLog_(std::move(appendLog))
@@ -193,6 +195,16 @@ void ServerActionsController::setup()
         const QString indexId = selectedServerId_();
         if (!indexId.isEmpty()) {
             emit context_.window->setDefaultServerWithTunRequested(indexId);
+        }
+    });
+    // Deliberately NOT routed through ServerActivationGestureLogic: the gesture's whole job is
+    // to keep a running group session group-shaped (same group no-op, other group switch), so
+    // the one action that must break out of it goes straight to the single-node path -- the same
+    // bypass the auto-switch failure fallback and "Set Current with TUN On" already use.
+    QObject::connect(context_.connectSoloServerAction, &QAction::triggered, context_.window, [this]() {
+        const QString indexId = selectedServerId_();
+        if (!indexId.isEmpty()) {
+            emit context_.window->connectSoloServerRequested(indexId);
         }
     });
 
@@ -305,6 +317,9 @@ void ServerActionsController::syncActionState(const ActionState& state)
     }
     if (context_.setDefaultServerWithTunAction != nullptr) {
         context_.setDefaultServerWithTunAction->setEnabled(state.hasSingleSelection);
+    if (context_.connectSoloServerAction != nullptr) {
+        context_.connectSoloServerAction->setEnabled(state.hasSingleSelection);
+    }
     }
 
     if (context_.testAction != nullptr) {
@@ -365,6 +380,12 @@ void ServerActionsController::showContextMenu(const QPoint& position)
     if (singleSelection) {
         menu->addAction(context_.setDefaultServerAction);
         menu->addAction(context_.setDefaultServerWithTunAction);
+        // The group-session escape hatch is only offered while it means something: outside a
+        // group session every click already is a single-node activation.
+        if (context_.connectSoloServerAction != nullptr
+            && locationGroupSessionActive_ && locationGroupSessionActive_()) {
+            menu->addAction(context_.connectSoloServerAction);
+        }
         menu->addAction(context_.copyUrlAction);
         menu->addAction(context_.exportShareLinksAction);
         menu->addAction(context_.exportClashYamlAction);

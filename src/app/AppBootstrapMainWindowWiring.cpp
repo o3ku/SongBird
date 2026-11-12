@@ -472,6 +472,16 @@ void AppBootstrap::wireMainWindowCommands()
             objects_->defaultServerSwitchCoordinator->activateLocationGroup(locationId);
         }
     });
+    // The group-session escape hatch: during a location-group session every ordinary click is
+    // gesture-routed (same group no-op / other group switch), so leaving the auto-select group
+    // for a plain single-node session needs this explicit entry. It goes straight to the
+    // coordinator -- the same deliberate gesture bypass "Set Current with TUN On" and the
+    // auto-switch failure fallback use (the bypass also clears the group target).
+    QObject::connect(objects_->mainWindow.get(), &MainWindow::connectSoloServerRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
+        if (objects_->defaultServerSwitchCoordinator != nullptr) {
+            objects_->defaultServerSwitchCoordinator->setDefaultServer(indexId);
+        }
+    });
     QObject::connect(objects_->mainWindow.get(), &MainWindow::setDefaultServerWithTunRequested, objects_->mainWindow.get(), [this](const QString& indexId) {
         if (objects_->defaultServerSwitchCoordinator != nullptr) {
             objects_->defaultServerSwitchCoordinator->setDefaultServerWithTun(indexId);

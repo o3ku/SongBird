@@ -28,6 +28,7 @@ struct MainWindowToolbarActions {
     QAction* testAction = nullptr;
     QAction* setDefaultServerAction = nullptr;
     QAction* setDefaultServerWithTunAction = nullptr;
+    QAction* connectSoloServerAction = nullptr;
     QAction* settingsAction = nullptr;
     QAction* aboutAction = nullptr;
     QAction* shortcutsAction = nullptr;

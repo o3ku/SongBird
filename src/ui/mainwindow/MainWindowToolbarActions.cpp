@@ -58,6 +58,14 @@ MainWindowToolbarActions createMainWindowToolbarActions(QObject* owner, bool qrP
         owner,
         trMainWindow("Set Current with TUN On"),
         QStringLiteral("setDefaultServerWithTunAction"));
+    // The group-session escape hatch (P1-3): during an auto-select group session every ordinary
+    // click is routed through ServerActivationGestureLogic (same group = no-op, other group =
+    // switch group), so "run THIS node as a plain single server" needs an explicit entry. Shown
+    // only in the server context menu while a group session runs.
+    actions.connectSoloServerAction = createAction(
+        owner,
+        trMainWindow("Connect as Single Server"),
+        QStringLiteral("connectSoloServerAction"));
 
     actions.importClipboardAction = createAction(owner, trMainWindow("Import Clipboard"), QStringLiteral("importClipboardAction"));
     actions.subAction = createAction(owner, trMainWindow("Subscriptions"));

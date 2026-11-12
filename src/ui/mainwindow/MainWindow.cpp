@@ -930,6 +930,7 @@ void MainWindow::createToolbarActions()
     testAction_ = actions.testAction;
     setDefaultServerAction_ = actions.setDefaultServerAction;
     setDefaultServerWithTunAction_ = actions.setDefaultServerWithTunAction;
+    connectSoloServerAction_ = actions.connectSoloServerAction;
     settingsAction_ = actions.settingsAction;
     aboutAction_ = actions.aboutAction;
     shortcutsAction_ = actions.shortcutsAction;
@@ -1311,7 +1312,8 @@ void MainWindow::setupServerActionsController()
             moveServerBottomAction_,
             testAction_,
             setDefaultServerAction_,
-            setDefaultServerWithTunAction_},
+            setDefaultServerWithTunAction_,
+            connectSoloServerAction_},
         [this]() { return serverSelectionController_ == nullptr ? QString() : serverSelectionController_->selectedServerId(); },
         [this]() { return serverSelectionController_ == nullptr ? QStringList() : serverSelectionController_->selectedServerIds(); },
         // Any unfavorited row makes the toggle read "add": the selection is what the menu acts
@@ -1328,6 +1330,9 @@ void MainWindow::setupServerActionsController()
             return false;
         },
         [this]() { return isUngroupedSubscriptionTabSelected(); },
+        // The context menu's group-session escape hatch is offered only while a location-group
+        // session runs; the flag comes from applyRuntimeState's snapshot, not the browsed tab.
+        [this]() { return !activeLocationGroupId_.isEmpty(); },
         [this]() { return ensureCanStartBackgroundTask(); },
         [this]() { updateActionState(); },
         [this](const QString& message) { appendLog(message); },

@@ -82,6 +82,7 @@ private slots:
     void logContextMenuUsesViewportCoordinates();
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void helpMenuCheckForUpdatesEmitsSignal();
+    void connectSoloServerActionEmitsSignalWithSelectedServer();
     void shortcutsCheatSheetListsEveryInstalledShortcut();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
@@ -768,6 +769,46 @@ void MainWindowTests::helpMenuCheckForUpdatesEmitsSignal()
     action->trigger();
 
     QCOMPARE(spy.count(), 1);
+}
+
+// P1-3's group-session escape hatch. The action is a permanent citizen of the window (the menu
+// offers it only while a location-group session runs), and triggering it must carry the
+// selected server id to the coordinator path that bypasses ServerActivationGestureLogic.
+void MainWindowTests::connectSoloServerActionEmitsSignalWithSelectedServer()
+{
+    MainWindow window;
+    Config config = createServerSelectionConfig();
+    window.setConfig(config);
+    QCoreApplication::processEvents();
+
+    auto* action = window.findChild<QAction*>(QStringLiteral("connectSoloServerAction"));
+    QVERIFY(action != nullptr);
+    QCOMPARE(action->text(), QStringLiteral("Connect as Single Server"));
+
+    auto* serverView = window.findChild<QTableView*>(QStringLiteral("serverTableView"));
+    QVERIFY(serverView != nullptr);
+    // Sync the action state once through a real selection cycle, then drop the selection: the
+    // action must disable with it (a dead click without a row to act on).
+    selectServerByDisplayName(serverView, QStringLiteral("Second"));
+    QCoreApplication::processEvents();
+    QVERIFY(action->isEnabled());
+
+    serverView->selectionModel()->clearSelection();
+    QCoreApplication::processEvents();
+    QVERIFY(!action->isEnabled());
+
+    selectServerByDisplayName(serverView, QStringLiteral("Second"));
+    QCoreApplication::processEvents();
+    QVERIFY(action->isEnabled());
+
+    QSignalSpy spy(&window, SIGNAL(connectSoloServerRequested(QString)));
+    QVERIFY(spy.isValid());
+
+    action->trigger();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
 }
 
 void MainWindowTests::shortcutsCheatSheetListsEveryInstalledShortcut()

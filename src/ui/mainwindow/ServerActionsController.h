@@ -32,6 +32,7 @@ public:
         QAction* testAction = nullptr;
         QAction* setDefaultServerAction = nullptr;
         QAction* setDefaultServerWithTunAction = nullptr;
+        QAction* connectSoloServerAction = nullptr;
     };
 
     struct ActionState {
@@ -55,6 +56,7 @@ public:
         std::function<QStringList()> selectedServerIds,
         std::function<bool()> anySelectedServerUnfavorited,
         std::function<bool()> isUngroupedSubscriptionTabSelected,
+        std::function<bool()> locationGroupSessionActive,
         std::function<bool()> canStartBackgroundTask,
         std::function<void()> updateActionState,
         std::function<void(const QString&)> appendLog,
@@ -75,6 +77,10 @@ private:
     // owns, so the flag is injected rather than re-derived here.
     std::function<bool()> anySelectedServerUnfavorited_;
     std::function<bool()> isUngroupedSubscriptionTabSelected_;
+    // True while a location-group session runs, i.e. while ordinary clicks are gesture-routed
+    // (same group no-op / other group switch). Only then does the context menu offer the
+    // "Connect as Single Server" escape hatch.
+    std::function<bool()> locationGroupSessionActive_;
     std::function<bool()> canStartBackgroundTask_;
     std::function<void()> updateActionState_;
     std::function<void(const QString&)> appendLog_;

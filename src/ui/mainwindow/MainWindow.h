@@ -133,6 +133,7 @@ signals:
     void setDefaultServerRequested(const QString& indexId);
     void connectLocationGroupRequested(const QString& locationId);
     void setDefaultServerWithTunRequested(const QString& indexId);
+    void connectSoloServerRequested(const QString& indexId);
     void testServersRequested(const QStringList& indexIds);
     // Batch export. The window owns the selection and the file dialog; the composition root owns
     // the formatter, so the UI layer never depends on services/ExportService.
@@ -298,6 +299,7 @@ private:
     QAction* testAction_ = nullptr;
     QAction* setDefaultServerAction_ = nullptr;
     QAction* setDefaultServerWithTunAction_ = nullptr;
+    QAction* connectSoloServerAction_ = nullptr;
     QAction* updateCurrentSubscriptionAction_ = nullptr;
     QAction* moveSubscriptionAction_ = nullptr;
     QAction* updateCurrentSubscriptionShortcutAction_ = nullptr;
