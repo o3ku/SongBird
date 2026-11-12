@@ -37,7 +37,12 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
 
     const std::optional<VmessItem> activeServer = resolveActiveServer();
     const QString activeServerId = activeServer.has_value() ? activeServer->indexId : QString();
-    const bool shouldRestartCore = isCoreRunning() && activeServerId == indexId;
+    // The anchor is the active server, and any other member of the running location group
+    // carries an outbound in the core's auto-select config too, so editing it reloads the
+    // core as well (the delete paths reload for the same reason).
+    const bool activeServerEdited = activeServerId == indexId;
+    const bool shouldRestartCore = isCoreRunning()
+        && (activeServerEdited || isRunningGroupMember(indexId));
 
     OperationResult result;
     if (existing->configType == ConfigType::Custom) {
@@ -63,8 +68,11 @@ void ServerEditorCoordinator::editServer(const QString& indexId)
     appendResult(result);
     syncWindow();
     if (result.success && shouldRestartCore) {
-        restartCoreIfRunning(QCoreApplication::translate(
-            "AppBootstrap", "Reloading core after editing the active server."));
+        restartCoreIfRunning(activeServerEdited
+            ? QCoreApplication::translate(
+                "AppBootstrap", "Reloading core after editing the active server.")
+            : QCoreApplication::translate(
+                "AppBootstrap", "Reloading core after editing a member of the active location group."));
     }
 }
 
@@ -107,6 +115,11 @@ std::optional<VmessItem> ServerEditorCoordinator::findServer(const QString& inde
 std::optional<VmessItem> ServerEditorCoordinator::resolveActiveServer() const
 {
     return callbacks_.resolveActiveServer ? callbacks_.resolveActiveServer() : std::nullopt;
+}
+
+bool ServerEditorCoordinator::isRunningGroupMember(const QString& indexId) const
+{
+    return callbacks_.isRunningGroupMember && callbacks_.isRunningGroupMember(indexId);
 }
 
 void ServerEditorCoordinator::restartCoreIfRunning(const QString& reason) const

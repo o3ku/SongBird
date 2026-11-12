@@ -754,6 +754,10 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>编辑当前服务器后正在重启核心。</translation>
     </message>
     <message>
+        <source>Reloading core after editing a member of the active location group.</source>
+        <translation>编辑活动位置分组成员后正在重启核心。</translation>
+    </message>
+    <message>
         <source>Reloading core after updating subscriptions.</source>
         <translation>更新订阅后正在重启核心。</translation>
     </message>

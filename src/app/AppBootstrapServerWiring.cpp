@@ -8,6 +8,7 @@
 #include <QWidget>
 
 #include "app/DefaultServerSwitchCoordinator.h"
+#include "appcore/LocationGroupScan.h"
 #include "appcore/ProxySession.h"
 #include "app/ServerCollectionCoordinator.h"
 #include "app/ServerEditorCoordinator.h"
@@ -95,6 +96,18 @@ void AppBootstrap::wireServerCoordinators()
         return findServerSnapshotById(indexId);
     };
     serverEditorCallbacks.resolveActiveServer = [this]() { return resolveActiveServerSnapshot(); };
+    // Group activation: the core embeds one outbound per member of the running location group,
+    // so an edit to any member -- not only the anchor -- has to reach the running core. The
+    // predicate is isGroupMember (the group's own membership rule), favorite-inclusive and
+    // Custom-exclusive, exactly like the member list the config was generated from.
+    serverEditorCallbacks.isRunningGroupMember = [this](const QString& indexId) {
+        const QString groupTarget = config_.ui().activeLocationGroupId.trimmed();
+        if (groupTarget.isEmpty()) {
+            return false;
+        }
+        const VmessItem* server = findServerById(indexId);
+        return server != nullptr && LocationGroupScan::isGroupMember(*server, groupTarget);
+    };
     serverEditorCallbacks.isCoreRunning = [this]() { return isCoreRunning(); };
     serverEditorCallbacks.appendLog = [this](const QString& message) {
         if (objects_->mainWindow != nullptr) {
