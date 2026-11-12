@@ -68,14 +68,23 @@ void ServerTableModel::setActiveIndexId(const QString& indexId)
     const int nextRow = rowByIndexId_.value(trimmedId, -1);
     currentIndexId_ = trimmedId;
 
-    const int firstRow = previousRow >= 0 ? previousRow : nextRow;
-    const int lastRow = previousRow >= nextRow ? previousRow : nextRow;
-    if (firstRow >= 0) {
-        emit dataChanged(
-            index(firstRow, 0),
-            index(lastRow, static_cast<int>(Column::ColumnCount) - 1),
-            {Qt::DisplayRole});
+    if (previousRow < 0 && nextRow < 0) {
+        return;
     }
+    // Repaint the union of the old and the new row, in either direction. The old pair clamped
+    // the range the wrong way for a switch to an *earlier* row (nextRow < previousRow): it
+    // produced [previousRow, previousRow] and left the newly marked row unrepainted. Fold the
+    // absent row (-1) into the present one so a first activation and a deactivation also work.
+    int firstRow = nextRow;
+    int lastRow = nextRow;
+    if (previousRow >= 0) {
+        firstRow = nextRow >= 0 ? qMin(previousRow, nextRow) : previousRow;
+        lastRow = nextRow >= 0 ? qMax(previousRow, nextRow) : previousRow;
+    }
+    emit dataChanged(
+        index(firstRow, 0),
+        index(lastRow, static_cast<int>(Column::ColumnCount) - 1),
+        {Qt::DisplayRole, Qt::DecorationRole, Qt::ForegroundRole, IsCurrentServerRole});
 }
 
 bool ServerTableModel::updateTestResult(const QString& indexId, const QString& result)
