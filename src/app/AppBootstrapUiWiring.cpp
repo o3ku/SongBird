@@ -12,6 +12,7 @@
 #include "appcore/ProxySession.h"
 #include "app/DefaultServerSwitchCoordinator.h"
 #include "appcore/IUserFeedback.h"
+#include "appcore/LocationGroupScan.h"
 #include "app/AutoSwitchCoordinator.h"
 #include "app/SpeedTestCoordinator.h"
 #include "common/DialogUtils.h"
@@ -158,7 +159,20 @@ void AppBootstrap::wireUiObjects()
     objects_->autoSwitchCoordinator = std::make_unique<AutoSwitchCoordinator>(
         AutoSwitchCoordinator::Dependencies{
             [this]() { return config_.ui().autoSwitchInGroup; },
-            [this]() { return config_.ui().mainSelectedLocationId; },
+            // The group the session auto-switches *within* -- the running target, never the tab
+            // the user happens to be browsing. Group mode: the persisted activation target.
+            // Single-node mode: the active node's own location group. The old wiring read
+            // ui().mainSelectedLocationId (the location view's selection), so a user who
+            // navigated to another tab silently disabled the feature -- the failed node is not a
+            // member of the group being looked at, and the scan returned failedIndex -1.
+            [this]() -> QString {
+                const QString groupTarget = config_.ui().activeLocationGroupId.trimmed();
+                if (!groupTarget.isEmpty()) {
+                    return groupTarget;
+                }
+                const VmessItem* active = findServerById(config_.currentIndexId);
+                return active != nullptr ? LocationGroupScan::locationIdOfServer(*active) : QString();
+            },
             [this]() { return config_.currentIndexId; },
             [this]() { return config_.collection().servers; },
             [this]() {

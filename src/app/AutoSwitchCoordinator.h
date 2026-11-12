@@ -44,8 +44,10 @@ public:
              std::function<void()> onFinished)>;
 
     struct Dependencies {
-        // The "auto switch in group" preference and the location view's selection, read at
-        // decision time: both can change between two failures.
+        // The "auto switch in group" preference and the group the session is switching within
+        // (the running target: the active group id, or the active node's own location group),
+        // read at decision time -- both can change between two failures. Deliberately not the
+        // location view's selection: the user browsing another tab must not disable the feature.
         std::function<bool()> autoSwitchEnabled;
         std::function<QString()> currentLocationId;
         std::function<QString()> currentServerId;
