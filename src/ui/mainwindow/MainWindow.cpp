@@ -490,10 +490,14 @@ void MainWindow::applyRuntimeState(const RuntimeStateSnapshot& snapshot)
     activeLocationGroupId_ = snapshot.activeLocationGroupId.trimmed();
     currentInCoreServerId_ = snapshot.currentInCoreServerId.trimmed();
     // While a group session runs, the highlighted row is the member the core actually uses
-    // (it moves as the auto-select group switches), not the anchor the config records.
+    // (it moves as the auto-select group switches), not the anchor the config records. Until
+    // the first Clash-API answer arrives the anchor is the fallback -- the same fallback
+    // showCurrentServerInTable applies -- so the highlight is never simply dropped.
     if (serverModel_ != nullptr) {
         serverModel_->setActiveIndexId(
-            activeLocationGroupId_.isEmpty() ? currentIndexId_ : currentInCoreServerId_);
+            activeLocationGroupId_.isEmpty() || currentInCoreServerId_.isEmpty()
+                ? currentIndexId_
+                : currentInCoreServerId_);
     }
     currentServerLocation_ = snapshot.currentServerLocation.trimmed();
     currentServerWarning_ = snapshot.currentServerWarning.trimmed();

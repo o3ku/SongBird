@@ -83,6 +83,7 @@ private slots:
     void toolbarOrdersSettingsSubscriptionsAndRoutingButtons();
     void helpMenuCheckForUpdatesEmitsSignal();
     void connectSoloServerActionEmitsSignalWithSelectedServer();
+    void groupSessionKeepsTheAnchorRowHighlightedUntilTheCoreAnswers();
     void shortcutsCheatSheetListsEveryInstalledShortcut();
     void routingToolbarButtonEmitsRoutingSettingsSignal();
     void toolbarUsesFullWidthLayoutAndCompactVerticalMargins();
@@ -809,6 +810,48 @@ void MainWindowTests::connectSoloServerActionEmitsSignalWithSelectedServer()
 
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("server-2"));
+}
+// A group session's current-row mark follows the member the core's auto-select group uses, but
+// between activation and the first Clash-API answer nobody knows that member yet -- the anchor
+// keeps the highlight instead of the mark being dropped outright (the same fallback
+// showCurrentServerInTable applies).
+void MainWindowTests::groupSessionKeepsTheAnchorRowHighlightedUntilTheCoreAnswers()
+{
+    MainWindow window;
+    window.setConfig(createServerSelectionConfig());
+    QCoreApplication::processEvents();
+
+    auto* model = window.findChild<ServerTableModel*>();
+    QVERIFY(model != nullptr);
+    const auto currentRowId = [model]() {
+        for (int row = 0; row < model->rowCount(); ++row) {
+            if (model->data(model->index(row, 0), ServerTableModel::IsCurrentServerRole).toBool()) {
+                return model->itemAt(row)->indexId;
+            }
+        }
+        return QString();
+    };
+    QCOMPARE(currentRowId(), QStringLiteral("server-1"));
+
+    // A group session starts on the anchor's group: no in-core answer yet.
+    RuntimeStateSnapshot snapshot;
+    snapshot.currentServerName = QStringLiteral("JP group, 3 node(s)");
+    snapshot.activeLocationGroupId = QStringLiteral("JP");
+    snapshot.activeLocationGroupMemberCount = 3;
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(currentRowId(), QStringLiteral("server-1"));
+
+    // The core answers member-3: the mark moves to it.
+    snapshot.currentInCoreServerId = QStringLiteral("server-3");
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(currentRowId(), QStringLiteral("server-3"));
+
+    // Back to a single-node session: the anchor (currentIndexId) carries the mark again.
+    snapshot.activeLocationGroupId.clear();
+    snapshot.activeLocationGroupMemberCount = 0;
+    snapshot.currentInCoreServerId.clear();
+    window.applyRuntimeState(snapshot);
+    QCOMPARE(currentRowId(), QStringLiteral("server-1"));
 }
 
 void MainWindowTests::shortcutsCheatSheetListsEveryInstalledShortcut()
