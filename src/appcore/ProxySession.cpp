@@ -862,7 +862,27 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
     currentRequest_.config.clashApiSecret.clear();
     if (!currentGroupLocationId_.isEmpty()) {
         currentGroupMembers_ = deps_.profileResolver.resolveGroupServers(currentGroupLocationId_);
-        currentRequest_.config.clashApiPort = pickFreeLoopbackPort();
+        // The cap is runtime policy, not membership: a huge subscription must not turn one
+        // generated config into hundreds of outbounds and a probe storm inside the core. The
+        // anchor is safe -- the resolver moved it to the front -- and the truncation is said
+        // out loud so "JP group, 20 node(s)" never looks like the group's real size.
+        constexpr int kMaxGroupMembers = 20;
+        if (currentGroupMembers_.size() > kMaxGroupMembers) {
+            emit logMessage(tr("Location group '%1' has %2 server(s); the auto-select group is capped at %3.")
+                .arg(currentGroupLocationId_)
+                .arg(QString::number(currentGroupMembers_.size()))
+                .arg(QString::number(kMaxGroupMembers)));
+            currentGroupMembers_.erase(
+                currentGroupMembers_.begin() + kMaxGroupMembers, currentGroupMembers_.end());
+        }
+        const int clashApiPort = pickFreeLoopbackPort();
+        if (clashApiPort <= 0) {
+            // Degraded display, not a failed start: the group runs fine without the status
+            // API; only the "which member is the core is on" segment goes missing. Said out
+            // loud because that silence would otherwise look like the core never answering.
+            emit logMessage(tr("Could not reserve a local port for the group status API; the member in use will not be shown."));
+        }
+        currentRequest_.config.clashApiPort = clashApiPort;
         currentRequest_.config.clashApiSecret = QStringLiteral("%1").arg(
             QRandomGenerator::global()->generate64(), 16, 16, QLatin1Char('0'));
         if (currentGroupMembers_.isEmpty()) {

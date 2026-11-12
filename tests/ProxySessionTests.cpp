@@ -39,6 +39,7 @@ private slots:
     void groupStartWritesAutoSelectConfigAndReachesProxying();
     void groupStartFailsWhenTheGroupHasNoEmbeddableMember();
     void groupStartEmitsTargetUnavailableWhenTheCoreCannotBuildTheGroup();
+    void groupStartCapsTheAutoSelectGroupAndLogsTheTruncation();
     void groupStartReachesProxyingWhenTheCurrentNodeIsOutsideTheGroup();
     void startReachesProxyingWhenCoreListensAndLocationResolves();
     void startFailsWhenTheOutboundNeverAnswers();
@@ -828,6 +829,64 @@ void ProxySessionTests::groupStartEmitsTargetUnavailableWhenTheCoreCannotBuildTh
         qPrintable(unavailableSpy.at(0).at(1).toString()));
     QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
     QCOMPARE(harness.mainCore.startCount, 0);
+}
+
+// The member cap is the session's runtime policy: a 25-server group embeds exactly 20 members
+// (the anchor safe at the front), and the truncation is said out loud so the "20 node(s)"
+// display never looks like the group's real size.
+void ProxySessionTests::groupStartCapsTheAutoSelectGroupAndLogsTheTruncation()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+
+    QList<VmessItem> members;
+    for (int index = 0; index < 25; ++index) {
+        VmessItem member = harness.launchableServer();
+        member.indexId = QStringLiteral("server-%1").arg(index);
+        member.address = QStringLiteral("server-%1.example.com").arg(index);
+        members.append(member);
+    }
+    harness.groupServers = members;
+    harness.currentServerIndexId = members.constFirst().indexId;
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.ui().activeLocationGroupId = QStringLiteral("US");
+
+    QSignalSpy logSpy(harness.session.get(), SIGNAL(logMessage(QString)));
+    harness.session->start(request);
+
+    bool sawCapLine = false;
+    for (const QList<QVariant>& arguments : logSpy) {
+        if (arguments.at(0).toString().contains(QStringLiteral("has 25 server(s); the auto-select group is capped at 20"))) {
+            sawCapLine = true;
+        }
+    }
+    QVERIFY2(sawCapLine, qPrintable(logSpy.isEmpty() ? QStringLiteral("(no log lines)") : logSpy.at(0).at(0).toString()));
+
+    QFile runtimeConfig(harness.tempDir.filePath(QStringLiteral("runtime.json")));
+    QVERIFY(runtimeConfig.open(QIODevice::ReadOnly));
+    const QJsonObject root = QJsonDocument::fromJson(runtimeConfig.readAll()).object();
+    runtimeConfig.close();
+    int memberOutbounds = 0;
+    int groupOutboundCount = 0;
+    const QJsonArray outbounds = root.value(QStringLiteral("outbounds")).toArray();
+    for (const QJsonValue& value : outbounds) {
+        const QJsonObject outbound = value.toObject();
+        const QString tag = outbound.value(QStringLiteral("tag")).toString();
+        if (tag.startsWith(QStringLiteral("member-"))) {
+            ++memberOutbounds;
+        }
+        if (tag == QStringLiteral("proxy")) {
+            groupOutboundCount = outbound.value(QStringLiteral("outbounds")).toArray().size();
+        }
+    }
+    QCOMPARE(memberOutbounds, 20);
+    QCOMPARE(groupOutboundCount, 20);
+
+    harness.session->stop(true);
 }
 
 void ProxySessionTests::startReachesProxyingWhenCoreListensAndLocationResolves()

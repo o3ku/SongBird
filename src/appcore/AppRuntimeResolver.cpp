@@ -48,11 +48,10 @@ const VmessItem* AppRuntimeResolver::resolveActiveServerPointer() const
 
 // Group activation: the embeddable members in config list order, with the current node moved
 // to the front so it becomes the anchor (continuity: activating a group keeps the node the
-// user was on). Capped so a large subscription cannot turn one generated config into
-// hundreds of outbounds and a probe storm inside the core.
+// user was on). Uncapped by design: the member cap is the session's runtime policy (the session
+// is the one that has to say why a group was truncated), so this reports the whole group.
 QList<VmessItem> AppRuntimeResolver::resolveGroupServers(const QString& locationId) const
 {
-    constexpr int kMaxGroupMembers = 20;
 
     QList<VmessItem> members = LocationGroupScan::embeddableMembers(
         config_.collection().servers, locationId);
@@ -63,9 +62,6 @@ QList<VmessItem> AppRuntimeResolver::resolveGroupServers(const QString& location
             members.move(i, 0);
             break;
         }
-    }
-    if (members.size() > kMaxGroupMembers) {
-        members.erase(members.begin() + kMaxGroupMembers, members.end());
     }
     return members;
 }
