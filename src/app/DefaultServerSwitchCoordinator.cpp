@@ -19,6 +19,12 @@ void DefaultServerSwitchCoordinator::setDefaultServer(const QString& indexId)
     }
 
     const QString previousIndexId = currentIndexId();
+    // The group target before the write clears it: leaving a group session is an activation
+    // change even when the node id stays the anchor (the "Connect as Single Server" entry on
+    // the anchor itself), because the running core holds the auto-select group config until a
+    // restart rewrites it as a single outbound. Without this the escape hatch on the anchor
+    // only cleared the persisted target and left the group session running.
+    const bool leftGroupSession = !activeLocationGroupId().trimmed().isEmpty();
     const OperationResult result = setDefaultServerOnConfig(indexId);
     appendResult(result);
     syncWindow();
@@ -30,7 +36,7 @@ void DefaultServerSwitchCoordinator::setDefaultServer(const QString& indexId)
     clearServerWarning();
     setCurrentActivationPending(true);
     if (isCoreRunning()) {
-        if (previousIndexId != currentIndexId() && callbacks_.restartCoreIfRunning) {
+        if ((previousIndexId != currentIndexId() || leftGroupSession) && callbacks_.restartCoreIfRunning) {
             callbacks_.restartCoreIfRunning(QCoreApplication::translate(
                 "AppBootstrap", "Reloading core after switching the default server."),
                 true);
@@ -52,6 +58,9 @@ void DefaultServerSwitchCoordinator::setDefaultServerWithTun(const QString& inde
     }
 
     const QString previousIndexId = currentIndexId();
+    // Same group-session rule as setDefaultServer(): "Set Current with TUN On" on the anchor of
+    // a running group must also leave the group, which is a restart even with an unchanged id.
+    const bool leftGroupSession = !activeLocationGroupId().trimmed().isEmpty();
     const OperationResult result = setDefaultServerOnConfig(indexId);
     appendResult(result);
     syncWindow();
@@ -63,7 +72,7 @@ void DefaultServerSwitchCoordinator::setDefaultServerWithTun(const QString& inde
     setCurrentActivationPending(true);
 
     if (isTunEnabled()) {
-        if (isCoreRunning() && previousIndexId != currentIndexId()) {
+        if (isCoreRunning() && (previousIndexId != currentIndexId() || leftGroupSession)) {
             if (callbacks_.restartCoreIfRunning) {
                 callbacks_.restartCoreIfRunning(
                     QCoreApplication::translate(

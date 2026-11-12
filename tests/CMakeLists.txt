@@ -480,6 +480,24 @@ songbird_add_qt_test(songbird_server_collection_coordinator_tests server-collect
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# setDefaultServer() decides "is this a reload?" by comparing node ids, which used to leave the
+# group-session escape hatch (Connect as Single Server on the anchor) a silent no-op: leaving a
+# group session is an activation change even when the node id stays the anchor. The callbacks
+# are the coordinator's whole world, so the harness pins the decision without a window or core.
+set(SONGBIRD_DEFAULT_SERVER_SWITCH_COORDINATOR_TEST_SOURCES
+    DefaultServerSwitchCoordinatorTests.cpp
+    ../src/app/DefaultServerSwitchCoordinator.h
+    ../src/app/DefaultServerSwitchCoordinator.cpp
+)
+
+songbird_add_qt_test(songbird_default_server_switch_coordinator_tests default-server-switch-coordinator
+    SOURCES
+        ${SONGBIRD_DEFAULT_SERVER_SWITCH_COORDINATOR_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Core
+)
+
 # isSingBoxRuleSetPublishedUpstream() is the list of rule-set categories the vendor does not
 # publish, so a rule naming one of them can never match. It is pure data with no I/O, so it gets
 # a target of its own rather than dragging in the whole sing-box config chain.
