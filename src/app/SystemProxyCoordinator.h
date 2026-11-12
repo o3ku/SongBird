@@ -45,6 +45,9 @@ public:
     void enable(bool showStartupOverlay = false);
     void retryStartup(bool showStartupOverlay = true);
     void disable();
+    // Startup with the app's proxy off: restore a snapshot that survived a crash, otherwise leave
+    // the registry untouched. Never clears (see the definition for why).
+    void recoverOwnedSystemProxyOnStartup();
     bool updateMode(SystemProxyMode mode) const;
     QString buildExceptions() const;
 

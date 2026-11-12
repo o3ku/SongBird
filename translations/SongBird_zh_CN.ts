@@ -402,6 +402,18 @@
         <translation>分组内自动切换已停止：组内全部节点均已失败。成功连接后将恢复自动切换。</translation>
     </message>
     <message>
+        <source>Stopping core because the active location group is now empty.</source>
+        <translation>活动位置分组已为空，正在停止内核。</translation>
+    </message>
+    <message>
+        <source>The active location group no longer has any server; the single active server will be used.</source>
+        <translation>活动位置分组已无任何服务器，将使用当前单节点。</translation>
+    </message>
+    <message>
+        <source>Restored the system proxy settings captured before the previous session.</source>
+        <translation>已恢复上次会话前捕获的系统代理设置。</translation>
+    </message>
+    <message>
         <source>Administrator Permission</source>
         <translation>管理员权限</translation>
     </message>
@@ -2190,6 +2202,10 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>Set Current with TUN On</source>
         <translation>设为当前并开启 TUN</translation>
+    </message>
+    <message>
+        <source>Connect as Single Server</source>
+        <translation>以单节点连接</translation>
     </message>
     <message>
         <source>Test</source>

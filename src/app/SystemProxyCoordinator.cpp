@@ -197,6 +197,28 @@ bool SystemProxyCoordinator::restoreCapturedSnapshot()
     return true;
 }
 
+// Startup with the app's proxy off. The old disabled branch called disable() (ForcedClear),
+// which deleted ProxyServer/ProxyOverride/AutoConfigURL on every launch -- so a user who had
+// their own enterprise proxy or PAC script before opening the app lost it by simply starting
+// the app with its own proxy off. The registry holding a proxy is not evidence that *we* set
+// it (SystemProxyOwnershipPolicy); only a captured snapshot is. Restoring that snapshot heals
+// the crash case (our dead 127.0.0.1:<port> is still there) and puts the user's own settings
+// back; with no snapshot there is nothing of ours to undo, so the registry is left alone.
+void SystemProxyCoordinator::recoverOwnedSystemProxyOnStartup()
+{
+    if (deps_.systemProxyService == nullptr) {
+        return;
+    }
+    if (!restoreCapturedSnapshot()) {
+        return;
+    }
+    if (deps_.proxySession != nullptr) {
+        deps_.proxySession->adoptManagedSystemProxy(false);
+    }
+    appendResult(OperationResult::ok(QCoreApplication::translate(
+        "AppBootstrap", "Restored the system proxy settings captured before the previous session.")));
+}
+
 void SystemProxyCoordinator::cleanupRuntimeForExit(bool windowsShutdown)
 {
     applyModeOnExit(windowsShutdown);

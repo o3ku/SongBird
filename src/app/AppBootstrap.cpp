@@ -650,7 +650,14 @@ void AppBootstrap::applyStartupSystemProxyPreference()
         return;
     }
 
-    disableSystemProxy();
+    // Proxy off for this session. Never force-clear the registry: a user's own enterprise proxy,
+    // PAC script or debugging proxy is not ours to delete just because we started with our proxy
+    // off (SystemProxyOwnershipPolicy -- ownership, never registry state). Only a captured
+    // snapshot proves we touched it; restoring that heals a crash-left proxy and puts the user's
+    // settings back. With no snapshot there is nothing of ours to undo, so we leave it alone.
+    if (objects_->systemProxyCoordinator != nullptr) {
+        objects_->systemProxyCoordinator->recoverOwnedSystemProxyOnStartup();
+    }
 }
 
 void AppBootstrap::persistUiState()
