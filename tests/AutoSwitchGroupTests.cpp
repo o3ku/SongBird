@@ -111,6 +111,7 @@ private slots:
     void locationGroupScanEmbedsOnlyNonCustomMembers();
     void activationGestureFromStoppedActivatesTheNode();
     void activationGestureInGroupSessionSwitchesNoOpsAndFallsBack();
+    void activationGestureTreatsAFavoritedGroupMemberAsSameGroup();
 
     // Coordinator
     // Coordinator
@@ -356,6 +357,30 @@ void AutoSwitchGroupTests::activationGestureInGroupSessionSwitchesNoOpsAndFallsB
         true, QString(), servers, QStringLiteral("jp-1"));
     QCOMPARE(static_cast<int>(plain.kind),
              static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateNode));
+}
+
+void AutoSwitchGroupTests::activationGestureTreatsAFavoritedGroupMemberAsSameGroup()
+{
+    // A favorited node is still a member of its location group: it shows in that group's tab and
+    // group activation embeds it. Clicking one while that group runs must be a no-op, not a jump
+    // to the FAVORITE pseudo-group -- locationIdOfServer resolves FAVORITE first and used to turn
+    // the click into a cross-group switch that restarted the session.
+    const QList<VmessItem> servers{
+        makeServer(QStringLiteral("us-1"), QStringLiteral("us 1"), QStringLiteral("US")),
+        makeServer(QStringLiteral("us-fav"), QStringLiteral("us fav"), QStringLiteral("US"), true),
+    };
+
+    const auto sameGroup = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("US"), servers, QStringLiteral("us-fav"));
+    QCOMPARE(static_cast<int>(sameGroup.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::NoOp));
+
+    // The FAVORITE group itself still resolves to FAVORITE for a node outside the running group.
+    const auto favoriteGroup = ServerActivationGestureLogic::resolveServerActivationGesture(
+        true, QStringLiteral("JP"), servers, QStringLiteral("us-fav"));
+    QCOMPARE(static_cast<int>(favoriteGroup.kind),
+             static_cast<int>(ServerActivationGestureLogic::ActivationGesture::Kind::ActivateGroup));
+    QCOMPARE(favoriteGroup.locationId, QStringLiteral("FAVORITE"));
 }
 
 void AutoSwitchGroupTests::failureIsIgnoredWhenPreferenceOff()

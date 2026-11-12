@@ -57,11 +57,16 @@ inline ActivationGesture resolveServerActivationGesture(
 
     // A group session runs: clicking a node of that same group is a no-op (no needless
     // restart), clicking a node of another group switches the auto-select to that group.
-    const QString clickedLocation = LocationGroupScan::locationIdOfServer(*clicked);
-    if (clickedLocation == activeGroupLocationId.trimmed()) {
+    //
+    // Membership goes through isGroupMember, the same predicate the group's own member list is
+    // built from -- NOT locationIdOfServer. A favorited node is a member of its location group
+    // (it is shown in that tab and the group activation embeds it), so clicking one while that
+    // group runs is a no-op; locationIdOfServer resolves FAVORITE first and would have wrongly
+    // reported "another group" and restarted the session on the FAVORITE pseudo-group.
+    if (LocationGroupScan::isGroupMember(*clicked, activeGroupLocationId)) {
         return {};
     }
-    return {ActivationGesture::Kind::ActivateGroup, {}, clickedLocation};
+    return {ActivationGesture::Kind::ActivateGroup, {}, LocationGroupScan::locationIdOfServer(*clicked)};
 }
 
 } // namespace ServerActivationGestureLogic
