@@ -137,6 +137,9 @@ private slots:
     void deletingASubscriptionThatOwnsAGroupMemberReloadsTheCore();
     void hidingASubscriptionDoesNotSaveOnItsOwn();
     void persistingPendingEditsWritesTheHiddenStateOnce();
+    void movingTheLastGroupMemberAwayClearsTheTargetAndStopsTheCore();
+    void movingOneMemberOutOfAPopulatedGroupLeavesTheCoreAlone();
+    void unfavoritingTheLastFavoriteClearsTheFavoriteTargetAndStopsTheCore();
 };
 
 void ServerCollectionCoordinatorTests::stopsTheCoreWhenTheActiveServerIsRemovedCleanly()
@@ -454,6 +457,94 @@ void ServerCollectionCoordinatorTests::persistingPendingEditsWritesTheHiddenStat
 
     QCOMPARE(repository.saveCalls_, 2);
     QVERIFY(failingRecorder.log().contains(QStringLiteral("Failed to save")));
+}
+
+// A location edit is the third way (besides removals and subscription deletes) the last member
+// can leave the running group. The target must be spent and the core stopped -- the same
+// recovery the removal paths apply -- or the next restart would fail the launch instead of
+// falling back to the single active server.
+void ServerCollectionCoordinatorTests::movingTheLastGroupMemberAwayClearsTheTargetAndStopsTheCore()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("JP"), 2);
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.setServersLocation(
+        {QStringLiteral("member-0"), QStringLiteral("member-1")}, QStringLiteral("US"));
+
+    QVERIFY(config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.stopCoreCalls, 1);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+    QVERIFY(recorder.log().contains(
+        QStringLiteral("Stopping core because the active location group is now empty.")));
+}
+
+// A location edit that leaves the group populated is state, not configuration: no stop, no
+// reload -- the core keeps its embedded member list until the next restart, exactly like a
+// location change while a single node runs.
+void ServerCollectionCoordinatorTests::movingOneMemberOutOfAPopulatedGroupLeavesTheCoreAlone()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("JP"), 2);
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.setServersLocation({QStringLiteral("member-1")}, QStringLiteral("US"));
+
+    QCOMPARE(config.ui().activeLocationGroupId, QStringLiteral("JP"));
+    QCOMPARE(recorder.stopCoreCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+}
+
+// The FAVORITE pseudo-group's membership is the favorite flag, so unfavoriting the last
+// favorite empties a running FAVORITE target the same way a removal does.
+void ServerCollectionCoordinatorTests::unfavoritingTheLastFavoriteClearsTheFavoriteTargetAndStopsTheCore()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("FAVORITE"), 2);
+    for (VmessItem& item : config.collection().servers) {
+        item.favorite = true;
+    }
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.setServersFavorite(
+        {QStringLiteral("member-0"), QStringLiteral("member-1")}, false);
+
+    QVERIFY(config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.stopCoreCalls, 1);
+    QCOMPARE(recorder.restartCoreCalls, 0);
 }
 
 QTEST_MAIN(ServerCollectionCoordinatorTests)

@@ -33,15 +33,7 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
         return;
     }
 
-    // The removal may have emptied the group target. A target with no members cannot start, so
-    // clear it whether or not the core is running -- the stale target would otherwise fail the next
-    // launch -- and stop the core only when one is up.
-    if (clearRunningGroupIfEmptied()) {
-        if (isCoreRunning()) {
-            appendResult(OperationResult::ok(QCoreApplication::translate(
-                "AppBootstrap", "Stopping core because the active location group is now empty.")));
-            stopCore();
-        }
+    if (stopCoreIfGroupTargetEmptied()) {
         return;
     }
 
@@ -128,6 +120,12 @@ void ServerCollectionCoordinator::setServersLocation(const QStringList& indexIds
     if (changed > 0) {
         appendResult(deps_.serverService.save(deps_.config));
         syncWindow();
+        // A location edit can take the last member out of the running group -- the same stale
+        // target a removal leaves -- so the emptied-target recovery runs here too (see
+        // removeServers). Membership that merely changed shape stays untouched: the core keeps
+        // its embedded member list until the next restart, by the same rule as a location
+        // change while a single node runs.
+        stopCoreIfGroupTargetEmptied();
     }
 }
 
@@ -147,6 +145,9 @@ void ServerCollectionCoordinator::setServersFavorite(const QStringList& indexIds
     if (changed > 0) {
         appendResult(deps_.serverService.save(deps_.config));
         syncWindow();
+        // Unfavoriting the last favorite empties a running FAVORITE group target, exactly like a
+        // removal does; the same recovery clears the target and stops the core.
+        stopCoreIfGroupTargetEmptied();
     }
 }
 
@@ -208,12 +209,7 @@ void ServerCollectionCoordinator::deleteSubscription(const QString& subscription
 
     // Same as removeServers(): clear an emptied group target regardless of the core, stop only when
     // one is running.
-    if (clearRunningGroupIfEmptied()) {
-        if (isCoreRunning()) {
-            appendResult(OperationResult::ok(QCoreApplication::translate(
-                "AppBootstrap", "Stopping core because the active location group is now empty.")));
-            stopCore();
-        }
+    if (stopCoreIfGroupTargetEmptied()) {
         return;
     }
 
@@ -295,6 +291,22 @@ bool ServerCollectionCoordinator::removalTouchesRunningGroup(const QStringList& 
         }
     }
     return false;
+}
+
+// The emptied-target recovery shared by every path that can take the last member out of the
+// running group: clear the persisted target (it can never start again as-is) and stop a running
+// core, because its config embeds a member set that no longer exists.
+bool ServerCollectionCoordinator::stopCoreIfGroupTargetEmptied()
+{
+    if (!clearRunningGroupIfEmptied()) {
+        return false;
+    }
+    if (isCoreRunning()) {
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "Stopping core because the active location group is now empty.")));
+        stopCore();
+    }
+    return true;
 }
 
 bool ServerCollectionCoordinator::clearRunningGroupIfEmptied()

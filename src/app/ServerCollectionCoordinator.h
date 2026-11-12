@@ -65,9 +65,13 @@ private:
     // because the running core holds one outbound per member and has to be reloaded when the set
     // changes -- removing a non-anchor member is otherwise invisible to the core.
     bool removalTouchesRunningGroup(const QStringList& indexIds) const;
-    // Clears the group target when the removal left it with no members, and reports whether it did.
-    // A target with no members cannot start, so leaving it set would only fail the next launch.
+    // Clears the group target when the running group no longer has any member, saves the
+    // cleared target, and reports whether it did. A target with no members cannot start, so
+    // leaving it set would only fail the next launch.
     bool clearRunningGroupIfEmptied();
+    // The emptied-target recovery: clearRunningGroupIfEmptied() plus stopping a running core
+    // (its config embeds a member set that no longer exists). True when the target was spent.
+    bool stopCoreIfGroupTargetEmptied();
 
     Dependencies deps_;
     Callbacks callbacks_;
