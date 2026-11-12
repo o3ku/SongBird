@@ -80,6 +80,7 @@ public:
     // writing an empty file.
     void setShareLinksExportProvider(std::function<QString(const QStringList&)> provider);
     void setClashYamlExportProvider(std::function<QString(const QStringList&)> provider);
+    void setLocationGroupActivatableProvider(std::function<bool(const QString&)> provider);
     void setExistingCoreTypes(const QList<CoreType>& coreTypes);
     // Borrowed, never owned, and outlives this window: the composition root
     // declares it first so it is destroyed last. Leaving it unset is supported and
@@ -349,6 +350,7 @@ private:
     std::function<QString(const QString&)> shareUrlResolver_;
     std::function<QString(const QStringList&)> shareLinksExportProvider_;
     std::function<QString(const QStringList&)> clashYamlExportProvider_;
+    std::function<bool(const QString&)> locationGroupActivatableProvider_;
     LogFileWriter* logFileWriter_ = nullptr;
     QList<CoreType> existingCoreTypes_;
     QString currentIndexId_;

@@ -280,6 +280,14 @@ void MainWindow::setClashYamlExportProvider(std::function<QString(const QStringL
     clashYamlExportProvider_ = std::move(provider);
 }
 
+// Group activation from a location tab's context menu: the composition root answers "would
+// this group actually activate" (the generator's verdict, core capability included) so the
+// menu can refuse what would only fail after the click.
+void MainWindow::setLocationGroupActivatableProvider(std::function<bool(const QString&)> provider)
+{
+    locationGroupActivatableProvider_ = std::move(provider);
+}
+
 void MainWindow::exportServersToFile(
     const QStringList& indexIds,
     const std::function<QString(const QStringList&)>& provider,
@@ -1211,7 +1219,11 @@ void MainWindow::setupSubscriptionViewController()
                 emit reorderSubscriptionsRequested(orderedIds);
             },
             [this]() { emit openSettingsAtSubscriptionsTabRequested(); },
-            [this](const QString& locationId) { emit connectLocationGroupRequested(locationId); }});
+            [this](const QString& locationId) { emit connectLocationGroupRequested(locationId); },
+            [this](const QString& locationId) {
+                return locationGroupActivatableProvider_
+                    && locationGroupActivatableProvider_(locationId);
+            }});
     if (serverWorkspace_ != nullptr) {
         serverWorkspace_->setCompactSelectionHandler([this](const QString&) {
             if (serverListController_ != nullptr) {

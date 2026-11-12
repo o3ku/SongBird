@@ -22,6 +22,7 @@
 #include "services/ServerService.h"
 #include "services/SpeedTestController.h"
 #include "subscription/ShareUrlBuilder.h"
+#include "runtime/ClientConfigWriter.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/tray/TrayController.h"
 
@@ -65,6 +66,24 @@ void AppBootstrap::wireUiObjects()
         }
         return exportService_.exportClashYaml(servers);
     });
+    // Group activation from a location tab: the menu asks "would this group actually
+    // activate" and gets the generator's own answer -- the same pure generation the
+    // activation will run, so an all-Xray group (or any other unrunnable member set) is
+    // refused before the click instead of failing the startup afterwards.
+    objects_->mainWindow->setLocationGroupActivatableProvider(
+        [this](const QString& locationId) -> bool {
+            if (objects_->clientConfigWriter == nullptr) {
+                return false;
+            }
+            const QList<VmessItem> members = LocationGroupScan::embeddableMembers(
+                config_.collection().servers, locationId);
+            if (members.isEmpty()) {
+                return false;
+            }
+            return objects_->clientConfigWriter
+                ->generateClientGroupConfigs(config_, members)
+                .generated.result.success;
+        });
     objects_->trayController = std::make_unique<TrayController>(objects_->mainWindow.get());
     objects_->speedTestCoordinator = std::make_unique<SpeedTestCoordinator>(
         SpeedTestCoordinator::Dependencies{

@@ -869,10 +869,13 @@ void SubscriptionViewController::showContextMenu(const QString& tabKey, const QP
         if (!locationId.isEmpty()) {
             auto* connectGroupAction = menu.addAction(QObject::tr("Connect as Auto-Select Group"));
             connectGroupAction->setObjectName(QStringLiteral("connectLocationGroupAction"));
-            // A group with no embeddable member cannot be activated; custom configs are the
-            // usual reason (a whole-file config cannot become one outbound of a group).
+            // Enabled exactly when an activation would succeed: the composition root injects
+            // the generator's real answer (core capability included -- an all-Xray group is
+            // not clickable), falling back to plain membership when unset (tests).
             connectGroupAction->setEnabled(
-                !LocationGroupScan::embeddableMembers(servers_, locationId).isEmpty());
+                callbacks_.locationGroupActivatable
+                    ? callbacks_.locationGroupActivatable(locationId)
+                    : !LocationGroupScan::embeddableMembers(servers_, locationId).isEmpty());
             QObject::connect(connectGroupAction, &QAction::triggered, &menu, [this, locationId]() {
                 if (callbacks_.connectLocationGroup) {
                     callbacks_.connectLocationGroup(locationId);

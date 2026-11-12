@@ -38,6 +38,10 @@ public:
         std::function<void()> openSubscriptionManagement;
         // Group activation from a location item's context menu.
         std::function<void(const QString& locationId)> connectLocationGroup;
+        // Whether "Connect as Auto-Select Group" would actually activate for this location:
+        // the composition root answers with the generator's verdict (core capability
+        // included). Unset falls back to plain membership, which is what tests rely on.
+        std::function<bool(const QString& locationId)> locationGroupActivatable;
     };
 
     SubscriptionViewController(
