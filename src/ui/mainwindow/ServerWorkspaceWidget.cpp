@@ -266,11 +266,13 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
     connect(groupByLocationButton_, &QToolButton::customContextMenuRequested, this, [this](const QPoint& position) {
         // Only in the grouped mode: unchecked means the subscription view is showing, and the
         // preference would be adjusting a mode the user is not looking at.
-        // While a group session runs, the core's auto-select owns in-group switching; the
-        // app-level failure fallback menu would only promise a second, competing mechanism.
+        // While a group session runs, the core's auto-select owns in-group switching, so the
+        // toggle is shown disabled with the reason rather than vanishing -- the preference
+        // still governs the whole-group failure fallback, and hiding it would only look like
+        // the feature disappeared.
         const bool autoSwitchSuperseded = groupMenuAutoSwitchAvailable_ != nullptr
             && !groupMenuAutoSwitchAvailable_();
-        if (groupMenuAutoSwitchChecked_ == nullptr || !groupByLocationButton_->isChecked() || autoSwitchSuperseded) {
+        if (groupMenuAutoSwitchChecked_ == nullptr || !groupByLocationButton_->isChecked()) {
             return;
         }
         QMenu menu(groupByLocationButton_);
@@ -278,7 +280,12 @@ ServerWorkspaceWidget::ServerWorkspaceWidget(
         autoSwitchAction->setObjectName(QStringLiteral("autoSwitchInGroupAction"));
         autoSwitchAction->setCheckable(true);
         autoSwitchAction->setChecked(groupMenuAutoSwitchChecked_());
-        if (groupMenuAutoSwitchToggled_) {
+        if (autoSwitchSuperseded) {
+            autoSwitchAction->setEnabled(false);
+            autoSwitchAction->setToolTip(tr(
+                "In-group switching is handled by the auto-select group while it runs.\n"
+                "This setting still controls the fallback when the whole group fails."));
+        } else if (groupMenuAutoSwitchToggled_) {
             connect(autoSwitchAction, &QAction::toggled, this, [this](bool checked) {
                 groupMenuAutoSwitchToggled_(checked);
             });
