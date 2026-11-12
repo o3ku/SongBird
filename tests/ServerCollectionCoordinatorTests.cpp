@@ -56,6 +56,26 @@ Config makeConfigWithActiveCustomServer(const QString& address)
     return config;
 }
 
+// A config whose location group target is `groupLocationId` and whose members all carry an explicit
+// override, so membership does not depend on the name inference. The first member is the active
+// server (the group anchor), matching how group activation picks it.
+Config makeConfigWithLocationGroup(const QString& groupLocationId, int memberCount)
+{
+    Config config;
+    config.ui().activeLocationGroupId = groupLocationId;
+    for (int index = 0; index < memberCount; ++index) {
+        VmessItem item;
+        item.indexId = QStringLiteral("member-%1").arg(index);
+        item.address = QStringLiteral("https://member-%1.example").arg(index);
+        item.locationOverride = groupLocationId;
+        config.collection().servers.append(item);
+    }
+    if (!config.collection().servers.isEmpty()) {
+        config.currentIndexId = config.collection().servers.constFirst().indexId;
+    }
+    return config;
+}
+
 // Records what the coordinator asked the app to do. The coordinator owns no I/O of its own, so
 // these callbacks are the whole observable surface of a removal.
 struct RemovalRecorder {
@@ -111,6 +131,10 @@ private slots:
     void stopsTheCoreWhenTheActiveServerIsRemovedCleanly();
     void stopsTheCoreWhenOnlyTheManagedFileCleanupFailed();
     void keepsTheCoreRunningWhenTheRemovalCouldNotBeSaved();
+    void removingANonAnchorGroupMemberReloadsTheCore();
+    void emptyingTheGroupTargetClearsItAndStopsTheCore();
+    void emptyingTheGroupTargetClearsItEvenWhenTheCoreIsStopped();
+    void deletingASubscriptionThatOwnsAGroupMemberReloadsTheCore();
     void hidingASubscriptionDoesNotSaveOnItsOwn();
     void persistingPendingEditsWritesTheHiddenStateOnce();
 };
@@ -207,6 +231,124 @@ void ServerCollectionCoordinatorTests::keepsTheCoreRunningWhenTheRemovalCouldNot
         QStringLiteral("Failed to save configuration after removing server(s).")));
     QCOMPARE(recorder.stopCoreCalls, 0);
     QCOMPARE(recorder.restartCoreCalls, 0);
+}
+
+void ServerCollectionCoordinatorTests::removingANonAnchorGroupMemberReloadsTheCore()
+{
+    // The core's auto-select group holds one outbound per member, so deleting a non-anchor member
+    // has to rebuild it. The anchor (the active server) stays, so the core is reloaded, not stopped.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("US"), 2);
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.removeServers({QStringLiteral("member-1")});
+
+    QCOMPARE(recorder.stopCoreCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 1);
+    // The group survives, so its target is left alone.
+    QCOMPARE(config.ui().activeLocationGroupId, QStringLiteral("US"));
+}
+
+void ServerCollectionCoordinatorTests::emptyingTheGroupTargetClearsItAndStopsTheCore()
+{
+    // The whole group is deleted: the target can no longer start, so it is cleared and the core is
+    // stopped rather than left running a group that would fail on the next launch.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("US"), 1);
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.removeServers({QStringLiteral("member-0")});
+
+    QVERIFY(config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.stopCoreCalls, 1);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+    QVERIFY(recorder.log().contains(QStringLiteral("the active location group is now empty")));
+}
+
+void ServerCollectionCoordinatorTests::emptyingTheGroupTargetClearsItEvenWhenTheCoreIsStopped()
+{
+    // A user can delete the last member with the core down. The stale target would still fail the
+    // next start, so it is cleared either way -- there is simply no core to stop.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("US"), 1);
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+    recorder.coreRunning = false;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.removeServers({QStringLiteral("member-0")});
+
+    QVERIFY(config.ui().activeLocationGroupId.isEmpty());
+    QCOMPARE(recorder.stopCoreCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 0);
+}
+
+void ServerCollectionCoordinatorTests::deletingASubscriptionThatOwnsAGroupMemberReloadsTheCore()
+{
+    // The subscription's nodes leave with it. When one of them was a non-anchor member of the
+    // running group, the core's auto-select list has to be rebuilt exactly as for a plain removal.
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    Config config = makeConfigWithLocationGroup(QStringLiteral("US"), 2);
+    // The second member belongs to a subscription; the anchor does not, so only the non-anchor
+    // member is affected and the group survives.
+    const QString subscriptionId = QStringLiteral("sub-1");
+    config.collection().servers[1].subId = subscriptionId;
+    SubItem subscription;
+    subscription.id = subscriptionId;
+    subscription.remarks = QStringLiteral("Sub");
+    subscription.url = QStringLiteral("https://sub.example");
+    subscription.enabled = true;
+    config.collection().subscriptions.append(subscription);
+
+    MockConfigRepository repository;
+    ServerService serverService(repository, QDir(temporaryDirectory.path()).filePath(QStringLiteral("managed")));
+    SubscriptionService subscriptionService(repository);
+
+    RemovalRecorder recorder;
+    recorder.config = &config;
+
+    ServerCollectionCoordinator coordinator(
+        ServerCollectionCoordinator::Dependencies{config, serverService, subscriptionService},
+        recorder.callbacks());
+
+    coordinator.deleteSubscription(subscriptionId);
+
+    QCOMPARE(recorder.stopCoreCalls, 0);
+    QCOMPARE(recorder.restartCoreCalls, 1);
+    QCOMPARE(config.ui().activeLocationGroupId, QStringLiteral("US"));
 }
 
 void ServerCollectionCoordinatorTests::hidingASubscriptionDoesNotSaveOnItsOwn()

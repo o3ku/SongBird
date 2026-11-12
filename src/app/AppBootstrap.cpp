@@ -13,6 +13,7 @@
 #include "app/StartupWindowPolicy.h"
 #include "appcore/BackgroundTaskCoordinator.h"
 #include "appcore/BackgroundThreadTracker.h"
+#include "appcore/LocationGroupScan.h"
 #include "app/ConfigBackupCoordinator.h"
 #include "app/ConfigPathResolver.h"
 #include "appcore/CoreProcessCleanupService.h"
@@ -627,6 +628,22 @@ bool AppBootstrap::reloadConfig()
     appendResult(OperationResult::ok(
         QCoreApplication::translate("AppBootstrap", "Configuration reloaded from disk.")));
     appendStartupResourceCheckResults();
+    // A subscription update can take the last member out of the running location group (the
+    // provider dropped every node of that region). Restarting into such a target would only
+    // fail the startup checklist with "no server this core can embed", so the target is spent
+    // and the reload falls back to the single active server -- the same recovery the delete
+    // paths apply (ServerCollectionCoordinator::clearRunningGroupIfEmptied).
+    const QString reloadedGroupTarget = config_.ui().activeLocationGroupId.trimmed();
+    if (!reloadedGroupTarget.isEmpty()
+        && LocationGroupScan::embeddableMembers(config_.collection().servers, reloadedGroupTarget).isEmpty()) {
+        config_.ui().activeLocationGroupId.clear();
+        if (objects_->serverService != nullptr) {
+            appendResult(objects_->serverService->save(config_));
+        }
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "The active location group no longer has any server; the single active server will be used.")));
+        syncStatusIndicators();
+    }
     if (uiReady_ && isCoreRunning()) {
         restartCoreIfRunning(
             QCoreApplication::translate("AppBootstrap", "Reloading core after reloading configuration."),

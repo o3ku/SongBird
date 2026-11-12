@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "appcore/LocationCatalog.h"
+#include "appcore/LocationGroupScan.h"
 #include "services/SubscriptionService.h"
 
 ServerCollectionCoordinator::ServerCollectionCoordinator(Dependencies deps, Callbacks callbacks)
@@ -17,6 +18,10 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
     const std::optional<VmessItem> activeServer = resolveActiveServer();
     const QString activeServerId = activeServer.has_value() ? activeServer->indexId : QString();
     const bool activeServerRemoved = !activeServerId.isEmpty() && indexIds.contains(activeServerId);
+    // A removal that takes a member out of the running group reloads the core just like removing
+    // the anchor: the core's auto-select list is built from the group's members, so a non-anchor
+    // member the user deleted must leave that list too.
+    const bool groupMemberRemoved = removalTouchesRunningGroup(indexIds);
 
     const ServerService::RemovalOutcome removal = deps_.serverService.removeServers(deps_.config, indexIds);
     appendResult(removal.result);
@@ -24,7 +29,27 @@ void ServerCollectionCoordinator::removeServers(const QStringList& indexIds)
     // Gate the core work on `applied`, not on `removal.result.success`: a cleanup failure makes the
     // result a failure while the servers are gone from the saved config all the same, and returning
     // early there would leave the core running the server the user just removed.
-    if (!removal.applied || !activeServerRemoved || !isCoreRunning()) {
+    if (!removal.applied) {
+        return;
+    }
+
+    // The removal may have emptied the group target. A target with no members cannot start, so
+    // clear it whether or not the core is running -- the stale target would otherwise fail the next
+    // launch -- and stop the core only when one is up.
+    if (clearRunningGroupIfEmptied()) {
+        if (isCoreRunning()) {
+            appendResult(OperationResult::ok(QCoreApplication::translate(
+                "AppBootstrap", "Stopping core because the active location group is now empty.")));
+            stopCore();
+        }
+        return;
+    }
+
+    if (!isCoreRunning()) {
+        return;
+    }
+
+    if (!activeServerRemoved && !groupMemberRemoved) {
         return;
     }
 
@@ -164,10 +189,39 @@ void ServerCollectionCoordinator::deleteSubscription(const QString& subscription
     const QString activeSubscriptionId = activeServer.has_value() ? activeServer->subId.trimmed() : QString();
     const bool activeSubscriptionRemoved = !activeSubscriptionId.isEmpty() && activeSubscriptionId == normalizedId;
 
+    // The subscription's nodes leave the config with it, so collect their ids first: any of them
+    // in the running group means the core's auto-select list has to be rebuilt.
+    QStringList subscriptionServerIds;
+    for (const VmessItem& server : deps_.config.collection().servers) {
+        if (server.subId.trimmed() == normalizedId) {
+            subscriptionServerIds.append(server.indexId);
+        }
+    }
+    const bool groupMemberRemoved = removalTouchesRunningGroup(subscriptionServerIds);
+
     const OperationResult result = deps_.subscriptionService.removeSubscription(deps_.config, normalizedId);
     appendResult(result);
     syncWindow();
-    if (!result.success || !activeSubscriptionRemoved || !isCoreRunning()) {
+    if (!result.success) {
+        return;
+    }
+
+    // Same as removeServers(): clear an emptied group target regardless of the core, stop only when
+    // one is running.
+    if (clearRunningGroupIfEmptied()) {
+        if (isCoreRunning()) {
+            appendResult(OperationResult::ok(QCoreApplication::translate(
+                "AppBootstrap", "Stopping core because the active location group is now empty.")));
+            stopCore();
+        }
+        return;
+    }
+
+    if (!isCoreRunning()) {
+        return;
+    }
+
+    if (!activeSubscriptionRemoved && !groupMemberRemoved) {
         return;
     }
 
@@ -222,4 +276,37 @@ void ServerCollectionCoordinator::restartCoreIfRunning(const QString& reason) co
     if (callbacks_.restartCoreIfRunning) {
         callbacks_.restartCoreIfRunning(reason, true);
     }
+}
+
+bool ServerCollectionCoordinator::removalTouchesRunningGroup(const QStringList& indexIds) const
+{
+    const QString groupId = deps_.config.ui().activeLocationGroupId.trimmed();
+    if (groupId.isEmpty()) {
+        return false;
+    }
+    const QList<VmessItem> members =
+        LocationGroupScan::embeddableMembers(deps_.config.collection().servers, groupId);
+    for (const VmessItem& member : members) {
+        const QString memberId = member.indexId.trimmed();
+        for (const QString& removedId : indexIds) {
+            if (removedId.trimmed() == memberId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ServerCollectionCoordinator::clearRunningGroupIfEmptied()
+{
+    const QString groupId = deps_.config.ui().activeLocationGroupId.trimmed();
+    if (groupId.isEmpty()) {
+        return false;
+    }
+    if (!LocationGroupScan::embeddableMembers(deps_.config.collection().servers, groupId).isEmpty()) {
+        return false;
+    }
+    deps_.config.ui().activeLocationGroupId.clear();
+    appendResult(deps_.serverService.save(deps_.config));
+    return true;
 }

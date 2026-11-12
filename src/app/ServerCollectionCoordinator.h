@@ -60,6 +60,14 @@ private:
     std::optional<VmessItem> resolveActiveServer() const;
     void stopCore() const;
     void restartCoreIfRunning(const QString& reason) const;
+    // Group activation: whether the batch about to be removed takes a member out of the running
+    // location group. Called before the removal is applied (the members are still in the config),
+    // because the running core holds one outbound per member and has to be reloaded when the set
+    // changes -- removing a non-anchor member is otherwise invisible to the core.
+    bool removalTouchesRunningGroup(const QStringList& indexIds) const;
+    // Clears the group target when the removal left it with no members, and reports whether it did.
+    // A target with no members cannot start, so leaving it set would only fail the next launch.
+    bool clearRunningGroupIfEmptied();
 
     Dependencies deps_;
     Callbacks callbacks_;
