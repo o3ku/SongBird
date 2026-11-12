@@ -54,7 +54,10 @@
 //      auto-select group over resolveGroupServers()'s members (anchor first, tag "member-N"
 //      by order); the transient Clash API endpoint is picked per group start so the app's
 //      ProxyGroupStatusPoller can follow which member the core is on. Both live in the
-//      request's config copy and are never serialized from here.
+//      request's config copy and are never serialized from here. A start that fails because
+//      the target itself cannot run (empty after resolution, or rejected by the writer's
+//      generation) fires groupTargetUnavailable(locationId, reason) after failed() -- the
+//      host's cue to offer leaving group mode rather than letting START fail identically.
 //      Boundary:      request-carried config fields.
 //
 //  IRuntimeProfileResolver::resolveGroupServers(locationId)

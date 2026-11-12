@@ -57,7 +57,11 @@ public:
         const QList<VmessItem>& members,
         const QString& filePath,
         QStringList* auxiliaryPaths,
-        QList<VmessItem>* embeddedMembers = nullptr) const;
+        QList<VmessItem>* embeddedMembers = nullptr,
+        // Set to true when the failure is the target itself (generation rejected the member
+        // set: no member runs on the launch core, or the core has no auto-select group), as
+        // opposed to a runtime path or disk failure that would hit a single-node write too.
+        bool* targetUnusable = nullptr) const;
 
     GeneratedConfigSet generateClientConfigs(
         const Config& config,

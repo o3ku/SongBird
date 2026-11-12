@@ -38,6 +38,7 @@ private slots:
     void startFailsWhenNoActiveServer();
     void groupStartWritesAutoSelectConfigAndReachesProxying();
     void groupStartFailsWhenTheGroupHasNoEmbeddableMember();
+    void groupStartEmitsTargetUnavailableWhenTheCoreCannotBuildTheGroup();
     void groupStartReachesProxyingWhenTheCurrentNodeIsOutsideTheGroup();
     void startReachesProxyingWhenCoreListensAndLocationResolves();
     void startFailsWhenTheOutboundNeverAnswers();
@@ -777,9 +778,54 @@ void ProxySessionTests::groupStartFailsWhenTheGroupHasNoEmbeddableMember()
     request.config.ui().activeLocationGroupId = QStringLiteral("US");
 
     QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    QSignalSpy unavailableSpy(harness.session.get(), SIGNAL(groupTargetUnavailable(QString,QString)));
     harness.session->start(request);
 
     QCOMPARE(failedSpy.count(), 1);
+    // The target itself is spent, so the host gets the leave-group-mode cue alongside the
+    // ordinary failure: same reason text, the location id it should spend.
+    QCOMPARE(unavailableSpy.count(), 1);
+    QCOMPARE(unavailableSpy.at(0).at(0).toString(), QStringLiteral("US"));
+    QVERIFY2(unavailableSpy.at(0).at(1).toString().contains(QStringLiteral("no server this core can embed")),
+        qPrintable(unavailableSpy.at(0).at(1).toString()));
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+    QCOMPARE(harness.mainCore.startCount, 0);
+}
+
+// The other "the target cannot run" class: the members exist, but the launch core cannot build
+// an auto-select group for them (every protocol pinned to Xray, which has no group). Same cue
+// as the empty group, from the writer's generation failure rather than the resolver's.
+void ProxySessionTests::groupStartEmitsTargetUnavailableWhenTheCoreCannotBuildTheGroup()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+
+    VmessItem first = harness.launchableServer();
+    VmessItem second = harness.launchableServer();
+    second.indexId = QStringLiteral("server-2");
+    second.address = QStringLiteral("second.example.com");
+    harness.groupServers = {first, second};
+    harness.currentServerIndexId = first.indexId;
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.ui().activeLocationGroupId = QStringLiteral("US");
+    // Every protocol pinned to Xray: the writer's generation rejects the whole member set.
+    request.config.policy().coreTypeItems.append(CoreTypeItem{
+        static_cast<int>(ConfigType::VMess),
+        static_cast<int>(CoreType::Xray)});
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    QSignalSpy unavailableSpy(harness.session.get(), SIGNAL(groupTargetUnavailable(QString,QString)));
+    harness.session->start(request);
+
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(unavailableSpy.count(), 1);
+    QCOMPARE(unavailableSpy.at(0).at(0).toString(), QStringLiteral("US"));
+    QVERIFY2(unavailableSpy.at(0).at(1).toString().contains(QStringLiteral("Xray")),
+        qPrintable(unavailableSpy.at(0).at(1).toString()));
     QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
     QCOMPARE(harness.mainCore.startCount, 0);
 }

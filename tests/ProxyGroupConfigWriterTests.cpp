@@ -66,6 +66,8 @@ private slots:
     void generateClientGroupConfigsDropsForeignCoreAndCustomMembers();
     void generateClientGroupConfigsFailsWhenNoMemberCanRunOnTheLaunchCore();
     void writeClientGroupConfigsWritesPrimaryAndReportsDroppedMembers();
+    void writeClientGroupConfigsFlagsGenerationFailuresAsTargetUnusable();
+    void writeClientGroupConfigsLeavesPlumbingFailuresTargetUsable();
 };
 
 void ProxyGroupConfigWriterTests::singBoxGroupRootBuildsUrlTestGroupOverMembers()
@@ -224,6 +226,48 @@ void ProxyGroupConfigWriterTests::writeClientGroupConfigsWritesPrimaryAndReports
     QVERIFY2(result.message.contains(QStringLiteral("Skipped 1 member(s)")),
              qPrintable(result.message));
     QVERIFY2(result.message.contains(QStringLiteral("h")), qPrintable(result.message));
+}
+
+// The unusable-target flag: a generation failure (the member set itself cannot run as a group)
+// marks the target spent so the session can offer leaving group mode; a plumbing failure (path,
+// disk) does not, because a single-node write on the same disk would fail identically.
+void ProxyGroupConfigWriterTests::writeClientGroupConfigsFlagsGenerationFailuresAsTargetUnusable()
+{
+    Config config = groupBaseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::Xray);
+
+    const QList<VmessItem> members{
+        groupMember(ConfigType::VMess, QStringLiteral("a.example.com"), QStringLiteral("a")),
+    };
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    ClientConfigWriter writer;
+    bool targetUnusable = false;
+    const OperationResult result = writer.writeClientGroupConfigs(
+        config, members, directory.filePath(QStringLiteral("config.generated.json")),
+        nullptr, nullptr, &targetUnusable);
+    QVERIFY(!result.success);
+    QVERIFY(targetUnusable);
+}
+
+void ProxyGroupConfigWriterTests::writeClientGroupConfigsLeavesPlumbingFailuresTargetUsable()
+{
+    Config config = groupBaseConfig();
+    setProtocolCore(config, ConfigType::VMess, CoreType::SingBox);
+
+    const QList<VmessItem> members{
+        groupMember(ConfigType::VMess, QStringLiteral("a.example.com"), QStringLiteral("a")),
+    };
+
+    ClientConfigWriter writer;
+    bool targetUnusable = false;
+    // An empty runtime path fails before generation is ever consulted.
+    const OperationResult result = writer.writeClientGroupConfigs(
+        config, members, QString(), nullptr, nullptr, &targetUnusable);
+    QVERIFY(!result.success);
+    QVERIFY(!targetUnusable);
 }
 
 QTEST_MAIN(ProxyGroupConfigWriterTests)

@@ -393,7 +393,8 @@ OperationResult ClientConfigWriter::writeClientGroupConfigs(
     const QList<VmessItem>& members,
     const QString& filePath,
     QStringList* auxiliaryPaths,
-    QList<VmessItem>* embeddedMembers) const
+    QList<VmessItem>* embeddedMembers,
+    bool* targetUnusable) const
 {
     if (filePath.trimmed().isEmpty()) {
         return OperationResult::fail(QCoreApplication::translate("ClientConfigWriter", "Runtime config path is empty."));
@@ -406,6 +407,11 @@ OperationResult ClientConfigWriter::writeClientGroupConfigs(
 
     const GroupGeneration generation = generateClientGroupConfigs(config, members);
     if (!generation.generated.result.success) {
+        // Generation rejected the member set itself; a single-node write on the same disk and
+        // path could still succeed, which is exactly the distinction callers ask about.
+        if (targetUnusable != nullptr) {
+            *targetUnusable = true;
+        }
         return generation.generated.result;
     }
 

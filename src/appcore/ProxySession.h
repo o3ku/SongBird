@@ -198,6 +198,13 @@ signals:
     // Display only -- receivers must not write the registry from it (issue #14, item A).
     void systemProxyUndoFailed(const QString& warning);
     void failed(const QString& reason);
+    // A group activation failed because its target cannot run at all: no embeddable member, or
+    // the launch core cannot build an auto-select group for these members (a mixed-core group
+    // anchored on a core without a group). Distinct from failed() (which still fires first, with
+    // the same reason): it says the *target* is spent, so a host may offer leaving group mode
+    // instead of leaving the user to fail again on START. Disk and port failures of a group
+    // start do NOT fire this -- switching nodes would not help there.
+    void groupTargetUnavailable(const QString& locationId, const QString& reason);
     void stopped();
     void coreOutput(const QString& line);
     void auxiliaryCoreOutput(const QString& line);
@@ -349,6 +356,9 @@ private:
     // (member tag "member-N" maps back over this order). Both stay empty for single-node runs.
     QString currentGroupLocationId_;
     QList<VmessItem> currentGroupMembers_;
+    // The group target of the start now failing, when the failure is the target itself (see
+    // groupTargetUnavailable). Set at the two failure sites, spent by failStartup().
+    QString unavailableGroupTargetId_;
     QString currentServerLocation_;
     // ISO country code of the last location probe (empty when unknown). Kept beside the display
     // string so the "fix location from exit" action can use the probe's answer without the UI

@@ -548,11 +548,19 @@ void ProxySession::startInternal(
     } else {
         // The writer drops members the launch core cannot embed; taking the embedded list
         // back keeps the tag order (member-1..N) in step with what the core actually runs.
+        bool groupTargetUnusable = false;
         writeResult = deps_.configWriter.writeClientGroupConfigs(
             currentRequest_.config, currentGroupMembers_, coreConfigPath,
-            &auxiliaryConfigPaths, &currentGroupMembers_);
+            &auxiliaryConfigPaths, &currentGroupMembers_, &groupTargetUnusable);
         if (!currentGroupMembers_.isEmpty()) {
             currentServer_ = currentGroupMembers_.first();
+        }
+        if (groupTargetUnusable) {
+            // Generation rejected the target (no member runs on the anchor's core, or the core
+            // has no auto-select group at all) -- same "the target is spent" class as an empty
+            // group. Disk and port failures leave the flag down: switching nodes fixes nothing
+            // there, so no leave-group offer is made for them.
+            unavailableGroupTargetId_ = currentGroupLocationId_;
         }
     }
     if (!writeResult.success) {
@@ -844,6 +852,7 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
     // from the resolver every (re)start, so a subscription update between restarts can change
     // the member set without any extra bookkeeping. The anchor (first member) drives core
     // resolution, probes and display exactly like a single-node start's active server.
+    unavailableGroupTargetId_.clear();
     currentGroupLocationId_ = currentRequest_.config.ui().activeLocationGroupId.trimmed();
     currentGroupMembers_.clear();
     // The endpoint is per-activation: a fresh port and secret each group start, so a stale
@@ -857,6 +866,10 @@ std::optional<ProxySession::StartupProfile> ProxySession::resolveStartupProfile(
         currentRequest_.config.clashApiSecret = QStringLiteral("%1").arg(
             QRandomGenerator::global()->generate64(), 16, 16, QLatin1Char('0'));
         if (currentGroupMembers_.isEmpty()) {
+            // The target itself is spent (every member was removed or is foreign to the core):
+            // a retry would fail identically, so the failure is flagged for the host's
+            // leave-group-mode offer.
+            unavailableGroupTargetId_ = currentGroupLocationId_;
             const QString message = QCoreApplication::translate(
                 "ProxySession", "Location group '%1' has no server this core can embed in an auto-select group.")
                 .arg(currentGroupLocationId_);
@@ -989,11 +1002,18 @@ void ProxySession::keepChecklistForUserDismissal(const QString& step, const QStr
 
 void ProxySession::failStartup(const OperationResult& result)
 {
+    // Captured before the cleanup wipes the group state: this failure's target, when the
+    // failure was the target itself.
+    const QString unavailableGroupTarget = unavailableGroupTargetId_;
+    unavailableGroupTargetId_.clear();
     cleanupAfterFailedStartup();
     if (currentRequest_.warnOnFailure) {
         setServerWarning(tr("Please verify manually"));
     }
     emit failed(result.message);
+    if (!unavailableGroupTarget.isEmpty()) {
+        emit groupTargetUnavailable(unavailableGroupTarget, result.message);
+    }
 }
 
 void ProxySession::cleanupAfterFailedStartup()
