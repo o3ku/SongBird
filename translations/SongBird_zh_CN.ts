@@ -410,6 +410,28 @@
         <translation>活动位置分组已无任何服务器，将使用当前单节点。</translation>
     </message>
     <message>
+        <source>The active location group target was cleared because it cannot run.</source>
+        <translation>活动位置分组目标无法运行，已清除。</translation>
+    </message>
+    <message>
+        <source>Location Group Unavailable</source>
+        <translation>位置分组不可用</translation>
+    </message>
+    <message>
+        <source>The location group '%1' cannot run as an auto-select group:
+%2
+
+Switch to subscription grouping and connect the current server as a single node?</source>
+        <translation>位置分组“%1”无法作为自动选择分组运行：
+%2
+
+切换到订阅分组并以当前服务器单节点连接？</translation>
+    </message>
+    <message>
+        <source>No server is selected; pick a single server to connect.</source>
+        <translation>未选择服务器；请选择一个服务器单节点连接。</translation>
+    </message>
+    <message>
         <source>Restored the system proxy settings captured before the previous session.</source>
         <translation>已恢复上次会话前捕获的系统代理设置。</translation>
     </message>

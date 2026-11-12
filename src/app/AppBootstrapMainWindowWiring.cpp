@@ -172,6 +172,10 @@ void AppBootstrap::wireProxySessionSignals()
                          systemProxyUndoWarning_ = warning;
                          syncStatusIndicators();
                      });
+    QObject::connect(objects_->proxySession.get(), &ProxySession::groupTargetUnavailable,
+                     objects_->mainWindow.get(), [this](const QString& locationId, const QString& reason) {
+                         offerSubscriptionModeAfterGroupTargetFailure(locationId, reason);
+                     });
     QObject::connect(objects_->proxySession.get(), &ProxySession::stopped,
                      objects_->mainWindow.get(), [this]() {
                          syncStatusIndicators();
@@ -219,6 +223,51 @@ void AppBootstrap::wireProxySessionSignals()
         }
         return true;
     });
+}
+
+// The leave-group-mode offer after ProxySession::groupTargetUnavailable. The session already
+// failed the start and undid its own work; the target itself is spent (no embeddable member,
+// or a launch core that cannot build an auto-select group), so both answers clear it -- a
+// START would only fail on it again. "Yes" additionally returns the server list to
+// subscription grouping and starts the current single node, the pre-group shape whose core
+// resolution is the single-node path's own.
+void AppBootstrap::offerSubscriptionModeAfterGroupTargetFailure(const QString& locationId, const QString& reason)
+{
+    if (shuttingDown_.load() || objects_->mainWindow == nullptr) {
+        return;
+    }
+
+    const QString failedTarget = config_.ui().activeLocationGroupId.trimmed();
+    config_.ui().activeLocationGroupId.clear();
+    if (!failedTarget.isEmpty() && objects_->serverService != nullptr) {
+        appendResult(objects_->serverService->save(config_));
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "The active location group target was cleared because it cannot run.")));
+    }
+    syncStatusIndicators();
+
+    const QMessageBox::StandardButton choice = DialogUtils::askYesNoQuestion(
+        objects_->mainWindow.get(),
+        QCoreApplication::translate("AppBootstrap", "Location Group Unavailable"),
+        QCoreApplication::translate(
+            "AppBootstrap",
+            "The location group '%1' cannot run as an auto-select group:\n%2\n\nSwitch to subscription grouping and connect the current server as a single node?")
+            .arg(locationId, reason));
+    if (choice != QMessageBox::Yes) {
+        return;
+    }
+
+    config_.ui().mainGroupByLocation = false;
+    if (objects_->serverService != nullptr) {
+        appendResult(objects_->serverService->save(config_));
+    }
+    syncWindow();
+    if (resolveActiveServerSnapshot().has_value()) {
+        enableSystemProxy(true);
+    } else {
+        appendResult(OperationResult::fail(QCoreApplication::translate(
+            "AppBootstrap", "No server is selected; pick a single server to connect.")));
+    }
 }
 
 void AppBootstrap::wireRuntimeStateSignals()

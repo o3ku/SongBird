@@ -101,6 +101,10 @@ private:
     // step. Deliberately NOT inside DefaultServerSwitchCoordinator: the auto-switch failure
     // fallback switches to a specific node on purpose, even inside the group it came from.
     void routeServerActivationGesture(const QString& indexId);
+    // The leave-group-mode offer after a group activation failed because its target cannot
+    // run (ProxySession::groupTargetUnavailable): spend the target, then ask whether to fall
+    // back to subscription grouping with the current single node.
+    void offerSubscriptionModeAfterGroupTargetFailure(const QString& locationId, const QString& reason);
     // Group activation display state, owned by the poller connection: the member the core's
     // auto-select group is currently on ("" while the core has not answered or a single-node
     // session runs).
