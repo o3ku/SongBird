@@ -45,5 +45,9 @@ private:
     QString currentMemberId_;
     QString baseUrl_;
     QString authorizationHeader_;
+    // Bumped by every start()/stop(): a reply that comes back after a retarget belongs to a
+    // different activation (the port is per-activation), so its answer must never be mapped
+    // through the new member list. Same epoch = same target.
+    quint32 pollEpoch_ = 0;
     bool requestInFlight_ = false;
 };

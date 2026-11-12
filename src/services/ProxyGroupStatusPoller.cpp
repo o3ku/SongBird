@@ -15,6 +15,11 @@ namespace {
 // on it, so a steady cadence keeps the UI honest without leaning on the API.
 constexpr int PollIntervalMs = 5 * 1000;
 
+// A reply that never comes (a foreign process squatting on the recycled port and accepting
+// without answering) must not freeze the cadence: without a deadline, requestInFlight_ stays
+// true forever and the poller goes silent for the rest of the session.
+constexpr int RequestTimeoutMs = 5 * 1000;
+
 int memberIndexFromTag(const QString& tag)
 {
     const QString prefix = QStringLiteral("member-");
@@ -59,6 +64,10 @@ void ProxyGroupStatusPoller::start(int port, const QString& secret, const QStrin
     baseUrl_ = QStringLiteral("http://127.0.0.1:%1").arg(port);
     authorizationHeader_ = QStringLiteral("Bearer %1").arg(secret.trimmed());
     currentMemberId_.clear();
+    // A request from the previous target may still be in flight; it answers to a different
+    // activation now, and the epoch bump below retires it.
+    requestInFlight_ = false;
+    ++pollEpoch_;
     pollTimer_->start();
     pollNow();
 }
@@ -69,6 +78,7 @@ void ProxyGroupStatusPoller::stop()
     baseUrl_.clear();
     authorizationHeader_.clear();
     memberIndexIds_.clear();
+    ++pollEpoch_;
     if (!currentMemberId_.isEmpty()) {
         currentMemberId_.clear();
         emit currentMemberChanged(QString());
@@ -92,16 +102,21 @@ void ProxyGroupStatusPoller::pollNow()
     }
 
     QNetworkRequest request(QUrl(baseUrl_ + QStringLiteral("/proxies/proxy")));
+    request.setTransferTimeout(RequestTimeoutMs);
     if (!authorizationHeader_.isEmpty()) {
         request.setRawHeader(QByteArrayLiteral("Authorization"), authorizationHeader_.toUtf8());
     }
+    const quint32 requestEpoch = pollEpoch_;
 
     requestInFlight_ = true;
     QNetworkReply* reply = networkManager_->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, requestEpoch]() {
         reply->deleteLater();
         requestInFlight_ = false;
-        if (!isActive()) {
+        // Not just isActive(): a retarget or a stop happened since the request left, so the
+        // answer -- however well formed -- describes a different activation's group and must
+        // not be mapped through this target's member list.
+        if (!isActive() || requestEpoch != pollEpoch_) {
             return;
         }
 

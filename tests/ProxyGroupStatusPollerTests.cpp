@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QPointer>
 
 #include "services/ProxyGroupStatusPoller.h"
 
@@ -67,6 +68,57 @@ private:
     QString scriptedNow_ = QStringLiteral("member-1");
 };
 
+// Accepts the poller's connection but holds the answer until the test releases it: the shape of
+// a core that is slow, wedged, or -- after a retarget -- simply no longer the one being polled.
+class HoldingClashApi final : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit HoldingClashApi(QObject* parent = nullptr)
+        : QObject(parent)
+    {
+        connect(&server_, &QTcpServer::newConnection, this, [this]() {
+            while (QTcpSocket* connection = server_.nextPendingConnection()) {
+                connection_ = connection;
+                connect(connection, &QTcpSocket::disconnected, connection, &QTcpSocket::deleteLater);
+            }
+        });
+    }
+
+    bool listen()
+    {
+        return server_.listen(QHostAddress::LocalHost, 0);
+    }
+
+    int port() const
+    {
+        return server_.serverPort();
+    }
+
+    void answerNow(const QString& now)
+    {
+        if (connection_ == nullptr) {
+            return;
+        }
+        const QByteArray body = QJsonDocument(QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("URLTest")},
+            {QStringLiteral("now"), now},
+        }).toJson();
+        const QByteArray response = QByteArrayLiteral("HTTP/1.1 200 OK\r\n")
+            + QByteArrayLiteral("Content-Type: application/json\r\n")
+            + QByteArray("Content-Length: " + QByteArray::number(body.size()) + "\r\n")
+            + QByteArrayLiteral("Connection: close\r\n\r\n")
+            + body;
+        connection_->write(response);
+        connection_->disconnectFromHost();
+    }
+
+private:
+    QTcpServer server_;
+    QPointer<QTcpSocket> connection_;
+};
+
 } // namespace
 
 class ProxyGroupStatusPollerTests : public QObject
@@ -77,6 +129,7 @@ private slots:
     void mapsTheGroupsNowTagBackToTheMemberId();
     void ignoresAnswersOutsideTheMemberList();
     void stopClearsTheCurrentMember();
+    void aLateAnswerFromARetargetedEndpointIsIgnored();
 
 private:
     QTemporaryDir keepAlive_;
@@ -143,5 +196,35 @@ void ProxyGroupStatusPollerTests::stopClearsTheCurrentMember()
     QVERIFY(!poller.isActive());
 }
 
+
+// The endpoint is per-activation (a fresh port each group start), so a reply that arrives after
+// a retarget describes a different core's group. Mapping it through the new member list would
+// name the wrong member; the epoch guard must retire it instead.
+void ProxyGroupStatusPollerTests::aLateAnswerFromARetargetedEndpointIsIgnored()
+{
+    HoldingClashApi staleEndpoint;
+    QVERIFY(staleEndpoint.listen());
+    FakeClashApi liveEndpoint;
+    QVERIFY(liveEndpoint.listen());
+
+    ProxyGroupStatusPoller poller;
+    QSignalSpy changedSpy(&poller, SIGNAL(currentMemberChanged(QString)));
+
+    // The first target accepts but never answers; the retarget happens while its request is
+    // still being held.
+    poller.start(staleEndpoint.port(), QStringLiteral("s3cret"),
+        {QStringLiteral("old-a"), QStringLiteral("old-b")});
+    poller.start(liveEndpoint.port(), QStringLiteral("s3cret"),
+        {QStringLiteral("new-a"), QStringLiteral("new-b")});
+    QVERIFY(changedSpy.wait(10000));
+    QCOMPARE(poller.currentMemberId(), QStringLiteral("new-a"));
+
+    // The stale endpoint finally answers with member-2 -- a tag that would map to "new-b" if
+    // the reply were (wrongly) read through the new member list. It must change nothing.
+    staleEndpoint.answerNow(QStringLiteral("member-2"));
+    QTest::qWait(200);
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(poller.currentMemberId(), QStringLiteral("new-a"));
+}
 QTEST_MAIN(ProxyGroupStatusPollerTests)
 #include "ProxyGroupStatusPollerTests.moc"
