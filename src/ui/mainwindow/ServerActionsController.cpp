@@ -317,9 +317,9 @@ void ServerActionsController::syncActionState(const ActionState& state)
     }
     if (context_.setDefaultServerWithTunAction != nullptr) {
         context_.setDefaultServerWithTunAction->setEnabled(state.hasSingleSelection);
+    }
     if (context_.connectSoloServerAction != nullptr) {
         context_.connectSoloServerAction->setEnabled(state.hasSingleSelection);
-    }
     }
 
     if (context_.testAction != nullptr) {
