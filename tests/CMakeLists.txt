@@ -1407,22 +1407,6 @@ songbird_add_qt_test(songbird_proxy_health_watch_policy_tests proxy-health-watch
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-# RoutingScorePolicy ranks candidate nodes: EWMA smoothing so one outlier does not reorder the
-# list, a circuit breaker so a dead node cannot win on a stale score, and a switch margin so two
-# nodes within noise of each other do not trade the active connection on every probe. Pure logic,
-# so it gets its own target rather than dragging in the ProxySession chain.
-set(SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES
-    RoutingScorePolicyTests.cpp
-)
-
-songbird_add_qt_test(songbird_routing_score_policy_tests routing-score-policy
-    SOURCES
-        ${SONGBIRD_ROUTING_SCORE_POLICY_TEST_SOURCES}
-    LIBRARIES
-        Qt${QT_VERSION_MAJOR}::Test
-        Qt${QT_VERSION_MAJOR}::Widgets
-)
-
 set(SONGBIRD_USER_AGENT_TEST_SOURCES
     UserAgentTests.cpp
 )

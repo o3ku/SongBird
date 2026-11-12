@@ -31,8 +31,6 @@ set(SONGBIRD_SHARED_SOURCES
     appcore/StartupResourceBroker.cpp
     appcore/HealthStripPolicy.h
     appcore/HealthStripPolicy.cpp
-    appcore/RoutingScorePolicy.h
-    appcore/RoutingScorePolicy.cpp
     appcore/SystemProxyOwnershipPolicy.h
     appcore/CountryNameInference.h
     appcore/CountryNameInference.cpp
