@@ -49,6 +49,23 @@ bool writeJsonFile(const QString& path, const QJsonObject& root)
     return file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) >= 0;
 }
 
+bool writeTextFile(const QString& path, const QString& text)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    return file.write(text.toUtf8()) >= 0;
+}
+
+QString makeBackupPath(QTemporaryDir& tempDir, const QString& fileName)
+{
+    const QString backupDirectory = tempDir.filePath(QStringLiteral("backups"));
+    QDir().mkpath(backupDirectory);
+    return QDir(backupDirectory).filePath(fileName);
+}
+
 QJsonObject readJsonFile(const QString& path)
 {
     QFile file(path);
@@ -284,6 +301,19 @@ QJsonObject makeCanonicalRoot()
     return root;
 }
 
+// A canonical root with the inbound local port swapped, so two backups (or a backup
+// and the primary) are distinguishable after a load. "inbound" is an array of one
+// object in the file, so the port is swapped inside its first element.
+QJsonObject makeRootWithLocalPort(int localPort)
+{
+    QJsonObject root = makeCanonicalRoot();
+    QJsonArray inboundArray = root.value(QStringLiteral("inbound")).toArray();
+    QJsonObject inbound = inboundArray.isEmpty() ? QJsonObject() : inboundArray.at(0).toObject();
+    inbound.insert(QStringLiteral("localPort"), localPort);
+    root.insert(QStringLiteral("inbound"), QJsonArray{inbound});
+    return root;
+}
+
 } // namespace
 
 class JsonConfigRepositoryTests : public QObject {
@@ -303,6 +333,10 @@ private slots:
     void loadMergesStateFileWithoutBlockingOnMissingOrInvalidState();
     void loadIgnoresLegacyOnlyFields();
     void loadDropsPortOverridesThatDisagreeWithTheLocalPort();
+    void loadRestoresNewestBackupWhenPrimaryIsCorrupt();
+    void loadSkipsCorruptBackupForOlderUsableOne();
+    void loadReturnsEmptyWhenPrimaryAndBackupsAreCorrupt();
+    void loadWarnsAndSaveRefusesWhenSchemaVersionIsNewer();
     void saveWritesCanonicalSongBirdStructure();
     void saveSkipsRewritingFilesWhoseContentDidNotChange();
     void saveRemovesEmptyStateFile();
@@ -749,6 +783,118 @@ void JsonConfigRepositoryTests::loadDropsPortOverridesThatDisagreeWithTheLocalPo
     QCOMPARE(written.value(QStringLiteral("localPort")).toInt(), 20808);
     QVERIFY(!written.contains(QStringLiteral("localHttpPort")));
     QVERIFY(!written.contains(QStringLiteral("localLocationProbePort")));
+}
+
+void JsonConfigRepositoryTests::loadRestoresNewestBackupWhenPrimaryIsCorrupt()
+{
+    // A corrupt primary used to load as an empty config, which the next save would persist
+    // over the user's data. The newest backup is restored onto the primary path instead,
+    // the load reports no error, and the recovery is recorded as a warning.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeTextFile(configPath, QStringLiteral("{ not json")));
+    QVERIFY(writeJsonFile(
+        makeBackupPath(tempDir, QStringLiteral("songbird_2026_11_18_10_00_00_000.json")),
+        makeRootWithLocalPort(10811)));
+    QVERIFY(writeJsonFile(
+        makeBackupPath(tempDir, QStringLiteral("songbird_2026_11_18_11_00_00_000.json")),
+        makeRootWithLocalPort(10812)));
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.localPort, 10812);
+    QVERIFY2(!repository.lastLoadWarning().isEmpty(), qPrintable(repository.lastLoadWarning()));
+    QVERIFY2(repository.lastLoadWarning().contains(QStringLiteral("songbird_2026_11_18_11_00_00_000.json")),
+             qPrintable(repository.lastLoadWarning()));
+    // The restore is on disk, not just in memory: a fresh load reads the backup's config.
+    JsonConfigRepository reloaded(configPath);
+    QCOMPARE(reloaded.load().localPort, 10812);
+    QVERIFY(reloaded.lastLoadError().isEmpty());
+}
+
+void JsonConfigRepositoryTests::loadSkipsCorruptBackupForOlderUsableOne()
+{
+    // Backups are tried newest-first and a corrupt one is skipped, not fatal.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeTextFile(configPath, QStringLiteral("{ not json")));
+    QVERIFY(writeJsonFile(
+        makeBackupPath(tempDir, QStringLiteral("songbird_2026_11_18_10_00_00_000.json")),
+        makeRootWithLocalPort(10811)));
+    QVERIFY(writeTextFile(
+        makeBackupPath(tempDir, QStringLiteral("songbird_2026_11_18_11_00_00_000.json")),
+        QStringLiteral("{ not json either")));
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.localPort, 10811);
+    QVERIFY(!repository.lastLoadWarning().isEmpty());
+}
+
+void JsonConfigRepositoryTests::loadReturnsEmptyWhenPrimaryAndBackupsAreCorrupt()
+{
+    // No usable backup: the load still fails with the primary's error, not a backup's,
+    // and the config stays empty rather than half-restored.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+    QVERIFY(writeTextFile(configPath, QStringLiteral("{ not json")));
+    QVERIFY(writeTextFile(
+        makeBackupPath(tempDir, QStringLiteral("songbird_2026_11_18_10_00_00_000.json")),
+        QStringLiteral("{ not json either")));
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(!repository.lastLoadError().isEmpty());
+    QVERIFY(config.collection().servers.isEmpty());
+    QVERIFY(repository.lastLoadWarning().isEmpty());
+}
+
+void JsonConfigRepositoryTests::loadWarnsAndSaveRefusesWhenSchemaVersionIsNewer()
+{
+    // A config written by a newer build loads -- the known fields still read -- but the
+    // warning is recorded and the whole save is refused, so the unknown fields are never
+    // silently dropped by an overwrite.
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString configPath = makeConfigPath(tempDir);
+    QJsonObject root = makeCanonicalRoot();
+    root.insert(QStringLiteral("schemaVersion"), 99);
+    QVERIFY(writeJsonFile(configPath, root));
+
+    QFile beforeFile(configPath);
+    QVERIFY(beforeFile.open(QIODevice::ReadOnly));
+    const QByteArray beforeBytes = beforeFile.readAll();
+    beforeFile.close();
+
+    JsonConfigRepository repository(configPath);
+    const Config config = repository.load();
+
+    QVERIFY(repository.lastLoadError().isEmpty());
+    QCOMPARE(config.localPort, 10809);
+    QVERIFY2(repository.lastLoadWarning().contains(QStringLiteral("99")),
+             qPrintable(repository.lastLoadWarning()));
+
+    QVERIFY(!repository.save(config));
+    QVERIFY2(repository.lastSaveError().contains(QStringLiteral("newer"), Qt::CaseInsensitive),
+             qPrintable(repository.lastSaveError()));
+    QVERIFY2(repository.lastSaveError().contains(QStringLiteral("99")),
+             qPrintable(repository.lastSaveError()));
+
+    QFile afterFile(configPath);
+    QVERIFY(afterFile.open(QIODevice::ReadOnly));
+    QCOMPARE(afterFile.readAll(), beforeBytes);
 }
 
 void JsonConfigRepositoryTests::subscriptionLastUpdatedRoundTripsAndDefaultsToNever()

@@ -628,6 +628,13 @@ bool AppBootstrap::reloadConfig()
     if (!secretStoreWarning.isEmpty()) {
         appendResult(OperationResult::ok(secretStoreWarning), LogSeverity::Warning);
     }
+    // Same channel for a load that succeeded with a caveat: the primary file was corrupt
+    // and a backup was restored, or the file came from a newer build and will not be
+    // overwritten. Either way the user should see it in the log, not only in a flag.
+    const QString loadWarning = objects_->repository->lastLoadWarning().trimmed();
+    if (!loadWarning.isEmpty()) {
+        appendResult(OperationResult::ok(loadWarning), LogSeverity::Warning);
+    }
     syncWindow();
     if (!uiStateRestored_ && objects_->mainWindow != nullptr) {
         objects_->mainWindow->restoreUiState(config_);

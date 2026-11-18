@@ -1,5 +1,7 @@
 #include "persistence/JsonConfigRepository.h"
 
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -10,10 +12,15 @@
 
 #include "common/JsonFile.h"
 #include "common/LocalInboundPorts.h"
+#include "persistence/JsonConfigRootSerialization.h"
 #include "persistence/JsonConfigSerialization.h"
 #include "persistence/JsonConfigStateSerialization.h"
 #include "persistence/SecretFieldCodec.h"
 #include "platform/SecretStoreFactory.h"
+// The backup fallback uses ConfigBackupService, included here in the .cpp only: the
+// service's header does not include this header, so the include graph stays acyclic
+// (the service itself builds a repository only when writing a backup).
+#include "services/ConfigBackupService.h"
 
 #include <utility>
 
@@ -62,11 +69,36 @@ JsonConfigRepository::JsonConfigRepository(QString configPath, std::unique_ptr<c
 Config JsonConfigRepository::load()
 {
     lastLoadError_.clear();
+    lastLoadWarning_.clear();
     lastSecretStoreWarning_.clear();
     secretMigrationPending_ = false;
+    schemaTooNew_ = false;
+    loadedSchemaVersion_ = -1;
     Config config = loadPrimaryConfig();
     if (!lastLoadError_.isEmpty()) {
-        return {};
+        // The primary file is unreadable or unparseable: try the backups newest-first
+        // before giving up with an empty config. A backup that loads is restored onto
+        // the primary path and the load is retried, so the next start is normal again.
+        const QString primaryLoadError = lastLoadError_;
+        const QString restoredBackup = restoreNewestUsableBackup();
+        if (restoredBackup.isEmpty()) {
+            lastLoadError_ = primaryLoadError;
+            return {};
+        }
+        lastLoadError_.clear();
+        config = loadPrimaryConfig();
+        if (!lastLoadError_.isEmpty()) {
+            // The restored file itself does not load: that error describes the file now
+            // on disk, so it is kept instead of the primary's.
+            return {};
+        }
+        const QString restoreNote = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "Configuration file was corrupt; restored from backup %1.")
+            .arg(QDir::toNativeSeparators(restoredBackup));
+        lastLoadWarning_ = lastLoadWarning_.isEmpty()
+            ? restoreNote
+            : restoreNote + QLatin1Char(' ') + lastLoadWarning_;
     }
 
     if (!loadStateInto(config)) {
@@ -84,8 +116,9 @@ Config JsonConfigRepository::load()
     // config in memory is complete -- but it is recorded, because the file
     // still holds plaintext. On a successful re-save, save() has already
     // recorded the encode outcome in lastSecretStoreWarning_, so nothing is
-    // cleared here.
-    if (secretMigrationPending_) {
+    // cleared here. A file from a newer build is never re-saved at all: save()
+    // refuses it, and the refusal must not surface as a failed migration.
+    if (secretMigrationPending_ && !schemaTooNew_) {
         secretMigrationPending_ = false;
         if (!save(config)) {
             lastSecretStoreWarning_ = QCoreApplication::translate(
@@ -100,6 +133,16 @@ Config JsonConfigRepository::load()
 bool JsonConfigRepository::save(const Config& config)
 {
     lastSaveError_.clear();
+
+    // A config written by a newer build may carry fields this build does not know.
+    // Saving would silently drop them, so the whole save is refused instead.
+    if (schemaTooNew_) {
+        lastSaveError_ = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "Refusing to save the configuration file because it was written by a newer version of SongBird (schema version %1).")
+            .arg(loadedSchemaVersion_);
+        return false;
+    }
 
     // Write both files even if one fails, so a state-file problem never hides
     // that the primary config was persisted (or vice versa). The return value
@@ -135,6 +178,11 @@ QString JsonConfigRepository::configPath() const
 QString JsonConfigRepository::lastLoadError() const
 {
     return lastLoadError_;
+}
+
+QString JsonConfigRepository::lastLoadWarning() const
+{
+    return lastLoadWarning_;
 }
 
 QString JsonConfigRepository::lastSaveError() const
@@ -189,6 +237,23 @@ Config JsonConfigRepository::loadPrimaryConfig()
     // value must never reach the in-memory config still encrypted, and a
     // legacy plaintext value must be reported so load() can migrate it.
     QJsonObject root = document.object();
+
+    // schemaVersion is written by every save but was never read: a config from a newer
+    // build may carry fields this build does not know, which a save would silently
+    // drop. Loading still works -- the known fields read the same -- but the file is
+    // never overwritten, and the warning is recorded for the log panel.
+    loadedSchemaVersion_ = root.value(QStringLiteral("schemaVersion")).toInt(-1);
+    if (loadedSchemaVersion_ > JsonConfigRootSerialization::kSongBirdJsonConfigSchemaVersion) {
+        schemaTooNew_ = true;
+        const QString schemaWarning = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "Configuration file was written by a newer version of SongBird (schema version %1); it will not be overwritten.")
+            .arg(loadedSchemaVersion_);
+        lastLoadWarning_ = lastLoadWarning_.isEmpty()
+            ? schemaWarning
+            : lastLoadWarning_ + QLatin1Char(' ') + schemaWarning;
+    }
+
     const SecretFieldCodec::LoadReport secretReport =
         SecretFieldCodec::decodeSecrets(root, secretStore_.get());
     if (secretReport.secretDecryptFailed) {
@@ -205,6 +270,34 @@ Config JsonConfigRepository::loadPrimaryConfig()
     secretMigrationPending_ = secretReport.legacyPlaintextSecretsFound && !secretReport.secretDecryptFailed;
 
     return JsonConfigSerialization::parseConfig(root);
+}
+
+QString JsonConfigRepository::restoreNewestUsableBackup()
+{
+    const QString backupDirectory = ConfigBackupService::backupDirectoryPathFor(configPath_);
+    if (backupDirectory.trimmed().isEmpty()) {
+        return {};
+    }
+
+    QDir directory(backupDirectory);
+    QFileInfoList backupFiles = directory.entryInfoList(
+        QStringList{QStringLiteral("songbird_*.json")},
+        QDir::Files | QDir::NoDotAndDotDot);
+    // Newest first, same order the backup service prunes by: last modified, then name.
+    std::sort(backupFiles.begin(), backupFiles.end(), [](const QFileInfo& left, const QFileInfo& right) {
+        if (left.lastModified() == right.lastModified()) {
+            return left.fileName() > right.fileName();
+        }
+        return left.lastModified() > right.lastModified();
+    });
+
+    ConfigBackupService backupService(configPath_);
+    for (const QFileInfo& backupFile : backupFiles) {
+        if (backupService.restoreFromPath(backupFile.absoluteFilePath()).success) {
+            return backupFile.absoluteFilePath();
+        }
+    }
+    return {};
 }
 
 bool JsonConfigRepository::loadStateInto(Config& config)

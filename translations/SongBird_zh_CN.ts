@@ -2105,6 +2105,18 @@ The running core will be stopped before installation if needed.</source>
         <translation>已保存的代理凭据无法重新加密保存，仍以明文保存在配置文件中。</translation>
     </message>
     <message>
+        <source>Configuration file was corrupt; restored from backup %1.</source>
+        <translation>配置文件已损坏，已从备份 %1 恢复。</translation>
+    </message>
+    <message>
+        <source>Configuration file was written by a newer version of SongBird (schema version %1); it will not be overwritten.</source>
+        <translation>配置文件由更新版本的 SongBird 写入（架构版本 %1），不会被覆盖。</translation>
+    </message>
+    <message>
+        <source>Refusing to save the configuration file because it was written by a newer version of SongBird (schema version %1).</source>
+        <translation>拒绝保存配置文件，因为它由更新版本的 SongBird 写入（架构版本 %1）。</translation>
+    </message>
+    <message>
         <source>configuration file</source>
         <translation>配置文件</translation>
     </message>
