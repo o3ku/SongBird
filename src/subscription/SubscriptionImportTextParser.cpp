@@ -38,6 +38,37 @@ bool SubscriptionImportTextParser::isSubscriptionUrl(const QString& text)
         || value.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
 }
 
+bool SubscriptionImportTextParser::isLoopbackHost(const QString& host)
+{
+    QString normalized = host.trimmed().toLower();
+    if (normalized.startsWith(QChar('[')) && normalized.endsWith(QChar(']'))) {
+        normalized = normalized.mid(1, normalized.size() - 2);
+    }
+    return normalized == QStringLiteral("127.0.0.1")
+        || normalized == QStringLiteral("localhost")
+        || normalized == QStringLiteral("::1");
+}
+
+bool SubscriptionImportTextParser::isAllowedSubscriptionUrl(const QString& url)
+{
+    return isAllowedSubscriptionUrl(QUrl::fromUserInput(url.trimmed()));
+}
+
+bool SubscriptionImportTextParser::isAllowedSubscriptionUrl(const QUrl& parsedUrl)
+{
+    if (!parsedUrl.isValid()) {
+        return false;
+    }
+    const QString scheme = parsedUrl.scheme().toLower();
+    if (scheme == QStringLiteral("https")) {
+        return !parsedUrl.host().trimmed().isEmpty();
+    }
+    if (scheme == QStringLiteral("http")) {
+        return isLoopbackHost(parsedUrl.host());
+    }
+    return false;
+}
+
 QString SubscriptionImportTextParser::extractHostOrIpFromUrl(const QString& url)
 {
     const QString normalizedUrl = url.trimmed();

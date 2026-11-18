@@ -1579,6 +1579,20 @@ songbird_add_qt_test(songbird_subscription_parser_tests subscription-parser
         Qt${QT_VERSION_MAJOR}::Network
 )
 
+# The subscription URL policy (https always, http loopback-only) is a pure function
+# on the import text parser, so it is tested directly here. The service-level
+# enforcement in downloadText is covered by subscription-update-service.
+set(SONGBIRD_SUBSCRIPTION_IMPORT_TEXT_PARSER_TEST_SOURCES
+    SubscriptionImportTextParserTests.cpp
+)
+
+songbird_add_qt_test(songbird_subscription_import_text_parser_tests subscription-import-text-parser
+    SOURCES
+        ${SONGBIRD_SUBSCRIPTION_IMPORT_TEXT_PARSER_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_SERVER_SERVICE_TEST_SOURCES
     ServerServiceTests.cpp
 )
