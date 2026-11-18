@@ -7,22 +7,106 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QTemporaryDir>
 #include <QTextStream>
+
+#include "app/MacAppUpdateScript.h"
+#include "common/AppPaths.h"
+
+#if defined(Q_OS_MACOS)
+namespace {
+
+bool launchMacUpdate(const QString& diskImagePath, const QString& activeConfigPath)
+{
+    const QFileInfo executable(QCoreApplication::applicationFilePath());
+    QDir bundle = executable.dir();
+    if (bundle.dirName() != QStringLiteral("MacOS") || !bundle.cdUp()
+        || bundle.dirName() != QStringLiteral("Contents") || !bundle.cdUp()
+        || !bundle.dirName().endsWith(QStringLiteral(".app"), Qt::CaseInsensitive)) {
+        return false;
+    }
+    const QFileInfo bundleInfo(bundle.absolutePath());
+    if (bundleInfo.isSymLink() || !QFileInfo(bundleInfo.absolutePath()).isWritable()) {
+        return false;
+    }
+
+    const QString dataDirectory = AppPaths::userDataDirectory();
+    const QString updates = QDir(dataDirectory).filePath(QStringLiteral("updates"));
+    if (!QDir().mkpath(updates)) {
+        return false;
+    }
+    QTemporaryDir work(QDir(updates).filePath(QStringLiteral("install-XXXXXX")));
+    if (!work.isValid()) {
+        return false;
+    }
+
+    const QString logPath = QDir(work.path()).filePath(QStringLiteral("install.log"));
+    const auto title = QCoreApplication::translate("AppBootstrap", "Update Failed");
+    const auto failureMessage = QCoreApplication::translate(
+        "AppBootstrap", "SongBird could not install the update. See the update log at %1.").arg(logPath);
+
+    QStringList originalArguments = QCoreApplication::arguments();
+    const QString configPath = QFileInfo(activeConfigPath).absoluteFilePath();
+    const QString legacyPrefix = executable.absolutePath() + QLatin1Char('/');
+    const QString installedConfigPath = configPath.startsWith(legacyPrefix)
+        ? QDir(dataDirectory).filePath(configPath.mid(legacyPrefix.size()))
+        : configPath;
+
+    QStringList arguments{
+        QStringLiteral("-c"),
+        QString::fromLatin1(kMacAppUpdateScript),
+        QStringLiteral("songbird-update"),
+        QString::number(QCoreApplication::applicationPid()),
+        QFileInfo(diskImagePath).absoluteFilePath(),
+        bundle.absolutePath(),
+        dataDirectory,
+        work.path(),
+        title,
+        failureMessage,
+        QStringLiteral("--config=") + installedConfigPath,
+        QStringLiteral("--config=") + configPath
+    };
+    // The updated process receives the resolved path, including when the original path was
+    // relative to a terminal working directory or moved out of the old bundle.
+    originalArguments.removeFirst();
+    for (int i = 0; i < originalArguments.size(); ++i) {
+        const QString& argument = originalArguments.at(i);
+        if (argument == QStringLiteral("--config") || argument == QStringLiteral("--restart-wait-pid")) {
+            ++i;
+        } else if (!argument.startsWith(QStringLiteral("--config="))
+                   && !argument.startsWith(QStringLiteral("--restart-wait-pid="))) {
+            arguments.append(argument);
+        }
+    }
+    const bool started = QProcess::startDetached(QStringLiteral("/bin/bash"), arguments);
+    if (started) {
+        work.setAutoRemove(false);
+    }
+    return started;
+}
+
+} // namespace
+#endif
 
 AppUpdateInstallService::AppUpdateInstallService(ElevatedLauncher elevatedLauncher)
     : elevatedLauncher_(std::move(elevatedLauncher))
 {
 }
 
-bool AppUpdateInstallService::launchUpdateScript(const QString& newExecutablePath) const
+bool AppUpdateInstallService::launchUpdateScript(const QString& packagePath, const QString& configPath) const
 {
     const QString currentExecutablePath = QCoreApplication::applicationFilePath();
     const QFileInfo currentExecutableInfo(currentExecutablePath);
-    const QFileInfo newExecutableInfo(newExecutablePath);
+    const QFileInfo newExecutableInfo(packagePath);
     if (!currentExecutableInfo.exists() || !newExecutableInfo.exists()) {
         return false;
     }
 
+#if defined(Q_OS_MACOS)
+    return newExecutableInfo.suffix().compare(QStringLiteral("dmg"), Qt::CaseInsensitive) == 0
+        && launchMacUpdate(packagePath, configPath);
+#else
+    Q_UNUSED(configPath);
     QDir updateDirectory = newExecutableInfo.dir();
     if (!updateDirectory.exists()) {
         return false;
@@ -82,7 +166,7 @@ bool AppUpdateInstallService::launchUpdateScript(const QString& newExecutablePat
         QStringLiteral("-CurrentExe"),
         currentExecutablePath,
         QStringLiteral("-NewExe"),
-        newExecutablePath,
+        packagePath,
         QStringLiteral("-BackupExe"),
         backupExecutablePath,
         QStringLiteral("-LogPath"),
@@ -94,4 +178,5 @@ bool AppUpdateInstallService::launchUpdateScript(const QString& newExecutablePat
     }
 
     return QProcess::startDetached(QStringLiteral("powershell.exe"), arguments, updateDirectory.absolutePath());
+#endif
 }

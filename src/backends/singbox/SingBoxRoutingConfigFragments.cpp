@@ -24,7 +24,7 @@ namespace {
 QString resolveLocalSingBoxRuleSetPath(const QString& tag)
 {
     const QString fileName = QStringLiteral("%1.srs").arg(tag);
-    const QString path = QDir(AppPaths::applicationDirectory())
+    const QString path = QDir(AppPaths::dataDirectory())
                              .filePath(QStringLiteral("%1/%2").arg(SingBoxPaths::ruleSetDirectoryName(), fileName));
     const QFileInfo fileInfo(path);
     return fileInfo.exists() && fileInfo.isFile()

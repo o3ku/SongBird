@@ -179,7 +179,7 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
     const QString title = QCoreApplication::translate("AppBootstrap", "Download SongBird Update");
     const QString appDir = deps_.applicationDirectory
         ? deps_.applicationDirectory()
-        : AppPaths::applicationDirectory();
+        : AppPaths::userDataDirectory();
     const QString updateDirectory = QDir(appDir).filePath(QStringLiteral("updates"));
     // The running executable cannot be overwritten on Windows, so the download lands under a
     // different local name; verification still uses the published asset name.
@@ -192,7 +192,8 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
 
     QPointer<QObject> uiContext(deps_.feedback->uiContext());
     QPointer<AppUpdateCheckCoordinator> self(this);
-    runInBackground([self, downloadResult, updateDirectory, title, dialogParent, token, uiContext]() {
+    const auto platform = deps_.assetPlatform ? deps_.assetPlatform() : currentAssetPlatform();
+    runInBackground([self, downloadResult, updateDirectory, title, dialogParent, token, uiContext, platform]() {
         OperationResult result;
         QString savedPath;
         if (self.isNull()) {
@@ -209,7 +210,7 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
         QObject* target = uiContext.isNull()
             ? static_cast<QObject*>(QCoreApplication::instance())
             : uiContext.data();
-        self->invokeOnUiThread(target, [self, result, savedPath, title, dialogParent, token]() {
+        self->invokeOnUiThread(target, [self, result, savedPath, title, dialogParent, token, platform]() {
             if (self.isNull() || self->deps_.backgroundTasks == nullptr) {
                 return;
             }
@@ -229,7 +230,16 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
                 return;
             }
 
-            if (!savedPath.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
+            const bool macDiskImage = platform.isMacOS()
+                && savedPath.endsWith(QStringLiteral(".dmg"), Qt::CaseInsensitive);
+            if (macDiskImage && !result.requiresRestart) {
+                self->deps_.feedback->showOperationMessage(title, result, messageParent);
+                return;
+            }
+
+            const bool canInstall = macDiskImage
+                || (!platform.isMacOS() && savedPath.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive));
+            if (!canInstall) {
                 const QString message = AppUpdateCheckPresentation::buildDownloadedPackageMessage(savedPath, result);
                 self->deps_.feedback->showInformation(
                     messageParent,

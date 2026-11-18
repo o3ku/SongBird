@@ -233,5 +233,5 @@ QString AppRuntimeResolver::resolveCoreInstallDirectory(CoreType coreType) const
         return configDirectory;
     }
 
-    return AppPaths::applicationDirectory();
+    return AppPaths::dataDirectory();
 }

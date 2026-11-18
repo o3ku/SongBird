@@ -32,7 +32,7 @@ void AppBootstrap::wireUpdateCoordinators(const std::function<void(QThread*)>& t
             objects_->userFeedback.get(),
             []() { return QCoreApplication::applicationVersion(); },
             [this]() { return config_.checkPreReleaseUpdate; },
-            []() { return AppPaths::applicationDirectory(); },
+            []() { return AppPaths::userDataDirectory(); },
             [this]() { return shuttingDown_.load(); },
             trackBackgroundThread,
             {},

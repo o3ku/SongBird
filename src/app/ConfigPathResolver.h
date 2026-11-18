@@ -14,7 +14,7 @@ inline QString resolveDefaultConfigPath()
         return currentDirectoryPath;
     }
 
-    return QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("songbird.json"));
+    return QDir(AppPaths::dataDirectory()).filePath(QStringLiteral("songbird.json"));
 }
 
 inline QString resolveRequestedConfigPath(const QStringList& arguments)

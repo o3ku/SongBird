@@ -634,6 +634,10 @@ Restart SongBird now and apply the update automatically?</source>
         <translation>更新已下载</translation>
     </message>
     <message>
+        <source>SongBird could not install the update. See the update log at %1.</source>
+        <translation>SongBird 无法安装更新。请查看更新日志 %1。</translation>
+    </message>
+    <message>
         <source>Failed to start the update script.</source>
         <translation>启动更新脚本失败。</translation>
     </message>

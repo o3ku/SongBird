@@ -55,6 +55,8 @@ private slots:
     void checkDoesNotClaimBackgroundTask();
     void manualCheckDownloadsWhenUserAccepts();
     void downloadClaimsAndFinishesAppUpdateTask();
+    void macDiskImagePromptsForRestartOnlyWhenEligible_data();
+    void macDiskImagePromptsForRestartOnlyWhenEligible();
     void prereleaseBuildChecksPrereleasesEvenWhenTheSettingIsOff();
 };
 
@@ -124,7 +126,8 @@ void AppUpdateCheckCoordinatorTests::manualCheckDownloadsWhenUserAccepts()
             return OperationResult::ok(QStringLiteral("SongBird update downloaded."));
         },
         [](std::function<void()> task) { task(); },
-        [](QObject*, std::function<void()> callback) { callback(); }
+        [](QObject*, std::function<void()> callback) { callback(); },
+        []() { return CoreAssetPlatform{CoreAssetPlatform::Os::Windows}; }
     });
 
     coordinator.checkAppUpdates(true);
@@ -171,6 +174,47 @@ void AppUpdateCheckCoordinatorTests::downloadClaimsAndFinishesAppUpdateTask()
     QVERIFY(!backgroundTasks.isActive());
     QCOMPARE(feedback.informationMessages.size(), 1);
     QVERIFY(feedback.restartPrompts.isEmpty());
+}
+
+void AppUpdateCheckCoordinatorTests::macDiskImagePromptsForRestartOnlyWhenEligible_data()
+{
+    QTest::addColumn<bool>("eligible");
+    QTest::newRow("official checksum") << true;
+    QTest::newRow("mirror checksum only") << false;
+}
+
+void AppUpdateCheckCoordinatorTests::macDiskImagePromptsForRestartOnlyWhenEligible()
+{
+    QFETCH(bool, eligible);
+    BackgroundTaskCoordinator backgroundTasks;
+    RecordingFeedback feedback;
+    const QString packagePath = QStringLiteral("/tmp/SongBird Update/SongBird.dmg");
+
+    AppUpdateCheckCoordinator::Dependencies dependencies;
+    dependencies.backgroundTasks = &backgroundTasks;
+    dependencies.feedback = &feedback;
+    dependencies.downloadUpdate = [eligible, &packagePath](const AppUpdateCheckResult&, const QString&, QString* savedPath) {
+        *savedPath = packagePath;
+        return OperationResult::ok(QStringLiteral("Download result"), eligible);
+    };
+    dependencies.runInBackground = [](std::function<void()> task) { task(); };
+    dependencies.invokeOnUiThread = [](QObject*, std::function<void()> callback) { callback(); };
+    dependencies.assetPlatform = []() { return CoreAssetPlatform{CoreAssetPlatform::Os::MacOS}; };
+    AppUpdateCheckCoordinator coordinator(dependencies);
+
+    AppUpdateCheckResult release;
+    release.assetName = QStringLiteral("SongBird.dmg");
+    release.assetDownloadUrl = QUrl(QStringLiteral("https://example.test/SongBird.dmg"));
+    coordinator.downloadAppUpdate(release);
+
+    if (eligible) {
+        QCOMPARE(feedback.restartPrompts, QStringList{packagePath});
+        QVERIFY(feedback.operationMessages.isEmpty());
+    } else {
+        QVERIFY(feedback.restartPrompts.isEmpty());
+        QCOMPARE(feedback.operationMessages, QStringList{QStringLiteral("Download result")});
+    }
+    QVERIFY(!backgroundTasks.isActive());
 }
 
 // The default configuration skips prereleases, and the newest stable release is numerically older

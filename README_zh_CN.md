@@ -81,6 +81,8 @@ SongBird 在一个小型桌面程序里管理 V2Ray 系代理服务器 —— VM
 
 macOS 支持是新增的。CI 会在 macOS 上构建、签名、启动程序并运行测试套件，因此构建损坏或启动失败无法发布出去 —— 但 CI 无法确认系统代理或登录项在某台具体的 Mac 上真的生效了。如果那里有问题，请附上「关于」对话框中的版本号提交 issue。
 
+安装目录可写时，SongBird 可以在应用内安装已验证的 macOS 更新。配置、状态和已下载的内核保存在 `~/Library/Application Support/SongBird`。更新程序会在替换旧应用包前迁移其中的数据。更新后的 ad-hoc 签名版本可能会再次请求 macOS 权限或钥匙串访问授权。
+
 ## 从源码构建
 
 SongBird 需要 CMake、C++20 编译器与 Qt 5.15。CI 工作流是可用配置的参考：`.github/workflows/release.yml` 里 Windows 用钉死版本的预编译静态 Qt5（一个 vcpkg 安装根，产物是单个 exe），macOS 用 Homebrew 的 `qt@5`。

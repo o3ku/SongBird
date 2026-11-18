@@ -89,17 +89,18 @@ void ApplicationRestartCoordinator::promptRestartForLanguageChange()
 }
 
 bool ApplicationRestartCoordinator::promptRestartForDownloadedAppUpdate(
-    const QString& newExecutablePath,
+    const QString& packagePath,
+    const QString& configPath,
     QWidget* parent)
 {
-    if (newExecutablePath.trimmed().isEmpty()) {
+    if (packagePath.trimmed().isEmpty()) {
         return false;
     }
 
     const QString message = QCoreApplication::translate(
         "AppBootstrap",
         "Downloaded update package: %1\n\nRestart SongBird now and apply the update automatically?")
-            .arg(QDir::toNativeSeparators(newExecutablePath));
+            .arg(QDir::toNativeSeparators(packagePath));
     if (DialogUtils::askYesNoQuestion(
             parent,
             QCoreApplication::translate("AppBootstrap", "Update Downloaded"),
@@ -110,7 +111,7 @@ bool ApplicationRestartCoordinator::promptRestartForDownloadedAppUpdate(
     }
 
     if (deps_.appUpdateInstallService == nullptr
-        || !deps_.appUpdateInstallService->launchUpdateScript(newExecutablePath)) {
+        || !deps_.appUpdateInstallService->launchUpdateScript(packagePath, configPath)) {
         appendResult(OperationResult::fail(
             QCoreApplication::translate("AppBootstrap", "Failed to start the update script.")));
         DialogUtils::showWarning(
@@ -120,6 +121,7 @@ bool ApplicationRestartCoordinator::promptRestartForDownloadedAppUpdate(
         return false;
     }
 
+    persistUiState();
     setShutdownUiStatePersisted(true);
     cleanupRuntimeForExit(false);
     SingleInstanceBootstrap::releaseCurrentInstance();

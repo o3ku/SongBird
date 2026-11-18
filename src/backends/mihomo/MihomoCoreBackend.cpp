@@ -60,7 +60,7 @@ QString fallbackAssetName(const QString& platformPart, const QString& variantPar
 QStringList dataDirectoryArguments(CoreType coreType)
 {
     const QString dataDirectory =
-        catalogCoreDataDirectory(coreType, AppPaths::applicationDirectory());
+        catalogCoreDataDirectory(coreType, AppPaths::dataDirectory());
     return dataDirectory.isEmpty()
         ? QStringList{}
         : QStringList{QStringLiteral("-d"), QDir::toNativeSeparators(dataDirectory)};

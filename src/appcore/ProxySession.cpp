@@ -106,7 +106,7 @@ QStringList missingSingBoxRuleSetTagsFor(const QString& configPath)
                                     .toArray();
     QStringList missingTags;
     QSet<QString> seenTags;
-    const QString ruleSetDirectory = QDir(AppPaths::applicationDirectory()).filePath(SingBoxPaths::ruleSetDirectoryName());
+    const QString ruleSetDirectory = QDir(AppPaths::dataDirectory()).filePath(SingBoxPaths::ruleSetDirectoryName());
     for (const QJsonValue& value : ruleSets) {
         const QJsonObject ruleSet = value.toObject();
         if (ruleSet.value(QStringLiteral("type")).toString() != QStringLiteral("remote")) {

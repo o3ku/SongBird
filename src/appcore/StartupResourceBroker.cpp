@@ -150,7 +150,7 @@ void StartupResourceBroker::downloadMissingSingBoxRuleSetsAndResume(
         return;
     }
 
-    const QString targetDirectory = AppPaths::applicationDirectory();
+    const QString targetDirectory = AppPaths::dataDirectory();
     const QString startMessage = sessionStrings_.ruleSetDownloadStartSentence(
         tags.size(),
         QDir::toNativeSeparators(QDir(targetDirectory).filePath(SingBoxPaths::ruleSetDirectoryName())));

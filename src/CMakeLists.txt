@@ -384,6 +384,7 @@ set(SONGBIRD_SOURCES
     app/AppUpdateCheckPresentation.cpp
     app/AppUpdateInstallService.h
     app/AppUpdateInstallService.cpp
+    app/MacAppUpdateScript.h
     app/ApplicationRestartCoordinator.h
     app/ApplicationRestartCoordinator.cpp
     app/ConfigPathResolver.h

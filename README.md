@@ -81,6 +81,8 @@ Three cores are interchangeable, and SongBird picks a default per protocol. Not 
 
 macOS support is new. CI builds the bundle, signs it, starts the application and runs the test suite on macOS, so a broken build or a failure to launch cannot ship — but CI cannot confirm that the system proxy or the login item really took effect on a particular Mac. If something misbehaves there, please open an issue with the version from the About dialog.
 
+SongBird can install verified macOS updates from the app when the installation directory is writable. Settings, state and downloaded cores are stored under `~/Library/Application Support/SongBird`. The updater migrates data stored inside older app bundles before replacing them. An updated ad-hoc-signed build may ask for macOS permissions or Keychain access again.
+
 ## Building From Source
 
 SongBird needs CMake, a C++20 compiler and Qt 5.15. The CI workflows are the reference for a working setup: `.github/workflows/release.yml` for Windows (a pinned prebuilt static-Qt5 vcpkg install root, so the release is a single exe) and macOS (Homebrew `qt@5`).

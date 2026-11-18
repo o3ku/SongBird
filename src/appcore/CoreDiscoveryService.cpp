@@ -27,6 +27,7 @@ QStringList buildCoreCandidateDirectories(const QString& configPath)
     };
 
     appendDirectory(QDir::currentPath());
+    appendDirectory(AppPaths::dataDirectory());
     appendDirectory(AppPaths::applicationDirectory());
     appendDirectory(QFileInfo(configPath).dir().absolutePath());
     return directories;

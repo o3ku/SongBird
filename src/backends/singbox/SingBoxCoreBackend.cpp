@@ -373,7 +373,7 @@ QJsonObject SingBoxCoreBackend::buildExperimental(const Config& config)
         cacheFile.insert(QStringLiteral("enabled"), true);
         cacheFile.insert(
             QStringLiteral("path"),
-            QDir(AppPaths::applicationDirectory()).filePath(QStringLiteral("cache.db")));
+            QDir(AppPaths::dataDirectory()).filePath(QStringLiteral("cache.db")));
         cacheFile.insert(QStringLiteral("store_fakeip"), config.dns().fakeIp);
         experimental.insert(QStringLiteral("cache_file"), cacheFile);
     }

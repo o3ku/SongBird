@@ -346,5 +346,8 @@ OperationResult AppUpdateService::downloadUpdate(
             "Warning: GitHub was unreachable, so this update was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so install it only if you trust the mirror that served it.");
     }
 
-    return OperationResult::ok(savedMessage, true);
+    // An ad-hoc-signed disk image has no stable publisher identity of its own.
+    const bool canInstallAutomatically = !mirrorVerified
+        || !publishedName.endsWith(QStringLiteral(".dmg"), Qt::CaseInsensitive);
+    return OperationResult::ok(savedMessage, canInstallAutomatically);
 }

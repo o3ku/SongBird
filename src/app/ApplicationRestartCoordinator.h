@@ -31,7 +31,8 @@ public:
     bool askRestartAsAdministratorForTun() const;
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
-    bool promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent);
+    bool promptRestartForDownloadedAppUpdate(
+        const QString& packagePath, const QString& configPath, QWidget* parent);
     bool restartApplication(bool requireAdministrator);
 
 private:

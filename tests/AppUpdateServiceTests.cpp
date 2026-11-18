@@ -42,6 +42,7 @@ private slots:
     void checkRecordsOfficialMetadataProvenance();
     void checkRecordsMirrorMetadataProvenance();
     void downloadSavesAVerifiedUpdate();
+    void downloadSavesAMirrorVerifiedUpdateWithWarning_data();
     void downloadSavesAMirrorVerifiedUpdateWithWarning();
     void downloadRefusesAnUnverifiedUpdate();
     void downloadRefusesAnUpdateOnChecksumMismatch();
@@ -315,8 +316,18 @@ void AppUpdateServiceTests::downloadSavesAVerifiedUpdate()
     QCOMPARE(file.readAll(), QByteArray("update-bytes"));
 }
 
+void AppUpdateServiceTests::downloadSavesAMirrorVerifiedUpdateWithWarning_data()
+{
+    QTest::addColumn<QString>("assetName");
+    QTest::addColumn<bool>("requiresRestart");
+    QTest::newRow("windows") << QStringLiteral("SongBird.exe") << true;
+    QTest::newRow("macOS") << QStringLiteral("SongBird.dmg") << false;
+}
+
 void AppUpdateServiceTests::downloadSavesAMirrorVerifiedUpdateWithWarning()
 {
+    QFETCH(QString, assetName);
+    QFETCH(bool, requiresRestart);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
 
@@ -329,8 +340,8 @@ void AppUpdateServiceTests::downloadSavesAMirrorVerifiedUpdateWithWarning()
     // cannot use it, so the degraded mirror pass verifies it instead -- and the saved
     // message says so loudly, so the user knows this install is mirror-verified only.
     AppUpdateCheckResult checkResult;
-    checkResult.assetName = QStringLiteral("songbird.exe");
-    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    checkResult.assetName = assetName;
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/") + assetName);
     // SHA-256 of "update-bytes".
     checkResult.assetDigest =
         QStringLiteral("92439dd4e7652a0414d2cd9d220e8d2767ed71f9005327223fc5d12b7a5065c3");
@@ -341,6 +352,7 @@ void AppUpdateServiceTests::downloadSavesAMirrorVerifiedUpdateWithWarning()
 
     QVERIFY2(result.success, qPrintable(result.message));
     QVERIFY(QFile::exists(savedPath));
+    QCOMPARE(result.requiresRestart, requiresRestart);
     QVERIFY(result.message.contains(QStringLiteral("mirror")));
     QVERIFY(result.message.contains(QStringLiteral("GitHub was unreachable")));
 }

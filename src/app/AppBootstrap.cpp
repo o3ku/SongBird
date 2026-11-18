@@ -1230,7 +1230,7 @@ void AppBootstrap::promptRestartForLanguageChange()
 bool AppBootstrap::promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent)
 {
     return objects_->applicationRestartCoordinator != nullptr
-        && objects_->applicationRestartCoordinator->promptRestartForDownloadedAppUpdate(newExecutablePath, parent);
+        && objects_->applicationRestartCoordinator->promptRestartForDownloadedAppUpdate(newExecutablePath, configPath_, parent);
 }
 
 bool AppBootstrap::restartApplication(bool requireAdministrator)
@@ -1368,5 +1368,5 @@ QString AppBootstrap::resolveCoreInstallDirectory(CoreType coreType) const
 {
     return objects_->appRuntimeResolver != nullptr
         ? objects_->appRuntimeResolver->resolveCoreInstallDirectory(coreType)
-        : AppPaths::applicationDirectory();
+        : AppPaths::dataDirectory();
 }

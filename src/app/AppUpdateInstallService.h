@@ -11,7 +11,7 @@ public:
 
     explicit AppUpdateInstallService(ElevatedLauncher elevatedLauncher = {});
 
-    bool launchUpdateScript(const QString& newExecutablePath) const;
+    bool launchUpdateScript(const QString& packagePath, const QString& configPath) const;
 
 private:
     ElevatedLauncher elevatedLauncher_;
