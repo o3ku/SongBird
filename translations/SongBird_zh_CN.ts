@@ -3810,6 +3810,14 @@ This setting still controls the fallback when the whole group fails.</source>
         <translation>订阅 URL 无效。</translation>
     </message>
     <message>
+        <source>Subscription URL is not allowed: use https, or http only for a loopback host (127.0.0.1, localhost, ::1).</source>
+        <translation>不允许使用该订阅 URL：请使用 https，或仅对回环地址（127.0.0.1、localhost、::1）使用 http。</translation>
+    </message>
+    <message>
+        <source>Subscription response exceeds the 10 MiB limit.</source>
+        <translation>订阅响应超过 10 MiB 限制。</translation>
+    </message>
+    <message>
         <source>Subscription download cancelled.</source>
         <translation>订阅下载已取消。</translation>
     </message>

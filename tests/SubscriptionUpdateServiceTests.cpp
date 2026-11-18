@@ -36,6 +36,11 @@ public:
         return server_.listen(QHostAddress::LocalHost, 0);
     }
 
+    bool listenOn(const QHostAddress& address)
+    {
+        return server_.listen(address, 0);
+    }
+
     quint16 port() const
     {
         return server_.serverPort();
@@ -182,6 +187,9 @@ private slots:
     void etagSentOnSubsequentRequest();
     void lastModifiedSentOnSubsequentRequest();
     void invalidUrlFailsImmediately();
+    void httpNonLoopbackUrlFailsBeforeAnyNetworkRequest();
+    void oversizedResponseIsRefused();
+    void redirectToNonLoopbackHttpIsRefused();
     void unsupportedProtocolsAreNamedInTheFailure();
     void unsupportedProtocolsStayOnTheFirstLineOfTheFailure();
     void successfulDownloadStampsLastUpdated();
@@ -472,6 +480,68 @@ void SubscriptionUpdateServiceTests::invalidUrlFailsImmediately()
     QVERIFY(!result.success);
     QVERIFY(result.message.contains(QStringLiteral("invalid"), Qt::CaseInsensitive)
             || result.message.contains(QStringLiteral("failed"), Qt::CaseInsensitive));
+}
+
+void SubscriptionUpdateServiceTests::httpNonLoopbackUrlFailsBeforeAnyNetworkRequest()
+{
+    // Plain http to a non-loopback host is refused by the fetch policy before any
+    // network I/O: the stub server must see zero requests.
+    Harness h;
+    h.repo.config_.collection().subscriptions[0].url = QStringLiteral("http://example.invalid/sub");
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    QVERIFY2(result.message.contains(QStringLiteral("not allowed"), Qt::CaseInsensitive),
+             qPrintable(result.message));
+    QVERIFY2(result.message.contains(QStringLiteral("loopback"), Qt::CaseInsensitive),
+             qPrintable(result.message));
+    QCOMPARE(h.server.requestCount(), 0);
+    QVERIFY(h.repo.config_.collection().servers.isEmpty());
+}
+
+void SubscriptionUpdateServiceTests::oversizedResponseIsRefused()
+{
+    // A body past the 10 MiB cap is aborted mid-download and refused: no servers are
+    // imported, and the failure names the limit instead of a parse error.
+    Harness h;
+    const QByteArray hugeBody(10 * 1024 * 1024 + 1, 'x');
+    h.server.setNextResponse(makeHttpResponse(200, hugeBody));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    QVERIFY2(result.message.contains(QStringLiteral("10 MiB"), Qt::CaseInsensitive),
+             qPrintable(result.message));
+    QVERIFY(h.repo.config_.collection().servers.isEmpty());
+}
+
+void SubscriptionUpdateServiceTests::redirectToNonLoopbackHttpIsRefused()
+{
+    // NoLessSafeRedirectPolicy stops https -> http downgrades, but a loopback http URL
+    // may still redirect to a plain-http host elsewhere. The final URL gets the same
+    // policy check: the redirect is followed (the second server sees the request) and
+    // the download is then refused, with no servers imported.
+    Harness h;
+    StubHttpServer secondServer;
+    if (!secondServer.listenOn(QHostAddress(QStringLiteral("127.0.0.2")))) {
+        QSKIP("Second loopback address 127.0.0.2 is not bindable on this machine.");
+    }
+    const QString redirectTarget = QStringLiteral("http://127.0.0.2:%1/sub").arg(secondServer.port());
+    const QByteArray redirectResponse = QByteArray("HTTP/1.1 302 Found\r\n")
+        + "Location: " + redirectTarget.toUtf8() + "\r\n"
+        + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+    h.server.setNextResponse(redirectResponse);
+    secondServer.setNextResponse(makeHttpResponse(200, kVmessPayload));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    QVERIFY2(result.message.contains(QStringLiteral("not allowed"), Qt::CaseInsensitive),
+             qPrintable(result.message));
+    // The redirect was followed -- the second server saw the request -- and the refusal
+    // came from the final-URL check, not from the request failing. The count is 3, not
+    // 1, because the retry loop re-attempts the permanent refusal like any other
+    // download failure.
+    QVERIFY(secondServer.requestCount() >= 1);
+    QVERIFY(h.repo.config_.collection().servers.isEmpty());
 }
 
 void SubscriptionUpdateServiceTests::unsupportedProtocolsAreNamedInTheFailure()

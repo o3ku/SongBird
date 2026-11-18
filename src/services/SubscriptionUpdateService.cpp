@@ -23,10 +23,15 @@
 #include "services/SubscriptionUpdateOrder.h"
 #include "subscription/ShareUrlParser.h"
 #include "subscription/SubscriptionContentParser.h"
+#include "subscription/SubscriptionImportTextParser.h"
 
 namespace {
 constexpr int kSubscriptionDownloadTimeoutMs = ServiceTimeouts::kDefaultNetworkTimeoutMs;
 constexpr int kCancellationPollIntervalMs = ServiceTimeouts::kCancellationPollIntervalMs;
+// A subscription document is a list of node links; 10 MiB is orders of magnitude above any
+// legitimate one, and a server that streams past it is either broken or hostile. The reply
+// is aborted at this size, never buffered whole.
+constexpr qint64 kMaxSubscriptionBodyBytes = 10 * 1024 * 1024;
 const QString kLoopbackAddress = QStringLiteral("127.0.0.1");
 
 
@@ -582,6 +587,14 @@ OperationResult SubscriptionUpdateService::downloadText(
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription URL is invalid."));
     }
 
+    // Plain http sends the subscription content -- node credentials included -- in clear
+    // text, so it is only allowed to a loopback host (a local test server or a LAN tool
+    // on this machine). Anything else must be https. This is checked here, before any
+    // network I/O, and again on the final URL after redirects below.
+    if (!SubscriptionImportTextParser::isAllowedSubscriptionUrl(parsedUrl)) {
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription URL is not allowed: use https, or http only for a loopback host (127.0.0.1, localhost, ::1)."));
+    }
+
     QNetworkRequest request{parsedUrl};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     const QString resolvedUA = resolveSubscriptionUserAgent(userAgent);
@@ -605,8 +618,17 @@ OperationResult SubscriptionUpdateService::downloadText(
     cancellationTimer.setInterval(kCancellationPollIntervalMs);
     bool timedOut = false;
     bool cancelled = false;
+    bool bodyTooLarge = false;
     QNetworkReply* reply = networkAccessManager_.get(request);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(reply, &QNetworkReply::downloadProgress, &loop, [&](qint64 bytesReceived, qint64) {
+        if (bytesReceived <= kMaxSubscriptionBodyBytes) {
+            return;
+        }
+        bodyTooLarge = true;
+        reply->abort();
+        loop.quit();
+    });
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         timedOut = true;
         reply->abort();
@@ -639,6 +661,14 @@ OperationResult SubscriptionUpdateService::downloadText(
         return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription download timed out."));
     }
 
+    // The abort() above sets a generic cancellation error on the reply, so the size
+    // refusal is checked first: the user needs to hear "too large", not "cancelled".
+    if (bodyTooLarge) {
+        networkAccessManager_.setProxy(previousProxy);
+        disposeReply(reply);
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription response exceeds the 10 MiB limit."));
+    }
+
     if (reply->error() != QNetworkReply::NoError) {
         const QString error = reply->errorString();
         networkAccessManager_.setProxy(previousProxy);
@@ -646,6 +676,15 @@ OperationResult SubscriptionUpdateService::downloadText(
         return statusCode > 0
             ? OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "HTTP %1: %2").arg(statusCode).arg(error))
             : OperationResult::fail(error);
+    }
+
+    // NoLessSafeRedirectPolicy stops https -> http downgrades, but a loopback http URL
+    // may still redirect to a plain-http host on the network, so the final URL gets
+    // the same policy check as the requested one before the body is trusted.
+    if (!SubscriptionImportTextParser::isAllowedSubscriptionUrl(reply->url())) {
+        networkAccessManager_.setProxy(previousProxy);
+        disposeReply(reply);
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription URL is not allowed: use https, or http only for a loopback host (127.0.0.1, localhost, ::1)."));
     }
 
     // Capture caching headers before reading the body so callers can persist
@@ -672,7 +711,15 @@ OperationResult SubscriptionUpdateService::downloadText(
         *outNotModified = false;
     }
 
-    *content = QString::fromUtf8(reply->readAll()).trimmed();
+    // Bounded read: the downloadProgress handler aborts past the limit, but the reply
+    // may already hold more than the limit when the loop exits, so never readAll().
+    const QByteArray rawBody = reply->read(kMaxSubscriptionBodyBytes + 1);
+    if (rawBody.size() > kMaxSubscriptionBodyBytes) {
+        networkAccessManager_.setProxy(previousProxy);
+        disposeReply(reply);
+        return OperationResult::fail(QCoreApplication::translate("SubscriptionUpdateService", "Subscription response exceeds the 10 MiB limit."));
+    }
+    *content = QString::fromUtf8(rawBody).trimmed();
     networkAccessManager_.setProxy(previousProxy);
     disposeReply(reply);
 
