@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix (review): proxy credentials are no longer stored in plain text. Node UUIDs/passwords, Hysteria2 obfuscation passwords, WireGuard private keys and the local inbound password are protected at rest through a new `ISecretStore` (DPAPI user scope on Windows, a Keychain-held AES-256-GCM key on macOS). Legacy plaintext values load as before and are re-saved protected; a failed protect/decrypt, or a platform without a store, stays plaintext but is recorded in `lastSecretStoreWarning()` and shown as a warning in the log panel instead of failing silently.
 - Fix (review): `defaultAllowInsecure` now defaults to false, so a fresh install verifies TLS certificates unless the user opts in. An explicitly stored value is preserved. Note: under the old default the value was only written when turned off, so a config that relied on the old implicit-true now loads as false and the checkbox has to be re-enabled deliberately.
 - Change: the SongBirdAuto front end is removed. `src/auto/` and its executable, resources, tests, CMake target, guard allowlists and the second-front-end seams it needed in `ProxySession` are gone; the project builds one application now. Historical entries below still name it where they describe past releases.
 - Fix (review): `ProxyHealthWatchdog::shuttingDown_` was declared and read in six guards but never written, so its "no new probe during teardown" defence was inert. It now reads `ProxySession::shuttingDown_` through `SessionStrings::isShuttingDown()`, so the guards are live.

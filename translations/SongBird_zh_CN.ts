@@ -2041,6 +2041,22 @@ The running core will be stopped before installation if needed.</source>
         <translation>写入%1失败：%2</translation>
     </message>
     <message>
+        <source>No secret store is available on this platform, so proxy credentials are stored in plain text in the configuration file.</source>
+        <translation>此平台没有可用的密钥存储，因此代理凭据以明文保存在配置文件中。</translation>
+    </message>
+    <message>
+        <source>Some proxy credentials could not be decrypted and were ignored. Re-enter the credentials for the affected servers or re-import them.</source>
+        <translation>部分已保存的代理凭据无法解密，已忽略。请重新输入受影响服务器的凭据，或重新导入这些服务器。</translation>
+    </message>
+    <message>
+        <source>Some proxy credentials could not be encrypted and are stored in plain text in the configuration file.</source>
+        <translation>部分代理凭据无法加密，以明文保存在配置文件中。</translation>
+    </message>
+    <message>
+        <source>Stored proxy credentials could not be re-saved encrypted; they remain in plain text in the configuration file.</source>
+        <translation>已保存的代理凭据无法重新加密保存，仍以明文保存在配置文件中。</translation>
+    </message>
+    <message>
         <source>configuration file</source>
         <translation>配置文件</translation>
     </message>

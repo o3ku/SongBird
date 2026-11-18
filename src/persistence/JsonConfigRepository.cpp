@@ -12,6 +12,8 @@
 #include "common/LocalInboundPorts.h"
 #include "persistence/JsonConfigSerialization.h"
 #include "persistence/JsonConfigStateSerialization.h"
+#include "persistence/SecretFieldCodec.h"
+#include "platform/SecretStoreFactory.h"
 
 #include <utility>
 
@@ -47,13 +49,21 @@ QString describeWriteFailure(
 } // namespace
 
 JsonConfigRepository::JsonConfigRepository(QString configPath)
+    : JsonConfigRepository(std::move(configPath), createSecretStore())
+{
+}
+
+JsonConfigRepository::JsonConfigRepository(QString configPath, std::unique_ptr<const ISecretStore> secretStore)
     : configPath_(std::move(configPath))
+    , secretStore_(std::move(secretStore))
 {
 }
 
 Config JsonConfigRepository::load()
 {
     lastLoadError_.clear();
+    lastSecretStoreWarning_.clear();
+    secretMigrationPending_ = false;
     Config config = loadPrimaryConfig();
     if (!lastLoadError_.isEmpty()) {
         return {};
@@ -68,6 +78,21 @@ Config JsonConfigRepository::load()
     // what stops a config that has since changed `localPort` from resolving the HTTP inbound and
     // the location probe off two different bases.
     LocalInboundPorts::clearStaleOverrides(config);
+
+    // Migration: legacy plaintext credentials found while a store is available
+    // are re-saved protected. A failed re-save is not a failed load -- the
+    // config in memory is complete -- but it is recorded, because the file
+    // still holds plaintext. On a successful re-save, save() has already
+    // recorded the encode outcome in lastSecretStoreWarning_, so nothing is
+    // cleared here.
+    if (secretMigrationPending_) {
+        secretMigrationPending_ = false;
+        if (!save(config)) {
+            lastSecretStoreWarning_ = QCoreApplication::translate(
+                "JsonConfigRepository",
+                "Stored proxy credentials could not be re-saved encrypted; they remain in plain text in the configuration file.");
+        }
+    }
 
     return config;
 }
@@ -117,6 +142,11 @@ QString JsonConfigRepository::lastSaveError() const
     return lastSaveError_;
 }
 
+QString JsonConfigRepository::lastSecretStoreWarning() const
+{
+    return lastSecretStoreWarning_;
+}
+
 QString JsonConfigRepository::stateConfigPath() const
 {
     const QFileInfo fileInfo(configPath_);
@@ -155,7 +185,26 @@ Config JsonConfigRepository::loadPrimaryConfig()
         return {};
     }
 
-    return JsonConfigSerialization::parseConfig(document.object());
+    // Credentials are translated before the document is parsed: a protected
+    // value must never reach the in-memory config still encrypted, and a
+    // legacy plaintext value must be reported so load() can migrate it.
+    QJsonObject root = document.object();
+    const SecretFieldCodec::LoadReport secretReport =
+        SecretFieldCodec::decodeSecrets(root, secretStore_.get());
+    if (secretReport.secretDecryptFailed) {
+        lastSecretStoreWarning_ = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "Some stored proxy credentials could not be decrypted and were ignored. Re-enter the credentials for the affected servers or re-import them.");
+    } else if (secretReport.storeUnavailable) {
+        lastSecretStoreWarning_ = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "No secret store is available on this platform, so proxy credentials are stored in plain text in the configuration file.");
+    }
+    // A decrypt failure forbids the migration: re-saving would write the
+    // undecryptable value away as an empty field.
+    secretMigrationPending_ = secretReport.legacyPlaintextSecretsFound && !secretReport.secretDecryptFailed;
+
+    return JsonConfigSerialization::parseConfig(root);
 }
 
 bool JsonConfigRepository::loadStateInto(Config& config)
@@ -187,6 +236,23 @@ JsonFile::WriteResult JsonConfigRepository::savePrimaryConfig(const Config& conf
 {
     QJsonObject root;
     JsonConfigSerialization::applyConfig(root, config);
+
+    // Credentials are protected on the way out. A value that cannot be
+    // protected stays plaintext and is reported -- dropping it would lose the
+    // credential, and failing the save would lose the whole config.
+    const SecretFieldCodec::SaveReport secretReport =
+        SecretFieldCodec::encodeSecrets(root, secretStore_.get());
+    if (secretReport.secretProtectFailed) {
+        lastSecretStoreWarning_ = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "Some proxy credentials could not be encrypted and are stored in plain text in the configuration file.");
+    } else if (secretReport.storeUnavailable) {
+        lastSecretStoreWarning_ = QCoreApplication::translate(
+            "JsonConfigRepository",
+            "No secret store is available on this platform, so proxy credentials are stored in plain text in the configuration file.");
+    } else {
+        lastSecretStoreWarning_.clear();
+    }
 
     const QFileInfo fileInfo(configPath_);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
