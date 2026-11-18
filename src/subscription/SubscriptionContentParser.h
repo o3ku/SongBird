@@ -10,6 +10,13 @@
 struct SubscriptionParseReport {
     QList<VmessItem> items;
     QStringList notes;
+    // Set when a pass recognised the document but could not read it: the document uses
+    // a YAML feature the built-in reader does not support (anchor, alias, merge key,
+    // block scalar, tag, a second document). Empty when no such failure occurred. When
+    // set, `items` is empty -- a document that misreads is refused whole, not
+    // half-imported -- and the failure message leads with this instead of the generic
+    // "no supported servers".
+    QString parseError;
     // One entry per node the parser could not turn into a server: the declared
     // type, plus the node's name, which is the only way to find it again in a
     // document with thousands of them.
@@ -35,7 +42,8 @@ public:
     static SubscriptionParseReport parseManyWithReport(const QString& content);
 
 private:
-    static QList<VmessItem> tryParseClash(const QString& content, QStringList* skippedTypes);
+    static QList<VmessItem> tryParseClash(const QString& content, QStringList* skippedTypes,
+                                          QString* parseError = nullptr);
     static QList<VmessItem> tryParseJsonArray(const QJsonArray& array, QStringList* skippedTypes);
     static QList<VmessItem> tryParseSingBox(const QString& content, QStringList* skippedTypes);
     static QList<VmessItem> tryParseSip008(const QString& content);

@@ -69,6 +69,16 @@ private slots:
     void subscriptionClashUnclosedQuoteNeverBecomesAComment();
     void subscriptionClashUnclosedFlowQuoteAtTextEndIsReported();
     void subscriptionClashUnclosedBlockValueIsReported();
+    void subscriptionClashAnchorIsRefusedWithLine();
+    void subscriptionClashAliasIsRefusedWithLine();
+    void subscriptionClashMergeKeyIsRefusedWithLine();
+    void subscriptionClashBlockScalarIsRefusedWithLine();
+    void subscriptionClashTagIsRefusedWithLine();
+    void subscriptionClashSecondDocumentIsRefusedWithLine();
+    void subscriptionClashFlowAliasIsRefusedWithLine();
+    void subscriptionClashLeadingSeparatorAndTrailingEndAreAllowed();
+    void subscriptionClashQuotedIndicatorsAreDataNotConstructs();
+    void subscriptionClashConstructOutsideProxiesIsIgnored();
     void subscriptionBinaryPayloadPrefixIsCountedNotPrinted();
     void subscriptionBinaryPayloadIsDecodedOnceAndNotWalkedAgain();
 
@@ -1410,6 +1420,217 @@ void SubscriptionParserTests::subscriptionClashUnclosedBlockValueIsReported()
                                                   &key, &value, &malformedValue));
     QVERIFY(!malformedValue);
     QCOMPARE(value, QStringLiteral("Closed"));
+}
+
+void SubscriptionParserTests::subscriptionClashAnchorIsRefusedWithLine()
+{
+    // An anchor used to arrive as data: `server: &srv 1.2.3.4` parsed to the literal
+    // value "&srv 1.2.3.4", so the node was imported with an address nothing can
+    // dial. The document is refused whole, with the construct and its line named.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: &srv 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("anchor")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 4")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashAliasIsRefusedWithLine()
+{
+    // The anchor definition sits outside `proxies:` and is harmless on its own; the
+    // alias use inside it is what the reader cannot resolve, so that is what fails.
+    const QString yaml = QStringLiteral(
+        "defaults: &d\n"
+        "  port: 443\n"
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: *d\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("alias")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 7")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashMergeKeyIsRefusedWithLine()
+{
+    // `<<: *defaults` used to become a field named "<<" that the node parser
+    // ignores, so the merged fields vanished and the node came back missing
+    // whatever the defaults carried. The merge key is the construct that fails,
+    // not the alias behind it.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    <<: *defaults\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("merge key")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 4")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashBlockScalarIsRefusedWithLine()
+{
+    // `uuid: |` used to read as the literal value "|", and the indented body line
+    // behind it was then read as a stray field of the node. The header line is the
+    // construct that fails, before its body can be misread.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: |\n"
+        "      11111111-1111-1111-1111-111111111111\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("block scalar")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 6")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashTagIsRefusedWithLine()
+{
+    // `!!str` used to arrive as part of the value, so the address was read as the
+    // literal "!!str 1.2.3.4".
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: !!str 1.2.3.4\n"
+        "    port: 443\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("tag")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 4")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashSecondDocumentIsRefusedWithLine()
+{
+    // The walker used to stop at the second document's `proxies:` and return only
+    // the first document's nodes, so half a subscription vanished without a word.
+    // Refusing the document whole is the honest failure: the valid node in the first
+    // document is not half-imported beside a dropped second one.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+        "---\n"
+        "proxies:\n"
+        "  - name: n2\n"
+        "    type: vmess\n"
+        "    server: 5.6.7.8\n"
+        "    port: 443\n"
+        "    uuid: 22222222-2222-2222-2222-222222222222\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("second document")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 7")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashFlowAliasIsRefusedWithLine()
+{
+    // Flow style is the same construct in a different shape: `server: *srv` inside
+    // `{...}` used to become the literal value "*srv".
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - {name: n1, type: vmess, server: *srv, port: 443, uuid: 11111111-1111-1111-1111-111111111111}\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.items.isEmpty());
+    QVERIFY2(report.parseError.contains(QStringLiteral("alias")), qPrintable(report.parseError));
+    QVERIFY2(report.parseError.contains(QStringLiteral("line 2")), qPrintable(report.parseError));
+}
+
+void SubscriptionParserTests::subscriptionClashLeadingSeparatorAndTrailingEndAreAllowed()
+{
+    // A leading `---` and a trailing `...` are one document's start and end, not a
+    // second document: providers emit both, and refusing them would break
+    // subscriptions that read fine today.
+    const QString yaml = QStringLiteral(
+        "---\n"
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+        "...\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.parseError.isEmpty());
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("n1"));
+}
+
+void SubscriptionParserTests::subscriptionClashQuotedIndicatorsAreDataNotConstructs()
+{
+    // An indicator inside quotes is content: a name that reads "a & b * c ! d", a
+    // password that starts with "*", and a comment that mentions an alias are all
+    // data the reader handles, not constructs it must refuse.
+    const QString yaml = QStringLiteral(
+        "proxies:\n"
+        "  - name: \"a & b * c ! d\"\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4 # *alias &anchor\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+        "    password: \"*secret\"\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.parseError.isEmpty());
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("a & b * c ! d"));
+}
+
+void SubscriptionParserTests::subscriptionClashConstructOutsideProxiesIsIgnored()
+{
+    // The scan only reads where the walker reads. An anchor in `proxy-groups:`
+    // never reaches a node, so it must not refuse a subscription whose nodes are
+    // perfectly readable.
+    const QString yaml = QStringLiteral(
+        "proxy-groups:\n"
+        "  - name: g1\n"
+        "    type: select\n"
+        "    proxies: &p [n1]\n"
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: 1.2.3.4\n"
+        "    port: 443\n"
+        "    uuid: 11111111-1111-1111-1111-111111111111\n"
+    );
+
+    const SubscriptionParseReport report = SubscriptionContentParser::parseManyWithReport(yaml);
+    QVERIFY(report.parseError.isEmpty());
+    QCOMPARE(report.items.size(), 1);
+    QCOMPARE(report.items.constFirst().remarks, QStringLiteral("n1"));
 }
 
 void SubscriptionParserTests::subscriptionBinaryPayloadPrefixIsCountedNotPrinted()

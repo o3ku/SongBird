@@ -8,6 +8,13 @@ namespace SubscriptionYamlParser {
 QString scalar(const QString& text);
 bool isListItem(const QString& line);
 int indent(const QString& line);
+// Position of the ':' that separates a key from its value in block style, or -1.
+// Only ':' followed by whitespace (or the end of the line) separates, and only
+// outside a quoted scalar, so `name: "a: b"` splits at the field and a bare `a:b`
+// is one scalar. Exported for the unsupported-construct scan, which needs the raw
+// value after the separator: the processed value has already lost whether it was
+// quoted, and a quoted "&name" is data while an unquoted one is an anchor.
+int keyValueSeparator(const QString& text);
 // `malformedValue` (optional) is set when the text after the separator opens a quoted
 // scalar that never closes -- the case where the rest of the node is sitting inside the
 // value. The pair is still filled in (there is no better reading), but the caller must

@@ -10,7 +10,7 @@
 
 namespace ClashSubscriptionParser {
 
-QList<VmessItem> parseContent(const QString& content, QStringList* skippedTypes)
+QList<VmessItem> parseContent(const QString& content, QStringList* skippedTypes, QString* parseError)
 {
     // JSON first, and the order is the whole point. A subscription served as a
     // JSON document is valid YAML too, so the line walker used to read it -- and
@@ -26,9 +26,9 @@ QList<VmessItem> parseContent(const QString& content, QStringList* skippedTypes)
     // but a one-node document like `name: "Gemini #1"` can parse as a JSON object
     // whose `"proxies"` key is a quoted scalar rather than an array, and returning
     // that empty result would end the walk on a document the line parser reads fine.
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(content.trimmed().toUtf8(), &parseError);
-    if (parseError.error == QJsonParseError::NoError && document.isObject()) {
+    QJsonParseError jsonParseError;
+    const QJsonDocument document = QJsonDocument::fromJson(content.trimmed().toUtf8(), &jsonParseError);
+    if (jsonParseError.error == QJsonParseError::NoError && document.isObject()) {
         const QJsonValue proxies = document.object().value(QStringLiteral("proxies"));
         if (proxies.isArray()) {
             QStringList jsonSkipped;
@@ -42,7 +42,7 @@ QList<VmessItem> parseContent(const QString& content, QStringList* skippedTypes)
         }
     }
 
-    return ClashYamlProxyParser::parseProxyItems(content, skippedTypes);
+    return ClashYamlProxyParser::parseProxyItems(content, skippedTypes, parseError);
 }
 
 QList<VmessItem> parseProxyArray(const QJsonArray& proxies, QStringList* skippedTypes)
