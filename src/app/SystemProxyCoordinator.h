@@ -46,7 +46,11 @@ public:
     void retryStartup(bool showStartupOverlay = true);
     void disable();
     // Startup with the app's proxy off: restore a snapshot that survived a crash, otherwise leave
-    // the registry untouched. Never clears (see the definition for why).
+    // the registry untouched -- unless the registry still points at our own port with nothing
+    // listening on it, which is a dead leftover no snapshot is needed to recognise: with no
+    // snapshot to restore, the sanitized capture (proxy off) is restored instead. A listener
+    // means the proxy may be working, so it is left alone. Never clears blindly (see the
+    // definition for why).
     void recoverOwnedSystemProxyOnStartup();
     bool updateMode(SystemProxyMode mode) const;
     QString buildExceptions() const;

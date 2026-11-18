@@ -47,6 +47,12 @@ struct SystemProxySnapshot {
     bool operator!=(const SystemProxySnapshot& other) const { return !(*this == other); }
 };
 
+// True when the snapshot describes an enabled proxy whose server mentions `server`
+// (a plain substring test: the registry holds either a bare "host:port" or the
+// per-scheme form "http=host:port;https=host:port;ftp=host:port"). An empty `server`
+// never matches, because without it there is nothing to compare against.
+bool systemProxySnapshotMentionsServer(const SystemProxySnapshot& snapshot, const QString& server);
+
 // What to restore when the captured snapshot already points at *our own* port.
 //
 // This is the crashed-session case: the process was killed while proxying, so the registry

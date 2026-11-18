@@ -32,6 +32,15 @@ private slots:
     void sanitizeIgnoresAnEmptyServerArgument();
     void anInvalidSnapshotIsNeverRestorable();
     void anEmptyButValidSnapshotIsStillRestorable();
+
+    // Startup with the app's proxy off: a dead leftover of ours.
+    void startupRestoresWhenTheRegistryDoesNotMentionUsAndASnapshotExists();
+    void startupLeavesAloneWhenTheRegistryDoesNotMentionUsAndNoSnapshotExists();
+    void startupLeavesAloneWhenOurOwnProxyIsListening();
+    void startupRestoresWhenOurOwnProxyIsDeadAndASnapshotExists();
+    void startupDisablesWhenOurOwnProxyIsDeadAndNoSnapshotExists();
+    void startupIgnoresADisabledRegistryEntry();
+    void startupIgnoresAnEmptyServerArgument();
 };
 
 void SystemProxyOwnershipPolicyTests::failedStartupLeavesAProxyWeNeverTouchedAlone()
@@ -171,6 +180,122 @@ void SystemProxyOwnershipPolicyTests::anEmptyButValidSnapshotIsStillRestorable()
     snapshot.enabled = false;
 
     QVERIFY(isRestorableSystemProxySnapshot(snapshot));
+}
+
+void SystemProxyOwnershipPolicyTests::startupRestoresWhenTheRegistryDoesNotMentionUsAndASnapshotExists()
+{
+    // Preserved behaviour: the registry holds the user's own proxy, a snapshot survived, and
+    // startup puts the user's settings back -- the listening check has nothing to say here,
+    // because the entry is not ours to remove.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("10.0.0.1:3128");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/false,
+            /*snapshotRestorable=*/true),
+        StartupLeftoverProxyAction::Restore);
+}
+
+void SystemProxyOwnershipPolicyTests::startupLeavesAloneWhenTheRegistryDoesNotMentionUsAndNoSnapshotExists()
+{
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("10.0.0.1:3128");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/false,
+            /*snapshotRestorable=*/false),
+        StartupLeftoverProxyAction::LeaveAlone);
+}
+
+void SystemProxyOwnershipPolicyTests::startupLeavesAloneWhenOurOwnProxyIsListening()
+{
+    // A listener means the proxy may be working -- another instance, or another tool on the
+    // same port. Removing it would break a working setup, snapshot or not.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:10809");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/true,
+            /*snapshotRestorable=*/true),
+        StartupLeftoverProxyAction::LeaveAlone);
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/true,
+            /*snapshotRestorable=*/false),
+        StartupLeftoverProxyAction::LeaveAlone);
+}
+
+void SystemProxyOwnershipPolicyTests::startupRestoresWhenOurOwnProxyIsDeadAndASnapshotExists()
+{
+    // The crash case with a surviving snapshot: the registry still points at our port, nothing
+    // listens on it, and the snapshot says what was there before we wrote it.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:10809");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/false,
+            /*snapshotRestorable=*/true),
+        StartupLeftoverProxyAction::Restore);
+}
+
+void SystemProxyOwnershipPolicyTests::startupDisablesWhenOurOwnProxyIsDeadAndNoSnapshotExists()
+{
+    // The crash case with the snapshot lost (state file gone, or a build from before snapshots
+    // existed): there is nothing to restore, so the leftover is turned off rather than left
+    // pointing at a dead port.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:10809");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/false,
+            /*snapshotRestorable=*/false),
+        StartupLeftoverProxyAction::Disable);
+}
+
+void SystemProxyOwnershipPolicyTests::startupIgnoresADisabledRegistryEntry()
+{
+    // A disabled registry entry is not a leftover proxy: nothing is being routed through it,
+    // so the listening check cannot condemn it and no removal is needed.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = false;
+    current.server = QStringLiteral("127.0.0.1:10809");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QStringLiteral("127.0.0.1:10809"), /*listening=*/false,
+            /*snapshotRestorable=*/false),
+        StartupLeftoverProxyAction::LeaveAlone);
+}
+
+void SystemProxyOwnershipPolicyTests::startupIgnoresAnEmptyServerArgument()
+{
+    // Without a server to compare against, nothing can be recognised as our own: the entry is
+    // treated as a foreign proxy and left alone.
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:10809");
+
+    QCOMPARE(
+        decideStartupLeftoverProxyAction(
+            current, QString(), /*listening=*/false, /*snapshotRestorable=*/false),
+        StartupLeftoverProxyAction::LeaveAlone);
 }
 
 QTEST_MAIN(SystemProxyOwnershipPolicyTests)

@@ -5,9 +5,13 @@
 #include <utility>
 
 #include <QCoreApplication>
+#include <QHostAddress>
+#include <QTcpSocket>
 
 #include "appcore/ProxySession.h"
+#include "appcore/SystemProxyOwnershipPolicy.h"
 #include "common/LocalInboundPorts.h"
+#include "common/PortValidator.h"
 #include "common/SystemProxyExceptions.h"
 #include "platform/ISystemProxyService.h"
 #include "services/ServerService.h"
@@ -203,20 +207,76 @@ bool SystemProxyCoordinator::restoreCapturedSnapshot()
 // the app with its own proxy off. The registry holding a proxy is not evidence that *we* set
 // it (SystemProxyOwnershipPolicy); only a captured snapshot is. Restoring that snapshot heals
 // the crash case (our dead 127.0.0.1:<port> is still there) and puts the user's own settings
-// back; with no snapshot there is nothing of ours to undo, so the registry is left alone.
+// back; with no snapshot there is nothing of ours to undo, so the registry is left alone --
+// unless it still points at our own port with nothing listening on it. That state can only
+// be a leftover of ours (a snapshot lost with the state file, or a build from before snapshots
+// existed), and leaving it means the machine stays offline. It is removed by restoring the
+// sanitized capture, which is proxy off; a listener means the proxy may be working, so it is
+// left alone instead.
+namespace {
+
+// Whether anything answers on a loopback port: one connect, no retries. A refused connect
+// answers immediately; the timeout only bounds a listener that accepts without answering.
+bool isLocalTcpPortListening(int port)
+{
+    if (!isValidTcpPort(port)) {
+        return false;
+    }
+    QTcpSocket socket;
+    socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
+    if (socket.waitForConnected(200)) {
+        socket.disconnectFromHost();
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
 void SystemProxyCoordinator::recoverOwnedSystemProxyOnStartup()
 {
     if (deps_.systemProxyService == nullptr) {
         return;
     }
-    if (!restoreCapturedSnapshot()) {
+    // The registry as this process found it: the crash case is a proxy that still points at
+    // our own port with no core behind it, and only that state is a leftover of ours. A
+    // snapshot alone cannot prove it -- the registry may have moved on since the snapshot was
+    // captured -- so the current values are read first.
+    const SystemProxySnapshot current = deps_.systemProxyService->capture();
+    const int httpPort = LocalInboundPorts::httpPort(deps_.config);
+    const QString ourServer = QStringLiteral("127.0.0.1:%1").arg(httpPort);
+    const bool listening = isLocalTcpPortListening(httpPort);
+    switch (decideStartupLeftoverProxyAction(
+        current, ourServer, listening,
+        isRestorableSystemProxySnapshot(deps_.config.systemProxySnapshot()))) {
+    case StartupLeftoverProxyAction::LeaveAlone:
+        return;
+    case StartupLeftoverProxyAction::Restore:
+        if (!restoreCapturedSnapshot()) {
+            return;
+        }
+        if (deps_.proxySession != nullptr) {
+            deps_.proxySession->adoptManagedSystemProxy(false);
+        }
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "Restored the system proxy settings captured before the previous session.")));
+        return;
+    case StartupLeftoverProxyAction::Disable:
+        // No snapshot survived to restore, so the sanitized capture is the restore: proxy
+        // off, leftover keys deleted. sanitizeSelfReferentialSnapshot turns a snapshot that
+        // points at our own port into exactly that.
+        if (!deps_.systemProxyService->restore(sanitizeSelfReferentialSnapshot(current, ourServer))) {
+            appendResult(OperationResult::fail(QCoreApplication::translate(
+                "AppBootstrap", "Could not remove the leftover system proxy pointing at %1; the system proxy still points at a port nothing is listening on.").arg(ourServer)));
+            return;
+        }
+        if (deps_.proxySession != nullptr) {
+            deps_.proxySession->adoptManagedSystemProxy(false);
+        }
+        appendResult(OperationResult::ok(QCoreApplication::translate(
+            "AppBootstrap", "Removed a leftover system proxy pointing at %1; nothing was listening on that port, so it was turned off.").arg(ourServer)));
         return;
     }
-    if (deps_.proxySession != nullptr) {
-        deps_.proxySession->adoptManagedSystemProxy(false);
-    }
-    appendResult(OperationResult::ok(QCoreApplication::translate(
-        "AppBootstrap", "Restored the system proxy settings captured before the previous session.")));
 }
 
 void SystemProxyCoordinator::cleanupRuntimeForExit(bool windowsShutdown)
