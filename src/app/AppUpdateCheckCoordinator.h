@@ -26,8 +26,7 @@ public:
         const CoreAssetPlatform& platform,
         AppUpdateCheckResult* result)>;
     using DownloadUpdate = std::function<OperationResult(
-        const QUrl& downloadUrl,
-        const QString& assetName,
+        const AppUpdateCheckResult& checkResult,
         const QString& targetDirectory,
         QString* savedPath)>;
     using ThreadRunner = std::function<void(std::function<void()> task)>;

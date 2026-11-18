@@ -126,6 +126,17 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-hardcoded-colors.ps1
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
+
+    # Downloads go to github.com only. A mirror is a man in the middle: it serves whatever
+    # bytes it chooses, and a checksum published beside the file on GitHub cannot vouch for
+    # bytes the mirror substituted.
+    add_test(
+        NAME no-third-party-mirrors
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-no-third-party-mirrors.ps1
+            -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    )
 endif()
 
 # The same guards as pure-stdlib Python scripts, so a Linux gate can run them. The PowerShell
@@ -163,6 +174,8 @@ if(Python3_Interpreter_FOUND)
     songbird_add_python_guard(py-async-owners check_async_owners.py
         ${SONGBIRD_PYTHON_SOURCE_ROOT})
     songbird_add_python_guard(py-hardcoded-colors check_hardcoded_colors.py
+        ${SONGBIRD_PYTHON_SOURCE_ROOT})
+    songbird_add_python_guard(py-no-third-party-mirrors check_no_third_party_mirrors.py
         ${SONGBIRD_PYTHON_SOURCE_ROOT})
     songbird_add_python_guard(py-q-os-include-scope check_q_os_include_scope.py
         --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
@@ -1021,6 +1034,21 @@ set(SONGBIRD_SECRET_STORE_TEST_SOURCES
 songbird_add_qt_test(songbird_secret_store_tests secret-store
     SOURCES
         ${SONGBIRD_SECRET_STORE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# SHA-256 verification for downloads: the parsing and comparison are pure functions, so
+# they are tested directly here. The service-level paths (core, app, geo) are exercised
+# through their own tests with fake download handlers.
+set(SONGBIRD_RELEASE_CHECKSUM_TEST_SOURCES
+    ReleaseChecksumTests.cpp
+)
+
+songbird_add_qt_test(songbird_release_checksum_tests release-checksum
+    SOURCES
+        ${SONGBIRD_RELEASE_CHECKSUM_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

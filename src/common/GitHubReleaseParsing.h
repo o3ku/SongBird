@@ -10,6 +10,11 @@ namespace GitHubReleaseParsing {
 struct ReleaseAsset {
     QString name;
     QUrl downloadUrl;
+    // The `digest` the releases API returns for the asset ("sha256:<hex>"). The checksum
+    // verification trusts this first: it comes with the metadata over the same TLS connection,
+    // and every GitHub-hosted asset has one whether or not the upstream publishes a checksum
+    // file beside it.
+    QString digest;
 };
 
 struct Release {

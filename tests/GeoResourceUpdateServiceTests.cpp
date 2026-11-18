@@ -2,11 +2,33 @@
 
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include <algorithm>
 
 #include "services/GeoResourceUpdateService.h"
+
+// A minimal releases-API payload naming one asset with the SHA-256 of the bytes the fake
+// download handler serves for it, so the verification the service now does has something
+// true to check against.
+QByteArray releaseMetadataJson(const QString& assetName, const QString& digestHex)
+{
+    QJsonObject asset;
+    asset.insert(QStringLiteral("name"), assetName);
+    asset.insert(
+        QStringLiteral("browser_download_url"),
+        QStringLiteral("https://github.com/example.invalid/") + assetName);
+    asset.insert(QStringLiteral("digest"), QStringLiteral("sha256:") + digestHex);
+    QJsonObject release;
+    release.insert(QStringLiteral("tag_name"), QStringLiteral("v1.0.0"));
+    release.insert(QStringLiteral("prerelease"), false);
+    release.insert(QStringLiteral("draft"), false);
+    release.insert(QStringLiteral("assets"), QJsonArray{asset});
+    return QJsonDocument(QJsonArray{release}).toJson(QJsonDocument::Compact);
+}
 
 class GeoResourceUpdateServiceTests : public QObject {
     Q_OBJECT
@@ -17,6 +39,8 @@ private slots:
     void updateSingBoxRuleSetRejectsUnsupportedTag();
     void updateCoreGeoFileSavesUnderTheNameTheCoreReads();
     void updateCoreGeoFileRejectsAnIncompleteRequirement();
+    void updateRefusesGeoFileWhenReleaseMetadataIsUnavailable();
+    void updateRefusesGeoFileOnChecksumMismatch();
 };
 
 void GeoResourceUpdateServiceTests::updateReportsProgressAndWritesGeoFile()
@@ -27,7 +51,16 @@ void GeoResourceUpdateServiceTests::updateReportsProgressAndWritesGeoFile()
     QStringList progressMessages;
     GeoResourceUpdateService service(
         directory.path(),
-        [](const QUrl&, QByteArray* content) {
+        [](const QUrl& url, QByteArray* content) {
+            // The service fetches the release metadata first to learn the expected checksum,
+            // then the file itself; the handler has to answer both.
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                *content = releaseMetadataJson(
+                    QStringLiteral("geoip.dat"),
+                    // SHA-256 of "geo-payload".
+                    QStringLiteral("a5e18841150b7f40d88caa3dbe6e32eb7c8ad4638b6f6fbfdf01c41c81f9f70e"));
+                return OperationResult::ok();
+            }
             *content = QByteArray("geo-payload");
             return OperationResult::ok();
         },
@@ -75,6 +108,13 @@ void GeoResourceUpdateServiceTests::updateSingBoxRuleSetWritesRuleSetFile()
         directory.path(),
         [&requestedUrl](const QUrl& url, QByteArray* content) {
             requestedUrl = url.toString();
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                *content = releaseMetadataJson(
+                    QStringLiteral("geosite-google.srs"),
+                    // SHA-256 of "rule-set-payload".
+                    QStringLiteral("bd76240a216c52f7643892302821f7c4d4c8e1d82f78f6ef14cda232614668bc"));
+                return OperationResult::ok();
+            }
             *content = QByteArray("rule-set-payload");
             return OperationResult::ok();
         });
@@ -115,6 +155,13 @@ void GeoResourceUpdateServiceTests::updateCoreGeoFileSavesUnderTheNameTheCoreRea
         directory.path(),
         [&requestedUrl](const QUrl& url, QByteArray* content) {
             requestedUrl = url.toString();
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                *content = releaseMetadataJson(
+                    QStringLiteral("geosite.dat"),
+                    // SHA-256 of "geosite-payload".
+                    QStringLiteral("c9af58977a8e31e67943c82547ca16c9d22458facc1b5700350574daa138a5ac"));
+                return OperationResult::ok();
+            }
             *content = QByteArray("geosite-payload");
             return OperationResult::ok();
         },
@@ -133,8 +180,8 @@ void GeoResourceUpdateServiceTests::updateCoreGeoFileSavesUnderTheNameTheCoreRea
     const OperationResult result = service.updateCoreGeoFile(requirement);
 
     QVERIFY2(result.success, qPrintable(result.message));
-    // A mirror prefix may be prepended to the URL, so only the repository, release and asset name
-    // are asserted -- the point is which file is fetched, not which host serves it.
+    // Only the repository, release and asset name are asserted -- the point is which file is
+    // fetched, not the exact host or query string.
     QVERIFY2(
         requestedUrl.endsWith(
             QStringLiteral("MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat")),
@@ -184,6 +231,54 @@ void GeoResourceUpdateServiceTests::updateCoreGeoFileRejectsAnIncompleteRequirem
     QVERIFY(result.message.contains(QStringLiteral("No download source for geo file GeoSite.dat")));
     QVERIFY(!downloadAttempted);
     QVERIFY(!QFile::exists(QDir(directory.path()).filePath(QStringLiteral("GeoSite.dat"))));
+}
+
+void GeoResourceUpdateServiceTests::updateRefusesGeoFileWhenReleaseMetadataIsUnavailable()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    GeoResourceUpdateService service(
+        directory.path(),
+        [](const QUrl& url, QByteArray* content) {
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                return OperationResult::fail(QStringLiteral("GitHub API unavailable"));
+            }
+            *content = QByteArray("geo-payload");
+            return OperationResult::ok();
+        });
+
+    const OperationResult result = service.update(QStringLiteral("geoip"));
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("cannot be verified")));
+    QVERIFY(!QFile::exists(directory.filePath(QStringLiteral("geoip.dat"))));
+}
+
+void GeoResourceUpdateServiceTests::updateRefusesGeoFileOnChecksumMismatch()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    GeoResourceUpdateService service(
+        directory.path(),
+        [](const QUrl& url, QByteArray* content) {
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                // The digest of "something-else", not of the "geo-payload" the file URL serves.
+                *content = releaseMetadataJson(
+                    QStringLiteral("geoip.dat"),
+                    QStringLiteral("3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a"));
+                return OperationResult::ok();
+            }
+            *content = QByteArray("geo-payload");
+            return OperationResult::ok();
+        });
+
+    const OperationResult result = service.update(QStringLiteral("geoip"));
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
+    QVERIFY(!QFile::exists(directory.filePath(QStringLiteral("geoip.dat"))));
 }
 
 QTEST_MAIN(GeoResourceUpdateServiceTests)

@@ -9,8 +9,10 @@
 
 #include <utility>
 
+#include "common/GitHubReleaseParsing.h"
 #include "common/GitHubUrls.h"
 #include "common/JsonFile.h"
+#include "common/ReleaseChecksum.h"
 #include "common/SingBoxPaths.h"
 #include "services/GeoResourceDownload.h"
 
@@ -61,7 +63,9 @@ OperationResult GeoResourceUpdateService::update(const QString& geoName) const
     return downloadAndSave(
         buildDownloadUrl(normalizedGeoName),
         fileName,
-        QDir(targetDirectory_).filePath(fileName));
+        QDir(targetDirectory_).filePath(fileName),
+        v2rayRulesDatRepositoryPath(),
+        fileName);
 }
 
 OperationResult GeoResourceUpdateService::updateSingBoxRuleSet(const QString& tag) const
@@ -83,7 +87,11 @@ OperationResult GeoResourceUpdateService::updateSingBoxRuleSet(const QString& ta
     return downloadAndSave(
         buildSingBoxRuleSetDownloadUrl(normalizedTag),
         fileName,
-        QDir(targetDirectory_).filePath(QStringLiteral("%1/%2").arg(SingBoxPaths::ruleSetDirectoryName(), fileName)));
+        QDir(targetDirectory_).filePath(QStringLiteral("%1/%2").arg(SingBoxPaths::ruleSetDirectoryName(), fileName)),
+        normalizedTag.startsWith(QStringLiteral("geosite-"))
+            ? singGeositeRepositoryPath()
+            : singGeoipRepositoryPath(),
+        fileName);
 }
 
 OperationResult GeoResourceUpdateService::updateCoreGeoFile(
@@ -105,13 +113,53 @@ OperationResult GeoResourceUpdateService::updateCoreGeoFile(
     return downloadAndSave(
         githubLatestReleaseDownloadUrl(requirement.repositoryPath, requirement.sourceFileName),
         fileName,
-        QDir(targetDirectory_).filePath(fileName));
+        QDir(targetDirectory_).filePath(fileName),
+        requirement.repositoryPath,
+        requirement.sourceFileName);
+}
+
+QString GeoResourceUpdateService::expectedDigestForGeoFile(
+    const QString& repositoryPath,
+    const QString& sourceFileName) const
+{
+    QByteArray payload;
+    // Quiet: the metadata fetch is a precondition for the download, not a download source the
+    // user is choosing between.
+    const OperationResult fetchResult = GeoResourceDownload::downloadBytes(
+        githubReleasesApiUrl(repositoryPath, 5),
+        QStringLiteral("release metadata"),
+        &payload,
+        downloadHandler_,
+        {});
+    if (!fetchResult.success || payload.isEmpty()) {
+        return {};
+    }
+
+    const GitHubReleaseParsing::ParseResult parsed = GitHubReleaseParsing::parseGitHubReleaseList(payload);
+    if (parsed.status != GitHubReleaseParsing::ParseStatus::Ok) {
+        return {};
+    }
+    // The file URL resolves to the latest stable release, so prereleases and drafts are skipped
+    // here too -- a prerelease could name a different asset set.
+    for (const GitHubReleaseParsing::Release& release : parsed.releases) {
+        if (release.draft || release.prerelease || release.tagName.isEmpty()) {
+            continue;
+        }
+        for (const GitHubReleaseParsing::ReleaseAsset& asset : release.assets) {
+            if (asset.name == sourceFileName) {
+                return ReleaseChecksum::digestToHex(asset.digest);
+            }
+        }
+    }
+    return {};
 }
 
 OperationResult GeoResourceUpdateService::downloadAndSave(
     const QUrl& url,
     const QString& fileName,
-    const QString& targetPath) const
+    const QString& targetPath,
+    const QString& repositoryPath,
+    const QString& sourceFileName) const
 {
     if (targetDirectory_.trimmed().isEmpty()) {
         return OperationResult::fail(
@@ -121,6 +169,32 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
     if (!QDir().mkpath(targetDirectory_)) {
         return OperationResult::fail(
             QCoreApplication::translate("GeoResourceUpdateService", "Failed to create the geo target directory."));
+    }
+
+    // The expected checksum is fetched before the file so a release that cannot be verified
+    // fails fast instead of after a download.
+    QString expectedDigest;
+    QString digestError;
+    if (repositoryPath.trimmed().isEmpty()) {
+        digestError = QCoreApplication::translate(
+            "GeoResourceUpdateService", "No repository is known for geo file %1.").arg(fileName);
+    } else {
+        expectedDigest = expectedDigestForGeoFile(repositoryPath, sourceFileName);
+        if (expectedDigest.isEmpty()) {
+            digestError = QCoreApplication::translate(
+                "GeoResourceUpdateService",
+                "No SHA-256 checksum is available for %1 in the latest %2 release.")
+                .arg(sourceFileName)
+                .arg(repositoryPath);
+        }
+    }
+    if (!digestError.isEmpty()) {
+        return OperationResult::fail(
+            QCoreApplication::translate(
+                "GeoResourceUpdateService",
+                "Geo file %1 cannot be verified: %2 The file was not saved.")
+                .arg(fileName)
+                .arg(digestError));
     }
 
     reportProgress(
@@ -142,6 +216,15 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
         return OperationResult::fail(
             QCoreApplication::translate("GeoResourceUpdateService", "Downloaded %1 is empty.")
                 .arg(fileName));
+    }
+
+    if (!ReleaseChecksum::matchesSha256(content, expectedDigest)) {
+        return OperationResult::fail(
+            QCoreApplication::translate("GeoResourceUpdateService", "SHA-256 checksum mismatch for geo file %1: the downloaded file does not match the checksum published for %2 (expected %3, got %4). The file was not saved.")
+                .arg(fileName)
+                .arg(sourceFileName)
+                .arg(expectedDigest)
+                .arg(ReleaseChecksum::sha256Hex(content)));
     }
 
     reportProgress(

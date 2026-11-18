@@ -18,6 +18,7 @@
 #include "common/GitHubMirrorHelper.h"
 #include "common/GitHubUrls.h"
 #include "common/JsonFile.h"
+#include "common/ReleaseChecksum.h"
 #include "common/UserAgent.h"
 #include "services/AppUpdateReleaseMetadata.h"
 #include "services/CoreUpdateVersion.h"
@@ -180,6 +181,18 @@ OperationResult AppUpdateService::checkForUpdate(
     if (const AppUpdateReleaseAsset* asset = selectBestAppUpdateAsset(release.assets, platform)) {
         result->assetName = asset->name;
         result->assetDownloadUrl = asset->downloadUrl;
+        result->assetDigest = ReleaseChecksum::digestToHex(asset->digest);
+        QList<ReleaseChecksum::NamedAsset> releaseAssets;
+        releaseAssets.reserve(release.assets.size());
+        for (const AppUpdateReleaseAsset& releaseAsset : release.assets) {
+            releaseAssets.append(
+                ReleaseChecksum::NamedAsset{releaseAsset.name, releaseAsset.downloadUrl});
+        }
+        if (const std::optional<ReleaseChecksum::NamedAsset> checksumAsset =
+                ReleaseChecksum::findChecksumAsset(releaseAssets, asset->name)) {
+            result->checksumAssetName = checksumAsset->name;
+            result->checksumAssetDownloadUrl = checksumAsset->downloadUrl;
+        }
     }
     result->updateAvailable = CoreUpdateVersion::isNewerThan(release.tagName, currentVersion);
 
@@ -195,18 +208,23 @@ OperationResult AppUpdateService::checkForUpdate(
 }
 
 OperationResult AppUpdateService::downloadUpdate(
-    const QUrl& downloadUrl,
-    const QString& assetName,
+    const AppUpdateCheckResult& checkResult,
     const QString& targetDirectory,
     QString* savedPath) const
 {
+    const QUrl& downloadUrl = checkResult.assetDownloadUrl;
+    const QString& assetName = checkResult.assetName;
     if (!downloadUrl.isValid()) {
         return OperationResult::fail(
             QCoreApplication::translate("AppUpdateService", "Update package URL is unavailable."));
     }
 
-    const QString normalizedAssetName = QFileInfo(assetName.trimmed()).fileName();
-    if (normalizedAssetName.isEmpty()) {
+    // The published name is what the checksum document lists; the saved name is what the file
+    // lands under, which may differ (see AppUpdateCheckResult::downloadFileName).
+    const QString publishedName = QFileInfo(assetName.trimmed()).fileName();
+    const QString savedName = QFileInfo(checkResult.downloadFileName.trimmed()).fileName();
+    const QString normalizedAssetName = savedName.isEmpty() ? publishedName : savedName;
+    if (publishedName.isEmpty()) {
         return OperationResult::fail(
             QCoreApplication::translate("AppUpdateService", "Update package name is unavailable."));
     }
@@ -249,6 +267,41 @@ OperationResult AppUpdateService::downloadUpdate(
                 .arg(lastError.isEmpty()
                     ? QCoreApplication::translate("AppUpdateService", "Unknown error")
                     : lastError));
+    }
+
+    // The bytes are verified before anything is written: an executable that fails its checksum
+    // is refused outright, and one with no checksum to check against is refused too. SongBird's
+    // own releases publish "<asset>.sha256" (see .github/workflows/release.yml) and the API
+    // digest covers older releases, so a release with neither is one to fetch by hand from the
+    // releases page, not one to install blind.
+    const std::optional<ReleaseChecksum::NamedAsset> checksumAsset =
+        checkResult.checksumAssetDownloadUrl.isValid()
+        ? std::optional<ReleaseChecksum::NamedAsset>{ReleaseChecksum::NamedAsset{
+            checkResult.checksumAssetName, checkResult.checksumAssetDownloadUrl}}
+        : std::nullopt;
+    const ReleaseChecksum::VerificationOutcome verification =
+        ReleaseChecksum::verifyDownloadedBytes(
+            packageBytes,
+            publishedName,
+            downloadUrl,
+            checkResult.assetDigest,
+            checksumAsset,
+            [this](const QUrl& url, QByteArray* content) {
+                return downloadHandler_
+                    ? downloadHandler_(url, content)
+                    : downloadBytesWithNetwork(url, content, kAppUpdateMetadataTimeoutMs);
+            });
+    if (verification.status == ReleaseChecksum::Verification::Mismatched) {
+        return OperationResult::fail(
+            QCoreApplication::translate("AppUpdateService", "SHA-256 checksum mismatch for SongBird %1: the downloaded update does not match the published checksum (expected %2, got %3). The update was not saved.")
+                .arg(publishedName)
+                .arg(verification.expectedHex)
+                .arg(verification.actualHex));
+    }
+    if (verification.status == ReleaseChecksum::Verification::Unverifiable) {
+        return OperationResult::fail(
+            QCoreApplication::translate("AppUpdateService", "No SHA-256 checksum is available for SongBird %1, so the downloaded update cannot be verified. The update was not saved; download it manually from the releases page if this persists.")
+                .arg(publishedName));
     }
 
     const QString packagePath = directory.filePath(normalizedAssetName);

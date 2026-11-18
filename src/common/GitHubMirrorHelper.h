@@ -1,44 +1,16 @@
 #pragma once
 
 #include <QList>
-#include <QString>
 #include <QUrl>
 
-inline QStringList githubMirrorPrefixes()
-{
-    return {
-        QStringLiteral("https://ghfast.top/"),
-        QStringLiteral("https://mirror.ghproxy.com/"),
-        QStringLiteral("https://ghproxy.net/")
-    };
-}
-
-inline bool isGitHubOriginUrl(const QUrl& url)
-{
-    const QString host = url.host().trimmed().toLower();
-    return host == QStringLiteral("github.com")
-        || host == QStringLiteral("api.github.com")
-        || host.endsWith(QStringLiteral(".github.com"))
-        || host.endsWith(QStringLiteral(".githubusercontent.com"));
-}
-
+// Downloads go to github.com only. Third-party GitHub mirrors used to be prepended here
+// (ghfast.top, mirror.ghproxy.com, ghproxy.net) so a download that GitHub served slowly could
+// still finish, but a mirror is a man in the middle: it serves whatever bytes it chooses, and a
+// checksum published beside the file on GitHub cannot vouch for bytes the mirror substituted.
+// The helper stays as a pass-through so the five call sites keep one place to change if a
+// legitimate alternate source is ever needed; it must never grow a third-party host again --
+// check_no_third_party_mirrors.py fails the build if one appears.
 inline QList<QUrl> buildGitHubMirrorCandidateUrls(const QUrl& url)
 {
-    QList<QUrl> result;
-    if (!url.isValid() || url.scheme().trimmed().isEmpty()) {
-        return result;
-    }
-
-    if (!isGitHubOriginUrl(url)) {
-        result.append(url);
-        return result;
-    }
-
-    const QString encodedUrl = url.toString(QUrl::FullyEncoded);
-    for (const QString& prefix : githubMirrorPrefixes()) {
-        result.append(QUrl(prefix + encodedUrl));
-    }
-    result.append(url);
-
-    return result;
+    return {url};
 }

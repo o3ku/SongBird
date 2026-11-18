@@ -181,14 +181,18 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
         ? deps_.applicationDirectory()
         : AppPaths::applicationDirectory();
     const QString updateDirectory = QDir(appDir).filePath(QStringLiteral("updates"));
-    const QString assetName = AppUpdateCheckPresentation::resolveDownloadAssetName(updateResult.assetName);
+    // The running executable cannot be overwritten on Windows, so the download lands under a
+    // different local name; verification still uses the published asset name.
+    AppUpdateCheckResult downloadResult = updateResult;
+    downloadResult.downloadFileName =
+        AppUpdateCheckPresentation::resolveDownloadAssetName(updateResult.assetName);
     const QString startMessage = QCoreApplication::translate("AppBootstrap", "Downloading SongBird %1...")
                                      .arg(updateResult.latestVersion);
     deps_.feedback->appendLog(startMessage);
 
     QPointer<QObject> uiContext(deps_.feedback->uiContext());
     QPointer<AppUpdateCheckCoordinator> self(this);
-    runInBackground([self, updateResult, updateDirectory, assetName, title, dialogParent, token, uiContext]() {
+    runInBackground([self, downloadResult, updateDirectory, title, dialogParent, token, uiContext]() {
         OperationResult result;
         QString savedPath;
         if (self.isNull()) {
@@ -196,18 +200,10 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
         }
 
         if (self->deps_.downloadUpdate) {
-            result = self->deps_.downloadUpdate(
-                updateResult.assetDownloadUrl,
-                assetName,
-                updateDirectory,
-                &savedPath);
+            result = self->deps_.downloadUpdate(downloadResult, updateDirectory, &savedPath);
         } else {
             AppUpdateService service;
-            result = service.downloadUpdate(
-                updateResult.assetDownloadUrl,
-                assetName,
-                updateDirectory,
-                &savedPath);
+            result = service.downloadUpdate(downloadResult, updateDirectory, &savedPath);
         }
 
         QObject* target = uiContext.isNull()
