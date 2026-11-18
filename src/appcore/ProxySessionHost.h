@@ -36,6 +36,13 @@
 //      Default:       the session's real liveness probe runs as the fallback direct probe.
 //      Boundary:      injected callback.
 //
+//  setLocalPortAvailabilityCheck(LocalPortFreeCheck)
+//      Serves:        headless tests (a scripted "is this loopback port free" answer; the
+//                     start tests stand up a fake proxy on the config's own ports, so the
+//                     real probe would report the harness's own listener as a conflict).
+//      Default:       the real loopback bind probe (LocalPortConflictCheck::isLocalTcpPortFree).
+//      Boundary:      injected callback.
+//
 //  ProxyHealthWatchdog::SessionStrings::isShuttingDown()
 //      Serves:        the satellite's "arm no new probe or timer during teardown" guards.
 //                     It reads the session's own shuttingDown_ flag through this injected

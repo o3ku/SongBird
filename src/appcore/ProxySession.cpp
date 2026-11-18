@@ -29,6 +29,7 @@
 #include "appcore/TunRuntimeState.h"
 #include "common/AppPaths.h"
 #include "common/BackgroundThreadLaunch.h"
+#include "common/LocalPortConflictCheck.h"
 #include "common/SingBoxPaths.h"
 #include "common/ThreadShutdown.h"
 #include "runtime/ClientConfigWriter.h"
@@ -153,6 +154,29 @@ QString tunAdminRequiredStartMessage()
     return QCoreApplication::translate(
         "ProxySession",
         "TUN mode requires administrator privileges on Windows. Run SongBird as administrator before starting the core.");
+}
+
+// The role names in the port-conflict message. Separate translate() calls, one literal each:
+// the localization scan only recognises single-literal calls, so the roles cannot be folded
+// into the message template as concatenated fragments.
+QString localInboundPortRoleName(LocalPortConflictCheck::Role role)
+{
+    switch (role) {
+    case LocalPortConflictCheck::Role::Socks:
+        return QCoreApplication::translate("ProxySession", "SOCKS inbound");
+    case LocalPortConflictCheck::Role::Http:
+        return QCoreApplication::translate("ProxySession", "HTTP inbound");
+    case LocalPortConflictCheck::Role::LocationProbe:
+        return QCoreApplication::translate("ProxySession", "location probe");
+    }
+    return {};
+}
+
+QString localInboundPortConflictMessage(const LocalPortConflictCheck::Port& occupied)
+{
+    return QCoreApplication::translate("ProxySession", "Local port %1 (%2) is already in use by another program. Change the local port in Settings or stop the program using it, then try again.")
+        .arg(occupied.port)
+        .arg(localInboundPortRoleName(occupied.role));
 }
 
 } // namespace
@@ -311,6 +335,11 @@ void ProxySession::setAvailabilityCheck(AvailabilityCheck check, int intervalMs)
 void ProxySession::setDirectConnectivityCheck(DirectConnectivityCheck check)
 {
     healthWatch_->setDirectConnectivityCheck(std::move(check));
+}
+
+void ProxySession::setLocalPortAvailabilityCheck(LocalPortFreeCheck check)
+{
+    localPortFreeCheck_ = std::move(check);
 }
 
 void ProxySession::start(const StartRequest& request)
@@ -587,6 +616,21 @@ void ProxySession::startInternal(
         .arg(activationTarget, activationContext.join(QStringLiteral(" | "))));
 
     setPhase(Phase::ValidateRuntimeResources);
+    // The core binds its three local inbounds itself; a port another program already holds
+    // would fail there as a core bind error, which reads as a broken node. The check runs
+    // here, first in the runtime-resources phase, so the failure names the port before any
+    // download starts. A probe is not a reservation -- the core's own bind is the backstop
+    // for the race between the check and the launch.
+    const LocalPortConflictCheck::Port occupiedPort = LocalPortConflictCheck::firstOccupiedPort(
+        LocalPortConflictCheck::localInboundPorts(currentRequest_.config),
+        localPortFreeCheck_ ? localPortFreeCheck_ : LocalPortConflictCheck::isLocalTcpPortFree);
+    if (occupiedPort.port > 0) {
+        const OperationResult portResult = OperationResult::fail(localInboundPortConflictMessage(occupiedPort));
+        setCheckpointStatus(CoreStartupCheckpointStatus::Failed, checkRuntimeResourcesStep, portResult.message);
+        failStartup(portResult);
+        return;
+    }
+
     if (launchCore == CoreType::SingBox) {
         const QStringList missingRuleSets = missingSingBoxRuleSetTagsFor(coreConfigPath);
         if (!missingRuleSets.isEmpty()) {

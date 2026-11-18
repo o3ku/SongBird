@@ -447,6 +447,15 @@ songbird_add_qt_test(songbird_local_port_option_tests local-port-option
         Qt${QT_VERSION_MAJOR}::Test
 )
 
+# The pre-start conflict check for the three ports the core binds. The helper is a pure
+# header plus a loopback bind probe, so this target needs nothing but its own file.
+songbird_add_qt_test(songbird_local_port_conflict_check_tests local-port-conflict-check
+    SOURCES
+        LocalPortConflictCheckTests.cpp
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 set(SONGBIRD_SETTINGS_DIALOG_APPLY_PLAN_TEST_SOURCES
     SettingsDialogApplyPlanTests.cpp
 )

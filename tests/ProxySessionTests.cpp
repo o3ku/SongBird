@@ -26,6 +26,7 @@
 #include "appcore/OutboundLivenessProbeService.h"
 #include "appcore/OutboundLocationProbeService.h"
 #include "appcore/ProxySession.h"
+#include "common/LocalPortConflictCheck.h"
 #include "runtime/ClientConfigWriter.h"
 #include "runtime/CoreInfo.h"
 #include "runtime/ICoreProcessHost.h"
@@ -36,6 +37,9 @@ class ProxySessionTests : public QObject
 
 private slots:
     void startFailsWhenNoActiveServer();
+    void startFailsWhenLocalPortIsOccupied();
+    void startFailsWhenHttpInboundPortIsOccupied();
+    void startFailsWhenLocationProbePortIsOccupied();
     void groupStartWritesAutoSelectConfigAndReachesProxying();
     void groupStartFailsWhenTheGroupHasNoEmbeddableMember();
     void groupStartEmitsTargetUnavailableWhenTheCoreCannotBuildTheGroup();
@@ -398,6 +402,10 @@ struct ProxySessionHarness final
             directConnectivityCheckCount.fetch_add(1);
             return directConnectivityAvailable.load();
         });
+        // The start tests stand up a fake proxy on the config's own ports, so the real
+        // loopback bind probe would report the harness's own listener as a conflict.
+        // Conflict tests override this per test with the real probe.
+        session->setLocalPortAvailabilityCheck([](int) { return true; });
     }
 
     std::optional<VmessItem> resolveActiveServer() const override
@@ -626,6 +634,18 @@ ProxySession::AvailabilityCheck makeScriptedCheck(const std::shared_ptr<Scripted
     };
 }
 
+// One free loopback port number: bound and released, the same shape as
+// ProxySession::pickFreeLoopbackPort. A caller that needs the port held keeps its own
+// QTcpServer listening on it.
+int takeFreeLoopbackPort()
+{
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 0)) {
+        return 0;
+    }
+    return probe.serverPort();
+}
+
 // Drives the session through the real startup cascade to Proxying, the only phase the health watch
 // runs in. Returns false instead of asserting so the caller can QVERIFY2 it with a message: the
 // QTest macros need to `return` from the test function and cannot be used from here.
@@ -682,6 +702,116 @@ void ProxySessionTests::startFailsWhenNoActiveServer()
 
     QCOMPARE(failedSpy.count(), 1);
     QVERIFY(failedSpy.takeFirst().at(0).toString().contains(QStringLiteral("No active server")));
+    QCOMPARE(harness.mainCore.startCount, 0);
+    QVERIFY(!harness.session->isActive());
+    QVERIFY(!harness.session->isActivationInProgress());
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+void ProxySessionTests::startFailsWhenLocalPortIsOccupied()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+
+    QTcpServer occupant;
+    QVERIFY(occupant.listen(QHostAddress::LocalHost, 0));
+    const int occupiedPort = occupant.serverPort();
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.localPort = occupiedPort;
+    request.config.localHttpPort = 0;
+    request.config.localLocationProbePort = takeFreeLoopbackPort();
+    QVERIFY(request.config.localLocationProbePort > 0);
+    // The other two inbounds must be free, or the failure would name them instead.
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(occupiedPort + 1));
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(request.config.localLocationProbePort));
+
+    harness.session->setLocalPortAvailabilityCheck(&LocalPortConflictCheck::isLocalTcpPortFree);
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+
+    QCOMPARE(failedSpy.count(), 1);
+    const QString message = failedSpy.takeFirst().at(0).toString();
+    QVERIFY(message.contains(QString::number(occupiedPort)));
+    QVERIFY(message.contains(QStringLiteral("SOCKS")));
+    QCOMPARE(harness.mainCore.startCount, 0);
+    QVERIFY(!harness.session->isActive());
+    QVERIFY(!harness.session->isActivationInProgress());
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+void ProxySessionTests::startFailsWhenHttpInboundPortIsOccupied()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+
+    QTcpServer occupant;
+    QVERIFY(occupant.listen(QHostAddress::LocalHost, 0));
+    const int occupiedPort = occupant.serverPort();
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.localPort = takeFreeLoopbackPort();
+    QVERIFY(request.config.localPort > 0);
+    request.config.localHttpPort = occupiedPort;
+    request.config.localLocationProbePort = takeFreeLoopbackPort();
+    QVERIFY(request.config.localLocationProbePort > 0);
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(request.config.localPort));
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(request.config.localLocationProbePort));
+
+    harness.session->setLocalPortAvailabilityCheck(&LocalPortConflictCheck::isLocalTcpPortFree);
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+
+    QCOMPARE(failedSpy.count(), 1);
+    const QString message = failedSpy.takeFirst().at(0).toString();
+    QVERIFY(message.contains(QString::number(occupiedPort)));
+    QVERIFY(message.contains(QStringLiteral("HTTP")));
+    QCOMPARE(harness.mainCore.startCount, 0);
+    QVERIFY(!harness.session->isActive());
+    QVERIFY(!harness.session->isActivationInProgress());
+    QCOMPARE(static_cast<int>(harness.session->phase()), static_cast<int>(ProxySession::Phase::Stopped));
+}
+
+void ProxySessionTests::startFailsWhenLocationProbePortIsOccupied()
+{
+    ProxySessionHarness harness;
+    QVERIFY(harness.tempDir.isValid());
+    harness.coreInfo.type = CoreType::SingBox;
+    harness.coreInfo.program = harness.tempDir.filePath(QStringLiteral("sing-box.exe"));
+    harness.activeServer = harness.launchableServer();
+    harness.currentServerIndexId = harness.activeServer->indexId;
+
+    QTcpServer occupant;
+    QVERIFY(occupant.listen(QHostAddress::LocalHost, 0));
+    const int occupiedPort = occupant.serverPort();
+
+    ProxySession::StartRequest request = harness.launchableRequest();
+    request.config.localPort = takeFreeLoopbackPort();
+    QVERIFY(request.config.localPort > 0);
+    request.config.localHttpPort = 0;
+    request.config.localLocationProbePort = occupiedPort;
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(request.config.localPort));
+    QVERIFY(LocalPortConflictCheck::isLocalTcpPortFree(request.config.localPort + 1));
+
+    harness.session->setLocalPortAvailabilityCheck(&LocalPortConflictCheck::isLocalTcpPortFree);
+
+    QSignalSpy failedSpy(harness.session.get(), SIGNAL(failed(QString)));
+    harness.session->start(request);
+
+    QCOMPARE(failedSpy.count(), 1);
+    const QString message = failedSpy.takeFirst().at(0).toString();
+    QVERIFY(message.contains(QString::number(occupiedPort)));
+    QVERIFY(message.contains(QStringLiteral("location probe")));
     QCOMPARE(harness.mainCore.startCount, 0);
     QVERIFY(!harness.session->isActive());
     QVERIFY(!harness.session->isActivationInProgress());

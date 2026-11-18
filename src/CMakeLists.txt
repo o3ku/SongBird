@@ -61,6 +61,7 @@ set(SONGBIRD_SHARED_SOURCES
     common/LogSeverity.h
     common/LogSeverity.cpp
     common/LocalInboundPorts.h
+    common/LocalPortConflictCheck.h
     common/LocalPortOption.h
     common/PortValidator.h
     common/RoutingValuePattern.h

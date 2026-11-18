@@ -128,6 +128,14 @@ public:
     using DirectConnectivityCheck = std::function<bool(int timeoutMs)>;
     void setDirectConnectivityCheck(DirectConnectivityCheck check);
 
+    // The loopback bind probe the startup port check consults, one call per inbound port.
+    // Injected for the same reason DirectConnectivityCheck is -- the start tests stand up a
+    // fake proxy on the config's own ports, so without a seam the check would report the
+    // harness's own listener as a conflict. Unset means the real probe
+    // (LocalPortConflictCheck::isLocalTcpPortFree) is used.
+    using LocalPortFreeCheck = std::function<bool(int port)>;
+    void setLocalPortAvailabilityCheck(LocalPortFreeCheck check);
+
     void start(const StartRequest& request);
     void stop(bool immediate = false);
     void restartIfRunning(const StartRequest& request);
@@ -348,6 +356,9 @@ private:
     PostStopAction postStopAction_;
     TunCleanupState tunCleanupState_ = TunCleanupState::Idle;
     CoreSwitchConfirmation coreSwitchConfirmation_;
+    // The injected loopback bind probe for the startup port check (see
+    // setLocalPortAvailabilityCheck). Null means the real probe.
+    LocalPortFreeCheck localPortFreeCheck_;
 
     StartRequest currentRequest_;
     VmessItem currentServer_;
