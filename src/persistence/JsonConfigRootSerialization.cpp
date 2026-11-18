@@ -6,8 +6,6 @@
 
 namespace {
 
-constexpr int kSongBirdJsonConfigSchemaVersion = 7;
-
 using namespace JsonConfigUtils;
 
 } // namespace
