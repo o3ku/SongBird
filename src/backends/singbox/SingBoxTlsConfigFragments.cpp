@@ -62,6 +62,21 @@ QJsonObject buildTls(const Config& config, const VmessItem& server)
         }
     }
 
+    if (!server.echConfigList.trimmed().isEmpty() && !ProtocolConfigMapper::isRealityTransport(transportSecurity)) {
+        // sing-box 1.13/1.14 outbound TLS: ech is a sub-block whose config is a list of
+        // base64 ECHConfigLists -- the same value Xray's echConfigList carries verbatim.
+        // ECH is a TLS 1.3 extension: on TLS 1.2 the extension is silently dropped, so the
+        // minimum is pinned to 1.3 while a pinned config is present. The two pre-1.13
+        // toggles (pq_signature_schemes_enabled, dynamic_record_sizing_disabled) were
+        // removed in 1.13.0 and are never emitted. echForceQuery is an Xray-only mode
+        // (none/half/full), not a hostname, so it is not mapped to query_server_name.
+        QJsonObject ech;
+        ech.insert(QStringLiteral("enabled"), true);
+        ech.insert(QStringLiteral("config"), QJsonArray{server.echConfigList.trimmed()});
+        tls.insert(QStringLiteral("ech"), ech);
+        tls.insert(QStringLiteral("min_version"), QStringLiteral("1.3"));
+    }
+
     if (ProtocolConfigMapper::isRealityTransport(transportSecurity)) {
         QJsonObject utls;
         utls.insert(QStringLiteral("enabled"), true);

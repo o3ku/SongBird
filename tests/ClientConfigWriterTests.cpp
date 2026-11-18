@@ -49,6 +49,9 @@ private slots:
     void validateServerRejectsUnsupportedXrayNetwork();
     void validateServerAcceptsSupportedXrayNetworks();
     void validateServerRejectsUnsupportedXrayConfigType();
+    void validateServerNamesServerProtocolAndCore();
+    void generateClientConfigsRefusesUnknownProtocol();
+    void buildClientRootEmitsNoOutboundForUnsupportedProtocol();
     void validateServerIgnoresNetworkForXrayHysteria2();
     void generateClientConfigsSetsLegacySniffRouteOnlyWhenEnabled();
     void generateClientConfigsAddsLegacyFragmentOutboundWhenEnabled();
@@ -70,6 +73,7 @@ private slots:
     void generateClientConfigsUsesLegacyRealityMldsa65Verify();
     void generateClientConfigsUsesLegacyRealityPublicKeyField();
     void generateClientConfigsUsesLegacyTlsEchFields();
+    void generateClientConfigsEmitsSingBoxTlsEchFields();
     void generateClientConfigsUsesDefaultAllowInsecureForSingBoxTlsWhenServerValueMissing();
     void generateClientConfigsUsesSingBoxTlsCertificates();
     void generateClientConfigsUsesSingBoxPinnedCertificatePublicKeyHashes();
@@ -899,6 +903,79 @@ void ClientConfigWriterTests::validateServerRejectsUnsupportedXrayConfigType()
 
     QVERIFY2(!result.success, qPrintable(result.message));
     QVERIFY(result.message.contains(QStringLiteral("Xray")));
+    QVERIFY2(result.message.contains(QStringLiteral("test")), qPrintable(result.message));
+    QVERIFY2(result.message.contains(QStringLiteral("TUIC")), qPrintable(result.message));
+}
+
+void ClientConfigWriterTests::validateServerNamesServerProtocolAndCore()
+{
+    // The refusal has to name all three things the user needs to act on: which server,
+    // which protocol, and which core's generator refused it. "The selected server type
+    // is not supported" named none of them.
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Unknown;
+
+    const ICoreBackend* singBoxBackend = coreBackend(CoreType::SingBox);
+    QVERIFY(singBoxBackend != nullptr);
+    const OperationResult singBoxResult = singBoxBackend->validateServer(server);
+    QVERIFY2(!singBoxResult.success, qPrintable(singBoxResult.message));
+    QVERIFY2(singBoxResult.message.contains(QStringLiteral("test")), qPrintable(singBoxResult.message));
+    QVERIFY2(singBoxResult.message.contains(QStringLiteral("Unknown")), qPrintable(singBoxResult.message));
+    QVERIFY2(singBoxResult.message.contains(QStringLiteral("sing-box")), qPrintable(singBoxResult.message));
+
+    server.configType = ConfigType::TUIC;
+    const ICoreBackend* mihomoBackend = coreBackend(CoreType::Mihomo);
+    QVERIFY(mihomoBackend != nullptr);
+    const OperationResult mihomoResult = mihomoBackend->validateServer(server);
+    QVERIFY2(!mihomoResult.success, qPrintable(mihomoResult.message));
+    QVERIFY2(mihomoResult.message.contains(QStringLiteral("test")), qPrintable(mihomoResult.message));
+    QVERIFY2(mihomoResult.message.contains(QStringLiteral("TUIC")), qPrintable(mihomoResult.message));
+    QVERIFY2(mihomoResult.message.contains(QStringLiteral("Mihomo")), qPrintable(mihomoResult.message));
+}
+
+void ClientConfigWriterTests::generateClientConfigsRefusesUnknownProtocol()
+{
+    // An Unknown protocol resolves to no core, so generation must fail with the named
+    // error and an empty root, never a bare outbound with an empty type for the
+    // speed-test batch runner to extract and probe. No core name is given because none
+    // could be selected for this protocol.
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Unknown;
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    QVERIFY2(!generated.result.success, qPrintable(generated.result.message));
+    QVERIFY2(generated.result.message.contains(QStringLiteral("test")), qPrintable(generated.result.message));
+    QVERIFY2(generated.result.message.contains(QStringLiteral("Unknown")), qPrintable(generated.result.message));
+    QVERIFY(generated.primary.root.isEmpty());
+}
+
+void ClientConfigWriterTests::buildClientRootEmitsNoOutboundForUnsupportedProtocol()
+{
+    // Each backend's root is empty for a protocol it has no outbound for, so no bare
+    // outbound (sing-box) or bare proxy (Mihomo) with an empty type is ever emitted.
+    // Core selection refuses these pairings before generation, so this is asserted
+    // against the backend contract directly, like the Xray validation test above.
+    Config config = baseConfig();
+
+    VmessItem server = baseServer();
+    server.configType = ConfigType::Unknown;
+    const ICoreBackend* singBoxBackend = coreBackend(CoreType::SingBox);
+    QVERIFY(singBoxBackend != nullptr);
+    QVERIFY(singBoxBackend->buildClientRoot(config, server).isEmpty());
+
+    server.configType = ConfigType::TUIC;
+    const ICoreBackend* mihomoBackend = coreBackend(CoreType::Mihomo);
+    QVERIFY(mihomoBackend != nullptr);
+    QVERIFY(mihomoBackend->buildClientRoot(config, server).isEmpty());
+
+    const ICoreBackend* xrayBackend = coreBackend(CoreType::Xray);
+    QVERIFY(xrayBackend != nullptr);
+    QVERIFY(xrayBackend->buildClientRoot(config, server).isEmpty());
 }
 
 void ClientConfigWriterTests::validateServerIgnoresNetworkForXrayHysteria2()
@@ -1488,6 +1565,39 @@ void ClientConfigWriterTests::generateClientConfigsUsesLegacyTlsEchFields()
 
     QCOMPARE(tlsSettings.value(QStringLiteral("echConfigList")).toString(), QStringLiteral("ECHCONFIGBASE64"));
     QCOMPARE(tlsSettings.value(QStringLiteral("echForceQuery")).toString(), QStringLiteral("half"));
+}
+
+void ClientConfigWriterTests::generateClientConfigsEmitsSingBoxTlsEchFields()
+{
+    // sing-box 1.13/1.14 outbound TLS carries ECH as a sub-block: enabled plus a config
+    // list holding the same base64 ECHConfigList Xray's echConfigList carries. ECH needs
+    // TLS 1.3, so the minimum is pinned while a pinned config is present. echForceQuery
+    // is an Xray-only mode (none/half/full), not a hostname, so it is not mapped to
+    // query_server_name.
+    Config config = baseConfig();
+    config.tun().tunModeItem.enableTun = false;
+    VmessItem server = baseServer();
+    server.coreType = CoreType::SingBox;
+    server.streamSecurity = QStringLiteral("tls");
+    server.echConfigList = QStringLiteral("ECHCONFIGBASE64");
+    server.echForceQuery = QStringLiteral("half");
+
+    ClientConfigWriter writer;
+    const ClientConfigWriter::GeneratedConfigSet generated = writer.generateClientConfigs(config, server);
+
+    const QJsonObject proxyOutbound = findObjectByTag(
+        generated.primary.root.value(QStringLiteral("outbounds")).toArray(),
+        QStringLiteral("proxy"));
+    const QJsonObject tls = proxyOutbound.value(QStringLiteral("tls")).toObject();
+    const QJsonObject ech = tls.value(QStringLiteral("ech")).toObject();
+
+    QVERIFY(ech.value(QStringLiteral("enabled")).toBool());
+    QCOMPARE(ech.value(QStringLiteral("config")).toArray().size(), 1);
+    QCOMPARE(ech.value(QStringLiteral("config")).toArray().at(0).toString(), QStringLiteral("ECHCONFIGBASE64"));
+    QCOMPARE(tls.value(QStringLiteral("min_version")).toString(), QStringLiteral("1.3"));
+    QVERIFY(!ech.contains(QStringLiteral("query_server_name")));
+    QVERIFY(!ech.contains(QStringLiteral("pq_signature_schemes_enabled")));
+    QVERIFY(!ech.contains(QStringLiteral("dynamic_record_sizing_disabled")));
 }
 
 void ClientConfigWriterTests::generateClientConfigsUsesDefaultAllowInsecureForSingBoxTlsWhenServerValueMissing()

@@ -12,6 +12,14 @@ namespace OutboundSupport = SingBoxOutboundConfigSupport;
 
 QJsonObject SingBoxOutboundConfigFragments::buildPrimaryOutbound(const Config& config, const VmessItem& server, const QString& tag)
 {
+    // This core has no outbound implementation for the protocol. Returning an empty object
+    // makes the caller fail with a clear message instead of emitting a bare outbound with
+    // an empty type that the core then rejects cryptically -- the same shape Xray's
+    // fragment already uses.
+    if (ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType).isEmpty()) {
+        return {};
+    }
+
     QJsonObject outbound;
     outbound.insert(QStringLiteral("tag"), tag);
     outbound.insert(QStringLiteral("type"), ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType));

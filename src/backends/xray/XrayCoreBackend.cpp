@@ -105,7 +105,9 @@ OperationResult XrayCoreBackend::validateServer(const VmessItem& server) const
     // either, so they are rejected here the same way MihomoCoreBackend does it.
     if (!supportsConfigType(server.configType) || server.configType == ConfigType::Custom) {
         return OperationResult::fail(QCoreApplication::translate(
-            "XrayCoreBackend", "The selected server type is not supported by the current Xray generator."));
+            "XrayCoreBackend", "Server %1 (%2) is not supported by the Xray generator.")
+            .arg(server.remarks.trimmed().isEmpty() ? server.address : server.remarks,
+                 configTypeDisplayName(server.configType)));
     }
 
     // Hysteria2 always emits a hysteria transport and ignores `network`, so there is
