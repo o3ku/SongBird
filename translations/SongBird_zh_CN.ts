@@ -436,6 +436,14 @@ Switch to subscription grouping and connect the current server as a single node?
         <translation>已恢复上次会话前捕获的系统代理设置。</translation>
     </message>
     <message>
+        <source>Removed a leftover system proxy pointing at %1; nothing was listening on that port, so it was turned off.</source>
+        <translation>已移除指向 %1 的残留系统代理；该端口上没有任何程序在监听，因此已将其关闭。</translation>
+    </message>
+    <message>
+        <source>Could not remove the leftover system proxy pointing at %1; the system proxy still points at a port nothing is listening on.</source>
+        <translation>无法移除指向 %1 的残留系统代理；系统代理仍指向一个没有任何程序监听的端口。</translation>
+    </message>
+    <message>
         <source>Administrator Permission</source>
         <translation>管理员权限</translation>
     </message>

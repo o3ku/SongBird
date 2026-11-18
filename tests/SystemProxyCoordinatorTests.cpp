@@ -1,6 +1,10 @@
 #include <QtTest>
 
+#include <memory>
 #include <QStringList>
+
+#include <QHostAddress>
+#include <QTcpServer>
 
 #include "app/SystemProxyCoordinator.h"
 #include "domain/models/RoutingRule.h"
@@ -76,6 +80,50 @@ public:
 
 } // namespace
 
+// A port nothing is listening on: bind one, take its number, close it. The probe in the
+// recovery path connects, so a number that was merely never bound would do, but a number
+// the OS just handed out is a port this machine is known to accept.
+int freeTcpPort()
+{
+    QTcpServer server;
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        return 0;
+    }
+    const int port = server.serverPort();
+    server.close();
+    return port;
+}
+
+// Everything recoverOwnedSystemProxyOnStartup() needs, with the fake service and the
+// messages it reports. The coordinator is built on demand so each test can tune the
+// config and the captured registry state first; it is held by pointer because the
+// coordinator stores references and is not copyable.
+struct RecoveryFixture {
+    Config config;
+    MockConfigRepository repository;
+    ServerService serverService{repository};
+    FakeSystemProxyService service;
+    QStringList messages;
+    QStringList failures;
+    std::unique_ptr<SystemProxyCoordinator> coordinator_;
+
+    void build()
+    {
+        SystemProxyCoordinator::Callbacks callbacks;
+        callbacks.appendResult = [&](const OperationResult& result) {
+            (result.success ? messages : failures).append(result.message);
+        };
+        coordinator_ = std::make_unique<SystemProxyCoordinator>(
+            SystemProxyCoordinator::Dependencies{config, serverService, &service, nullptr},
+            callbacks);
+    }
+
+    void recover()
+    {
+        coordinator_->recoverOwnedSystemProxyOnStartup();
+    }
+};
+
 class SystemProxyCoordinatorTests : public QObject {
     Q_OBJECT
 
@@ -85,6 +133,14 @@ private slots:
     void updateModeTreatsAMissingServiceAsSuccess();
     void updateModePassesTheLocalPortPairToTheService();
     void buildExceptionsDerivesBypassEntriesFromDirectRoutingRules();
+
+    // Startup with the app's proxy off: a dead leftover of ours.
+    void startupRecoveryRestoresSnapshotWhenTheRegistryPointsElsewhere();
+    void startupRecoveryLeavesAForeignProxyAloneWithoutASnapshot();
+    void startupRecoveryDisablesADeadLeftoverWithoutASnapshot();
+    void startupRecoveryLeavesALiveProxyAlone();
+    void startupRecoveryRestoresTheSnapshotForADeadLeftover();
+    void startupRecoveryReportsFailureWhenTheDisableIsRefused();
 };
 
 void SystemProxyCoordinatorTests::updateModeReportsFailureWhenTheServiceRefusesTheWrite()
@@ -235,6 +291,170 @@ void SystemProxyCoordinatorTests::buildExceptionsDerivesBypassEntriesFromDirectR
     // through the proxy.
     QVERIFY(entries.contains(QStringLiteral("localhost")));
     QVERIFY(entries.contains(QStringLiteral("192.168.*")));
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryRestoresSnapshotWhenTheRegistryPointsElsewhere()
+{
+    // Preserved behaviour: the registry holds the user's own proxy and a snapshot survived,
+    // so startup puts the user's settings back -- the probe never runs on an entry that is
+    // not ours.
+    RecoveryFixture fixture;
+    fixture.config.localPort = 10808;
+
+    SystemProxySnapshot stored;
+    stored.valid = true;
+    stored.enabled = false;
+    fixture.config.systemProxySnapshot() = stored;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("10.0.0.1:3128");
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 1);
+    QCOMPARE(fixture.service.lastRestored_, stored);
+    QVERIFY(fixture.failures.isEmpty());
+    QCOMPARE(fixture.messages.size(), 1);
+    QVERIFY(fixture.messages.first().contains(
+        QStringLiteral("Restored the system proxy settings captured before the previous session.")));
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryLeavesAForeignProxyAloneWithoutASnapshot()
+{
+    // The registry holds the user's own proxy and no snapshot survived: nothing of ours to
+    // undo, so the registry is left exactly as it was.
+    RecoveryFixture fixture;
+    fixture.config.localPort = 10808;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("10.0.0.1:3128");
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 0);
+    QVERIFY(fixture.messages.isEmpty());
+    QVERIFY(fixture.failures.isEmpty());
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryDisablesADeadLeftoverWithoutASnapshot()
+{
+    // The crash case with the snapshot lost: the registry still points at our own port and
+    // nothing listens on it, so the leftover is turned off by restoring the sanitized
+    // capture -- proxy off, leftover keys deleted.
+    const int port = freeTcpPort();
+    QVERIFY(port > 0);
+
+    RecoveryFixture fixture;
+    fixture.config.localHttpPort = port;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:%1").arg(port);
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 1);
+    QVERIFY(fixture.service.lastRestored_.valid);
+    QVERIFY(!fixture.service.lastRestored_.enabled);
+    QVERIFY(!fixture.service.lastRestored_.server.has_value());
+    QVERIFY(fixture.failures.isEmpty());
+    QCOMPARE(fixture.messages.size(), 1);
+    QVERIFY(fixture.messages.first().contains(QStringLiteral("Removed a leftover system proxy")));
+    QVERIFY(fixture.messages.first().contains(QStringLiteral("127.0.0.1:%1").arg(port)));
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryLeavesALiveProxyAlone()
+{
+    // A listener on our own port means the proxy may be working -- another instance, or
+    // another tool on the same port -- so the registry is left alone even with no snapshot.
+    QTcpServer occupant;
+    QVERIFY(occupant.listen(QHostAddress::LocalHost, 0));
+    const int port = occupant.serverPort();
+
+    RecoveryFixture fixture;
+    fixture.config.localHttpPort = port;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:%1").arg(port);
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 0);
+    QVERIFY(fixture.messages.isEmpty());
+    QVERIFY(fixture.failures.isEmpty());
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryRestoresTheSnapshotForADeadLeftover()
+{
+    // The crash case with a surviving snapshot: the registry still points at our dead port,
+    // and the snapshot -- not a blind clear -- says what was there before.
+    const int port = freeTcpPort();
+    QVERIFY(port > 0);
+
+    RecoveryFixture fixture;
+    fixture.config.localHttpPort = port;
+
+    SystemProxySnapshot stored;
+    stored.valid = true;
+    stored.enabled = false;
+    fixture.config.systemProxySnapshot() = stored;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:%1").arg(port);
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 1);
+    QCOMPARE(fixture.service.lastRestored_, stored);
+    QVERIFY(fixture.failures.isEmpty());
+    QCOMPARE(fixture.messages.size(), 1);
+    QVERIFY(fixture.messages.first().contains(
+        QStringLiteral("Restored the system proxy settings captured before the previous session.")));
+}
+
+void SystemProxyCoordinatorTests::startupRecoveryReportsFailureWhenTheDisableIsRefused()
+{
+    // The registry write can be refused (policy-locked machine): the failure is reported
+    // instead of silently pretending the leftover is gone.
+    const int port = freeTcpPort();
+    QVERIFY(port > 0);
+
+    RecoveryFixture fixture;
+    fixture.config.localHttpPort = port;
+    fixture.service.restoreAccepts_ = false;
+
+    SystemProxySnapshot current;
+    current.valid = true;
+    current.enabled = true;
+    current.server = QStringLiteral("127.0.0.1:%1").arg(port);
+    fixture.service.captured_ = current;
+
+    fixture.build();
+    fixture.recover();
+
+    QCOMPARE(fixture.service.restoreCalls_, 1);
+    QVERIFY(fixture.messages.isEmpty());
+    QCOMPARE(fixture.failures.size(), 1);
+    QVERIFY(fixture.failures.first().contains(QStringLiteral("Could not remove the leftover system proxy")));
 }
 
 QTEST_MAIN(SystemProxyCoordinatorTests)

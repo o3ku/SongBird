@@ -70,3 +70,39 @@ inline FailedStartupProxyAction decideStopProxyAction(
     return snapshotRestorable ? FailedStartupProxyAction::Restore
                               : FailedStartupProxyAction::Clear;
 }
+
+// What startup should do about a system proxy that points at our own port.
+//
+// The crash case: the process was killed while proxying, so the registry still holds
+// 127.0.0.1:<our port> and no core is listening on it any more. The snapshot restore
+// is the pre-existing behaviour for that case; the two guards are what keep it from
+// touching a proxy that is not a leftover. The registry must mention our own endpoint
+// -- a user's own proxy is never ours to remove -- and nothing may be listening on
+// the port: a listener means the proxy may be working (another instance, or another
+// tool that uses the same port), and removing it would break a working setup.
+//
+// When the registry does not mention our endpoint, the listening check has nothing to
+// say: the snapshot restore is the pre-existing behaviour (put the user's own settings
+// back), not a leftover removal.
+enum class StartupLeftoverProxyAction {
+    LeaveAlone,  // not ours, or may be working
+    Restore,     // dead leftover, and we know what was there before
+    Disable      // dead leftover, and no snapshot survived to restore
+};
+
+inline StartupLeftoverProxyAction decideStartupLeftoverProxyAction(
+    const SystemProxySnapshot& current,
+    const QString& ourServer,
+    bool listening,
+    bool snapshotRestorable)
+{
+    if (!systemProxySnapshotMentionsServer(current, ourServer)) {
+        return snapshotRestorable ? StartupLeftoverProxyAction::Restore
+                                  : StartupLeftoverProxyAction::LeaveAlone;
+    }
+    if (listening) {
+        return StartupLeftoverProxyAction::LeaveAlone;
+    }
+    return snapshotRestorable ? StartupLeftoverProxyAction::Restore
+                              : StartupLeftoverProxyAction::Disable;
+}
