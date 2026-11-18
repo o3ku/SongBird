@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix (review): `defaultAllowInsecure` now defaults to false, so a fresh install verifies TLS certificates unless the user opts in. An explicitly stored value is preserved. Note: under the old default the value was only written when turned off, so a config that relied on the old implicit-true now loads as false and the checkbox has to be re-enabled deliberately.
 - Change: the SongBirdAuto front end is removed. `src/auto/` and its executable, resources, tests, CMake target, guard allowlists and the second-front-end seams it needed in `ProxySession` are gone; the project builds one application now. Historical entries below still name it where they describe past releases.
 - Fix (review): `ProxyHealthWatchdog::shuttingDown_` was declared and read in six guards but never written, so its "no new probe during teardown" defence was inert. It now reads `ProxySession::shuttingDown_` through `SessionStrings::isShuttingDown()`, so the guards are live.
 - Fix (review): `AutoSwitchCoordinator`'s warm probe map grew without bound -- the TTL only bounded decisions, not the container, so recycled `indexId`s accumulated for the life of the process. `pruneWarmResults()` now drops stale keys on every harvest and keys outside the current group on every warm round.

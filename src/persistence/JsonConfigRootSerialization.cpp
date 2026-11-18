@@ -93,7 +93,7 @@ void read(const QJsonObject& root, RootConfigState& config)
     config.dns().domainStrategyForFreedom = readString(root, QStringLiteral("domainStrategyForFreedom"));
     config.dns().domainStrategyForProxy = readString(root, QStringLiteral("domainStrategyForProxy"));
     config.dns().dnsHosts = readString(root, QStringLiteral("dnsHosts"));
-    config.dns().defaultAllowInsecure = readBool(root, QStringLiteral("defaultAllowInsecure"), true);
+    config.dns().defaultAllowInsecure = readBool(root, QStringLiteral("defaultAllowInsecure"), false);
     config.ignoreGeoUpdateCore = readBool(root, QStringLiteral("ignoreGeoUpdateCore"), false);
     config.skipOutboundCheck = readBool(root, QStringLiteral("skipOutboundCheck"), false);
     config.systemProxyAdvancedProtocol = readString(root, QStringLiteral("systemProxyAdvancedProtocol"));
@@ -172,7 +172,7 @@ void write(QJsonObject& root, const RootConfigState& config)
     writeIfNotEmpty(root, QStringLiteral("domainStrategyForFreedom"), config.dns().domainStrategyForFreedom);
     writeIfNotEmpty(root, QStringLiteral("domainStrategyForProxy"), config.dns().domainStrategyForProxy);
     writeIfNotEmpty(root, QStringLiteral("dnsHosts"), config.dns().dnsHosts);
-    writeIfNotDefault(root, QStringLiteral("defaultAllowInsecure"), config.dns().defaultAllowInsecure, true);
+    writeIfNotDefault(root, QStringLiteral("defaultAllowInsecure"), config.dns().defaultAllowInsecure, false);
     writeIfNotEmpty(root, QStringLiteral("defaultFingerprint"), config.dns().defaultFingerprint);
     writeIfNotEmpty(root, QStringLiteral("defaultUserAgent"), config.dns().defaultUserAgent);
     writeIfNotDefault(root, QStringLiteral("ignoreGeoUpdateCore"), config.ignoreGeoUpdateCore, false);

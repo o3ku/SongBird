@@ -63,10 +63,11 @@ struct DnsConfigState {
     QString domainStrategyForFreedom;
     QString domainStrategyForProxy;
     QString dnsHosts;
-    // On by default: an expired or hostname-mismatched certificate is common on the free and
-    // self-hosted nodes this app is pointed at, and a node that cannot complete a handshake is
-    // indistinguishable from a dead node to a user who does not know to look here.
-    bool defaultAllowInsecure = true;
+    // Off by default: TLS verification stays on unless the user opts in. An expired or
+    // hostname-mismatched certificate is common on the free and self-hosted nodes this app is
+    // pointed at, so the setting exists -- but silently accepting any certificate must be a
+    // deliberate choice, not the behaviour a fresh install ships with.
+    bool defaultAllowInsecure = false;
 };
 
 struct UiConfigState {
