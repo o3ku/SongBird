@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
-"""Port of scripts/check-no-third-party-mirrors.ps1 -- downloads go to github.com only."""
+"""Port of scripts/check-mirror-allowlist.ps1 -- URL hosts in C++ sources are allowlisted.
+
+Downloads go through three intentional GitHub mirrors (ghfast.top, mirror.ghproxy.com,
+ghproxy.net) for regions where github.com is unreachable, and the checksum that vouches
+for the bytes is anchored to the official GitHub channel instead (see
+ReleaseChecksum.h). A new mirror host must therefore be a deliberate decision, not a
+string literal nobody reads twice: every host that appears in an `http(s)://` URL in a
+C++ source under src/ must be on the allowlist below. A host the list does not name
+fails the build, and adding one means editing this file (and its PowerShell twin) in
+the open, not slipping a prefix into GitHubMirrorHelper.h.
+
+Hosts in comments are exempt: a comment names a host to explain history, and
+GitHubMirrorHelper.h itself documents the mirrors that way.
+"""
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -17,15 +31,53 @@ from guardlib.common import (  # noqa: E402
     walk_files,
 )
 
-# The mirrors that used to be prepended to download URLs (GitHubMirrorHelper.h). A mirror is
-# a man in the middle: it serves whatever bytes it chooses, and a checksum published beside
-# the file on GitHub cannot vouch for bytes the mirror substituted. Downloads go to github.com
-# only, so none of these hosts may appear in a C++ source.
-FORBIDDEN_HOSTS = (
-    "ghfast.top",
-    "mirror.ghproxy.com",
-    "ghproxy.net",
+# Hosts a URL in src/ may name. GitHub origins are covered by suffix below; the mirrors
+# are the three intentional ones (see GitHubMirrorHelper.h); the rest are the services
+# the code already talks to, grouped by purpose so a new entry has to say why it belongs.
+ALLOWED_EXACT_HOSTS = frozenset(
+    {
+        "github.com",
+        # Intentional GitHub mirrors.
+        "ghfast.top",
+        "mirror.ghproxy.com",
+        "ghproxy.net",
+        # Connectivity checks (OutboundLivenessProbeService, ProxyAvailabilityCheckService).
+        "www.gstatic.com",
+        "connectivitycheck.gstatic.com",
+        "cp.cloudflare.com",
+        "detectportal.firefox.com",
+        "www.msftconnecttest.com",
+        "www.google.com",
+        # Exit-location lookups (OutboundLocationProbeService).
+        "ifconfig.co",
+        "ip-api.com",
+        "ipapi.co",
+        "ipinfo.io",
+        "ipwho.is",
+        # macOS login-item helper (MacAutoRunService).
+        "www.apple.com",
+        # Loopback and the DNS defaults (Config.h, ProxyGroupStatusPoller).
+        "127.0.0.1",
+        "localhost",
+        "1.1.1.1",
+        "223.5.5.5",
+    }
 )
+
+# Any subdomain of a GitHub origin (api.github.com, raw.githubusercontent.com, ...).
+ALLOWED_HOST_SUFFIXES = (
+    ".github.com",
+    ".githubusercontent.com",
+)
+
+URL_HOST_RE = re.compile(r"https?://([A-Za-z0-9._-]+)")
+
+
+def is_allowed_host(host: str) -> bool:
+    host = host.lower()
+    if host in ALLOWED_EXACT_HOSTS:
+        return True
+    return host.endswith(ALLOWED_HOST_SUFFIXES)
 
 
 def blank_comments_keep_strings(text: str) -> str:
@@ -36,7 +88,7 @@ def blank_comments_keep_strings(text: str) -> str:
     thing this guard exists to catch -- is blanked out with it. This scanner tracks string,
     character and raw-string literals, so a `//` inside one stays code and a real comment is
     still stripped (a host named in a comment is history being explained, not a download
-    being routed, and GitHubMirrorHelper.h itself names all three that way).
+    being routed).
     """
     out = list(text)
     index = 0
@@ -105,21 +157,20 @@ def main(argv) -> int:
     violations: list[str] = []
     for path in files:
         text = blank_comments_keep_strings(read_text(path))
-        for host in FORBIDDEN_HOSTS:
-            index = text.find(host)
-            while index >= 0:
+        for match in URL_HOST_RE.finditer(text):
+            host = match.group(1).lower()
+            if not is_allowed_host(host):
                 violations.append(
-                    f"third-party GitHub mirror host '{host}' in "
-                    f"{relative_label(path, root)}:{line_of(text, index)}"
+                    f"URL host '{host}' is not on the mirror allowlist in "
+                    f"{relative_label(path, root)}:{line_of(text, match.start(1))}"
                 )
-                index = text.find(host, index + len(host))
 
     if violations:
         fail_with_violations(violations)
 
     print(
-        f"Mirror check passed: {len(files)} C++ file(s) scanned, "
-        "no third-party GitHub mirror host."
+        f"Mirror allowlist check passed: {len(files)} C++ file(s) scanned, "
+        "every URL host is a GitHub origin, an intentional mirror, or an allowlisted service host."
     )
     return 0
 

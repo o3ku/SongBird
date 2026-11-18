@@ -1105,6 +1105,10 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <source>No SHA-256 checksum is available for SongBird %1, so the downloaded update cannot be verified. The update was not saved; download it manually from the releases page if this persists.</source>
         <translation>没有可用的 SongBird %1 的 SHA-256 校验和，因此无法验证下载的更新。更新未保存；如果问题持续，请从发布页面手动下载。</translation>
     </message>
+    <message>
+        <source>Warning: GitHub was unreachable, so this update was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so install it only if you trust the mirror that served it.</source>
+        <translation>警告：无法访问 GitHub，因此本次更新仅通过下载镜像提供的校验和进行了验证。镜像可以提供任意内容，只有在你信任提供该文件的镜像时才安装。</translation>
+    </message>
 </context>
 <context>
     <name>ClientConfigWriter</name>
@@ -1769,6 +1773,14 @@ The running core will be stopped before installation if needed.</source>
         <source>Verified the SHA-256 checksum for %1 %2.</source>
         <translation>已验证 %1 %2 的 SHA-256 校验和。</translation>
     </message>
+    <message>
+        <source>Warning: GitHub was unreachable, so %1 %2 was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so keep the core only if you trust the mirror that served it.</source>
+        <translation>警告：无法访问 GitHub，因此 %1 %2 仅通过下载镜像提供的校验和进行了验证。镜像可以提供任意内容，只有在你信任提供该文件的镜像时才保留此核心。</translation>
+    </message>
+    <message>
+        <source>Warning: GitHub was unreachable, so this core was verified against a checksum from a download mirror only.</source>
+        <translation>警告：无法访问 GitHub，因此此核心仅通过下载镜像提供的校验和进行了验证。</translation>
+    </message>
 </context>
 <context>
     <name>CustomServerDialog</name>
@@ -2068,6 +2080,14 @@ The running core will be stopped before installation if needed.</source>
     <message>
         <source>SHA-256 checksum mismatch for geo file %1: the downloaded file does not match the checksum published for %2 (expected %3, got %4). The file was not saved.</source>
         <translation>Geo 文件 %1 的 SHA-256 校验和不匹配：下载的文件与为 %2 发布的校验和不一致（应为 %3，实际为 %4）。文件未保存。</translation>
+    </message>
+    <message>
+        <source>Warning: GitHub was unreachable, so %1 was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so keep the file only if you trust the mirror that served it.</source>
+        <translation>警告：无法访问 GitHub，因此 %1 仅通过下载镜像提供的校验和进行了验证。镜像可以提供任意内容，只有在你信任提供该文件的镜像时才保留此文件。</translation>
+    </message>
+    <message>
+        <source>Warning: GitHub was unreachable, so this file was verified against a checksum from a download mirror only.</source>
+        <translation>警告：无法访问 GitHub，因此此文件仅通过下载镜像提供的校验和进行了验证。</translation>
     </message>
 </context>
 <context>

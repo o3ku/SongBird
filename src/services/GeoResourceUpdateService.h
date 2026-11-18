@@ -39,8 +39,15 @@ private:
         const QString& repositoryPath,
         const QString& sourceFileName) const;
     // The SHA-256 the latest stable release of `repositoryPath` reports for `sourceFileName`,
-    // or empty when the metadata cannot be fetched or names no such asset.
-    QString expectedDigestForGeoFile(const QString& repositoryPath, const QString& sourceFileName) const;
+    // or empty when the metadata cannot be fetched or names no such asset. `fromOfficial`
+    // says whether the metadata arrived over the official GitHub channel: a digest from a
+    // mirror only proves the file agrees with the mirror, so a match still installs, but
+    // with a loud warning (see downloadAndSave).
+    struct ExpectedGeoDigest {
+        QString hex;
+        bool fromOfficial = false;
+    };
+    ExpectedGeoDigest expectedDigestForGeoFile(const QString& repositoryPath, const QString& sourceFileName) const;
     static QUrl buildDownloadUrl(const QString& geoName);
     static QUrl buildSingBoxRuleSetDownloadUrl(const QString& tag);
 

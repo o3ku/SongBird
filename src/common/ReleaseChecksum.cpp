@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+#include "common/GitHubMirrorHelper.h"
+
 namespace ReleaseChecksum {
 
 namespace {
@@ -24,6 +26,49 @@ bool isHex64(const QString& text)
 QString baseName(const QString& fileName)
 {
     return QFileInfo(fileName).fileName();
+}
+
+VerificationOutcome comparedOutcome(
+    Verification verifiedStatus,
+    const QString& expectedHex,
+    const QString& actualHex)
+{
+    VerificationOutcome outcome;
+    outcome.expectedHex = expectedHex;
+    outcome.actualHex = actualHex;
+    outcome.status = actualHex == expectedHex ? verifiedStatus : Verification::Mismatched;
+    return outcome;
+}
+
+// Tries each checksum URL in turn and returns the outcome for the first document that
+// names the asset, or Unverifiable when none does. `expandUrl` maps one checksum URL to
+// the URLs to fetch for it: the identity for the official pass, the mirror candidates
+// for the degraded pass.
+VerificationOutcome verifyAgainstChecksumUrls(
+    Verification verifiedStatus,
+    const QString& assetName,
+    const QString& actualHex,
+    const QList<QUrl>& checksumUrls,
+    const std::function<QList<QUrl>(const QUrl&)>& expandUrl,
+    const FetchChecksum& fetchChecksum)
+{
+    if (!fetchChecksum) {
+        return VerificationOutcome{};
+    }
+    for (const QUrl& checksumUrl : checksumUrls) {
+        for (const QUrl& fetchUrl : expandUrl(checksumUrl)) {
+            QByteArray document;
+            if (!fetchChecksum(fetchUrl, &document).success) {
+                continue;
+            }
+            const std::optional<QString> expected = expectedSha256ForAsset(document, assetName);
+            if (!expected.has_value()) {
+                continue;
+            }
+            return comparedOutcome(verifiedStatus, *expected, actualHex);
+        }
+    }
+    return VerificationOutcome{};
 }
 
 } // namespace
@@ -149,61 +194,89 @@ QList<QUrl> derivedChecksumUrls(const QUrl& packageDownloadUrl)
 }
 
 VerificationOutcome verifyDownloadedBytes(
-    const QByteArray& packageBytes,
-    const QString& assetName,
-    const QUrl& packageDownloadUrl,
-    const QString& apiDigest,
-    const std::optional<NamedAsset>& checksumAsset,
-    const std::function<OperationResult(const QUrl& url, QByteArray* content)>& fetchChecksum)
+    const VerificationRequest& request,
+    const FetchChecksum& fetchChecksum)
 {
-    const QString expectedFromApi = digestToHex(apiDigest);
-    if (!expectedFromApi.isEmpty()) {
-        VerificationOutcome outcome;
-        outcome.expectedHex = expectedFromApi;
-        outcome.actualHex = sha256Hex(packageBytes);
-        outcome.status = outcome.actualHex == outcome.expectedHex
-            ? Verification::Verified
-            : Verification::Mismatched;
-        return outcome;
+    // The API digest is only as trustworthy as the metadata that carried it: a mirror
+    // can report any digest it likes for the bytes it serves.
+    if (request.metadataFromOfficial) {
+        const QString expectedFromApi = digestToHex(request.apiDigest);
+        if (!expectedFromApi.isEmpty()) {
+            return comparedOutcome(
+                Verification::Verified, expectedFromApi, sha256Hex(request.packageBytes));
+        }
     }
 
-    // Every remaining source is a checksum document fetched over the network, so each one is
-    // tried in turn and a fetch failure just moves on to the next -- a missing checksum file is
-    // normal for upstreams that do not publish one, and only the absence of all of them is
-    // Unverifiable.
+    // Every remaining source is a checksum document fetched over the network. A document
+    // only anchors the bytes when it comes from GitHub itself: the checksum asset the
+    // metadata named (which a mirror could point anywhere) and the URLs derived from the
+    // package URL (whose host a mirror could equally have chosen) are both gated on a
+    // GitHub origin host, and on the metadata being official -- or, for the bootstrap,
+    // on the package URL coming from code rather than from metadata at all.
     QList<QUrl> checksumUrls;
-    if (checksumAsset.has_value() && checksumAsset->downloadUrl.isValid()) {
-        checksumUrls.append(checksumAsset->downloadUrl);
+    if (request.metadataFromOfficial
+        && request.checksumAsset.has_value()
+        && isGitHubOriginUrl(request.checksumAsset->downloadUrl)) {
+        checksumUrls.append(request.checksumAsset->downloadUrl);
     }
-    for (const QUrl& derivedUrl : derivedChecksumUrls(packageDownloadUrl)) {
+    const bool derivedUrlsAnchored =
+        request.metadataFromOfficial || request.packageUrlFromCode;
+    if (derivedUrlsAnchored) {
+        for (const QUrl& derivedUrl : derivedChecksumUrls(request.packageDownloadUrl)) {
+            if (isGitHubOriginUrl(derivedUrl) && !checksumUrls.contains(derivedUrl)) {
+                checksumUrls.append(derivedUrl);
+            }
+        }
+    }
+
+    // A missing checksum file is normal for upstreams that do not publish one, and only
+    // the absence of all of them is Unverifiable. Documents are fetched exactly as named:
+    // routing a checksum fetch through a mirror would let the mirror substitute the
+    // document the anchor is read from.
+    const QString actualHex = sha256Hex(request.packageBytes);
+    return verifyAgainstChecksumUrls(
+        Verification::Verified,
+        request.assetName,
+        actualHex,
+        checksumUrls,
+        [](const QUrl& url) { return QList<QUrl>{url}; },
+        fetchChecksum);
+}
+
+VerificationOutcome verifyDownloadedBytesViaMirror(
+    const VerificationRequest& request,
+    const FetchChecksum& fetchChecksum)
+{
+    // Degraded pass only: GitHub itself is unreachable, so the only checksum available
+    // is one a mirror vouches for. The API digest is mirror-supplied here too -- using
+    // it proves the bytes agree with the mirror, nothing more -- and every checksum URL
+    // is tried through the mirror candidates as well, so a checksum document GitHub
+    // would have served can still be reached through the mirror that answers.
+    // A match is MirrorVerified, never Verified, and callers must say so loudly.
+    const QString expectedFromApi = digestToHex(request.apiDigest);
+    if (!expectedFromApi.isEmpty()) {
+        return comparedOutcome(
+            Verification::MirrorVerified, expectedFromApi, sha256Hex(request.packageBytes));
+    }
+
+    QList<QUrl> checksumUrls;
+    if (request.checksumAsset.has_value() && request.checksumAsset->downloadUrl.isValid()) {
+        checksumUrls.append(request.checksumAsset->downloadUrl);
+    }
+    for (const QUrl& derivedUrl : derivedChecksumUrls(request.packageDownloadUrl)) {
         if (!checksumUrls.contains(derivedUrl)) {
             checksumUrls.append(derivedUrl);
         }
     }
 
-    const QString actualHex = sha256Hex(packageBytes);
-    for (const QUrl& checksumUrl : checksumUrls) {
-        if (!fetchChecksum) {
-            break;
-        }
-        QByteArray document;
-        if (!fetchChecksum(checksumUrl, &document).success) {
-            continue;
-        }
-        const std::optional<QString> expected = expectedSha256ForAsset(document, assetName);
-        if (!expected.has_value()) {
-            continue;
-        }
-        VerificationOutcome outcome;
-        outcome.expectedHex = *expected;
-        outcome.actualHex = actualHex;
-        outcome.status = outcome.actualHex == outcome.expectedHex
-            ? Verification::Verified
-            : Verification::Mismatched;
-        return outcome;
-    }
-
-    return VerificationOutcome{};
+    const QString actualHex = sha256Hex(request.packageBytes);
+    return verifyAgainstChecksumUrls(
+        Verification::MirrorVerified,
+        request.assetName,
+        actualHex,
+        checksumUrls,
+        [](const QUrl& url) { return buildGitHubMirrorCandidateUrls(url); },
+        fetchChecksum);
 }
 
 } // namespace ReleaseChecksum

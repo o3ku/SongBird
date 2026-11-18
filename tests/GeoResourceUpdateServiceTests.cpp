@@ -41,6 +41,7 @@ private slots:
     void updateCoreGeoFileRejectsAnIncompleteRequirement();
     void updateRefusesGeoFileWhenReleaseMetadataIsUnavailable();
     void updateRefusesGeoFileOnChecksumMismatch();
+    void updateReportsWarningWhenDigestComesFromAMirror();
 };
 
 void GeoResourceUpdateServiceTests::updateReportsProgressAndWritesGeoFile()
@@ -279,6 +280,51 @@ void GeoResourceUpdateServiceTests::updateRefusesGeoFileOnChecksumMismatch()
     QVERIFY(!result.success);
     QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
     QVERIFY(!QFile::exists(directory.filePath(QStringLiteral("geoip.dat"))));
+}
+
+void GeoResourceUpdateServiceTests::updateReportsWarningWhenDigestComesFromAMirror()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    QStringList progressMessages;
+    GeoResourceUpdateService service(
+        directory.path(),
+        [](const QUrl& url, QByteArray* content) {
+            // The official channel is unreachable: the metadata arrives through a mirror,
+            // so the digest it carries is mirror-supplied, not GitHub-anchored.
+            if (url.host() == QStringLiteral("api.github.com")) {
+                return OperationResult::fail(QStringLiteral("network unreachable"));
+            }
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                *content = releaseMetadataJson(
+                    QStringLiteral("geoip.dat"),
+                    // SHA-256 of "geo-payload".
+                    QStringLiteral("a5e18841150b7f40d88caa3dbe6e32eb7c8ad4638b6f6fbfdf01c41c81f9f70e"));
+                return OperationResult::ok();
+            }
+            *content = QByteArray("geo-payload");
+            return OperationResult::ok();
+        },
+        [&progressMessages](const QString& message) {
+            progressMessages.append(message);
+        });
+
+    const OperationResult result = service.update(QStringLiteral("geoip"));
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(QFile::exists(directory.filePath(QStringLiteral("geoip.dat"))));
+    // The file is saved -- mirrors exist so this works when GitHub is unreachable -- but
+    // the warning is loud in both places the user can see it: the log panel and the
+    // result message.
+    QVERIFY(std::any_of(
+        progressMessages.cbegin(),
+        progressMessages.cend(),
+        [](const QString& message) {
+            return message.contains(QStringLiteral("GitHub was unreachable"));
+        }));
+    QVERIFY(result.message.contains(QStringLiteral("GitHub was unreachable")));
+    QVERIFY(result.message.contains(QStringLiteral("mirror")));
 }
 
 QTEST_MAIN(GeoResourceUpdateServiceTests)

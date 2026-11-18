@@ -164,7 +164,9 @@ private slots:
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
     void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
     void updateInstallsPackageWhenApiDigestMatches();
+    void updateInstallsPackageWhenMetadataComesFromAMirror();
     void updateRefusesPackageOnChecksumMismatch();
+    void updateRefusesPackageOnMirrorMismatch();
     void updateRefusesPackageWhenReleaseHasNoChecksum();
     void updateGzipInstallUsesInjectedExtractorAndRespectsCancellation();
     void tarGzInstallExtractsIntoTheTargetDirectory();
@@ -475,6 +477,56 @@ void CoreUpdateServiceTests::updateInstallsPackageWhenApiDigestMatches()
     QVERIFY(result.message.contains(QStringLiteral("v1.14.2")));
 }
 
+void CoreUpdateServiceTests::updateInstallsPackageWhenMetadataComesFromAMirror()
+{
+    // SHA-256 of "dummy-package", the bytes the fake serves for the package URL -- but
+    // the official channel is unreachable, so the metadata arrives through a mirror.
+    // The official pass cannot use the mirror's digest; the degraded mirror pass verifies
+    // it instead, and the result says so loudly rather than presenting a mirror-verified
+    // core as if GitHub had vouched for it.
+    const QByteArray releasePayload = releasePayloadWithDigestFor(
+        CoreType::SingBox,
+        QStringLiteral("v1.14.2"),
+        QStringLiteral("sha256:73f9efcc02e48d777d943d6098d728697b846ddf3a637b04f4b6b10d553eca36"));
+
+    CoreUpdateService service(
+        [&releasePayload](const QUrl& url, QByteArray* content) {
+            if (url.host() == QStringLiteral("api.github.com")) {
+                return OperationResult::fail(QStringLiteral("network unreachable"));
+            }
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
+                *content = releasePayload;
+                return OperationResult::ok();
+            }
+            *content = QByteArray("dummy-package");
+            return OperationResult::ok();
+        },
+        [](const QString&, const QString&) {
+            return OperationResult::ok();
+        });
+
+    CoreUpdateConfig config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(result.message.contains(QStringLiteral("v1.14.2")));
+    QVERIFY(result.message.contains(QStringLiteral("mirror")));
+    QVERIFY(result.message.contains(QStringLiteral("GitHub was unreachable")));
+}
+
 void CoreUpdateServiceTests::updateRefusesPackageOnChecksumMismatch()
 {
     // SHA-256 of "something-else": the release claims a hash the downloaded bytes do not
@@ -488,6 +540,54 @@ void CoreUpdateServiceTests::updateRefusesPackageOnChecksumMismatch()
     CoreUpdateService service(
         [&releasePayload](const QUrl& url, QByteArray* content) {
             if (url.host() == QStringLiteral("api.github.com")) {
+                *content = releasePayload;
+                return OperationResult::ok();
+            }
+            *content = QByteArray("dummy-package");
+            return OperationResult::ok();
+        },
+        [&installAttempted](const QString&, const QString&) {
+            installAttempted = true;
+            return OperationResult::ok();
+        });
+
+    CoreUpdateConfig config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
+    QVERIFY(!installAttempted);
+}
+
+void CoreUpdateServiceTests::updateRefusesPackageOnMirrorMismatch()
+{
+    // The official channel is unreachable and the mirror's digest does not match the
+    // bytes it served: the degraded pass fails closed like the official one.
+    const QByteArray releasePayload = releasePayloadWithDigestFor(
+        CoreType::SingBox,
+        QStringLiteral("v1.14.2"),
+        QStringLiteral("sha256:3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a"));
+
+    bool installAttempted = false;
+    CoreUpdateService service(
+        [&releasePayload](const QUrl& url, QByteArray* content) {
+            if (url.host() == QStringLiteral("api.github.com")) {
+                return OperationResult::fail(QStringLiteral("network unreachable"));
+            }
+            if (url.toString().contains(QStringLiteral("api.github.com"))) {
                 *content = releasePayload;
                 return OperationResult::ok();
             }

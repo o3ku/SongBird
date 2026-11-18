@@ -39,9 +39,13 @@ private slots:
     void checkFindsNextPrereleaseForTheInstalledPrerelease();
     void assetSelectionFollowsTheTargetPlatform();
     void checkCarriesTheAssetDigestAndChecksumAsset();
+    void checkRecordsOfficialMetadataProvenance();
+    void checkRecordsMirrorMetadataProvenance();
     void downloadSavesAVerifiedUpdate();
+    void downloadSavesAMirrorVerifiedUpdateWithWarning();
     void downloadRefusesAnUnverifiedUpdate();
     void downloadRefusesAnUpdateOnChecksumMismatch();
+    void downloadRefusesAMirrorMismatch();
 };
 
 void AppUpdateServiceTests::checkFindsNewerStableRelease()
@@ -233,6 +237,53 @@ void AppUpdateServiceTests::checkCarriesTheAssetDigestAndChecksumAsset()
     QCOMPARE(result.checksumAssetName, QStringLiteral("songbird.exe.sha256"));
     QCOMPARE(result.checksumAssetDownloadUrl.toString(),
              QStringLiteral("https://example.invalid/songbird.exe.sha256"));
+    // The metadata arrived on the first attempt, from the official channel.
+    QVERIFY(result.metadataFromOfficial);
+}
+
+void AppUpdateServiceTests::checkRecordsOfficialMetadataProvenance()
+{
+    const QByteArray payload =
+        R"([{"tag_name":"v2.5.0","draft":false,"prerelease":false,"assets":[)"
+        R"({"name":"songbird.exe","browser_download_url":"https://example.invalid/songbird.exe"}]}])";
+    QList<QUrl> requestedUrls;
+    AppUpdateService service([&payload, &requestedUrls](const QUrl& url, QByteArray* content) {
+        requestedUrls.append(url);
+        *content = payload;
+        return OperationResult::ok();
+    });
+
+    AppUpdateCheckResult result;
+    QVERIFY(service.checkForUpdate(QStringLiteral("2.4.5"), false, windowsPlatform(), &result).success);
+    QVERIFY(result.metadataFromOfficial);
+    // Official first: the API is tried on api.github.com before any mirror is reached.
+    QVERIFY(!requestedUrls.isEmpty());
+    QCOMPARE(requestedUrls.first().host(), QStringLiteral("api.github.com"));
+}
+
+void AppUpdateServiceTests::checkRecordsMirrorMetadataProvenance()
+{
+    const QByteArray payload =
+        R"([{"tag_name":"v2.5.0","draft":false,"prerelease":false,"assets":[)"
+        R"({"name":"songbird.exe","browser_download_url":"https://example.invalid/songbird.exe"}]}])";
+    QList<QUrl> requestedUrls;
+    AppUpdateService service([&payload, &requestedUrls](const QUrl& url, QByteArray* content) {
+        requestedUrls.append(url);
+        if (url.host() == QStringLiteral("api.github.com")) {
+            return OperationResult::fail(QStringLiteral("network unreachable"));
+        }
+        *content = payload;
+        return OperationResult::ok();
+    });
+
+    AppUpdateCheckResult result;
+    QVERIFY(service.checkForUpdate(QStringLiteral("2.4.5"), false, windowsPlatform(), &result).success);
+    QVERIFY(result.updateAvailable);
+    QVERIFY(!result.metadataFromOfficial);
+    // The official channel was tried first and failed; a mirror answered instead.
+    QVERIFY(requestedUrls.size() >= 2);
+    QCOMPARE(requestedUrls.first().host(), QStringLiteral("api.github.com"));
+    QVERIFY(requestedUrls.at(1).host() != QStringLiteral("api.github.com"));
 }
 
 void AppUpdateServiceTests::downloadSavesAVerifiedUpdate()
@@ -251,6 +302,8 @@ void AppUpdateServiceTests::downloadSavesAVerifiedUpdate()
     // SHA-256 of "update-bytes".
     checkResult.assetDigest =
         QStringLiteral("92439dd4e7652a0414d2cd9d220e8d2767ed71f9005327223fc5d12b7a5065c3");
+    // The digest arrived with official metadata, so it anchors the official pass.
+    checkResult.metadataFromOfficial = true;
 
     QString savedPath;
     const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
@@ -260,6 +313,36 @@ void AppUpdateServiceTests::downloadSavesAVerifiedUpdate()
     QFile file(savedPath);
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.readAll(), QByteArray("update-bytes"));
+}
+
+void AppUpdateServiceTests::downloadSavesAMirrorVerifiedUpdateWithWarning()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppUpdateService service([](const QUrl&, QByteArray* content) {
+        *content = QByteArray("update-bytes");
+        return OperationResult::ok();
+    });
+
+    // The digest is right, but the metadata arrived through a mirror: the official pass
+    // cannot use it, so the degraded mirror pass verifies it instead -- and the saved
+    // message says so loudly, so the user knows this install is mirror-verified only.
+    AppUpdateCheckResult checkResult;
+    checkResult.assetName = QStringLiteral("songbird.exe");
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    // SHA-256 of "update-bytes".
+    checkResult.assetDigest =
+        QStringLiteral("92439dd4e7652a0414d2cd9d220e8d2767ed71f9005327223fc5d12b7a5065c3");
+    checkResult.metadataFromOfficial = false;
+
+    QString savedPath;
+    const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(QFile::exists(savedPath));
+    QVERIFY(result.message.contains(QStringLiteral("mirror")));
+    QVERIFY(result.message.contains(QStringLiteral("GitHub was unreachable")));
 }
 
 void AppUpdateServiceTests::downloadRefusesAnUnverifiedUpdate()
@@ -273,9 +356,11 @@ void AppUpdateServiceTests::downloadRefusesAnUnverifiedUpdate()
     });
 
     // No digest and no checksum asset: the release cannot be verified, so nothing is saved.
+    // Official metadata, so the failure is the official pass reporting unverifiable.
     AppUpdateCheckResult checkResult;
     checkResult.assetName = QStringLiteral("songbird.exe");
     checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    checkResult.metadataFromOfficial = true;
 
     QString savedPath;
     const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
@@ -302,6 +387,38 @@ void AppUpdateServiceTests::downloadRefusesAnUpdateOnChecksumMismatch()
     // SHA-256 of "something-else", not of the "update-bytes" the download serves.
     checkResult.assetDigest =
         QStringLiteral("3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a");
+    // Official metadata, so the official pass is what reports the mismatch.
+    checkResult.metadataFromOfficial = true;
+
+    QString savedPath;
+    const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
+    QVERIFY(savedPath.isEmpty());
+    QVERIFY(!QFile::exists(QDir(directory.path()).filePath(QStringLiteral("songbird.exe"))));
+}
+
+void AppUpdateServiceTests::downloadRefusesAMirrorMismatch()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppUpdateService service([](const QUrl&, QByteArray* content) {
+        *content = QByteArray("update-bytes");
+        return OperationResult::ok();
+    });
+
+    // A mirror-supplied digest that does not match the bytes fails closed in the degraded
+    // pass too: the mirror path only relaxes where the anchor comes from, never whether
+    // the bytes match it.
+    AppUpdateCheckResult checkResult;
+    checkResult.assetName = QStringLiteral("songbird.exe");
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    // SHA-256 of "something-else", not of the "update-bytes" the download serves.
+    checkResult.assetDigest =
+        QStringLiteral("3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a");
+    checkResult.metadataFromOfficial = false;
 
     QString savedPath;
     const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);

@@ -90,7 +90,12 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
         QCoreApplication::translate("CoreUpdateService", "Checking the latest %1 release...")
             .arg(displayName));
 
-    const QList<QUrl> releaseUrls = buildGitHubMirrorCandidateUrls(backend.releasesApiUrl());
+    // Release metadata decides whether the checksum anchor can be trusted at all, so it
+    // is fetched official-first: GitHub first, the mirrors only if GitHub does not
+    // answer. A mirror that answered first could hand us a digest and checksum URLs it
+    // chose itself, which no later check could tell apart from GitHub's own.
+    bool metadataFromOfficial = false;
+    const QList<QUrl> releaseUrls = buildGitHubOfficialFirstCandidateUrls(backend.releasesApiUrl());
     for (const QUrl& candidateUrl : releaseUrls) {
         if (UpdateOps::isCancellationRequested(request.cancelCheck)) {
             return failedResolution(UpdateOps::cancelledResult(), platform);
@@ -129,6 +134,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                 &release,
                 &parseError,
                 nullptr)) {
+            metadataFromOfficial = isGitHubOriginUrl(candidateUrl);
             lastError.clear();
             break;
         }
@@ -166,5 +172,8 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
             platform);
     }
 
-    return resolvedRelease(release, platform, usedBuiltInFallback);
+    CoreUpdateReleaseResolution::ReleaseResolutionResult result =
+        resolvedRelease(release, platform, usedBuiltInFallback);
+    result.metadataFromOfficial = metadataFromOfficial;
+    return result;
 }

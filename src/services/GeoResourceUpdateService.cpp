@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "common/GitHubMirrorHelper.h"
 #include "common/GitHubReleaseParsing.h"
 #include "common/GitHubUrls.h"
 #include "common/JsonFile.h"
@@ -118,19 +119,23 @@ OperationResult GeoResourceUpdateService::updateCoreGeoFile(
         requirement.sourceFileName);
 }
 
-QString GeoResourceUpdateService::expectedDigestForGeoFile(
+GeoResourceUpdateService::ExpectedGeoDigest GeoResourceUpdateService::expectedDigestForGeoFile(
     const QString& repositoryPath,
     const QString& sourceFileName) const
 {
     QByteArray payload;
+    QUrl answeredFrom;
     // Quiet: the metadata fetch is a precondition for the download, not a download source the
-    // user is choosing between.
+    // user is choosing between. Official first: the digest is only an anchor when GitHub
+    // itself reported it -- a mirror could report any digest for the file it serves.
     const OperationResult fetchResult = GeoResourceDownload::downloadBytes(
         githubReleasesApiUrl(repositoryPath, 5),
         QStringLiteral("release metadata"),
         &payload,
         downloadHandler_,
-        {});
+        {},
+        /*officialFirst=*/true,
+        &answeredFrom);
     if (!fetchResult.success || payload.isEmpty()) {
         return {};
     }
@@ -147,7 +152,10 @@ QString GeoResourceUpdateService::expectedDigestForGeoFile(
         }
         for (const GitHubReleaseParsing::ReleaseAsset& asset : release.assets) {
             if (asset.name == sourceFileName) {
-                return ReleaseChecksum::digestToHex(asset.digest);
+                ExpectedGeoDigest digest;
+                digest.hex = ReleaseChecksum::digestToHex(asset.digest);
+                digest.fromOfficial = isGitHubOriginUrl(answeredFrom);
+                return digest;
             }
         }
     }
@@ -174,12 +182,15 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
     // The expected checksum is fetched before the file so a release that cannot be verified
     // fails fast instead of after a download.
     QString expectedDigest;
+    bool digestFromOfficial = false;
     QString digestError;
     if (repositoryPath.trimmed().isEmpty()) {
         digestError = QCoreApplication::translate(
             "GeoResourceUpdateService", "No repository is known for geo file %1.").arg(fileName);
     } else {
-        expectedDigest = expectedDigestForGeoFile(repositoryPath, sourceFileName);
+        const ExpectedGeoDigest expected = expectedDigestForGeoFile(repositoryPath, sourceFileName);
+        expectedDigest = expected.hex;
+        digestFromOfficial = expected.fromOfficial;
         if (expectedDigest.isEmpty()) {
             digestError = QCoreApplication::translate(
                 "GeoResourceUpdateService",
@@ -227,6 +238,15 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
                 .arg(ReleaseChecksum::sha256Hex(content)));
     }
 
+    // A digest that arrived through a mirror only proves the file agrees with the mirror,
+    // not with GitHub: a geodata file the core trusts blindly is a routing decision made by
+    // whoever served the bytes, so the install says so loudly instead of silently.
+    if (!digestFromOfficial) {
+        reportProgress(
+            QCoreApplication::translate("GeoResourceUpdateService", "Warning: GitHub was unreachable, so %1 was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so keep the file only if you trust the mirror that served it.")
+                .arg(fileName));
+    }
+
     reportProgress(
         QCoreApplication::translate("GeoResourceUpdateService", "Saving %1...")
             .arg(QDir::toNativeSeparators(targetPath)));
@@ -256,9 +276,16 @@ OperationResult GeoResourceUpdateService::downloadAndSave(
             QCoreApplication::translate("GeoResourceUpdateService", "Failed to save %1.").arg(path));
     }
 
-    return OperationResult::ok(
+    QString updatedMessage =
         QCoreApplication::translate("GeoResourceUpdateService", "Updated %1.")
-            .arg(QDir::toNativeSeparators(targetPath)));
+            .arg(QDir::toNativeSeparators(targetPath));
+    if (!digestFromOfficial) {
+        updatedMessage += QStringLiteral(" ") + QCoreApplication::translate(
+            "GeoResourceUpdateService",
+            "Warning: GitHub was unreachable, so this file was verified against a checksum from a download mirror only.");
+    }
+
+    return OperationResult::ok(updatedMessage);
 }
 
 void GeoResourceUpdateService::reportProgress(const QString& message) const
