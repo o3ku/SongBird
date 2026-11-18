@@ -192,6 +192,7 @@ private slots:
     void redirectToNonLoopbackHttpIsRefused();
     void unsupportedProtocolsAreNamedInTheFailure();
     void unsupportedProtocolsStayOnTheFirstLineOfTheFailure();
+    void unsupportedYamlConstructIsNamedInTheFailure();
     void successfulDownloadStampsLastUpdated();
     void notModified304StampsLastUpdated();
     void failedDownloadLeavesLastUpdatedAlone();
@@ -587,6 +588,30 @@ void SubscriptionUpdateServiceTests::unsupportedProtocolsStayOnTheFirstLineOfThe
     QVERIFY2(firstLine.contains(QStringLiteral("skipped 1 node(s): hysteria")), qPrintable(firstLine));
     // ...and the trail is still there, on the lines behind it.
     QVERIFY2(result.message.contains(QChar('\n')), qPrintable(result.message));
+}
+
+void SubscriptionUpdateServiceTests::unsupportedYamlConstructIsNamedInTheFailure()
+{
+    // The download succeeded and the body is a Clash document, but one it uses an
+    // anchor in -- so no servers were imported, and "returned no supported servers"
+    // alone would read as "the airport is broken". The construct and its line are
+    // the reason, so they belong on the first line with the failure.
+    Harness h;
+    const QByteArray body =
+        "proxies:\n"
+        "  - name: n1\n"
+        "    type: vmess\n"
+        "    server: &srv 1.2.3.4\n"
+        "    port: 443\n";
+    h.server.setNextResponse(makeHttpResponse(200, body));
+
+    const OperationResult result = h.update();
+    QVERIFY(!result.success);
+    const QString firstLine = result.message.section(QChar('\n'), 0, 0);
+    QVERIFY2(firstLine.contains(QStringLiteral("no supported servers")), qPrintable(firstLine));
+    QVERIFY2(firstLine.contains(QStringLiteral("Unsupported YAML feature")), qPrintable(firstLine));
+    QVERIFY2(firstLine.contains(QStringLiteral("anchor")), qPrintable(firstLine));
+    QVERIFY2(firstLine.contains(QStringLiteral("line 4")), qPrintable(firstLine));
 }
 
 // "How stale is what I am showing?" is the question the tab hover text and the subscriptions

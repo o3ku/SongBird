@@ -3688,6 +3688,34 @@ This setting still controls the fallback when the whole group fails.</source>
         <source>(unclosed quoted value) here</source>
         <translation>（引号未闭合）此处</translation>
     </message>
+    <message>
+        <source>anchor (&amp;name)</source>
+        <translation>锚点（&amp;name）</translation>
+    </message>
+    <message>
+        <source>alias (*name)</source>
+        <translation>别名（*name）</translation>
+    </message>
+    <message>
+        <source>merge key (&lt;&lt;)</source>
+        <translation>合并键（&lt;&lt;）</translation>
+    </message>
+    <message>
+        <source>block scalar (| or &gt;)</source>
+        <translation>块标量（| 或 &gt;）</translation>
+    </message>
+    <message>
+        <source>tag (!name)</source>
+        <translation>标签（!name）</translation>
+    </message>
+    <message>
+        <source>second document (---)</source>
+        <translation>第二个文档（---）</translation>
+    </message>
+    <message>
+        <source>Unsupported YAML feature (%1) on line %2.</source>
+        <translation>不支持的 YAML 特性（%1），位于第 %2 行。</translation>
+    </message>
 </context>
 <context>
     <name>SubscriptionService</name>

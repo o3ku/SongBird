@@ -206,8 +206,18 @@ SubscriptionParseReport SubscriptionContentParser::parseManyWithReport(const QSt
         }
 
         QStringList clashSkipped;
-        const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped);
+        QString clashParseError;
+        const QList<VmessItem> clashItems = tryParseClash(current, &clashSkipped, &clashParseError);
         report.notes.append(QStringLiteral("Subscription parse: pass %1 clash count=%2").arg(iteration).arg(clashItems.size()));
+        // A document the YAML reader recognised but could not read is a permanent
+        // failure, not a layer to unwrap: the bytes are YAML, not base64, so the walk
+        // stops here with the reason named instead of decoding the same text again
+        // and reporting "no parser matched".
+        if (!clashParseError.isEmpty()) {
+            report.parseError = clashParseError;
+            report.skippedTypes = skipped + passSkipped;
+            return report;
+        }
         if (!clashSkipped.isEmpty()) {
             passSkipped = clashSkipped;
         }
@@ -395,9 +405,10 @@ QList<VmessItem> SubscriptionContentParser::tryParseSingBox(const QString& conte
     return parsed;
 }
 
-QList<VmessItem> SubscriptionContentParser::tryParseClash(const QString& content, QStringList* skippedTypes)
+QList<VmessItem> SubscriptionContentParser::tryParseClash(const QString& content, QStringList* skippedTypes,
+                                                           QString* parseError)
 {
-    return ClashSubscriptionParser::parseContent(content, skippedTypes);
+    return ClashSubscriptionParser::parseContent(content, skippedTypes, parseError);
 }
 
 QString SubscriptionContentParser::tryDecodeBase64(const QString& content)

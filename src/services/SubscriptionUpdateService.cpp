@@ -160,6 +160,12 @@ QString appendSkippedSummary(const QString& message, const SubscriptionParseRepo
 QString appendParseNotes(const QString& message, const SubscriptionParseReport& report)
 {
     QString detail = message;
+    // A document the reader recognised but could not read names its own reason, and
+    // it belongs on the first line with the failure: it is the answer, not a detail
+    // for the trail behind it.
+    if (!report.parseError.isEmpty()) {
+        detail = QStringLiteral("%1 %2").arg(detail, report.parseError);
+    }
     if (report.hasSkippedNodes()) {
         detail = QStringLiteral("%1 %2").arg(detail, report.skippedSummary());
     }
