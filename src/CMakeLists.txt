@@ -88,6 +88,8 @@ set(SONGBIRD_SHARED_SOURCES
     domain/models/SubItem.h
     domain/models/VmessItem.h
     platform/ISystemProxyService.h
+    platform/ISecretStore.h
+    platform/SecretStoreFactory.h
     platform/ITerminalProxyService.h
     platform/TerminalProxyPolicy.h
     platform/TerminalProxyPolicy.cpp
@@ -178,6 +180,7 @@ set(SONGBIRD_SHARED_SOURCES
     persistence/IConfigRepository.h
     persistence/JsonConfigRepository.h
     persistence/JsonConfigRepository.cpp
+    persistence/SecretFieldCodec.h
     persistence/JsonConfigCollectionSerialization.h
     persistence/JsonConfigCollectionSerialization.cpp
     persistence/JsonConfigServerSerialization.h
@@ -325,6 +328,9 @@ if(WIN32)
     list(APPEND SONGBIRD_SHARED_SOURCES
         platform/windows/WindowsJobObject.h
         platform/windows/WindowsJobObject.cpp
+        platform/windows/WindowsSecretStore.h
+        platform/windows/WindowsSecretStore.cpp
+        platform/windows/SecretStoreFactory.cpp
         platform/windows/WindowsSystemProxyService.h
         platform/windows/WindowsSystemProxyService.cpp
         platform/windows/WindowsTerminalProxyService.h
@@ -334,8 +340,19 @@ if(WIN32)
     )
 elseif(APPLE)
     list(APPEND SONGBIRD_SHARED_SOURCES
+        platform/macos/MacSecretStore.h
+        platform/macos/MacSecretStore.cpp
+        platform/macos/SecretStoreFactory.cpp
         platform/macos/MacSystemProxyService.h
         platform/macos/MacSystemProxyService.cpp
+    )
+else()
+    # Linux builds use the platform/null/ stand-ins (see AGENTS.md); there is
+    # no OS secret store here, so the factory returns the unavailable store
+    # and credentials stay plaintext with a recorded warning.
+    list(APPEND SONGBIRD_SHARED_SOURCES
+        platform/null/NullSecretStore.h
+        platform/null/SecretStoreFactory.cpp
     )
 endif()
 
@@ -819,8 +836,16 @@ if(WIN32)
     # The Win32 imports live in shared sources (CoreProcessCleanupService, TunRuntimeService,
     # WindowsSystemProxyService), so they are attached to songbird_shared_objs as well and
     # reach every consumer — including the test targets that link it.
-    target_link_libraries(songbird_shared_objs PUBLIC Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
-    target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32)
+    # Crypt32 provides the DPAPI entry points the Windows secret store uses.
+    target_link_libraries(songbird_shared_objs PUBLIC Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32 Crypt32)
+    target_link_libraries(songbird PRIVATE Advapi32 Shell32 Wininet User32 Iphlpapi Ws2_32 Crypt32)
+endif()
+
+if(APPLE)
+    # The Security framework provides the Keychain entry points the macOS
+    # secret store uses. Attached to the shared objects so the test targets
+    # that link it get it too.
+    target_link_libraries(songbird_shared_objs PUBLIC "-framework Security")
 endif()
 
 if(WIN32)

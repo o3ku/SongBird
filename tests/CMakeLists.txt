@@ -1010,6 +1010,22 @@ songbird_add_qt_test(songbird_json_config_repository_tests json-config-repositor
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The secret store abstraction and the credential migration: the codec and
+# the repository paths are exercised with fake stores, because the platform
+# stores (DPAPI, Keychain) cannot run on the Linux gate. The platform
+# implementations themselves are only compiled on their own OS.
+set(SONGBIRD_SECRET_STORE_TEST_SOURCES
+    SecretStoreTests.cpp
+)
+
+songbird_add_qt_test(songbird_secret_store_tests secret-store
+    SOURCES
+        ${SONGBIRD_SECRET_STORE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
 set(SONGBIRD_CONFIG_BACKUP_STATE_DOCUMENT_TEST_SOURCES
     ConfigBackupStateDocumentTests.cpp
 )

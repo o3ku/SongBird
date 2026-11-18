@@ -619,6 +619,15 @@ bool AppBootstrap::reloadConfig()
     }
 
     config_ = loadedConfig;
+    // A secret-store problem is a warning, not a load failure: the config in
+    // memory is complete, but the file may still hold plaintext credentials
+    // (no store on this platform, a failed protect/decrypt, or a failed
+    // migration), and that must reach the log panel instead of staying in a
+    // flag only a test reads.
+    const QString secretStoreWarning = objects_->repository->lastSecretStoreWarning().trimmed();
+    if (!secretStoreWarning.isEmpty()) {
+        appendResult(OperationResult::ok(secretStoreWarning), LogSeverity::Warning);
+    }
     syncWindow();
     if (!uiStateRestored_ && objects_->mainWindow != nullptr) {
         objects_->mainWindow->restoreUiState(config_);
