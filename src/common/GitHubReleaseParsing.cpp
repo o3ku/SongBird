@@ -57,6 +57,7 @@ ParseResult parseGitHubReleaseList(const QByteArray& payload)
             asset.name = assetObject.value(QStringLiteral("name")).toString().trimmed();
             asset.downloadUrl = QUrl(
                 assetObject.value(QStringLiteral("browser_download_url")).toString().trimmed());
+            asset.digest = assetObject.value(QStringLiteral("digest")).toString().trimmed();
             if (asset.downloadUrl.isValid()) {
                 release.assets.append(std::move(asset));
             }

@@ -181,6 +181,30 @@ void h() {
             $target = Join-Path $tree "ui\theme\AppThemePalette.cpp"
             Add-Content -LiteralPath $target -Encoding UTF8 -Value 'const char* kSelftestPaletteColor = "#123456";'
         }
+    },
+    @{
+        Name = "no-third-party-mirrors: a mirror host in a download URL"
+        Guard = "check-no-third-party-mirrors.ps1"
+        Break = {
+            param($tree)
+            $target = Join-Path $tree "common\SelftestMirrorLeak.cpp"
+            Set-Content -LiteralPath $target -Encoding UTF8 -Value @'
+const char* kSelftestMirror = "https://ghfast.top/https://github.com/example.invalid/x.zip";
+'@
+        }
+    },
+    @{
+        Name = "no-third-party-mirrors: a mirror host named in a comment is allowed"
+        Guard = "check-no-third-party-mirrors.ps1"
+        # This case asserts the OPPOSITE direction: a host named in a comment is history being
+        # explained, not a download being routed, so a tree where only comments name one must
+        # still pass. A guard that scans raw text cannot pass the suite.
+        ExpectGreen = $true
+        Break = {
+            param($tree)
+            $target = Join-Path $tree "common\GitHubMirrorHelper.h"
+            Add-Content -LiteralPath $target -Encoding UTF8 -Value '// ghfast.top used to be a mirror prefix here.'
+        }
     }
 )
 
@@ -219,7 +243,7 @@ try {
     Copy-Item -LiteralPath $sourcePath -Destination $cleanTree -Recurse -Force
     $cleanSource = Join-Path $cleanTree (Split-Path -Leaf $sourcePath)
 
-    foreach ($guard in @("check-backend-boundaries.ps1", "check-appbootstrap-member-order.ps1", "check-async-owners.ps1", "check-hardcoded-colors.ps1")) {
+    foreach ($guard in @("check-backend-boundaries.ps1", "check-appbootstrap-member-order.ps1", "check-async-owners.ps1", "check-hardcoded-colors.ps1", "check-no-third-party-mirrors.ps1")) {
         $exitCode = Invoke-Guard -Guard $guard -Arguments @("-SourceRoot", $cleanSource)
         if ($exitCode -ne 0) {
             $failures.Add("${guard}: reported a violation in an unmodified copy of the tree")

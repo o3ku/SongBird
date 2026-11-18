@@ -1,5 +1,9 @@
 #include <QtTest>
 
+#include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
+
 #include "services/AppUpdateService.h"
 
 namespace {
@@ -34,6 +38,10 @@ private slots:
     void checkFindsStableReleaseNewerThanTheInstalledPrerelease();
     void checkFindsNextPrereleaseForTheInstalledPrerelease();
     void assetSelectionFollowsTheTargetPlatform();
+    void checkCarriesTheAssetDigestAndChecksumAsset();
+    void downloadSavesAVerifiedUpdate();
+    void downloadRefusesAnUnverifiedUpdate();
+    void downloadRefusesAnUpdateOnChecksumMismatch();
 };
 
 void AppUpdateServiceTests::checkFindsNewerStableRelease()
@@ -203,6 +211,105 @@ void AppUpdateServiceTests::assetSelectionFollowsTheTargetPlatform()
     QVERIFY(noAssetResult.updateAvailable);
     QVERIFY(noAssetResult.assetName.isEmpty());
     QVERIFY(!noAssetResult.assetDownloadUrl.isValid());
+}
+
+void AppUpdateServiceTests::checkCarriesTheAssetDigestAndChecksumAsset()
+{
+    // SHA-256 of "update-bytes".
+    const QString updateDigest = QStringLiteral("92439dd4e7652a0414d2cd9d220e8d2767ed71f9005327223fc5d12b7a5065c3");
+    const QByteArray payload =
+        R"([{"tag_name":"v2.5.0","draft":false,"prerelease":false,"assets":[)"
+        R"({"name":"songbird.exe","browser_download_url":"https://example.invalid/songbird.exe","digest":"sha256:)" + updateDigest.toUtf8() + R"("},)"
+        R"({"name":"songbird.exe.sha256","browser_download_url":"https://example.invalid/songbird.exe.sha256"}]}])";
+    AppUpdateService service([&payload](const QUrl&, QByteArray* content) {
+        *content = payload;
+        return OperationResult::ok();
+    });
+
+    AppUpdateCheckResult result;
+    QVERIFY(service.checkForUpdate(QStringLiteral("2.4.5"), false, windowsPlatform(), &result).success);
+    QCOMPARE(result.assetName, QStringLiteral("songbird.exe"));
+    QCOMPARE(result.assetDigest, updateDigest);
+    QCOMPARE(result.checksumAssetName, QStringLiteral("songbird.exe.sha256"));
+    QCOMPARE(result.checksumAssetDownloadUrl.toString(),
+             QStringLiteral("https://example.invalid/songbird.exe.sha256"));
+}
+
+void AppUpdateServiceTests::downloadSavesAVerifiedUpdate()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppUpdateService service([](const QUrl&, QByteArray* content) {
+        *content = QByteArray("update-bytes");
+        return OperationResult::ok();
+    });
+
+    AppUpdateCheckResult checkResult;
+    checkResult.assetName = QStringLiteral("songbird.exe");
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    // SHA-256 of "update-bytes".
+    checkResult.assetDigest =
+        QStringLiteral("92439dd4e7652a0414d2cd9d220e8d2767ed71f9005327223fc5d12b7a5065c3");
+
+    QString savedPath;
+    const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(QFile::exists(savedPath));
+    QFile file(savedPath);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArray("update-bytes"));
+}
+
+void AppUpdateServiceTests::downloadRefusesAnUnverifiedUpdate()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppUpdateService service([](const QUrl&, QByteArray* content) {
+        *content = QByteArray("update-bytes");
+        return OperationResult::ok();
+    });
+
+    // No digest and no checksum asset: the release cannot be verified, so nothing is saved.
+    AppUpdateCheckResult checkResult;
+    checkResult.assetName = QStringLiteral("songbird.exe");
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+
+    QString savedPath;
+    const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("cannot be verified")));
+    QVERIFY(savedPath.isEmpty());
+    QVERIFY(!QFile::exists(QDir(directory.path()).filePath(QStringLiteral("songbird.exe"))));
+}
+
+void AppUpdateServiceTests::downloadRefusesAnUpdateOnChecksumMismatch()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppUpdateService service([](const QUrl&, QByteArray* content) {
+        *content = QByteArray("update-bytes");
+        return OperationResult::ok();
+    });
+
+    AppUpdateCheckResult checkResult;
+    checkResult.assetName = QStringLiteral("songbird.exe");
+    checkResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.invalid/songbird.exe"));
+    // SHA-256 of "something-else", not of the "update-bytes" the download serves.
+    checkResult.assetDigest =
+        QStringLiteral("3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a");
+
+    QString savedPath;
+    const OperationResult result = service.downloadUpdate(checkResult, directory.path(), &savedPath);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
+    QVERIFY(savedPath.isEmpty());
+    QVERIFY(!QFile::exists(QDir(directory.path()).filePath(QStringLiteral("songbird.exe"))));
 }
 
 QTEST_MAIN(AppUpdateServiceTests)

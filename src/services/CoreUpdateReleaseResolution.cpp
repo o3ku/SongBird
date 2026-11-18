@@ -16,11 +16,13 @@ namespace InstallFiles = CoreUpdateInstallFiles;
 
 CoreUpdateReleaseResolution::ReleaseResolutionResult resolvedRelease(
     const ReleaseMetadata::GitHubRelease& release,
-    CoreAssetPlatform platform)
+    CoreAssetPlatform platform,
+    bool fromBuiltInFallback = false)
 {
     CoreUpdateReleaseResolution::ReleaseResolutionResult result;
     result.release = release;
     result.platform = platform;
+    result.fromBuiltInFallback = fromBuiltInFallback;
     return result;
 }
 
@@ -64,7 +66,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                 .arg(displayName)
                 .arg(builtInFallbackRelease.assets.constFirst().name)
                 .arg(builtInFallbackRelease.tagName));
-        return resolvedRelease(builtInFallbackRelease, platform);
+        return resolvedRelease(builtInFallbackRelease, platform, /*fromBuiltInFallback=*/true);
     }
 
     if (directLatestDownloadUrl.isValid() && !directLatestAssetName.isEmpty()) {
@@ -78,7 +80,7 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
             QCoreApplication::translate("CoreUpdateService", "Using direct latest %1 package: %2")
                 .arg(displayName)
                 .arg(directLatestAssetName));
-        return resolvedRelease(release, platform);
+        return resolvedRelease(release, platform, /*fromBuiltInFallback=*/true);
     }
 
     ReleaseMetadata::GitHubRelease release;
@@ -138,9 +140,11 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
                 .arg(lastError));
     }
 
+    bool usedBuiltInFallback = false;
     if (release.tagName.trimmed().isEmpty()
         && !builtInFallbackRelease.tagName.trimmed().isEmpty()) {
         release = builtInFallbackRelease;
+        usedBuiltInFallback = true;
         UpdateOps::reportProgress(
             request.progressHandler,
             QCoreApplication::translate(
@@ -162,5 +166,5 @@ CoreUpdateReleaseResolution::ReleaseResolutionResult CoreUpdateReleaseResolution
             platform);
     }
 
-    return resolvedRelease(release, platform);
+    return resolvedRelease(release, platform, usedBuiltInFallback);
 }

@@ -127,6 +127,29 @@ QByteArray releasePayloadFor(CoreType coreType, const QString& tagName)
     return QJsonDocument(releases).toJson(QJsonDocument::Compact);
 }
 
+// Like releasePayloadFor, but every asset carries the same `digest`, so a case can say what
+// the update should do when the downloaded bytes do or do not hash to it.
+QByteArray releasePayloadWithDigestFor(CoreType coreType, const QString& tagName, const QString& digest)
+{
+    QJsonArray assets;
+    for (const CoreUpdateReleaseMetadata::GitHubReleaseAsset& asset : releaseAssetsFor(coreType)) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("name"), asset.name);
+        entry.insert(QStringLiteral("browser_download_url"), asset.downloadUrl.toString());
+        entry.insert(QStringLiteral("digest"), digest);
+        assets.append(entry);
+    }
+
+    QJsonObject release;
+    release.insert(QStringLiteral("tag_name"), tagName);
+    release.insert(QStringLiteral("prerelease"), false);
+    release.insert(QStringLiteral("assets"), assets);
+
+    QJsonArray releases;
+    releases.append(release);
+    return QJsonDocument(releases).toJson(QJsonDocument::Compact);
+}
+
 } // namespace
 
 class CoreUpdateServiceTests : public QObject {
@@ -140,6 +163,9 @@ private slots:
     void updateReturnsPromptlyWhenCancellationRequestedDuringDownload();
     void updateFallsBackToBuiltInSingBoxVersionWhenReleaseApiUnavailableAndNoCoreInstalled();
     void updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInstalled();
+    void updateInstallsPackageWhenApiDigestMatches();
+    void updateRefusesPackageOnChecksumMismatch();
+    void updateRefusesPackageWhenReleaseHasNoChecksum();
     void updateGzipInstallUsesInjectedExtractorAndRespectsCancellation();
     void tarGzInstallExtractsIntoTheTargetDirectory();
     void assetNamesFollowTheTargetPlatform();
@@ -245,11 +271,10 @@ void CoreUpdateServiceTests::updateReturnsPromptlyWhenCancellationRequestedDurin
                 QTest::qSleep(10);
             }
 
-            // Report it the way the real downloader does. Returning a plain failure instead made this
-            // case depend on the mirror list: only a github.com asset gets four candidate URLs, so
-            // what used to produce the cancelled result was the download loop's own cancellation check
-            // on the *next* iteration. An asset on any other host yields one candidate, the loop
-            // exhausts, and the cancellation comes back as an ordinary download failure.
+            // Report it the way the real downloader does. Returning a plain failure instead made
+            // this case depend on the download loop: the loop only reports cancellation when a
+            // candidate returns it, so a plain failure would come back as an ordinary download
+            // failure rather than the cancelled result this case asserts.
             return CoreUpdateOperations::cancelledResult();
         },
         [](const QString&, const QString&) {
@@ -407,6 +432,135 @@ void CoreUpdateServiceTests::updateUsesBuiltInXrayBootstrapVersionWhenNoCoreInst
         [](const QString& url) {
             return url.contains(QStringLiteral("/releases/latest/download/"));
         }));
+}
+
+void CoreUpdateServiceTests::updateInstallsPackageWhenApiDigestMatches()
+{
+    // SHA-256 of "dummy-package", the bytes the fake serves for the package URL.
+    const QByteArray releasePayload = releasePayloadWithDigestFor(
+        CoreType::SingBox,
+        QStringLiteral("v1.14.2"),
+        QStringLiteral("sha256:73f9efcc02e48d777d943d6098d728697b846ddf3a637b04f4b6b10d553eca36"));
+
+    CoreUpdateService service(
+        [&releasePayload](const QUrl& url, QByteArray* content) {
+            if (url.host() == QStringLiteral("api.github.com")) {
+                *content = releasePayload;
+                return OperationResult::ok();
+            }
+            *content = QByteArray("dummy-package");
+            return OperationResult::ok();
+        },
+        [](const QString&, const QString&) {
+            return OperationResult::ok();
+        });
+
+    CoreUpdateConfig config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(result.message.contains(QStringLiteral("v1.14.2")));
+}
+
+void CoreUpdateServiceTests::updateRefusesPackageOnChecksumMismatch()
+{
+    // SHA-256 of "something-else": the release claims a hash the downloaded bytes do not
+    // have, so the package must be refused before the install step runs.
+    const QByteArray releasePayload = releasePayloadWithDigestFor(
+        CoreType::SingBox,
+        QStringLiteral("v1.14.2"),
+        QStringLiteral("sha256:3160fbd511a071c87828ece647a54c6aa5a1e1563b7a89d89875af7a63ad327a"));
+
+    bool installAttempted = false;
+    CoreUpdateService service(
+        [&releasePayload](const QUrl& url, QByteArray* content) {
+            if (url.host() == QStringLiteral("api.github.com")) {
+                *content = releasePayload;
+                return OperationResult::ok();
+            }
+            *content = QByteArray("dummy-package");
+            return OperationResult::ok();
+        },
+        [&installAttempted](const QString&, const QString&) {
+            installAttempted = true;
+            return OperationResult::ok();
+        });
+
+    CoreUpdateConfig config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("checksum mismatch")));
+    QVERIFY(!installAttempted);
+}
+
+void CoreUpdateServiceTests::updateRefusesPackageWhenReleaseHasNoChecksum()
+{
+    // The payload names no digest and no checksum asset, and the fake serves package bytes
+    // for every checksum URL too, so no hash can be established from any source: the update
+    // is refused rather than installed unverified.
+    const QByteArray releasePayload = releasePayloadFor(CoreType::SingBox, QStringLiteral("v1.14.2"));
+
+    bool installAttempted = false;
+    CoreUpdateService service(
+        [&releasePayload](const QUrl& url, QByteArray* content) {
+            if (url.host() == QStringLiteral("api.github.com")) {
+                *content = releasePayload;
+                return OperationResult::ok();
+            }
+            *content = QByteArray("dummy-package");
+            return OperationResult::ok();
+        },
+        [&installAttempted](const QString&, const QString&) {
+            installAttempted = true;
+            return OperationResult::ok();
+        });
+
+    CoreUpdateConfig config;
+    config.checkPreReleaseUpdate = false;
+    config.ignoreGeoUpdateCore = true;
+
+    QTemporaryDir targetDirectory;
+    QVERIFY(targetDirectory.isValid());
+
+    CoreUpdateService::UpdateOptions options;
+    options.skipLocalVersionCheck = true;
+
+    const OperationResult result = service.update(
+        CoreType::SingBox,
+        config,
+        targetDirectory.path(),
+        options);
+
+    QVERIFY(!result.success);
+    QVERIFY(result.message.contains(QStringLiteral("cannot be verified")));
+    QVERIFY(!installAttempted);
 }
 
 void CoreUpdateServiceTests::updateGzipInstallUsesInjectedExtractorAndRespectsCancellation()

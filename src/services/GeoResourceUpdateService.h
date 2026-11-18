@@ -27,10 +27,20 @@ public:
 
 private:
     void reportProgress(const QString& message) const;
+    // Downloads `fileName` from `url` and saves it at `targetPath`, verifying its SHA-256
+    // against the digest the releases API reports for `sourceFileName` in `repositoryPath`
+    // before anything is written. A geo file with no verifiable checksum is refused, not
+    // saved: a database the core trusts blindly is a routing decision made by whoever served
+    // the bytes.
     OperationResult downloadAndSave(
         const QUrl& url,
         const QString& fileName,
-        const QString& targetPath) const;
+        const QString& targetPath,
+        const QString& repositoryPath,
+        const QString& sourceFileName) const;
+    // The SHA-256 the latest stable release of `repositoryPath` reports for `sourceFileName`,
+    // or empty when the metadata cannot be fetched or names no such asset.
+    QString expectedDigestForGeoFile(const QString& repositoryPath, const QString& sourceFileName) const;
     static QUrl buildDownloadUrl(const QString& geoName);
     static QUrl buildSingBoxRuleSetDownloadUrl(const QString& tag);
 

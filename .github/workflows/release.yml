@@ -300,9 +300,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release upload $tag songbird.exe --clobber
           }
+          # Every published asset gets a checksum file beside it, in sha256sum format. The
+          # client verifies a download against the API digest first and this file second, and
+          # refuses an update it cannot verify -- so a release without its checksum files is a
+          # release the client will not install.
+          $exeHash = (Get-FileHash songbird.exe -Algorithm SHA256).Hash.ToLower()
+          "$exeHash  songbird.exe" | Set-Content songbird.exe.sha256
+          gh release upload $tag songbird.exe.sha256 --clobber
           # The offline bundle is opt-in: the exe stays the primary asset, and it only
           # reaches the release together with the exe it belongs to.
           gh release upload $tag "${{ steps.stage-offline-bundle.outputs.offline_asset }}" --clobber
+          $offlineAsset = "${{ steps.stage-offline-bundle.outputs.offline_asset }}"
+          $offlineHash = (Get-FileHash $offlineAsset -Algorithm SHA256).Hash.ToLower()
+          "$offlineHash  $offlineAsset" | Set-Content "$offlineAsset.sha256"
+          gh release upload $tag "$offlineAsset.sha256" --clobber
 
   # A macOS build cannot share the job above: that one is a vcpkg build whose cost is
   # dominated by a cache the macOS side has nothing to put in, and its Qt5 comes from
@@ -494,7 +505,9 @@ jobs:
           ln -s /Applications dmg-root/Applications
           hdiutil create -volname "SongBird" -srcfolder dmg-root -ov -format UDZO \
             SongBird-macos-universal.dmg
-          shasum -a 256 SongBird-macos-universal.dmg
+          # The checksum file beside the DMG, in sha256sum format: the client verifies a
+          # download against the API digest first and this file second.
+          shasum -a 256 SongBird-macos-universal.dmg | tee SongBird-macos-universal.dmg.sha256
 
       - uses: actions/upload-artifact@v7
         with:
@@ -519,4 +532,5 @@ jobs:
             sleep 20
           done
           gh release upload "$tag" SongBird-macos-universal.dmg --clobber
+          gh release upload "$tag" SongBird-macos-universal.dmg.sha256 --clobber
 

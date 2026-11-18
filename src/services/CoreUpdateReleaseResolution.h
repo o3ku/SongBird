@@ -24,6 +24,11 @@ struct ReleaseResolutionResult {
     CoreAssetPlatform platform;
     OperationResult error;
     bool hasError = false;
+    // True when the release was constructed locally (the built-in bootstrap, or the direct
+    // latest URL) rather than read from the releases API. Such a release carries no API digest
+    // and no checksum asset list, so verification is best-effort there instead of fail-closed:
+    // refusing would brick a first run whenever the API is unreachable.
+    bool fromBuiltInFallback = false;
 };
 
 ReleaseResolutionResult resolveRelease(const ReleaseResolutionRequest& request);

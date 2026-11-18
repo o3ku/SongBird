@@ -104,7 +104,7 @@ bool parseLatestAppRelease(
             if (asset.name.isEmpty()) {
                 continue;
             }
-            convertedRelease.assets.append(AppUpdateReleaseAsset{asset.name, asset.downloadUrl});
+            convertedRelease.assets.append(AppUpdateReleaseAsset{asset.name, asset.downloadUrl, asset.digest});
         }
         *release = convertedRelease;
         return true;

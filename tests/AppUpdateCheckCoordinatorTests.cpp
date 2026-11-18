@@ -117,8 +117,8 @@ void AppUpdateCheckCoordinatorTests::manualCheckDownloadsWhenUserAccepts()
             result->assetDownloadUrl = QUrl(QStringLiteral("https://example.test/SongBird.exe"));
             return OperationResult::ok(QStringLiteral("SongBird v1.1.0 is available."));
         },
-        [&downloadedName, &downloadedDirectory](const QUrl&, const QString& assetName, const QString& targetDirectory, QString* savedPath) {
-            downloadedName = assetName;
+        [&downloadedName, &downloadedDirectory](const AppUpdateCheckResult& checkResult, const QString& targetDirectory, QString* savedPath) {
+            downloadedName = checkResult.downloadFileName;
             downloadedDirectory = targetDirectory;
             *savedPath = QStringLiteral("C:/SongBird/updates/SongBird.new.exe");
             return OperationResult::ok(QStringLiteral("SongBird update downloaded."));
@@ -156,7 +156,7 @@ void AppUpdateCheckCoordinatorTests::downloadClaimsAndFinishesAppUpdateTask()
         []() { return false; },
         {},
         {},
-        [&backgroundTasks, &activeKindsDuringDownload](const QUrl&, const QString&, const QString&, QString* savedPath) {
+        [&backgroundTasks, &activeKindsDuringDownload](const AppUpdateCheckResult&, const QString&, QString* savedPath) {
             activeKindsDuringDownload.append(backgroundTasks.active());
             *savedPath = QStringLiteral("C:/SongBird/updates/SongBird.zip");
             return OperationResult::ok(QStringLiteral("SongBird update downloaded."));

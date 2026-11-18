@@ -22,6 +22,7 @@ COMMANDS = [
     ("appbootstrap-member-order", "check_appbootstrap_member_order.py", [str(REPO_ROOT / "src")]),
     ("async-owners", "check_async_owners.py", [str(REPO_ROOT / "src")]),
     ("hardcoded-colors", "check_hardcoded_colors.py", [str(REPO_ROOT / "src")]),
+    ("no-third-party-mirrors", "check_no_third_party_mirrors.py", [str(REPO_ROOT / "src")]),
     (
         "q-os-include-scope",
         "check_q_os_include_scope.py",

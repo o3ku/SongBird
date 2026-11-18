@@ -10,6 +10,8 @@
 struct AppUpdateReleaseAsset {
     QString name;
     QUrl downloadUrl;
+    // The `digest` the releases API returns for the asset ("sha256:<hex>").
+    QString digest;
 };
 
 struct AppUpdateRelease {

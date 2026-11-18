@@ -73,7 +73,7 @@ bool parseGitHubReleasePayload(
         convertedRelease.tagName = parsedRelease.tagName;
         convertedRelease.prerelease = parsedRelease.prerelease;
         for (const GitHubReleaseParsing::ReleaseAsset& asset : parsedRelease.assets) {
-            convertedRelease.assets.append(GitHubReleaseAsset{asset.name, asset.downloadUrl});
+            convertedRelease.assets.append(GitHubReleaseAsset{asset.name, asset.downloadUrl, asset.digest});
         }
 
         if (!convertedRelease.tagName.isEmpty()) {

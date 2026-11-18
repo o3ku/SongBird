@@ -5,6 +5,8 @@
 
 #include <utility>
 
+#include "common/ReleaseChecksum.h"
+#include "common/UserAgent.h"
 #include "runtime/core/CoreBackendRegistry.h"
 #include "runtime/core/ICoreBackend.h"
 #include "services/CoreUpdateInstallFiles.h"
@@ -203,6 +205,72 @@ OperationResult CoreUpdateService::update(
 
     if (isCancellationRequested(cancelCheck)) {
         return cancelledResult();
+    }
+
+    // The package came from github.com over TLS, but TLS alone does not prove the bytes are
+    // the ones the release published -- a compromised release or a broken mirror could serve
+    // anything. Verify against the API digest first, then a checksum asset in the same release,
+    // then a checksum file derived from the package URL.
+    {
+        QList<ReleaseChecksum::NamedAsset> releaseAssets;
+        releaseAssets.reserve(release.assets.size());
+        for (const GitHubReleaseAsset& releaseAsset : release.assets) {
+            releaseAssets.append(ReleaseChecksum::NamedAsset{releaseAsset.name, releaseAsset.downloadUrl});
+        }
+        const std::optional<ReleaseChecksum::NamedAsset> checksumAsset =
+            ReleaseChecksum::findChecksumAsset(releaseAssets, asset->name);
+        const ReleaseChecksum::VerificationOutcome verification =
+            ReleaseChecksum::verifyDownloadedBytes(
+                packageBytes,
+                asset->name,
+                asset->downloadUrl,
+                asset->digest,
+                checksumAsset,
+                [this, &cancelCheck](const QUrl& url, QByteArray* content) {
+                    if (downloadHandler_) {
+                        return downloadHandler_(url, content);
+                    }
+                    return UpdateOps::downloadBytesWithNetwork(
+                        url, content, fallbackUserAgent(), kCoreMetadataTimeoutMs, cancelCheck);
+                });
+        if (verification.status == ReleaseChecksum::Verification::Mismatched) {
+            return OperationResult::fail(
+                QCoreApplication::translate("CoreUpdateService", "SHA-256 checksum mismatch for %1 %2 in release %3: the downloaded package does not match the published checksum (expected %4, got %5). The package was not installed.")
+                    .arg(displayName)
+                    .arg(asset->name)
+                    .arg(release.tagName)
+                    .arg(verification.expectedHex)
+                    .arg(verification.actualHex));
+        }
+        if (verification.status == ReleaseChecksum::Verification::Unverifiable) {
+            if (releaseResult.fromBuiltInFallback) {
+                // The bootstrap release is constructed locally because the releases API is
+                // unreachable, so there is no digest or checksum asset by definition -- and
+                // sing-box and Mihomo publish no checksum file at all. Refusing here would
+                // leave a first run with no core at all, so the failure is surfaced loudly
+                // and the install proceeds. The package still came from github.com over TLS;
+                // the residual risk is a compromised release, which no local check can rule
+                // out without metadata.
+                reportProgress(
+                    progressHandler,
+                    QCoreApplication::translate("CoreUpdateService", "Warning: no SHA-256 checksum is available for %1 %2, so the downloaded package could not be verified. Installing anyway because no core is installed yet; install a core manually if this is unexpected.")
+                        .arg(displayName)
+                        .arg(asset->name));
+            } else {
+                return OperationResult::fail(
+                    QCoreApplication::translate("CoreUpdateService", "No SHA-256 checksum is available for %1 %2 in release %3, so the downloaded package cannot be verified. The package was not installed.")
+                        .arg(displayName)
+                        .arg(asset->name)
+                        .arg(release.tagName));
+            }
+        } else {
+            reportProgress(
+                progressHandler,
+                QCoreApplication::translate(
+                    "CoreUpdateService", "Verified the SHA-256 checksum for %1 %2.")
+                    .arg(displayName)
+                    .arg(asset->name));
+        }
     }
 
     if (beforeInstall) {

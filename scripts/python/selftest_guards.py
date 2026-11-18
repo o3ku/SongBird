@@ -121,6 +121,24 @@ def _palette_is_exempt(tree: Path) -> None:
     )
 
 
+def _mirror_leak(tree: Path) -> None:
+    (tree / "common/SelftestMirrorLeak.cpp").write_text(
+        'const char* kSelftestMirror = "https://ghfast.top/https://github.com/example.invalid/x.zip";\n',
+        encoding="utf-8",
+    )
+
+
+def _mirror_in_comment_is_exempt(tree: Path) -> None:
+    # This case asserts the OPPOSITE direction: a host named in a comment is history being
+    # explained, not a download being routed, so a tree where only comments name one must
+    # still pass. A guard that scans raw text cannot satisfy it.
+    target = tree / "common/GitHubMirrorHelper.h"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n// ghfast.top used to be a mirror prefix here.\n",
+        encoding="utf-8",
+    )
+
+
 def _bare_sink_literal(tree: Path) -> None:
     (tree / "services/SelftestLocalizationLeak.cpp").write_text(
         "OperationResult f() {\n    return OperationResult::fail(QStringLiteral(\"the update failed \"\n"
@@ -208,12 +226,14 @@ SOURCE_TREE_CASES = [
     ("async-owners: a worker thread lambda capturing this with no guard", "check_async_owners.py", _async_leak),
     ("async-owners: an invokeMethod continuation posted elsewhere while capturing this", "check_async_owners.py", _invoke_leak),
     ("hardcoded-colors: a hex colour in a stylesheet literal outside the palette", "check_hardcoded_colors.py", _color_leak),
+    ("no-third-party-mirrors: a mirror host in a download URL", "check_no_third_party_mirrors.py", _mirror_leak),
 ]
 
 # Cases whose expected result is GREEN: they pin an exemption, so a guard that rejects
 # everything cannot pass the suite.
 GREEN_SOURCE_TREE_CASES = [
     ("hardcoded-colors: a palette file is allowed to name colours", "check_hardcoded_colors.py", _palette_is_exempt),
+    ("no-third-party-mirrors: a mirror host named in a comment is allowed", "check_no_third_party_mirrors.py", _mirror_in_comment_is_exempt),
 ]
 
 LOCALIZATION_CASES = [
@@ -274,6 +294,7 @@ def main(argv) -> int:
             "check_appbootstrap_member_order.py",
             "check_async_owners.py",
             "check_hardcoded_colors.py",
+            "check_no_third_party_mirrors.py",
         ]:
             if run_guard(guard, [str(clean_tree)]) != 0:
                 failures.append(f"{guard}: reported a violation in an unmodified copy of the tree")

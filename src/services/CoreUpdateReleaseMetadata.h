@@ -14,6 +14,9 @@ namespace CoreUpdateReleaseMetadata {
 struct GitHubReleaseAsset {
     QString name;
     QUrl downloadUrl;
+    // The `digest` the releases API returns for the asset ("sha256:<hex>"); empty for the
+    // locally built fallback release, which has no metadata to carry one.
+    QString digest;
 };
 
 struct GitHubRelease {

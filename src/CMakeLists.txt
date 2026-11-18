@@ -53,6 +53,8 @@ set(SONGBIRD_SHARED_SOURCES
     common/EndpointParser.h
     common/GitHubReleaseParsing.h
     common/GitHubReleaseParsing.cpp
+    common/ReleaseChecksum.h
+    common/ReleaseChecksum.cpp
     common/JsonFile.h
     common/LogFileWriter.h
     common/LogFileWriter.cpp

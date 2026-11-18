@@ -1089,6 +1089,14 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <source>SongBird update downloaded: %1</source>
         <translation>SongBird 更新已下载：%1</translation>
     </message>
+    <message>
+        <source>SHA-256 checksum mismatch for SongBird %1: the downloaded update does not match the published checksum (expected %2, got %3). The update was not saved.</source>
+        <translation>SongBird %1 的 SHA-256 校验和不匹配：下载的更新与已发布的校验和不一致（应为 %2，实际为 %3）。更新未保存。</translation>
+    </message>
+    <message>
+        <source>No SHA-256 checksum is available for SongBird %1, so the downloaded update cannot be verified. The update was not saved; download it manually from the releases page if this persists.</source>
+        <translation>没有可用的 SongBird %1 的 SHA-256 校验和，因此无法验证下载的更新。更新未保存；如果问题持续，请从发布页面手动下载。</translation>
+    </message>
 </context>
 <context>
     <name>ClientConfigWriter</name>
@@ -1729,6 +1737,22 @@ The running core will be stopped before installation if needed.</source>
         <source>The gzip package name is invalid.</source>
         <translation>gzip 包名无效。</translation>
     </message>
+    <message>
+        <source>SHA-256 checksum mismatch for %1 %2 in release %3: the downloaded package does not match the published checksum (expected %4, got %5). The package was not installed.</source>
+        <translation>%3 版本中 %1 %2 的 SHA-256 校验和不匹配：下载的安装包与已发布的校验和不一致（应为 %4，实际为 %5）。安装包未安装。</translation>
+    </message>
+    <message>
+        <source>Warning: no SHA-256 checksum is available for %1 %2, so the downloaded package could not be verified. Installing anyway because no core is installed yet; install a core manually if this is unexpected.</source>
+        <translation>警告：没有可用的 %1 %2 的 SHA-256 校验和，因此无法验证下载的安装包。由于尚未安装核心，将继续安装；如非预期，请手动安装核心。</translation>
+    </message>
+    <message>
+        <source>No SHA-256 checksum is available for %1 %2 in release %3, so the downloaded package cannot be verified. The package was not installed.</source>
+        <translation>%3 版本中没有可用的 %1 %2 的 SHA-256 校验和，因此无法验证下载的安装包。安装包未安装。</translation>
+    </message>
+    <message>
+        <source>Verified the SHA-256 checksum for %1 %2.</source>
+        <translation>已验证 %1 %2 的 SHA-256 校验和。</translation>
+    </message>
 </context>
 <context>
     <name>CustomServerDialog</name>
@@ -2013,6 +2037,22 @@ The running core will be stopped before installation if needed.</source>
         <source>No download source for geo file %1.</source>
         <translation>Geo 文件 %1 没有下载源。</translation>
     </message>
+    <message>
+        <source>Geo file %1 cannot be verified: %2 The file was not saved.</source>
+        <translation>无法验证 Geo 文件 %1：%2 文件未保存。</translation>
+    </message>
+    <message>
+        <source>No repository is known for geo file %1.</source>
+        <translation>未知 Geo 文件 %1 所属的仓库。</translation>
+    </message>
+    <message>
+        <source>No SHA-256 checksum is available for %1 in the latest %2 release.</source>
+        <translation>最新 %2 版本中没有可用的 %1 的 SHA-256 校验和。</translation>
+    </message>
+    <message>
+        <source>SHA-256 checksum mismatch for geo file %1: the downloaded file does not match the checksum published for %2 (expected %3, got %4). The file was not saved.</source>
+        <translation>Geo 文件 %1 的 SHA-256 校验和不匹配：下载的文件与为 %2 发布的校验和不一致（应为 %3，实际为 %4）。文件未保存。</translation>
+    </message>
 </context>
 <context>
     <name>JsonConfigRepository</name>
@@ -2045,7 +2085,7 @@ The running core will be stopped before installation if needed.</source>
         <translation>此平台没有可用的密钥存储，因此代理凭据以明文保存在配置文件中。</translation>
     </message>
     <message>
-        <source>Some proxy credentials could not be decrypted and were ignored. Re-enter the credentials for the affected servers or re-import them.</source>
+        <source>Some stored proxy credentials could not be decrypted and were ignored. Re-enter the credentials for the affected servers or re-import them.</source>
         <translation>部分已保存的代理凭据无法解密，已忽略。请重新输入受影响服务器的凭据，或重新导入这些服务器。</translation>
     </message>
     <message>
