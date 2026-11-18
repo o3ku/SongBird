@@ -616,6 +616,10 @@ void ClientConfigWriterTests::generateXrayConfigRejectsUnsupportedSkippingBefore
 {
     Config config = legacyConfig(ConfigType::Trojan);
     config.tun().tunModeItem.enableTun = false;
+    // The rejection under test needs certificate skipping to be requested: the server leaves
+    // allowInsecure unset, so the default decides it, and the default is false since the
+    // security review -- spell the true out instead of relying on it.
+    config.dns().defaultAllowInsecure = true;
     VmessItem server = baseServer();
     server.configType = ConfigType::Trojan;
     server.streamSecurity = QStringLiteral("tls");
