@@ -125,7 +125,7 @@ inline LoadReport decodeSecrets(QJsonObject& root, const ISecretStore* store)
             if (!server.contains(key)) {
                 continue;
             }
-            server.insert(key, decodeSecretValue(server.value(key).toString(), store, report));
+            server.insert(key, detail::decodeSecretValue(server.value(key).toString(), store, report));
         }
         servers[index] = server;
     }
@@ -139,7 +139,7 @@ inline LoadReport decodeSecrets(QJsonObject& root, const ISecretStore* store)
         if (inbound.contains(inboundPasswordKey())) {
             inbound.insert(
                 inboundPasswordKey(),
-                decodeSecretValue(inbound.value(inboundPasswordKey()).toString(), store, report));
+                detail::decodeSecretValue(inbound.value(inboundPasswordKey()).toString(), store, report));
             inbounds[0] = inbound;
             root.insert(QStringLiteral("inbound"), inbounds);
         }
