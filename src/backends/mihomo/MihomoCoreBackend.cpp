@@ -130,7 +130,9 @@ OperationResult MihomoCoreBackend::validateServer(const VmessItem& server) const
 {
     if (!supportsConfigType(server.configType) || server.configType == ConfigType::Custom) {
         return OperationResult::fail(QCoreApplication::translate(
-            "MihomoCoreBackend", "The selected server type is not supported by the current Mihomo generator."));
+            "MihomoCoreBackend", "Server %1 (%2) is not supported by the Mihomo generator.")
+            .arg(server.remarks.trimmed().isEmpty() ? server.address : server.remarks,
+                 configTypeDisplayName(server.configType)));
     }
 
     const QString network = server.network.trimmed().isEmpty()

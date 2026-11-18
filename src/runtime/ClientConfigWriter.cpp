@@ -182,7 +182,31 @@ ClientConfigWriter::GeneratedConfigSet ClientConfigWriter::generateClientConfigs
     GeneratedConfigSet generated;
     generated.primary.fileName = QStringLiteral("config.generated.json");
     generated.primary.root = buildRoot(config, server);
-    if (!generated.primary.root.isEmpty() && runtimeCoreType_ == CoreType::Xray
+    if (generated.primary.root.isEmpty()) {
+        // No config could be generated for this server -- an unsupported protocol, or a
+        // core that is not installed -- and the callers that generate without validating
+        // first (the speed-test batch runner) read result, not the root. Leaving result
+        // as ok here would hand them an empty root to extract a bare outbound from.
+        const QString serverDisplayName =
+            server.remarks.trimmed().isEmpty() ? server.address : server.remarks;
+        const CoreType resolvedCore = resolveSelectedCoreType(config, server, effectiveExistingCoreTypes());
+        if (resolvedCore == CoreType::Unknown) {
+            // No core could be selected for this protocol at all, so there is no core
+            // name to give: the server and the protocol are the actionable part.
+            generated.result = OperationResult::fail(
+                QCoreApplication::translate("ClientConfigWriter", "Cannot generate a runtime config for server %2 (%1).")
+                    .arg(configTypeDisplayName(server.configType))
+                    .arg(serverDisplayName));
+        } else {
+            generated.result = OperationResult::fail(
+                QCoreApplication::translate("ClientConfigWriter", "%1 cannot generate a runtime config for server %3 (%2).")
+                    .arg(coreTypeDisplayName(resolvedCore))
+                    .arg(configTypeDisplayName(server.configType))
+                    .arg(serverDisplayName));
+        }
+        return generated;
+    }
+    if (runtimeCoreType_ == CoreType::Xray
         && resolveSelectedCoreType(config, server, effectiveExistingCoreTypes()) == CoreType::Xray) {
         generated.result = XrayTlsCompatibility::adaptConfig(
             generated.primary.root, runtimeCoreVersion_, QDateTime::currentDateTimeUtc());

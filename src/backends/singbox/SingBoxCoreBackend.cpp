@@ -155,7 +155,9 @@ OperationResult SingBoxCoreBackend::validateServer(const VmessItem& server) cons
 {
     if (ProtocolConfigMapper::resolveSingBoxOutboundType(server.configType).isEmpty()) {
         return OperationResult::fail(QCoreApplication::translate(
-            "SingBoxCoreBackend", "The selected server type is not supported by the current sing-box generator."));
+            "SingBoxCoreBackend", "Server %1 (%2) is not supported by the sing-box generator.")
+            .arg(server.remarks.trimmed().isEmpty() ? server.address : server.remarks,
+                 configTypeDisplayName(server.configType)));
     }
 
     const QString network = server.network.trimmed().isEmpty()
@@ -192,11 +194,22 @@ QJsonObject SingBoxCoreBackend::buildClientGroupRoot(const Config& config, const
     if (members.isEmpty()) {
         return {};
     }
-    return assembleClientRoot(config, buildGroupOutbounds(config, members));
+    const QJsonArray outbounds = buildGroupOutbounds(config, members);
+    if (outbounds.isEmpty()) {
+        return {};
+    }
+    return assembleClientRoot(config, outbounds);
 }
 
 QJsonObject SingBoxCoreBackend::assembleClientRoot(const Config& config, const QJsonArray& outbounds)
 {
+    if (outbounds.isEmpty()) {
+        // No proxy outbound could be produced for these servers; emitting only inbounds
+        // and routes would leave a config that starts the core with nothing to proxy
+        // through.
+        return {};
+    }
+
     QJsonObject root;
     root.insert(QStringLiteral("log"), buildLog(config, true));
     root.insert(QStringLiteral("inbounds"), buildInbounds(config));
@@ -406,7 +419,14 @@ QJsonArray SingBoxCoreBackend::buildInbounds(const Config& config)
 QJsonArray SingBoxCoreBackend::buildOutbounds(const Config& config, const VmessItem& server)
 {
     QJsonArray outbounds;
-    outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, server, QStringLiteral("proxy")));
+    const QJsonObject primaryOutbound =
+        SingBoxConfigFragments::buildPrimaryOutbound(config, server, QStringLiteral("proxy"));
+    if (primaryOutbound.isEmpty()) {
+        // No proxy outbound could be produced for this protocol; emitting only
+        // direct/block would silently route everything around the proxy.
+        return {};
+    }
+    outbounds.append(primaryOutbound);
     outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
     outbounds.append(SingBoxConfigFragments::buildBlockOutbound());
     return outbounds;
@@ -416,16 +436,28 @@ QJsonArray SingBoxCoreBackend::buildGroupOutbounds(const Config& config, const Q
 {
     // The urltest group takes over the "proxy" tag the route names, and every member becomes
     // its own tagged outbound the group references; direct/block stay last exactly as in a
-    // single-node start.
+    // single-node start. A member with no outbound implementation is skipped with its tag, so
+    // the group never names a member that has no outbound.
     QStringList memberTags;
+    QJsonArray memberOutbounds;
     for (int i = 0; i < members.size(); ++i) {
-        memberTags.append(proxyGroupMemberTag(i + 1));
+        const QString memberTag = proxyGroupMemberTag(i + 1);
+        const QJsonObject memberOutbound =
+            SingBoxConfigFragments::buildPrimaryOutbound(config, members.at(i), memberTag);
+        if (memberOutbound.isEmpty()) {
+            continue;
+        }
+        memberTags.append(memberTag);
+        memberOutbounds.append(memberOutbound);
+    }
+    if (memberOutbounds.isEmpty()) {
+        return {};
     }
 
     QJsonArray outbounds;
     outbounds.append(SingBoxConfigFragments::buildUrlTestOutbound(memberTags));
-    for (int i = 0; i < members.size(); ++i) {
-        outbounds.append(SingBoxConfigFragments::buildPrimaryOutbound(config, members.at(i), memberTags.at(i)));
+    for (const QJsonValue& memberOutbound : memberOutbounds) {
+        outbounds.append(memberOutbound);
     }
     outbounds.append(SingBoxConfigFragments::buildDirectOutbound());
     outbounds.append(SingBoxConfigFragments::buildBlockOutbound());

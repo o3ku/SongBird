@@ -1105,6 +1105,14 @@ Restart SongBird and use the downloaded package to update to the new version.</s
         <translation>%1 无法为 %2 服务器生成运行时配置。</translation>
     </message>
     <message>
+        <source>Cannot generate a runtime config for server %2 (%1).</source>
+        <translation>无法为服务器 %2（%1）生成运行时配置。</translation>
+    </message>
+    <message>
+        <source>%1 cannot generate a runtime config for server %3 (%2).</source>
+        <translation>%1 无法为服务器 %3（%2）生成运行时配置。</translation>
+    </message>
+    <message>
         <source>Cannot generate a group config without members.</source>
         <translation>没有成员，无法生成分组配置。</translation>
     </message>
@@ -2357,8 +2365,8 @@ The running core will be stopped before installation if needed.</source>
         <translation>Mihomo 配置生成尚不支持 tcp headerType %1。</translation>
     </message>
     <message>
-        <source>The selected server type is not supported by the current Mihomo generator.</source>
-        <translation>当前 Mihomo 生成器不支持所选的服务器类型。</translation>
+        <source>Server %1 (%2) is not supported by the Mihomo generator.</source>
+        <translation>服务器 %1（%2）不受 Mihomo 生成器支持。</translation>
     </message>
 </context>
 <context>
@@ -3525,8 +3533,8 @@ This setting still controls the fallback when the whole group fails.</source>
 <context>
     <name>SingBoxCoreBackend</name>
     <message>
-        <source>The selected server type is not supported by the current sing-box generator.</source>
-        <translation>当前 sing-box 生成器不支持所选的服务器类型。</translation>
+        <source>Server %1 (%2) is not supported by the sing-box generator.</source>
+        <translation>服务器 %1（%2）不受 sing-box 生成器支持。</translation>
     </message>
     <message>
         <source>sing-box config generation does not support network %1 yet.</source>
@@ -4110,8 +4118,8 @@ This setting still controls the fallback when the whole group fails.</source>
 <context>
     <name>XrayCoreBackend</name>
     <message>
-        <source>The selected server type is not supported by the current Xray generator.</source>
-        <translation>当前 Xray 生成器不支持所选的服务器类型。</translation>
+        <source>Server %1 (%2) is not supported by the Xray generator.</source>
+        <translation>服务器 %1（%2）不受 Xray 生成器支持。</translation>
     </message>
     <message>
         <source>Xray config generation does not support network %1 yet.</source>

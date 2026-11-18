@@ -372,8 +372,14 @@ void appendRules(QJsonObject& root, const Config& config);
 
 QJsonObject buildClientRoot(const Config& config, const VmessItem& server)
 {
+    const QJsonObject primaryProxy = buildPrimaryProxy(config, server, kPrimaryProxyName);
+    if (primaryProxy.isEmpty()) {
+        // No proxy could be produced for this protocol; emitting only the group would
+        // leave the rules pointing at a proxy that does not exist.
+        return {};
+    }
     QJsonObject root = buildBaseClientRoot(config);
-    root.insert(QStringLiteral("proxies"), QJsonArray{buildPrimaryProxy(config, server, kPrimaryProxyName)});
+    root.insert(QStringLiteral("proxies"), QJsonArray{primaryProxy});
     root.insert(QStringLiteral("proxy-groups"), QJsonArray{buildProxyGroup()});
     appendRules(root, config);
     return root;
@@ -387,13 +393,22 @@ QJsonObject buildClientGroupRoot(const Config& config, const QList<VmessItem>& m
 
     // The url-test group takes over the "proxy" group name the rules already reference; every
     // member becomes its own named proxy. url/interval/tolerance stay unset so mihomo's
-    // defaults apply (generate_204 / 300s / none), matching sing-box's group behavior.
+    // defaults apply (generate_204 / 300s / none), matching sing-box's group behavior. A
+    // member with no proxy implementation is skipped with its name, so the group never
+    // names a member that has no proxy.
     QJsonArray proxies;
     QJsonArray memberNames;
     for (int i = 0; i < members.size(); ++i) {
         const QString memberName = proxyGroupMemberTag(i + 1);
+        const QJsonObject memberProxy = buildPrimaryProxy(config, members.at(i), memberName);
+        if (memberProxy.isEmpty()) {
+            continue;
+        }
         memberNames.append(memberName);
-        proxies.append(buildPrimaryProxy(config, members.at(i), memberName));
+        proxies.append(memberProxy);
+    }
+    if (proxies.isEmpty()) {
+        return {};
     }
 
     QJsonObject group;
@@ -466,6 +481,14 @@ void appendRules(QJsonObject& root, const Config& config)
 
 QJsonObject buildPrimaryProxy(const Config& config, const VmessItem& server, const QString& name)
 {
+    // This core has no proxy implementation for the protocol. Returning an empty object
+    // makes the caller fail with a clear message instead of emitting a bare proxy with an
+    // empty type that the core then rejects cryptically -- the same shape Xray's
+    // fragment already uses.
+    if (normalizeClashType(server.configType).isEmpty()) {
+        return {};
+    }
+
     QJsonObject proxy;
     proxy.insert(QStringLiteral("name"), name);
     proxy.insert(QStringLiteral("type"), normalizeClashType(server.configType));
