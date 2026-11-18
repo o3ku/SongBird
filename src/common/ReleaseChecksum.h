@@ -10,17 +10,30 @@
 #include "common/OperationResult.h"
 
 // SHA-256 verification for anything downloaded from a GitHub release: the app update, core
-// packages and geo databases. The trust anchor is always GitHub itself -- either the `digest`
-// field the releases API returns for each asset, or a checksum asset published in the same
-// release. A checksum fetched from anywhere else cannot vouch for the bytes, so there is no
-// third source here.
+// packages and geo databases.
 //
-// Verification is fail-closed by default: `verifyDownloadedBytes` reports Unverifiable when
-// no expected hash can be established at all, and callers refuse the install. The one exception
-// is a locally constructed release (the built-in core bootstrap, used when no core is installed
-// and the releases API is unreachable): there is no release metadata by definition, so the
-// caller warns loudly and proceeds instead of bricking a first run. That exception is the
-// caller's decision, not this helper's -- the helper never returns "verified" without a hash.
+// Trust model. A checksum is only an anchor when it arrived over the official GitHub
+// channel, and there are exactly two ways that happens:
+//   - the releases API answered from api.github.com, so the `digest` it returned and the
+//     checksum URLs it named are GitHub's own (callers record this as
+//     `metadataFromOfficial`; metadata fetched through a mirror is NOT official, however
+//     plausible it looks -- a mirror can forge a digest and a checksum URL as easily as
+//     it can forge the bytes);
+//   - a checksum URL derived from the package URL, when that URL itself comes from code
+//     rather than from metadata (the built-in core bootstrap, `packageUrlFromCode`).
+// A checksum document fetched from a mirror is never an official anchor: the mirror that
+// served the bytes can serve a matching checksum for whatever it chose to serve.
+//
+// Verification therefore runs in two passes. `verifyDownloadedBytes` is the official pass:
+// it only uses the sources above, fetched exactly as named (never through a mirror), and
+// reports Verified, Mismatched, or Unverifiable. `verifyDownloadedBytesViaMirror` is the
+// degraded pass for when GitHub itself is unreachable -- the exact situation the mirrors
+// exist for: it tries the same sources through the mirrors as well and reports
+// MirrorVerified when one matches. MirrorVerified means the bytes are self-consistent
+// with what the mirror said, NOT that GitHub vouches for them; a compromised mirror can
+// forge both, and callers must say so loudly instead of installing silently. A mismatch
+// fails closed in both passes, and when no checksum exists anywhere the result is
+// Unverifiable, never Verified.
 namespace ReleaseChecksum {
 
 // SHA-256 hex (lowercase) of `data`.
@@ -61,30 +74,65 @@ QList<QUrl> derivedChecksumUrls(const QUrl& packageDownloadUrl);
 
 enum class Verification {
     Verified,
+    // Verified against a checksum that only a mirror vouches for (see the trust model
+    // above). Installs proceed only where the caller accepts the degraded tradeoff, and
+    // the caller must warn loudly.
+    MirrorVerified,
     Mismatched,
     Unverifiable,
 };
 
 struct VerificationOutcome {
     Verification status = Verification::Unverifiable;
-    // Lowercase hex. Set for Verified and Mismatched; empty for Unverifiable.
+    // Lowercase hex. Set for Verified, MirrorVerified and Mismatched; empty for
+    // Unverifiable.
     QString expectedHex;
     QString actualHex;
 };
 
-// Verifies `packageBytes` for `assetName`, in order:
-//   1. `apiDigest`, when the release metadata carried one;
-//   2. `checksumAsset`, downloaded with `fetchChecksum` and parsed for the asset's hash;
-//   3. the checksum URLs derived from `packageDownloadUrl`, tried in order.
-// `fetchChecksum` is (url, content) -> OperationResult, the caller's own download path.
-// Returns Mismatched (never Verified) when a hash was established and the bytes differ, and
-// Unverifiable when no hash could be established from any source.
+// Everything one verification needs. `fetchChecksum` is (url, content) ->
+// OperationResult, the caller's own download path.
+struct VerificationRequest {
+    QByteArray packageBytes;
+    QString assetName;
+    QUrl packageDownloadUrl;
+    QString apiDigest;
+    std::optional<NamedAsset> checksumAsset;
+    // True when the release metadata (and therefore the API digest and any checksum URL
+    // the metadata names) arrived over the official GitHub channel. False is the safe
+    // default: a digest from unknown provenance is treated as mirror-supplied.
+    bool metadataFromOfficial = false;
+    // True when the package URL itself comes from code, not from release metadata (the
+    // built-in core bootstrap). Derived checksum URLs are then anchored to the URL's own
+    // host instead of to metadata that does not exist.
+    bool packageUrlFromCode = false;
+};
+
+using FetchChecksum =
+    std::function<OperationResult(const QUrl& url, QByteArray* content)>;
+
+// The official pass. Verifies `request.packageBytes` for `request.assetName`, in order:
+//   1. `apiDigest`, when the metadata that carried it came from the official channel;
+//   2. `checksumAsset`, when the metadata that named it came from the official channel
+//      and its URL is a GitHub origin;
+//   3. the checksum URLs derived from `packageDownloadUrl`, when their host is a GitHub
+//      origin and either the metadata was official or the package URL comes from code.
+// Checksum documents are fetched exactly as named, never through a mirror: a mirror
+// must not get a chance to substitute the document the anchor is read from.
+// Returns Mismatched (never Verified) when a hash was established and the bytes differ,
+// and Unverifiable when no official hash could be established from any source.
 VerificationOutcome verifyDownloadedBytes(
-    const QByteArray& packageBytes,
-    const QString& assetName,
-    const QUrl& packageDownloadUrl,
-    const QString& apiDigest,
-    const std::optional<NamedAsset>& checksumAsset,
-    const std::function<OperationResult(const QUrl& url, QByteArray* content)>& fetchChecksum);
+    const VerificationRequest& request,
+    const FetchChecksum& fetchChecksum);
+
+// The degraded pass, for when the official channel is unreachable and the mirrors are
+// all that answer. Same sources as the official pass, but each checksum URL is also
+// tried through the mirror candidates, and the API digest is used as a mirror-supplied
+// value: a match here proves the bytes agree with the mirror, not with GitHub. Returns
+// MirrorVerified on a match, Mismatched when a hash was established and the bytes
+// differ, and Unverifiable when no hash could be established from any source.
+VerificationOutcome verifyDownloadedBytesViaMirror(
+    const VerificationRequest& request,
+    const FetchChecksum& fetchChecksum);
 
 } // namespace ReleaseChecksum

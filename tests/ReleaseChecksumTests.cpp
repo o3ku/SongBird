@@ -31,9 +31,16 @@ private slots:
     void expectedSha256ParsesOpensslDigestFiles();
     void derivedChecksumUrlsFollowThePackageUrl();
     void verifyPrefersTheApiDigestAndNeverFetches();
+    void verifyIgnoresADigestFromMirrorMetadata();
     void verifyFallsBackToTheChecksumAsset();
+    void verifyIgnoresAMirrorHostedChecksumAsset();
     void verifyFallsBackToADerivedChecksumFile();
+    void verifyDerivedChecksumNeedsOfficialMetadataOrACodeUrl();
     void verifyIsUnverifiableWhenNoChecksumExists();
+    void verifyViaMirrorAcceptsAMirrorSuppliedDigest();
+    void verifyViaMirrorAcceptsAMirrorHostedChecksumDocument();
+    void verifyViaMirrorRefusesAMirrorMismatch();
+    void verifyViaMirrorIsUnverifiableWhenNoChecksumExists();
 };
 
 void ReleaseChecksumTests::sha256HexMatchesKnownVector()
@@ -187,28 +194,56 @@ void ReleaseChecksumTests::verifyPrefersTheApiDigestAndNeverFetches()
         return OperationResult::fail(QStringLiteral("must not be called"));
     };
 
-    const VerificationOutcome verified = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("hello"),
-        QStringLiteral("hello.txt"),
-        releaseUrl(QStringLiteral("hello.txt")),
-        QStringLiteral("sha256:") + kHelloSha256,
-        std::nullopt,
-        fetch);
+    // The digest only anchors the bytes when the metadata that carried it came from the
+    // official channel.
+    ReleaseChecksum::VerificationRequest official;
+    official.packageBytes = QByteArray("hello");
+    official.assetName = QStringLiteral("hello.txt");
+    official.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    official.apiDigest = QStringLiteral("sha256:") + kHelloSha256;
+    official.metadataFromOfficial = true;
+
+    const VerificationOutcome verified =
+        ReleaseChecksum::verifyDownloadedBytes(official, fetch);
     QCOMPARE(verified.status, Verification::Verified);
     QCOMPARE(verified.expectedHex, kHelloSha256);
     QCOMPARE(verified.actualHex, kHelloSha256);
     QCOMPARE(fetchCalls, 0);
 
-    const VerificationOutcome mismatched = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("hello"),
-        QStringLiteral("hello.txt"),
-        releaseUrl(QStringLiteral("hello.txt")),
-        QStringLiteral("sha256:") + kDummyPackageSha256,
-        std::nullopt,
-        fetch);
+    ReleaseChecksum::VerificationRequest mismatch = official;
+    mismatch.apiDigest = QStringLiteral("sha256:") + kDummyPackageSha256;
+    const VerificationOutcome mismatched =
+        ReleaseChecksum::verifyDownloadedBytes(mismatch, fetch);
     QCOMPARE(mismatched.status, Verification::Mismatched);
     QCOMPARE(mismatched.expectedHex, kDummyPackageSha256);
     QCOMPARE(mismatched.actualHex, kHelloSha256);
+    QCOMPARE(fetchCalls, 0);
+}
+
+void ReleaseChecksumTests::verifyIgnoresADigestFromMirrorMetadata()
+{
+    int fetchCalls = 0;
+    const auto fetch = [&fetchCalls](const QUrl&, QByteArray*) {
+        ++fetchCalls;
+        return OperationResult::fail(QStringLiteral("not found"));
+    };
+
+    // The same digest, but the metadata arrived through a mirror: a mirror can report any
+    // digest it likes for the bytes it serves, so the official pass must not use it. The
+    // derived checksum URLs are github.com URLs, but they are only trusted when the
+    // metadata was official (or the package URL comes from code), so with neither the
+    // result is Unverifiable -- and no checksum fetch happens at all.
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.apiDigest = QStringLiteral("sha256:") + kHelloSha256;
+    request.metadataFromOfficial = false;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
+    QCOMPARE(outcome.status, Verification::Unverifiable);
+    QVERIFY(outcome.expectedHex.isEmpty());
     QCOMPARE(fetchCalls, 0);
 }
 
@@ -222,23 +257,53 @@ void ReleaseChecksumTests::verifyFallsBackToTheChecksumAsset()
         return OperationResult::fail(QStringLiteral("not found"));
     };
 
-    const VerificationOutcome verified = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("hello"),
-        QStringLiteral("hello.txt"),
-        releaseUrl(QStringLiteral("hello.txt")),
-        QString(),
-        NamedAsset{QStringLiteral("hello.txt.sha256"), releaseUrl(QStringLiteral("hello.txt.sha256"))},
-        fetch);
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.checksumAsset =
+        NamedAsset{QStringLiteral("hello.txt.sha256"), releaseUrl(QStringLiteral("hello.txt.sha256"))};
+    request.metadataFromOfficial = true;
+
+    const VerificationOutcome verified =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
     QCOMPARE(verified.status, Verification::Verified);
 
-    const VerificationOutcome mismatched = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("tampered"),
-        QStringLiteral("hello.txt"),
-        releaseUrl(QStringLiteral("hello.txt")),
-        QString(),
-        NamedAsset{QStringLiteral("hello.txt.sha256"), releaseUrl(QStringLiteral("hello.txt.sha256"))},
-        fetch);
+    request.packageBytes = QByteArray("tampered");
+    const VerificationOutcome mismatched =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
     QCOMPARE(mismatched.status, Verification::Mismatched);
+}
+
+void ReleaseChecksumTests::verifyIgnoresAMirrorHostedChecksumAsset()
+{
+    const auto fetch = [](const QUrl& url, QByteArray* content) {
+        // Only the mirror-hosted document answers: the derived official URLs 404, so the
+        // only checksum the official pass could use is the mirror's own document.
+        if (url.host() == QStringLiteral("ghfast.top")
+            && url.toString().endsWith(QStringLiteral("hello.txt.sha256"))) {
+            *content = (kHelloSha256 + QStringLiteral("  hello.txt\n")).toUtf8();
+            return OperationResult::ok();
+        }
+        return OperationResult::fail(QStringLiteral("not found"));
+    };
+
+    // The metadata is official, but the checksum asset it names lives on a mirror: the
+    // document is fetched from the mirror's host, so it cannot anchor the bytes. The
+    // derived URLs (github.com, metadata official) are tried instead and 404, leaving
+    // the package Unverifiable rather than Verified-against-a-mirror.
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.checksumAsset = NamedAsset{
+        QStringLiteral("hello.txt.sha256"),
+        QUrl(QStringLiteral("https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/v26.3.27/hello.txt.sha256"))};
+    request.metadataFromOfficial = true;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
+    QCOMPARE(outcome.status, Verification::Unverifiable);
 }
 
 void ReleaseChecksumTests::verifyFallsBackToADerivedChecksumFile()
@@ -253,14 +318,46 @@ void ReleaseChecksumTests::verifyFallsBackToADerivedChecksumFile()
         return OperationResult::fail(QStringLiteral("not found"));
     };
 
-    const VerificationOutcome verified = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("dummy-package"),
-        QStringLiteral("dummy-package"),
-        releaseUrl(QStringLiteral("dummy-package")),
-        QString(),
-        std::nullopt,
-        fetch);
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("dummy-package");
+    request.assetName = QStringLiteral("dummy-package");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("dummy-package"));
+    request.metadataFromOfficial = true;
+
+    const VerificationOutcome verified =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
     QCOMPARE(verified.status, Verification::Verified);
+}
+
+void ReleaseChecksumTests::verifyDerivedChecksumNeedsOfficialMetadataOrACodeUrl()
+{
+    const auto fetch = [](const QUrl& url, QByteArray* content) {
+        if (url.toString().endsWith(QStringLiteral("dummy-package.dgst"))) {
+            *content = (QStringLiteral("SHA2-256(dummy-package)= ") + kDummyPackageSha256 + QStringLiteral("\n")).toUtf8();
+            return OperationResult::ok();
+        }
+        return OperationResult::fail(QStringLiteral("not found"));
+    };
+
+    // The bootstrap case: no metadata at all, but the package URL comes from the backend's
+    // code, so the derived checksum URLs are anchored to that URL's own (github.com) host.
+    ReleaseChecksum::VerificationRequest fromCode;
+    fromCode.packageBytes = QByteArray("dummy-package");
+    fromCode.assetName = QStringLiteral("dummy-package");
+    fromCode.packageDownloadUrl = releaseUrl(QStringLiteral("dummy-package"));
+    fromCode.packageUrlFromCode = true;
+
+    const VerificationOutcome verified =
+        ReleaseChecksum::verifyDownloadedBytes(fromCode, fetch);
+    QCOMPARE(verified.status, Verification::Verified);
+
+    // The same package URL, but named by mirror-supplied metadata: the derived document
+    // is not an official anchor without official metadata behind it.
+    ReleaseChecksum::VerificationRequest fromMirror = fromCode;
+    fromMirror.packageUrlFromCode = false;
+    const VerificationOutcome unverifiable =
+        ReleaseChecksum::verifyDownloadedBytes(fromMirror, fetch);
+    QCOMPARE(unverifiable.status, Verification::Unverifiable);
 }
 
 void ReleaseChecksumTests::verifyIsUnverifiableWhenNoChecksumExists()
@@ -272,18 +369,114 @@ void ReleaseChecksumTests::verifyIsUnverifiableWhenNoChecksumExists()
     };
 
     // No digest, no checksum asset, and every derived URL 404s: unverifiable, not verified.
-    const VerificationOutcome outcome = ReleaseChecksum::verifyDownloadedBytes(
-        QByteArray("dummy-package"),
-        QStringLiteral("dummy-package"),
-        releaseUrl(QStringLiteral("dummy-package")),
-        QString(),
-        std::nullopt,
-        fetch);
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("dummy-package");
+    request.assetName = QStringLiteral("dummy-package");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("dummy-package"));
+    request.metadataFromOfficial = true;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetch);
     QCOMPARE(outcome.status, Verification::Unverifiable);
     QVERIFY(outcome.expectedHex.isEmpty());
     QVERIFY(outcome.actualHex.isEmpty());
     // The checksum asset slot is empty, so all three derived URLs are tried.
     QCOMPARE(fetchCalls, 3);
+}
+
+void ReleaseChecksumTests::verifyViaMirrorAcceptsAMirrorSuppliedDigest()
+{
+    const auto fetch = [](const QUrl&, QByteArray*) {
+        return OperationResult::fail(QStringLiteral("must not be called"));
+    };
+
+    // GitHub unreachable, metadata through a mirror: the digest is mirror-supplied, so
+    // the degraded pass accepts it as MirrorVerified -- self-consistent with the mirror,
+    // not anchored to GitHub -- and never fetches.
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.apiDigest = QStringLiteral("sha256:") + kHelloSha256;
+    request.metadataFromOfficial = false;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytesViaMirror(request, fetch);
+    QCOMPARE(outcome.status, Verification::MirrorVerified);
+    QCOMPARE(outcome.expectedHex, kHelloSha256);
+    QCOMPARE(outcome.actualHex, kHelloSha256);
+}
+
+void ReleaseChecksumTests::verifyViaMirrorAcceptsAMirrorHostedChecksumDocument()
+{
+    const auto fetch = [](const QUrl& url, QByteArray* content) {
+        // The mirror pass expands each checksum URL through the mirror candidates, so the
+        // document is fetched from a mirror host here, not from github.com.
+        if (url.host() == QStringLiteral("ghfast.top")
+            && url.toString().endsWith(QStringLiteral("hello.txt.sha256"))) {
+            *content = (kHelloSha256 + QStringLiteral("  hello.txt\n")).toUtf8();
+            return OperationResult::ok();
+        }
+        return OperationResult::fail(QStringLiteral("not found"));
+    };
+
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.checksumAsset =
+        NamedAsset{QStringLiteral("hello.txt.sha256"), releaseUrl(QStringLiteral("hello.txt.sha256"))};
+    request.metadataFromOfficial = false;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytesViaMirror(request, fetch);
+    QCOMPARE(outcome.status, Verification::MirrorVerified);
+}
+
+void ReleaseChecksumTests::verifyViaMirrorRefusesAMirrorMismatch()
+{
+    const auto fetch = [](const QUrl&, QByteArray*) {
+        return OperationResult::fail(QStringLiteral("must not be called"));
+    };
+
+    // A mirror-supplied digest that does not match the bytes is a mismatch in the
+    // degraded pass too: the degraded path only ever relaxes where the anchor comes
+    // from, never whether the bytes match it.
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("hello");
+    request.assetName = QStringLiteral("hello.txt");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("hello.txt"));
+    request.apiDigest = QStringLiteral("sha256:") + kDummyPackageSha256;
+    request.metadataFromOfficial = false;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytesViaMirror(request, fetch);
+    QCOMPARE(outcome.status, Verification::Mismatched);
+    QCOMPARE(outcome.expectedHex, kDummyPackageSha256);
+    QCOMPARE(outcome.actualHex, kHelloSha256);
+}
+
+void ReleaseChecksumTests::verifyViaMirrorIsUnverifiableWhenNoChecksumExists()
+{
+    int fetchCalls = 0;
+    const auto fetch = [&fetchCalls](const QUrl&, QByteArray*) {
+        ++fetchCalls;
+        return OperationResult::fail(QStringLiteral("not found"));
+    };
+
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = QByteArray("dummy-package");
+    request.assetName = QStringLiteral("dummy-package");
+    request.packageDownloadUrl = releaseUrl(QStringLiteral("dummy-package"));
+    request.metadataFromOfficial = false;
+
+    const VerificationOutcome outcome =
+        ReleaseChecksum::verifyDownloadedBytesViaMirror(request, fetch);
+    QCOMPARE(outcome.status, Verification::Unverifiable);
+    QVERIFY(outcome.expectedHex.isEmpty());
+    // No checksum asset: three derived URLs, each tried through three mirrors plus the
+    // official URL.
+    QCOMPARE(fetchCalls, 12);
 }
 
 QTEST_MAIN(ReleaseChecksumTests)

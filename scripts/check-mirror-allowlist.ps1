@@ -6,16 +6,20 @@ $ErrorActionPreference = "Stop"
 
 # Why this check exists
 # --------------------
-# Downloads used to be routed through third-party GitHub mirrors (ghfast.top,
-# mirror.ghproxy.com, ghproxy.net) prepended ahead of github.com, so a download GitHub served
-# slowly could still finish. A mirror is a man in the middle: it serves whatever bytes it
-# chooses, and a checksum published beside the file on GitHub cannot vouch for bytes the
-# mirror substituted. The mirrors were removed and downloads go to github.com only; this
-# check makes sure one never creeps back in, in a string literal nobody reads twice.
+# Downloads go through three intentional GitHub mirrors (ghfast.top, mirror.ghproxy.com,
+# ghproxy.net) for regions where github.com is unreachable, and the checksum that vouches
+# for the bytes is anchored to the official GitHub channel instead (see ReleaseChecksum.h).
+# A new mirror host must therefore be a deliberate decision, not a string literal nobody
+# reads twice: every host that appears in an `http(s)://` URL in a C++ source under src/
+# must be on the allowlist below. A host the list does not name fails the build, and
+# adding one means editing this file (and its Python twin) in the open, not slipping a
+# prefix into GitHubMirrorHelper.h.
 #
-# The rule: none of the three hosts may appear in a C++ source under src/. Comments are
-# stripped first -- a host in a comment is history being explained, not a download being
-# routed, and GitHubMirrorHelper.h itself names all three that way.
+# The rule: each URL host must be a GitHub origin, one of the three intentional mirrors,
+# or an allowlisted service host (connectivity checks, exit-location lookups, the plist
+# DTD, loopback and the DNS defaults). Comments are stripped first -- a host in a comment
+# is history being explained, not a download being routed, and GitHubMirrorHelper.h itself
+# documents the mirrors that way.
 
 function Stop-CheckWithError {
     param([string]$Message)
@@ -32,13 +36,57 @@ function Stop-CheckWithError {
 # spelling as Get-ChildItem's, so the slice lands on the separator as intended.
 $sourcePath = (Get-Item -LiteralPath $SourceRoot).FullName
 
-# The mirrors that used to be prepended to download URLs. Kept as a small list rather than a
-# naming rule: a rule like "*proxy*" would let a new host opt out by being named helpfully.
-$forbiddenHosts = @(
+# Hosts a URL in src/ may name. GitHub origins are covered by suffix below; the mirrors
+# are the three intentional ones (see GitHubMirrorHelper.h); the rest are the services
+# the code already talks to, grouped by purpose so a new entry has to say why it belongs.
+$allowedExactHosts = @(
+    "github.com",
+    # Intentional GitHub mirrors.
     "ghfast.top",
     "mirror.ghproxy.com",
-    "ghproxy.net"
+    "ghproxy.net",
+    # Connectivity checks (OutboundLivenessProbeService, ProxyAvailabilityCheckService).
+    "www.gstatic.com",
+    "connectivitycheck.gstatic.com",
+    "cp.cloudflare.com",
+    "detectportal.firefox.com",
+    "www.msftconnecttest.com",
+    "www.google.com",
+    # Exit-location lookups (OutboundLocationProbeService).
+    "ifconfig.co",
+    "ip-api.com",
+    "ipapi.co",
+    "ipinfo.io",
+    "ipwho.is",
+    # macOS login-item helper (MacAutoRunService).
+    "www.apple.com",
+    # Loopback and the DNS defaults (Config.h, ProxyGroupStatusPoller).
+    "127.0.0.1",
+    "localhost",
+    "1.1.1.1",
+    "223.5.5.5"
 )
+
+# Any subdomain of a GitHub origin (api.github.com, raw.githubusercontent.com, ...).
+$allowedHostSuffixes = @(
+    ".github.com",
+    ".githubusercontent.com"
+)
+
+function Test-AllowedHost {
+    param([string]$Host)
+
+    $lower = $Host.ToLowerInvariant()
+    if ($allowedExactHosts -contains $lower) {
+        return $true
+    }
+    foreach ($suffix in $allowedHostSuffixes) {
+        if ($lower.EndsWith($suffix, [System.StringComparison]::Ordinal)) {
+            return $true
+        }
+    }
+    return $false
+}
 
 # Strips // and /* */ comments, replacing them with whitespace of the same length so the reported
 # line numbers match the file the reader opens. String-aware: the shared Remove-CppComments in
@@ -141,12 +189,11 @@ foreach ($file in $files) {
 
     $text = Remove-CppComments -Text (Get-Content -LiteralPath $fullPath -Raw)
 
-    foreach ($host in $forbiddenHosts) {
-        $searchFrom = 0
-        while (($found = $text.IndexOf($host, $searchFrom, [System.StringComparison]::Ordinal)) -ge 0) {
-            $line = ($text.Substring(0, $found) -split "`n").Count
-            $violations.Add("third-party GitHub mirror host '$host' in " + $relative + ":" + $line)
-            $searchFrom = $found + $host.Length
+    foreach ($match in [regex]::Matches($text, 'https?://([A-Za-z0-9._-]+)')) {
+        $host = $match.Groups[1].Value
+        if (-not (Test-AllowedHost -Host $host)) {
+            $line = ($text.Substring(0, $match.Groups[1].Index) -split "`n").Count
+            $violations.Add("URL host '$host' is not on the mirror allowlist in " + $relative + ":" + $line)
         }
     }
 }
@@ -155,4 +202,4 @@ if ($violations.Count -gt 0) {
     Stop-CheckWithError (($violations | ForEach-Object { "- $_" }) -join [Environment]::NewLine)
 }
 
-Write-Host (("Mirror check passed: {0} C++ file(s) scanned, no third-party GitHub mirror host.") -f $files.Count)
+Write-Host (("Mirror allowlist check passed: {0} C++ file(s) scanned, every URL host is a GitHub origin, an intentional mirror, or an allowlisted service host.") -f $files.Count)

@@ -95,14 +95,14 @@ RULES = [
         ],
     },
     {
-        "name": "no-third-party-mirrors",
-        "ps1": "check-no-third-party-mirrors.ps1",
-        "py": "check_no_third_party_mirrors.py",
+        "name": "mirror-allowlist",
+        "ps1": "check-mirror-allowlist.ps1",
+        "py": "check_mirror_allowlist.py",
         # The .ps1 takes -SourceRoot; the .py takes a positional source root.
         "ps1_args": ["-SourceRoot", "{SRC}"],
         "py_args": ["{SRC}"],
         "mutations": [
-            m for m in SOURCE_TREE_CASES if m[1] == "check_no_third_party_mirrors.py"
+            m for m in SOURCE_TREE_CASES if m[1] == "check_mirror_allowlist.py"
         ],
     },
     {

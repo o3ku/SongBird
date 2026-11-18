@@ -183,8 +183,23 @@ void h() {
         }
     },
     @{
-        Name = "no-third-party-mirrors: a mirror host in a download URL"
-        Guard = "check-no-third-party-mirrors.ps1"
+        Name = "mirror-allowlist: an unallowlisted mirror host in a download URL"
+        Guard = "check-mirror-allowlist.ps1"
+        Break = {
+            param($tree)
+            $target = Join-Path $tree "common\SelftestMirrorLeak.cpp"
+            Set-Content -LiteralPath $target -Encoding UTF8 -Value @'
+const char* kSelftestMirror = "https://ghproxy.org/https://github.com/example.invalid/x.zip";
+'@
+        }
+    },
+    @{
+        Name = "mirror-allowlist: an allowlisted mirror host in a download URL is allowed"
+        Guard = "check-mirror-allowlist.ps1"
+        # The three intentional mirrors are ON the allowlist: a tree that only routes a
+        # download through ghfast.top must still pass. A guard that rejects every mirror
+        # host cannot pass the suite.
+        ExpectGreen = $true
         Break = {
             param($tree)
             $target = Join-Path $tree "common\SelftestMirrorLeak.cpp"
@@ -194,8 +209,8 @@ const char* kSelftestMirror = "https://ghfast.top/https://github.com/example.inv
         }
     },
     @{
-        Name = "no-third-party-mirrors: a mirror host named in a comment is allowed"
-        Guard = "check-no-third-party-mirrors.ps1"
+        Name = "mirror-allowlist: a mirror host named in a comment is allowed"
+        Guard = "check-mirror-allowlist.ps1"
         # This case asserts the OPPOSITE direction: a host named in a comment is history being
         # explained, not a download being routed, so a tree where only comments name one must
         # still pass. A guard that scans raw text cannot pass the suite.
@@ -243,7 +258,7 @@ try {
     Copy-Item -LiteralPath $sourcePath -Destination $cleanTree -Recurse -Force
     $cleanSource = Join-Path $cleanTree (Split-Path -Leaf $sourcePath)
 
-    foreach ($guard in @("check-backend-boundaries.ps1", "check-appbootstrap-member-order.ps1", "check-async-owners.ps1", "check-hardcoded-colors.ps1", "check-no-third-party-mirrors.ps1")) {
+    foreach ($guard in @("check-backend-boundaries.ps1", "check-appbootstrap-member-order.ps1", "check-async-owners.ps1", "check-hardcoded-colors.ps1", "check-mirror-allowlist.ps1")) {
         $exitCode = Invoke-Guard -Guard $guard -Arguments @("-SourceRoot", $cleanSource)
         if ($exitCode -ne 0) {
             $failures.Add("${guard}: reported a violation in an unmodified copy of the tree")

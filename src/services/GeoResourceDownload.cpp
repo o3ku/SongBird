@@ -34,7 +34,9 @@ OperationResult GeoResourceDownload::downloadBytes(
     const QString& fileName,
     QByteArray* content,
     const GeoResourceUpdateService::DownloadHandler& downloadHandler,
-    const GeoResourceUpdateService::ProgressHandler& progressHandler)
+    const GeoResourceUpdateService::ProgressHandler& progressHandler,
+    bool officialFirst,
+    QUrl* downloadedFrom)
 {
     if (content == nullptr) {
         return OperationResult::fail(
@@ -47,7 +49,9 @@ OperationResult GeoResourceDownload::downloadBytes(
     }
 
     QString lastError;
-    const QList<QUrl> candidateUrls = buildGitHubMirrorCandidateUrls(url);
+    const QList<QUrl> candidateUrls = officialFirst
+        ? buildGitHubOfficialFirstCandidateUrls(url)
+        : buildGitHubMirrorCandidateUrls(url);
     for (const QUrl& candidateUrl : candidateUrls) {
         // Honor cancellation requested by AppBootstrap::waitForBackgroundThreads()
         // at shutdown so we stop trying additional mirrors when the app is exiting.
@@ -66,6 +70,9 @@ OperationResult GeoResourceDownload::downloadBytes(
         if (downloadHandler) {
             const OperationResult result = downloadHandler(candidateUrl, content);
             if (result.success) {
+                if (downloadedFrom != nullptr) {
+                    *downloadedFrom = candidateUrl;
+                }
                 reportProgress(
                     progressHandler,
                     QCoreApplication::translate("GeoResourceUpdateService", "Downloaded %1 (%2).")
@@ -166,6 +173,9 @@ OperationResult GeoResourceDownload::downloadBytes(
             continue;
         }
 
+        if (downloadedFrom != nullptr) {
+            *downloadedFrom = candidateUrl;
+        }
         reportProgress(
             progressHandler,
             QCoreApplication::translate("GeoResourceUpdateService", "Downloaded %1 (%2).")

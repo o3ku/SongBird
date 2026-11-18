@@ -122,6 +122,18 @@ def _palette_is_exempt(tree: Path) -> None:
 
 
 def _mirror_leak(tree: Path) -> None:
+    # An unallowlisted mirror host in a download URL: ghproxy.org is not one of the three
+    # intentional mirrors, so the allowlist guard must fail the tree.
+    (tree / "common/SelftestMirrorLeak.cpp").write_text(
+        'const char* kSelftestMirror = "https://ghproxy.org/https://github.com/example.invalid/x.zip";\n',
+        encoding="utf-8",
+    )
+
+
+def _allowlisted_mirror_is_exempt(tree: Path) -> None:
+    # The three intentional mirrors are ON the allowlist: a tree that only routes a
+    # download through ghfast.top must still pass. A guard that rejects every mirror
+    # host cannot satisfy it.
     (tree / "common/SelftestMirrorLeak.cpp").write_text(
         'const char* kSelftestMirror = "https://ghfast.top/https://github.com/example.invalid/x.zip";\n',
         encoding="utf-8",
@@ -226,14 +238,15 @@ SOURCE_TREE_CASES = [
     ("async-owners: a worker thread lambda capturing this with no guard", "check_async_owners.py", _async_leak),
     ("async-owners: an invokeMethod continuation posted elsewhere while capturing this", "check_async_owners.py", _invoke_leak),
     ("hardcoded-colors: a hex colour in a stylesheet literal outside the palette", "check_hardcoded_colors.py", _color_leak),
-    ("no-third-party-mirrors: a mirror host in a download URL", "check_no_third_party_mirrors.py", _mirror_leak),
+    ("mirror-allowlist: an unallowlisted mirror host in a download URL", "check_mirror_allowlist.py", _mirror_leak),
 ]
 
 # Cases whose expected result is GREEN: they pin an exemption, so a guard that rejects
 # everything cannot pass the suite.
 GREEN_SOURCE_TREE_CASES = [
     ("hardcoded-colors: a palette file is allowed to name colours", "check_hardcoded_colors.py", _palette_is_exempt),
-    ("no-third-party-mirrors: a mirror host named in a comment is allowed", "check_no_third_party_mirrors.py", _mirror_in_comment_is_exempt),
+    ("mirror-allowlist: an allowlisted mirror host in a download URL is allowed", "check_mirror_allowlist.py", _allowlisted_mirror_is_exempt),
+    ("mirror-allowlist: a mirror host named in a comment is allowed", "check_mirror_allowlist.py", _mirror_in_comment_is_exempt),
 ]
 
 LOCALIZATION_CASES = [
@@ -294,7 +307,7 @@ def main(argv) -> int:
             "check_appbootstrap_member_order.py",
             "check_async_owners.py",
             "check_hardcoded_colors.py",
-            "check_no_third_party_mirrors.py",
+            "check_mirror_allowlist.py",
         ]:
             if run_guard(guard, [str(clean_tree)]) != 0:
                 failures.append(f"{guard}: reported a violation in an unmodified copy of the tree")

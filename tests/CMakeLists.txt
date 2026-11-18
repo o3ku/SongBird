@@ -127,14 +127,14 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
 
-    # Downloads go to github.com only. A mirror is a man in the middle: it serves whatever
-    # bytes it chooses, and a checksum published beside the file on GitHub cannot vouch for
-    # bytes the mirror substituted.
+    # Downloads go through three intentional GitHub mirrors, and the checksum anchor is the
+    # official channel instead (see ReleaseChecksum.h). A new mirror host must be a
+    # deliberate allowlist decision, not a string literal nobody reads twice.
     add_test(
-        NAME no-third-party-mirrors
+        NAME mirror-allowlist
         COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
             -NoProfile
-            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-no-third-party-mirrors.ps1
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-mirror-allowlist.ps1
             -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}/../src
     )
 endif()
@@ -175,7 +175,7 @@ if(Python3_Interpreter_FOUND)
         ${SONGBIRD_PYTHON_SOURCE_ROOT})
     songbird_add_python_guard(py-hardcoded-colors check_hardcoded_colors.py
         ${SONGBIRD_PYTHON_SOURCE_ROOT})
-    songbird_add_python_guard(py-no-third-party-mirrors check_no_third_party_mirrors.py
+    songbird_add_python_guard(py-mirror-allowlist check_mirror_allowlist.py
         ${SONGBIRD_PYTHON_SOURCE_ROOT})
     songbird_add_python_guard(py-q-os-include-scope check_q_os_include_scope.py
         --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
@@ -1058,6 +1058,20 @@ set(SONGBIRD_RELEASE_CHECKSUM_TEST_SOURCES
 songbird_add_qt_test(songbird_release_checksum_tests release-checksum
     SOURCES
         ${SONGBIRD_RELEASE_CHECKSUM_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Widgets
+)
+
+# The mirror candidate builders: the three intentional mirrors, their order, and which
+# hosts count as a GitHub origin for the checksum anchor.
+set(SONGBIRD_GITHUB_MIRROR_HELPER_TEST_SOURCES
+    GitHubMirrorHelperTests.cpp
+)
+
+songbird_add_qt_test(songbird_github_mirror_helper_tests github-mirror-helper
+    SOURCES
+        ${SONGBIRD_GITHUB_MIRROR_HELPER_TEST_SOURCES}
     LIBRARIES
         Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Widgets

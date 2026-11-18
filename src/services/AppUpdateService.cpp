@@ -138,7 +138,11 @@ OperationResult AppUpdateService::checkForUpdate(
 
     QString lastError;
     AppUpdateRelease release;
-    for (const QUrl& candidateUrl : buildGitHubMirrorCandidateUrls(songbirdReleasesApiUrl())) {
+    // Release metadata decides whether the checksum anchor can be trusted at all, so it
+    // is fetched official-first: GitHub first, the mirrors only if GitHub does not
+    // answer. A mirror that answered first could hand us a digest and checksum URLs it
+    // chose itself, which no later check could tell apart from GitHub's own.
+    for (const QUrl& candidateUrl : buildGitHubOfficialFirstCandidateUrls(songbirdReleasesApiUrl())) {
         QThread* const currentThread = QThread::currentThread();
         if (currentThread != nullptr && currentThread->isInterruptionRequested()) {
             return OperationResult::cancel(
@@ -159,6 +163,7 @@ OperationResult AppUpdateService::checkForUpdate(
 
         QString parseError;
         if (parseLatestAppRelease(payload, allowPrerelease, &release, &parseError)) {
+            result->metadataFromOfficial = isGitHubOriginUrl(candidateUrl);
             lastError.clear();
             break;
         }
@@ -269,28 +274,45 @@ OperationResult AppUpdateService::downloadUpdate(
                     : lastError));
     }
 
-    // The bytes are verified before anything is written: an executable that fails its checksum
-    // is refused outright, and one with no checksum to check against is refused too. SongBird's
-    // own releases publish "<asset>.sha256" (see .github/workflows/release.yml) and the API
-    // digest covers older releases, so a release with neither is one to fetch by hand from the
+    // The bytes are verified before anything is written, against the official GitHub
+    // channel first: an executable that fails its checksum is refused outright, and one
+    // with no official checksum to check against is refused too. SongBird's own releases
+    // publish "<asset>.sha256" (see .github/workflows/release.yml) and the API digest
+    // covers older releases, so a release with neither is one to fetch by hand from the
     // releases page, not one to install blind.
+    //
+    // When GitHub itself was unreachable the metadata -- and the package -- came through
+    // a mirror, so there is no official anchor at all. The package is then verified
+    // against a mirror-supplied checksum instead: a match only proves the bytes agree
+    // with the mirror, so the install proceeds with a loud warning rather than silently,
+    // and a mismatch still refuses outright. That is the availability tradeoff the
+    // mirrors exist for, and the warning is the price of it.
     const std::optional<ReleaseChecksum::NamedAsset> checksumAsset =
         checkResult.checksumAssetDownloadUrl.isValid()
         ? std::optional<ReleaseChecksum::NamedAsset>{ReleaseChecksum::NamedAsset{
             checkResult.checksumAssetName, checkResult.checksumAssetDownloadUrl}}
         : std::nullopt;
-    const ReleaseChecksum::VerificationOutcome verification =
-        ReleaseChecksum::verifyDownloadedBytes(
-            packageBytes,
-            publishedName,
-            downloadUrl,
-            checkResult.assetDigest,
-            checksumAsset,
-            [this](const QUrl& url, QByteArray* content) {
-                return downloadHandler_
-                    ? downloadHandler_(url, content)
-                    : downloadBytesWithNetwork(url, content, kAppUpdateMetadataTimeoutMs);
-            });
+    ReleaseChecksum::VerificationRequest request;
+    request.packageBytes = packageBytes;
+    request.assetName = publishedName;
+    request.packageDownloadUrl = downloadUrl;
+    request.apiDigest = checkResult.assetDigest;
+    request.checksumAsset = checksumAsset;
+    request.metadataFromOfficial = checkResult.metadataFromOfficial;
+    const auto fetchChecksum = [this](const QUrl& url, QByteArray* content) {
+        return downloadHandler_
+            ? downloadHandler_(url, content)
+            : downloadBytesWithNetwork(url, content, kAppUpdateMetadataTimeoutMs);
+    };
+    ReleaseChecksum::VerificationOutcome verification =
+        ReleaseChecksum::verifyDownloadedBytes(request, fetchChecksum);
+    bool mirrorVerified = false;
+    if (verification.status == ReleaseChecksum::Verification::Unverifiable
+        && !checkResult.metadataFromOfficial) {
+        verification = ReleaseChecksum::verifyDownloadedBytesViaMirror(request, fetchChecksum);
+        mirrorVerified =
+            verification.status == ReleaseChecksum::Verification::MirrorVerified;
+    }
     if (verification.status == ReleaseChecksum::Verification::Mismatched) {
         return OperationResult::fail(
             QCoreApplication::translate("AppUpdateService", "SHA-256 checksum mismatch for SongBird %1: the downloaded update does not match the published checksum (expected %2, got %3). The update was not saved.")
@@ -315,8 +337,14 @@ OperationResult AppUpdateService::downloadUpdate(
         *savedPath = packagePath;
     }
 
-    return OperationResult::ok(
+    QString savedMessage =
         QCoreApplication::translate("AppUpdateService", "SongBird update downloaded: %1")
-            .arg(QDir::toNativeSeparators(packagePath)),
-        true);
+            .arg(QDir::toNativeSeparators(packagePath));
+    if (mirrorVerified) {
+        savedMessage += QStringLiteral(" ") + QCoreApplication::translate(
+            "AppUpdateService",
+            "Warning: GitHub was unreachable, so this update was verified against a checksum from a download mirror only. A mirror can serve any bytes it chooses, so install it only if you trust the mirror that served it.");
+    }
+
+    return OperationResult::ok(savedMessage, true);
 }
