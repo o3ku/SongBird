@@ -2880,6 +2880,22 @@ Switch this protocol to %3?</source>
         <source>Node reachable again; clearing the availability warning.</source>
         <translation>节点已恢复，清除可用性警告。</translation>
     </message>
+    <message>
+        <source>SOCKS inbound</source>
+        <translation>SOCKS 入站</translation>
+    </message>
+    <message>
+        <source>HTTP inbound</source>
+        <translation>HTTP 入站</translation>
+    </message>
+    <message>
+        <source>location probe</source>
+        <translation>位置探测</translation>
+    </message>
+    <message>
+        <source>Local port %1 (%2) is already in use by another program. Change the local port in Settings or stop the program using it, then try again.</source>
+        <translation>本地端口 %1（%2）已被其他程序占用。请在设置中更改本地端口，或停止占用该端口的程序，然后重试。</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
