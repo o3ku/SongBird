@@ -81,6 +81,17 @@ if(SONGBIRD_POWERSHELL_EXECUTABLE)
             -NoProfile
             -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-version-consistency.ps1
     )
+    # The macOS secret store uses CoreFoundation calls, which live in CoreFoundation, not
+    # Security. The sources compile with only Security linked, so the missing framework is
+    # invisible until the link step -- and the Linux gate never runs the APPLE block at all.
+    # PR #6 proved it: the GCM fix compiled, and both macOS architectures then failed at
+    # link with undefined symbols (_CFDataCreate, _CFDictionaryCreateMutable).
+    add_test(
+        NAME macos-frameworks
+        COMMAND ${SONGBIRD_POWERSHELL_EXECUTABLE}
+            -NoProfile
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-macos-frameworks.ps1
+    )
     # The README is the project's front page and nothing compiles it, so a moved or renamed
     # screenshot leaves a broken image icon there with no build failure. This only checks that every
     # referenced path exists and is non-empty; whether an image still shows the current UI needs a
@@ -184,6 +195,8 @@ if(Python3_Interpreter_FOUND)
         --source-root ${SONGBIRD_PYTHON_SOURCE_ROOT}
         --translation-file ${CMAKE_CURRENT_SOURCE_DIR}/../translations/SongBird_zh_CN.ts)
     songbird_add_python_guard(py-versions-consistent check_version_consistency.py
+        --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    songbird_add_python_guard(py-macos-frameworks check_macos_frameworks.py
         --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/..)
     songbird_add_python_guard(py-readme-assets check_readme_assets.py
         ${CMAKE_CURRENT_SOURCE_DIR}/..)

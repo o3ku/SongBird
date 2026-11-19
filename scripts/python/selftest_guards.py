@@ -209,6 +209,25 @@ def _plausible_version_fallback(tree: Path) -> None:
     target.write_text(updated, encoding="utf-8")
 
 
+def _macos_framework_link_removed(tree: Path) -> None:
+    # The shape that broke both macOS architectures after PR #6: the sources still use
+    # CoreFoundation, but the link is gone.
+    import re
+
+    path = tree / "src/CMakeLists.txt"
+    text = path.read_text(encoding="utf-8")
+    updated = re.sub(
+        r'\s*target_link_libraries\(songbird_shared_objs PUBLIC "-framework CoreFoundation"\)\n',
+        "\n",
+        text,
+    )
+    if updated == text:
+        raise AssertionError(
+            "selftest fixture is stale: no CoreFoundation link matched in src/CMakeLists.txt"
+        )
+    path.write_text(updated, encoding="utf-8")
+
+
 def _missing_readme_image(tree: Path) -> None:
     (tree / "README.md").write_text("# Title\n\n![shot](docs/screenshots/missing.png)\n", encoding="utf-8")
 
@@ -262,6 +281,10 @@ VERSION_CASES = [
     ("version-consistency: a display version that does not compose from project(VERSION) is rejected", _display_version_not_composed, []),
     ("version-consistency: a release tag that disagrees with project(VERSION) is rejected", lambda tree: None, ["--tag", "v999.0.0"]),
     ("version-consistency: a plausible version fallback in main.cpp is rejected", _plausible_version_fallback, []),
+]
+
+MACOS_CASES = [
+    ("macos-frameworks: a CoreFoundation link removed from src/CMakeLists.txt is rejected", _macos_framework_link_removed),
 ]
 
 README_CASES = [
@@ -389,6 +412,32 @@ def main(argv) -> int:
             )
         else:
             print("  green on the clean tree: check_version_consistency.py")
+
+        # --- macos-frameworks: operates on the build files, not on src/ --------------
+        for index, (name, mutation) in enumerate(MACOS_CASES):
+            tree = temp_root_path / f"mac{index}"
+            tree.mkdir()
+            shutil.copy(REPO_ROOT / "CMakeLists.txt", tree / "CMakeLists.txt")
+            shutil.copytree(REPO_ROOT / "src", tree / "src")
+            (tree / "scripts").mkdir()
+            mutation(tree)
+            exit_code = run_guard("check_macos_frameworks.py", ["--repo-root", str(tree)])
+            if exit_code == 0:
+                failures.append(f"{name}: the guard still reported success on a tree that violates it")
+            else:
+                print(f"  red as expected: {name}")
+
+        clean_macos_tree = temp_root_path / "mac-clean"
+        clean_macos_tree.mkdir()
+        shutil.copy(REPO_ROOT / "CMakeLists.txt", clean_macos_tree / "CMakeLists.txt")
+        shutil.copytree(REPO_ROOT / "src", clean_macos_tree / "src")
+        (clean_macos_tree / "scripts").mkdir()
+        if run_guard("check_macos_frameworks.py", ["--repo-root", str(clean_macos_tree)]) != 0:
+            failures.append(
+                "check_macos_frameworks.py: reported a violation in an unmodified copy of the build files"
+            )
+        else:
+            print("  green on the clean tree: check_macos_frameworks.py")
 
         # --- readme-assets: its own scratch tree ------------------------------------
         for index, (name, mutation, readme) in enumerate(README_CASES):

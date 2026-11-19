@@ -850,6 +850,12 @@ if(APPLE)
     # secret store uses. Attached to the shared objects so the test targets
     # that link it get it too.
     target_link_libraries(songbird_shared_objs PUBLIC "-framework Security")
+    # The secret store also uses CoreFoundation types and calls
+    # (CFDictionaryCreateMutable, CFDataCreate, CFRelease). They live in
+    # CoreFoundation, not Security: without this the macOS link fails with
+    # undefined symbols (_CFDataCreate, _CFDictionaryCreateMutable) even
+    # though every file compiles.
+    target_link_libraries(songbird_shared_objs PUBLIC "-framework CoreFoundation")
 endif()
 
 if(WIN32)
