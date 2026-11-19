@@ -1048,6 +1048,21 @@ songbird_add_qt_test(songbird_secret_store_tests secret-store
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+# The encrypt-then-MAC layout the macOS store seals with: the format and the
+# verify-before-decrypt order are pure functions over injected primitives, so
+# they are tested here with fake ones. The CommonCrypto primitives themselves
+# only compile on macOS.
+set(SONGBIRD_SEALED_VALUE_TEST_SOURCES
+    SealedValueTests.cpp
+)
+
+songbird_add_qt_test(songbird_sealed_value_tests sealed-value
+    SOURCES
+        ${SONGBIRD_SEALED_VALUE_TEST_SOURCES}
+    LIBRARIES
+        Qt${QT_VERSION_MAJOR}::Test
+)
+
 # SHA-256 verification for downloads: the parsing and comparison are pure functions, so
 # they are tested directly here. The service-level paths (core, app, geo) are exercised
 # through their own tests with fake download handlers.

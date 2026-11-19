@@ -2,16 +2,19 @@
 
 #include <QByteArray>
 
+#include <cstring>
+
 #include <CommonCrypto/CommonCrypto.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/SecItem.h>
 #include <Security/SecRandom.h>
 
+#include "common/SealedValue.h"
+
 namespace {
 
 constexpr size_t kKeyLength = 32;
-constexpr size_t kNonceLength = 12;
-constexpr size_t kTagLength = 16;
+constexpr size_t kIvLength = SealedValue::kIvLength;
 
 CFStringRef keychainService()
 {
@@ -114,17 +117,37 @@ QByteArray randomBytes(size_t count)
     return bytes;
 }
 
-QByteArray gcmCrypt(const QByteArray& key, const QByteArray& nonce, const QByteArray& input, bool encrypt, QByteArray* tag)
+// One purpose-bound subkey from the Keychain master key: the encryption key
+// and the MAC key must differ, so a weakness in one construction cannot be
+// carried into the other. The labels are part of the format -- changing one
+// orphans every sealed value, exactly like changing the master key.
+QByteArray deriveKey(const QByteArray& masterKey, const char* label)
+{
+    unsigned char derived[CC_SHA256_DIGEST_LENGTH];
+    CCHmac(
+        kCCHmacAlgSHA256,
+        masterKey.constData(),
+        static_cast<size_t>(masterKey.size()),
+        label,
+        std::strlen(label),
+        derived);
+    return QByteArray(reinterpret_cast<const char*>(derived), CC_SHA256_DIGEST_LENGTH);
+}
+
+// AES-CBC with PKCS#7 padding, via the public CCCryptorCreateWithMode API.
+// The GCM mode this file used before is private SPI (kCCModeGCM and the
+// CCCryptorGCM* calls are not in the public headers) and does not compile.
+QByteArray aesCbcCrypt(const QByteArray& key, const QByteArray& iv, const QByteArray& input, bool encrypt)
 {
     CCCryptorRef cryptor = nullptr;
     const CCCryptorStatus createStatus = CCCryptorCreateWithMode(
         encrypt ? kCCEncrypt : kCCDecrypt,
-        kCCModeGCM,
+        kCCModeCBC,
         kCCAlgorithmAES,
-        ccNoPadding,
-        nullptr,
+        ccPKCS7Padding,
+        iv.constData(),
         key.constData(),
-        key.size(),
+        static_cast<size_t>(key.size()),
         nullptr,
         0,
         0,
@@ -134,27 +157,47 @@ QByteArray gcmCrypt(const QByteArray& key, const QByteArray& nonce, const QByteA
         return {};
     }
 
-    QByteArray output(input.size(), 0);
-    CCCryptorStatus status = CCCryptorGCMAddIV(
-        cryptor, nonce.constData(), static_cast<size_t>(nonce.size()));
+    // CBC with PKCS#7 padding grows the plaintext by at most one block on
+    // encrypt; the ciphertext is already a whole number of blocks.
+    QByteArray output(input.size() + static_cast<int>(kCCBlockSizeAES128), 0);
+    size_t moved = 0;
+    CCCryptorStatus status = CCCryptorUpdate(
+        cryptor,
+        input.constData(),
+        static_cast<size_t>(input.size()),
+        output.data(),
+        static_cast<size_t>(output.size()),
+        &moved);
+    size_t total = moved;
     if (status == kCCSuccess) {
-        status = encrypt
-            ? CCCryptorGCMEncrypt(cryptor, input.constData(), static_cast<size_t>(input.size()), output.data())
-            : CCCryptorGCMDecrypt(cryptor, input.constData(), static_cast<size_t>(input.size()), output.data());
-    }
-
-    // Finalising produces the tag on encrypt and verifies it on decrypt: a
-    // tampered value fails here instead of decrypting to garbage.
-    if (status == kCCSuccess && tag != nullptr) {
-        size_t tagLength = kTagLength;
-        if (encrypt) {
-            tag->resize(static_cast<int>(kTagLength));
-        }
-        status = CCCryptorGCMFinal(cryptor, tag->data(), &tagLength);
+        moved = 0;
+        status = CCCryptorFinal(
+            cryptor,
+            output.data() + total,
+            static_cast<size_t>(output.size() - total),
+            &moved);
+        total += moved;
     }
 
     CCCryptorRelease(cryptor);
-    return status == kCCSuccess ? output : QByteArray();
+    if (status != kCCSuccess) {
+        return {};
+    }
+    output.resize(static_cast<int>(total));
+    return output;
+}
+
+QByteArray hmacSha256(const QByteArray& key, const QByteArray& data)
+{
+    unsigned char mac[CC_SHA256_DIGEST_LENGTH];
+    CCHmac(
+        kCCHmacAlgSHA256,
+        key.constData(),
+        static_cast<size_t>(key.size()),
+        data.constData(),
+        static_cast<size_t>(data.size()),
+        mac);
+    return QByteArray(reinterpret_cast<const char*>(mac), CC_SHA256_DIGEST_LENGTH);
 }
 
 } // namespace
@@ -165,26 +208,31 @@ QString MacSecretStore::protect(const QString& plaintext) const
         return {};
     }
 
-    const QByteArray key = loadOrCreateKey();
-    if (key.isEmpty()) {
+    const QByteArray masterKey = loadOrCreateKey();
+    if (masterKey.isEmpty()) {
         return {};
     }
 
-    const QByteArray nonce = randomBytes(kNonceLength);
-    if (nonce.isEmpty()) {
+    const QByteArray iv = randomBytes(kIvLength);
+    if (iv.isEmpty()) {
         return {};
     }
 
-    QByteArray tag;
-    const QByteArray ciphertext = gcmCrypt(key, nonce, plaintext.toUtf8(), true, &tag);
-    if (ciphertext.isEmpty() || tag.size() != static_cast<int>(kTagLength)) {
+    const QByteArray packed = SealedValue::seal(
+        deriveKey(masterKey, "songbird-secret-encryption"),
+        deriveKey(masterKey, "songbird-secret-authentication"),
+        iv,
+        plaintext.toUtf8(),
+        aesCbcCrypt,
+        hmacSha256);
+    if (packed.isEmpty()) {
         return {};
     }
 
-    // nonce || ciphertext || tag: everything the decrypt side needs travels
-    // with the value, so no per-value Keychain item is ever created.
+    // version || iv || ciphertext || mac: everything the decrypt side needs
+    // travels with the value, so no per-value Keychain item is ever created.
     return SecretStoreFormat::protectedPrefix()
-        + QString::fromLatin1((nonce + ciphertext + tag).toBase64());
+        + QString::fromLatin1(packed.toBase64());
 }
 
 QString MacSecretStore::unprotect(const QString& stored) const
@@ -195,23 +243,25 @@ QString MacSecretStore::unprotect(const QString& stored) const
 
     const QByteArray packed = QByteArray::fromBase64(
         SecretStoreFormat::stripProtectedPrefix(stored).toLatin1());
-    if (packed.size() < static_cast<int>(kNonceLength + kTagLength)) {
+    if (packed.isEmpty()) {
         return {};
     }
 
-    const QByteArray key = loadOrCreateKey();
-    if (key.isEmpty()) {
+    const QByteArray masterKey = loadOrCreateKey();
+    if (masterKey.isEmpty()) {
         return {};
     }
 
-    const QByteArray nonce = packed.left(static_cast<int>(kNonceLength));
-    const QByteArray tag = packed.right(static_cast<int>(kTagLength));
-    const QByteArray ciphertext = packed.mid(
-        static_cast<int>(kNonceLength),
-        packed.size() - static_cast<int>(kNonceLength + kTagLength));
-
-    QByteArray expectedTag = tag;
-    const QByteArray plaintext = gcmCrypt(key, nonce, ciphertext, false, &expectedTag);
+    // The MAC is verified before anything is decrypted (SealedValue::unseal),
+    // and a value sealed by the old GCM construction fails the version check
+    // closed: the macOS build never shipped with GCM, so no such value can
+    // exist in the wild, and a tampered one must never decrypt to garbage.
+    const QByteArray plaintext = SealedValue::unseal(
+        deriveKey(masterKey, "songbird-secret-encryption"),
+        deriveKey(masterKey, "songbird-secret-authentication"),
+        packed,
+        aesCbcCrypt,
+        hmacSha256);
     if (plaintext.isEmpty()) {
         return {};
     }
