@@ -74,9 +74,11 @@ $allowedHostSuffixes = @(
 )
 
 function Test-AllowedHost {
-    param([string]$Host)
+    # Named $HostName, not $Host: $Host is a read-only automatic variable and
+    # assigning to it aborts the guard ("Cannot overwrite variable Host").
+    param([string]$HostName)
 
-    $lower = $Host.ToLowerInvariant()
+    $lower = $HostName.ToLowerInvariant()
     if ($allowedExactHosts -contains $lower) {
         return $true
     }
@@ -190,10 +192,10 @@ foreach ($file in $files) {
     $text = Remove-CppComments -Text (Get-Content -LiteralPath $fullPath -Raw)
 
     foreach ($match in [regex]::Matches($text, 'https?://([A-Za-z0-9._-]+)')) {
-        $host = $match.Groups[1].Value
-        if (-not (Test-AllowedHost -Host $host)) {
+        $urlHost = $match.Groups[1].Value
+        if (-not (Test-AllowedHost -HostName $urlHost)) {
             $line = ($text.Substring(0, $match.Groups[1].Index) -split "`n").Count
-            $violations.Add("URL host '$host' is not on the mirror allowlist in " + $relative + ":" + $line)
+            $violations.Add("URL host '$urlHost' is not on the mirror allowlist in " + $relative + ":" + $line)
         }
     }
 }
