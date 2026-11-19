@@ -68,6 +68,7 @@ set(SONGBIRD_SHARED_SOURCES
     common/RoutingValuePattern.cpp
     common/ProcessRunner.h
     common/ProcessRunner.cpp
+    common/SealedValue.h
     common/ServerDisplayName.h
     common/StartupSequencer.h
     platform/SingleInstanceGuard.h
