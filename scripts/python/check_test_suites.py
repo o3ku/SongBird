@@ -8,6 +8,12 @@ cleanupTestCase as passes, so a suite whose `private slots:` lost its body print
 Re-executes every test binary, which is why it carries its own label (`suite`) and stays out
 of the default ctest run.
 
+A failure prints the command, the exit code, the captured stdout/stderr, and the Qt Test
+report the binary wrote, because the report is the only witness when a binary dies before
+its first banner: the Windows Release runs that motivated this reported only "exited 1" and
+deleted the report, so three red runs named no cause. The binaries run with -v2 so the
+report also logs each test function as it is entered.
+
 Usage:
     check_test_suites.py --build-directory build/msvc-debug
 """
@@ -98,6 +104,28 @@ def ctest_metadata(build_directory: Path, default_working_directory: Path) -> di
     return metadata
 
 
+def format_report(text: str, report_exists: bool) -> str:
+    """Render the Qt Test report for a failure message.
+
+    The report is the only witness when a binary dies before its first test
+    banner: a missing file proves the process never got that far, an empty one
+    proves it died before writing a line, and FAIL lines name the case that
+    went red. Capped at the last 300 lines: -v2 makes the file longer, and a
+    failure that needs more than that is a crash mid-run, whose last lines are
+    the ones that matter.
+    """
+    if not report_exists:
+        return "test report: file was not created -- the binary died before Qt Test wrote anything"
+    if not text.strip():
+        return "test report: file was created but is empty -- the binary died before Qt Test wrote a line"
+    lines = text.splitlines()
+    max_lines = 300
+    if len(lines) > max_lines:
+        omitted = len(lines) - max_lines
+        lines = [f"... ({omitted} earlier lines omitted) ..."] + lines[-max_lines:]
+    return "test report:\n" + "\n".join(lines)
+
+
 def main(argv) -> int:
     repo_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser()
@@ -154,8 +182,10 @@ def main(argv) -> int:
         with tempfile.TemporaryDirectory() as scratch_dir:
             output_file = Path(scratch_dir) / "qt-test-report.txt"
             try:
+                # -v2 logs each test function as it is entered, so a report that ends
+                # mid-function says where the binary died instead of only that it did.
                 result = subprocess.run(
-                    [str(executable), "-o", f"{output_file},txt"],
+                    [str(executable), "-o", f"{output_file},txt", "-v2"],
                     cwd=test_directory,
                     env=environment,
                     capture_output=True,
@@ -171,17 +201,35 @@ def main(argv) -> int:
                     else:
                         os.environ[name] = value
 
-            text = output_file.read_text(encoding="utf-8", errors="replace") if output_file.is_file() else ""
+            report_exists = output_file.is_file()
+            text = output_file.read_text(encoding="utf-8", errors="replace") if report_exists else ""
+            # The command as run, with the per-run report path abstracted away: the
+            # path is a temp file that is deleted with the scratch directory, so the
+            # executable and the flags are the reproducible part.
+            command_line = f"{executable} -o <report>,txt -v2"
+            # With -o, Qt Test sends its log to the report file and stdout stays
+            # empty -- but a binary that fails to start (missing plugin, loader
+            # error) prints to stderr instead, so the captured streams are part of
+            # the evidence on a non-zero exit.
+            captured = ""
+            if result.stdout.strip() or result.stderr.strip():
+                captured = (
+                    f"\nstdout:\n{result.stdout.strip()}\nstderr:\n{result.stderr.strip()}"
+                )
+            report_detail = format_report(text, report_exists)
 
             if result.returncode != 0:
-                failures.append(f"{executable.name}: exited {result.returncode}")
+                failures.append(
+                    f"{executable.name}: exited {result.returncode}\n"
+                    f"command: {command_line}{captured}\n{report_detail}"
+                )
                 continue
 
             totals = TOTALS.search(text)
             if not totals:
                 failures.append(
                     f"{executable.name}: no 'Totals:' line -- the binary did not run a test report "
-                    "at all"
+                    f"at all\ncommand: {command_line}{captured}\n{report_detail}"
                 )
                 continue
 
@@ -198,7 +246,7 @@ def main(argv) -> int:
                 failures.append(
                     f"{executable.name}: ran 0 test cases ({totals.group(0).strip()}) -- Qt Test "
                     "counts initTestCase/cleanupTestCase as passes, so a suite with no test "
-                    "functions still reports success"
+                    f"functions still reports success\ncommand: {command_line}{captured}\n{report_detail}"
                 )
 
     if failures:
