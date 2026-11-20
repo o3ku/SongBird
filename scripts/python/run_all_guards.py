@@ -39,6 +39,7 @@ COMMANDS = [
         ],
     ),
     ("versions-consistent", "check_version_consistency.py", ["--repo-root", str(REPO_ROOT)]),
+    ("macos-frameworks", "check_macos_frameworks.py", ["--repo-root", str(REPO_ROOT)]),
     ("readme-assets", "check_readme_assets.py", [str(REPO_ROOT)]),
     (
         "translations-fresh",

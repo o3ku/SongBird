@@ -53,6 +53,43 @@ QString describeWriteFailure(
     return QCoreApplication::translate("JsonConfigRepository", "Failed to write %1: %2").arg(label, target);
 }
 
+// Whether the config already on disk holds the same logical content as the
+// config about to be saved. The stored bytes are not comparable: a secret
+// store that re-protects with fresh randomness (macOS draws a new IV per
+// call) produces different bytes on every save, so the byte-compare inside
+// writeFileAtomically can never see an unchanged file. Decoding what is on
+// disk and comparing the plaintext instead restores the skip. Any doubt --
+// missing file, unreadable or unparseable content, a credential that cannot
+// be decrypted -- is not evidence of equality, so the save proceeds as
+// normal; skipping must never lose a change. Legacy plaintext credentials
+// are also not skipped: they still need their migration to protected form.
+bool primaryConfigLogicallyUnchanged(
+    const QString& configPath,
+    const QJsonObject& plaintextRoot,
+    const ISecretStore* secretStore)
+{
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+    const QByteArray payload = file.readAll();
+    file.close();
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return false;
+    }
+
+    QJsonObject storedRoot = document.object();
+    const SecretFieldCodec::LoadReport report =
+        SecretFieldCodec::decodeSecrets(storedRoot, secretStore);
+    if (report.legacyPlaintextSecretsFound) {
+        return false;
+    }
+    return storedRoot == plaintextRoot;
+}
+
 } // namespace
 
 JsonConfigRepository::JsonConfigRepository(QString configPath)
@@ -330,6 +367,11 @@ JsonFile::WriteResult JsonConfigRepository::savePrimaryConfig(const Config& conf
     QJsonObject root;
     JsonConfigSerialization::applyConfig(root, config);
 
+    // The logical form, before credentials are protected: the stored bytes
+    // change on every save when the store re-protects with fresh randomness,
+    // so only the plaintext form is a stable comparison for the skip below.
+    const QJsonObject plaintextRoot = root;
+
     // Credentials are protected on the way out. A value that cannot be
     // protected stays plaintext and is reported -- dropping it would lose the
     // credential, and failing the save would lose the whole config.
@@ -350,6 +392,15 @@ JsonFile::WriteResult JsonConfigRepository::savePrimaryConfig(const Config& conf
     const QFileInfo fileInfo(configPath_);
     if (!fileInfo.dir().exists() && !QDir().mkpath(fileInfo.dir().absolutePath())) {
         return {false, JsonFile::WriteFailureStage::Open};
+    }
+
+    // The byte-compare inside writeFileAtomically cannot see an unchanged
+    // file once credentials are re-protected (see above), so compare the
+    // logical content first and skip the rewrite when nothing changed. The
+    // byte-compare stays as a second line of defense for the case where the
+    // logical content matches but the stored bytes somehow do not.
+    if (primaryConfigLogicallyUnchanged(configPath_, plaintextRoot, secretStore_.get())) {
+        return {true, JsonFile::WriteFailureStage::None};
     }
 
     const QJsonDocument document(root);

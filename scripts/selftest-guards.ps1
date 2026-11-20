@@ -392,6 +392,75 @@ try {
     Remove-Item -LiteralPath $versionTempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# The macOS frameworks check works on src/CMakeLists.txt and the macOS platform sources, so it
+# needs its own fixture shape: copy those two into a scratch directory and break the link there.
+# Without this case the check could stop matching (a renamed target, a reworded framework line)
+# and go on reporting a pass against a file it no longer reads.
+$macosTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "songbird-macos-selftest-" + [guid]::NewGuid().ToString("N"))
+try {
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+    New-Item -ItemType Directory -Path $macosTempRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $macosTempRoot "src\platform") -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot "src\CMakeLists.txt") `
+        -Destination (Join-Path $macosTempRoot "src")
+    Copy-Item -LiteralPath (Join-Path $repoRoot "src\platform\macos") `
+        -Destination (Join-Path $macosTempRoot "src\platform") -Recurse
+
+    $macosCases = @(
+        @{
+            Name = "macos-frameworks: a CoreFoundation link removed from src/CMakeLists.txt is rejected"
+            Break = {
+                param($tree)
+                $path = Join-Path $tree "src\CMakeLists.txt"
+                $content = Get-Content -LiteralPath $path -Raw
+                $updated = $content -replace '(?m)^\s*target_link_libraries\(songbird_shared_objs PUBLIC "-framework CoreFoundation"\)\r?\n', ''
+                # A -replace that matches nothing returns the input unchanged, and the case would
+                # then pass on the strength of nothing at all. Assert the mutation landed, so a
+                # renamed target reports "fixture stale" instead of going green.
+                if ($updated -eq $content) {
+                    throw "selftest fixture is stale: no CoreFoundation link matched in '$path'"
+                }
+                Set-Content -LiteralPath $path -Value $updated -Encoding UTF8 -NoNewline
+            }
+        }
+    )
+
+    foreach ($case in $macosCases) {
+        $tree = Join-Path $macosTempRoot ([guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $tree -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $macosTempRoot "src") -Destination $tree -Recurse
+
+        & $case.Break $tree
+
+        $exitCode = Invoke-Guard -Guard "check-macos-frameworks.ps1" -Arguments @(
+            "-SrcCMakeListsPath", (Join-Path $tree "src\CMakeLists.txt"),
+            "-MacOSSourceRoot", (Join-Path $tree "src\platform\macos"))
+        if ($exitCode -eq 0) {
+            $failures.Add("$($case.Name): the guard still reported success on a tree that violates it")
+        } else {
+            Write-Host "  red as expected: $($case.Name)"
+        }
+
+        Remove-Item -LiteralPath $tree -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    # And the untouched copy must pass, so a guard that always fails cannot satisfy the cases above.
+    $cleanMacosTree = Join-Path $macosTempRoot "clean"
+    New-Item -ItemType Directory -Path $cleanMacosTree -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $macosTempRoot "src") -Destination $cleanMacosTree -Recurse
+    $cleanExit = Invoke-Guard -Guard "check-macos-frameworks.ps1" -Arguments @(
+        "-SrcCMakeListsPath", (Join-Path $cleanMacosTree "src\CMakeLists.txt"),
+        "-MacOSSourceRoot", (Join-Path $cleanMacosTree "src\platform\macos"))
+    if ($cleanExit -ne 0) {
+        $failures.Add("check-macos-frameworks.ps1: reported a violation in an unmodified copy of the build files")
+    } else {
+        Write-Host "  green on the clean tree: check-macos-frameworks.ps1"
+    }
+} finally {
+    Remove-Item -LiteralPath $macosTempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # The README asset check needs a README and a docs directory, so it gets its own scratch tree for the
 # same reason the version check does: the working tree must never be mutated by a self-test.
 $readmeTempRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
