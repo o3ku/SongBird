@@ -1,6 +1,8 @@
 #include "app/SystemProxyCoordinator.h"
 
+#include <chrono>
 #include <optional>
+#include <thread>
 
 #include <utility>
 
@@ -215,8 +217,13 @@ bool SystemProxyCoordinator::restoreCapturedSnapshot()
 // left alone instead.
 namespace {
 
-// Whether anything answers on a loopback port: one connect, no retries. A refused connect
-// answers immediately; the timeout only bounds a listener that accepts without answering.
+// Whether anything answers on a loopback port. A single connect is not
+// trusted: on macOS arm64 a connect to a just-freed loopback port has been
+// observed to succeed, so a positive result is confirmed by disconnecting,
+// waiting briefly, and connecting again -- a real listener is still there
+// for the second connect, a stale one is not. A refused connect answers
+// immediately; the timeout only bounds a listener that accepts without
+// answering.
 bool isLocalTcpPortListening(int port)
 {
     if (!isValidTcpPort(port)) {
@@ -224,11 +231,18 @@ bool isLocalTcpPortListening(int port)
     }
     QTcpSocket socket;
     socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
-    if (socket.waitForConnected(200)) {
-        socket.disconnectFromHost();
-        return true;
+    if (!socket.waitForConnected(200)) {
+        return false;
     }
-    return false;
+    socket.abort();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    QTcpSocket confirm;
+    confirm.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
+    if (!confirm.waitForConnected(200)) {
+        return false;
+    }
+    confirm.disconnectFromHost();
+    return true;
 }
 
 } // namespace
