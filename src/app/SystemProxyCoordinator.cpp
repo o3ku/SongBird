@@ -1,9 +1,7 @@
 #include "app/SystemProxyCoordinator.h"
 
-#include <chrono>
 #include <cstdio>
 #include <optional>
-#include <thread>
 
 #include <utility>
 
@@ -218,13 +216,27 @@ bool SystemProxyCoordinator::restoreCapturedSnapshot()
 // left alone instead.
 namespace {
 
-// Whether anything answers on a loopback port. A single connect is not
-// trusted: on macOS arm64 a connect to a just-freed loopback port has been
-// observed to succeed, so a positive result is confirmed by disconnecting,
-// waiting briefly, and connecting again -- a real listener is still there
-// for the second connect, a stale one is not. A refused connect answers
-// immediately; the timeout only bounds a listener that accepts without
-// answering.
+// Whether anything answers on a loopback port. A bare connect is not proof:
+// on macOS arm64 a connect to a just-freed loopback port has been observed to
+// succeed, twice in a row ([probe] diagnostics, run 44693424035), so connect
+// success alone cannot tell a dead port from a live one there. The probe
+// therefore proves a peer by exchanging bytes. The port is the HTTP inbound
+// (LocalInboundPorts::httpPort), so a real listener speaks HTTP: a complete
+// malformed request is sent -- malformed on purpose, so a real proxy can
+// never act on it, and complete (request line plus an empty line), so an HTTP
+// peer must answer it (400) or close rather than wait for more input.
+//   - bytes back: a live peer answered.
+//   - socket error or disconnect during the exchange: the peer is gone; on
+//     macOS arm64 this is the RST the phantom connect had not delivered yet.
+//   - silence with the connection still healthy: a real listener holding
+//     the connection (a silent TCP listener never answers, and the test
+//     fixture models a live proxy that way). The phantom's RST surfaces
+//     within the wait, so a connection still in ConnectedState afterwards
+//     is a live peer.
+// A peer that closes without answering is treated as dead: it is
+// indistinguishable from the phantom RST, and a working HTTP proxy inbound
+// answers a complete malformed request with bytes (400) rather than closing
+// silently.
 const char *socketStateName(QAbstractSocket::SocketState state)
 {
     switch (state) {
@@ -267,6 +279,17 @@ void logProbeVerdict(int port, const char *verdict, const char *reason)
     std::fprintf(stderr, "[probe] port=%d verdict=%s reason=%s\n", port, verdict, reason);
 }
 
+// One line for the exchange phase: what the peer did with the probe request.
+void logProbeExchange(int port, qint64 written, const QTcpSocket &socket)
+{
+    QString error = socket.errorString();
+    error.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    std::fprintf(stderr,
+                 "[probe] port=%d exchange written=%lld available=%lld error=\"%s\" state=%s\n",
+                 port, written, socket.bytesAvailable(),
+                 error.toUtf8().constData(), socketStateName(socket.state()));
+}
+
 bool isLocalTcpPortListening(int port)
 {
     if (!isValidTcpPort(port)) {
@@ -281,18 +304,28 @@ bool isLocalTcpPortListening(int port)
         return false;
     }
     logProbeAttempt(port, 1, socket);
-    socket.abort();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    QTcpSocket confirm;
-    confirm.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
-    if (!confirm.waitForConnected(200)) {
-        logProbeAttempt(port, 2, confirm);
-        logProbeVerdict(port, "not-listening", "second-connect-failed");
+    // Deliberately malformed but complete: no proxy can act on it, and an
+    // HTTP peer must answer (400) or close instead of waiting for more.
+    static const char kProbeRequest[] = "INVALID\r\n\r\n";
+    const qint64 written = socket.write(kProbeRequest);
+    if (written < 0) {
+        logProbeExchange(port, written, socket);
+        logProbeVerdict(port, "not-listening", "write-failed");
         return false;
     }
-    logProbeAttempt(port, 2, confirm);
-    logProbeVerdict(port, "listening", "both-connects-succeeded");
-    confirm.disconnectFromHost();
+    socket.waitForReadyRead(200);
+    logProbeExchange(port, written, socket);
+    if (socket.bytesAvailable() > 0) {
+        logProbeVerdict(port, "listening", "response-received");
+        socket.disconnectFromHost();
+        return true;
+    }
+    if (socket.state() != QAbstractSocket::ConnectedState) {
+        logProbeVerdict(port, "not-listening", "exchange-failed");
+        return false;
+    }
+    logProbeVerdict(port, "listening", "silent-peer-connected");
+    socket.disconnectFromHost();
     return true;
 }
 
