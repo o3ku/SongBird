@@ -1,6 +1,7 @@
 #include "app/SystemProxyCoordinator.h"
 
 #include <chrono>
+#include <cstdio>
 #include <optional>
 #include <thread>
 
@@ -224,23 +225,73 @@ namespace {
 // for the second connect, a stale one is not. A refused connect answers
 // immediately; the timeout only bounds a listener that accepts without
 // answering.
+const char *socketStateName(QAbstractSocket::SocketState state)
+{
+    switch (state) {
+    case QAbstractSocket::UnconnectedState:
+        return "Unconnected";
+    case QAbstractSocket::HostLookupState:
+        return "HostLookup";
+    case QAbstractSocket::ConnectingState:
+        return "Connecting";
+    case QAbstractSocket::ConnectedState:
+        return "Connected";
+    case QAbstractSocket::BoundState:
+        return "Bound";
+    case QAbstractSocket::ClosingState:
+        return "Closing";
+    case QAbstractSocket::ListeningState:
+        return "Listening";
+    }
+    return "Unknown";
+}
+
+// Diagnostic: one greppable line per probe attempt, written to stderr so it
+// survives in the CI log when the calling test fails (ctest runs with
+// --output-on-failure). The port is loopback-only; nothing sensitive is
+// logged. The error string is flattened to a single line so each attempt
+// stays greppable.
+void logProbeAttempt(int port, int attempt, const QTcpSocket &socket)
+{
+    QString error = socket.errorString();
+    error.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    std::fprintf(stderr,
+                 "[probe] port=%d attempt=%d connected=%d error=\"%s\" state=%s\n",
+                 port, attempt,
+                 socket.state() == QAbstractSocket::ConnectedState ? 1 : 0,
+                 error.toUtf8().constData(), socketStateName(socket.state()));
+}
+
+void logProbeVerdict(int port, const char *verdict, const char *reason)
+{
+    std::fprintf(stderr, "[probe] port=%d verdict=%s reason=%s\n", port, verdict, reason);
+}
+
 bool isLocalTcpPortListening(int port)
 {
     if (!isValidTcpPort(port)) {
+        logProbeVerdict(port, "not-listening", "invalid-port");
         return false;
     }
     QTcpSocket socket;
     socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
     if (!socket.waitForConnected(200)) {
+        logProbeAttempt(port, 1, socket);
+        logProbeVerdict(port, "not-listening", "first-connect-failed");
         return false;
     }
+    logProbeAttempt(port, 1, socket);
     socket.abort();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     QTcpSocket confirm;
     confirm.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
     if (!confirm.waitForConnected(200)) {
+        logProbeAttempt(port, 2, confirm);
+        logProbeVerdict(port, "not-listening", "second-connect-failed");
         return false;
     }
+    logProbeAttempt(port, 2, confirm);
+    logProbeVerdict(port, "listening", "both-connects-succeeded");
     confirm.disconnectFromHost();
     return true;
 }
