@@ -1048,6 +1048,15 @@ songbird_add_qt_test(songbird_secret_store_tests secret-store
         Qt${QT_VERSION_MAJOR}::Widgets
 )
 
+if(APPLE)
+    songbird_add_qt_test(songbird_mac_secret_cipher_tests mac-secret-cipher
+        SOURCES
+            MacSecretCipherTests.cpp
+        LIBRARIES
+            Qt${QT_VERSION_MAJOR}::Test
+    )
+endif()
+
 # SHA-256 verification for downloads: the parsing and comparison are pure functions, so
 # they are tested directly here. The service-level paths (core, app, geo) are exercised
 # through their own tests with fake download handlers.

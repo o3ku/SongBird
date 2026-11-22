@@ -85,7 +85,7 @@ SongBird can install verified macOS updates from the app when the installation d
 
 ## Building From Source
 
-SongBird needs CMake, a C++20 compiler and Qt 5.15. The CI workflows are the reference for a working setup: `.github/workflows/release.yml` for Windows (a pinned prebuilt static-Qt5 vcpkg install root, so the release is a single exe) and macOS (Homebrew `qt@5`).
+SongBird needs CMake, a C++20 compiler and Qt 5.15. The CI workflows are the reference for a working setup: `.github/workflows/release.yml` for Windows (a pinned prebuilt static-Qt5 vcpkg install root, so the release is a single exe) and macOS (Homebrew `qt@5` and `openssl@3`, with libcrypto linked statically).
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

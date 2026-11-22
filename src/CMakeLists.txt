@@ -345,6 +345,8 @@ elseif(APPLE)
     list(APPEND SONGBIRD_SHARED_SOURCES
         platform/macos/MacSecretStore.h
         platform/macos/MacSecretStore.cpp
+        platform/macos/MacSecretCipher.h
+        platform/macos/MacSecretCipher.cpp
         platform/macos/SecretStoreFactory.cpp
         platform/macos/MacSystemProxyService.h
         platform/macos/MacSystemProxyService.cpp
@@ -846,10 +848,13 @@ if(WIN32)
 endif()
 
 if(APPLE)
-    # The Security framework provides the Keychain entry points the macOS
-    # secret store uses. Attached to the shared objects so the test targets
-    # that link it get it too.
-    target_link_libraries(songbird_shared_objs PUBLIC "-framework Security")
+    # Embed libcrypto so the app bundle can run without a Homebrew installation.
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+    if(NOT OPENSSL_CRYPTO_LIBRARY MATCHES "\\.a$")
+        message(FATAL_ERROR "SongBird requires a static OpenSSL libcrypto on macOS.")
+    endif()
+    target_link_libraries(songbird_shared_objs PUBLIC "-framework Security" OpenSSL::Crypto)
 endif()
 
 if(WIN32)

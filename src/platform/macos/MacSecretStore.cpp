@@ -2,16 +2,16 @@
 
 #include <QByteArray>
 
-#include <CommonCrypto/CommonCrypto.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/SecItem.h>
 #include <Security/SecRandom.h>
 
+#include "platform/macos/MacSecretCipher.h"
+
 namespace {
 
-constexpr size_t kKeyLength = 32;
-constexpr size_t kNonceLength = 12;
-constexpr size_t kTagLength = 16;
+using MacSecretCipher::kKeyLength;
+using MacSecretCipher::kNonceLength;
 
 CFStringRef keychainService()
 {
@@ -56,7 +56,7 @@ QByteArray fetchKeychainKey()
             static_cast<int>(CFDataGetLength(data)));
     }
     CFRelease(result);
-    return key.size() == static_cast<int>(kKeyLength) ? key : QByteArray();
+    return key.size() == kKeyLength ? key : QByteArray();
 }
 
 bool storeKeychainKey(const QByteArray& key)
@@ -89,7 +89,7 @@ QByteArray loadOrCreateKey()
         return key;
     }
 
-    key.resize(static_cast<int>(kKeyLength));
+    key.resize(kKeyLength);
     if (SecRandomCopyBytes(
             kSecRandomDefault,
             kKeyLength,
@@ -114,49 +114,6 @@ QByteArray randomBytes(size_t count)
     return bytes;
 }
 
-QByteArray gcmCrypt(const QByteArray& key, const QByteArray& nonce, const QByteArray& input, bool encrypt, QByteArray* tag)
-{
-    CCCryptorRef cryptor = nullptr;
-    const CCCryptorStatus createStatus = CCCryptorCreateWithMode(
-        encrypt ? kCCEncrypt : kCCDecrypt,
-        kCCModeGCM,
-        kCCAlgorithmAES,
-        ccNoPadding,
-        nullptr,
-        key.constData(),
-        key.size(),
-        nullptr,
-        0,
-        0,
-        0,
-        &cryptor);
-    if (createStatus != kCCSuccess || cryptor == nullptr) {
-        return {};
-    }
-
-    QByteArray output(input.size(), 0);
-    CCCryptorStatus status = CCCryptorGCMAddIV(
-        cryptor, nonce.constData(), static_cast<size_t>(nonce.size()));
-    if (status == kCCSuccess) {
-        status = encrypt
-            ? CCCryptorGCMEncrypt(cryptor, input.constData(), static_cast<size_t>(input.size()), output.data())
-            : CCCryptorGCMDecrypt(cryptor, input.constData(), static_cast<size_t>(input.size()), output.data());
-    }
-
-    // Finalising produces the tag on encrypt and verifies it on decrypt: a
-    // tampered value fails here instead of decrypting to garbage.
-    if (status == kCCSuccess && tag != nullptr) {
-        size_t tagLength = kTagLength;
-        if (encrypt) {
-            tag->resize(static_cast<int>(kTagLength));
-        }
-        status = CCCryptorGCMFinal(cryptor, tag->data(), &tagLength);
-    }
-
-    CCCryptorRelease(cryptor);
-    return status == kCCSuccess ? output : QByteArray();
-}
-
 } // namespace
 
 QString MacSecretStore::protect(const QString& plaintext) const
@@ -175,16 +132,15 @@ QString MacSecretStore::protect(const QString& plaintext) const
         return {};
     }
 
-    QByteArray tag;
-    const QByteArray ciphertext = gcmCrypt(key, nonce, plaintext.toUtf8(), true, &tag);
-    if (ciphertext.isEmpty() || tag.size() != static_cast<int>(kTagLength)) {
+    const QByteArray packed = MacSecretCipher::seal(key, nonce, plaintext.toUtf8());
+    if (packed.isEmpty()) {
         return {};
     }
 
     // nonce || ciphertext || tag: everything the decrypt side needs travels
     // with the value, so no per-value Keychain item is ever created.
     return SecretStoreFormat::protectedPrefix()
-        + QString::fromLatin1((nonce + ciphertext + tag).toBase64());
+        + QString::fromLatin1(packed.toBase64());
 }
 
 QString MacSecretStore::unprotect(const QString& stored) const
@@ -195,7 +151,7 @@ QString MacSecretStore::unprotect(const QString& stored) const
 
     const QByteArray packed = QByteArray::fromBase64(
         SecretStoreFormat::stripProtectedPrefix(stored).toLatin1());
-    if (packed.size() < static_cast<int>(kNonceLength + kTagLength)) {
+    if (packed.size() < MacSecretCipher::kOverhead) {
         return {};
     }
 
@@ -204,17 +160,6 @@ QString MacSecretStore::unprotect(const QString& stored) const
         return {};
     }
 
-    const QByteArray nonce = packed.left(static_cast<int>(kNonceLength));
-    const QByteArray tag = packed.right(static_cast<int>(kTagLength));
-    const QByteArray ciphertext = packed.mid(
-        static_cast<int>(kNonceLength),
-        packed.size() - static_cast<int>(kNonceLength + kTagLength));
-
-    QByteArray expectedTag = tag;
-    const QByteArray plaintext = gcmCrypt(key, nonce, ciphertext, false, &expectedTag);
-    if (plaintext.isEmpty()) {
-        return {};
-    }
-
-    return QString::fromUtf8(plaintext);
+    const auto plaintext = MacSecretCipher::open(key, packed);
+    return plaintext ? QString::fromUtf8(*plaintext) : QString();
 }
