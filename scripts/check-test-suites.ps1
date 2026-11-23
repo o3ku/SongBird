@@ -22,6 +22,13 @@ $ErrorActionPreference = "Stop"
 # pass. A binary that cannot be started at all is also a failure (a missing Qt
 # platform plugin used to look like a silent pass).
 #
+# A failure prints the command, the exit code, and the Qt Test report the
+# binary wrote, because the report is the only witness when a binary dies
+# before its first banner: the Windows Release runs that motivated this
+# reported only "exited 1" and deleted the report, so three red runs named
+# no cause. The binaries run with -v2 so the report also logs each test
+# function as it is entered.
+#
 # Usage:
 #   pwsh -File scripts/check-test-suites.ps1 -BuildDirectory build/msvc-debug
 
@@ -127,6 +134,32 @@ if ($null -ne $ctest) {
     }
 }
 
+# The report file is the only witness when a binary dies before its first test
+# banner: it is written by Qt Test itself, so a missing file proves the process
+# never got that far, an empty one proves it died before writing a line, and
+# FAIL lines name the case that went red. Every failure below prints it (and
+# the command that produced it) before the finally block deletes the file, so
+# a failure never silently discards the evidence again. The report is capped
+# at the last 300 lines: -v2 makes the file longer, and a failure that needs
+# more than that is a crash mid-run, whose last lines are the ones that
+# matter.
+function Format-SuiteReport {
+    param([string]$ReportText, [bool]$ReportExists)
+    if (-not $ReportExists) {
+        return "test report: file was not created -- the binary died before Qt Test wrote anything"
+    }
+    if ([string]::IsNullOrWhiteSpace($ReportText)) {
+        return "test report: file was created but is empty -- the binary died before Qt Test wrote a line"
+    }
+    $lines = @($ReportText -split "`r?`n")
+    $maxLines = 300
+    if ($lines.Count -gt $maxLines) {
+        $omitted = $lines.Count - $maxLines
+        $lines = @("... ($omitted earlier lines omitted) ...") + $lines[($lines.Count - $maxLines)..($lines.Count - 1)]
+    }
+    return "test report:`n" + ($lines -join "`n")
+}
+
 foreach ($executable in $executables) {
     $checked += 1
     $outputFile = Join-Path ([System.IO.Path]::GetTempPath()) ("songbird-testsuite-" + [guid]::NewGuid().ToString("N") + ".txt")
@@ -156,27 +189,33 @@ foreach ($executable in $executables) {
     }
 
     try {
+        # -v2 logs each test function as it is entered, so a report that ends
+        # mid-function says where the binary died instead of only that it did.
         $process = Start-Process -FilePath $executable.FullName `
-            -ArgumentList @("-o", "$outputFile,txt") `
+            -ArgumentList @("-o", "$outputFile,txt", "-v2") `
             -WorkingDirectory $testDirectory `
             -NoNewWindow -PassThru -Wait `
             -ErrorAction Stop
 
         $text = ""
-        if (Test-Path -LiteralPath $outputFile) {
+        $reportExists = Test-Path -LiteralPath $outputFile
+        if ($reportExists) {
             $text = Get-Content -LiteralPath $outputFile -Raw
         }
+        $commandLine = "$($executable.FullName) -o <report>,txt -v2"
+        $reportDetail = Format-SuiteReport -ReportText $text -ReportExists $reportExists
 
         if ($process.ExitCode -ne 0) {
             # A non-zero exit is already a real failure and CTest would report it;
-            # the point of naming it here is that the message says *which* binary.
-            $failures.Add("$($executable.Name): exited $($process.ExitCode)")
+            # the point of naming it here is that the message says *which* binary --
+            # and the report below says why, which the old message never did.
+            $failures.Add("$($executable.Name): exited $($process.ExitCode)`ncommand: $commandLine`n$reportDetail")
             continue
         }
 
         $totals = $totalsPattern.Match($text)
         if (-not $totals.Success) {
-            $failures.Add("$($executable.Name): no 'Totals:' line -- the binary did not run a test report at all")
+            $failures.Add("$($executable.Name): no 'Totals:' line -- the binary did not run a test report at all`ncommand: $commandLine`n$reportDetail")
             continue
         }
 
@@ -208,7 +247,7 @@ foreach ($executable in $executables) {
             # itself explains why "2 passed" was not taken as good news.
             $failures.Add(($executable.Name + ": ran 0 test cases (" + $totals.Value.Trim() +
                 ") -- Qt Test counts initTestCase/cleanupTestCase as passes, so a suite with no " +
-                "test functions still reports success"))
+                "test functions still reports success`ncommand: $commandLine`n$reportDetail"))
             continue
         }
     } finally {
