@@ -1233,6 +1233,43 @@ bool AppBootstrap::promptRestartForDownloadedAppUpdate(const QString& newExecuta
         && objects_->applicationRestartCoordinator->promptRestartForDownloadedAppUpdate(newExecutablePath, parent);
 }
 
+bool AppBootstrap::promptOpenDownloadedAppUpdatePackage(const QString& packagePath, QWidget* parent)
+{
+    if (packagePath.trimmed().isEmpty()) {
+        return false;
+    }
+
+    // A disk image is not an executable the restart-and-apply path can swap in, and there is no
+    // macOS installer step behind this prompt: opening the image is the whole install flow.
+    // Say so plainly, instead of the old "restart and use the downloaded package" wording whose
+    // OK button did nothing (issue #5). The app is deliberately not quit here: the user drags
+    // SongBird to Applications and relaunches it by hand.
+    const QString message = QCoreApplication::translate(
+        "AppBootstrap",
+        "Downloaded package: %1\n\nOpen the package now? It will mount in Finder — drag SongBird to Applications to update, then relaunch SongBird.")
+            .arg(QDir::toNativeSeparators(packagePath));
+    if (DialogUtils::askYesNoQuestion(
+            parent,
+            QCoreApplication::translate("AppBootstrap", "Update Downloaded"),
+            message,
+            QMessageBox::Yes)
+        != QMessageBox::Yes) {
+        return false;
+    }
+
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(packagePath))) {
+        appendResult(OperationResult::fail(
+            QCoreApplication::translate("AppBootstrap", "Failed to open the downloaded package.")));
+        DialogUtils::showWarning(
+            parent,
+            QCoreApplication::translate("AppBootstrap", "Update Failed"),
+            QCoreApplication::translate("AppBootstrap", "Failed to open the downloaded package."));
+        return false;
+    }
+
+    return true;
+}
+
 bool AppBootstrap::restartApplication(bool requireAdministrator)
 {
     return objects_->applicationRestartCoordinator != nullptr

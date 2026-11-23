@@ -35,6 +35,11 @@ public:
         restartPrompts.append(newExecutablePath);
         return true;
     }
+    bool promptOpenDownloadedAppUpdatePackage(const QString& packagePath, QWidget*) override
+    {
+        openedPackages.append(packagePath);
+        return true;
+    }
 
     QStringList logs;
     QList<OperationResult> results;
@@ -45,6 +50,7 @@ public:
     QStringList trayMessages;
     QStringList openedUrls;
     QStringList restartPrompts;
+    QStringList openedPackages;
     bool yesNoAnswer = true;
 };
 
@@ -55,6 +61,7 @@ private slots:
     void checkDoesNotClaimBackgroundTask();
     void manualCheckDownloadsWhenUserAccepts();
     void downloadClaimsAndFinishesAppUpdateTask();
+    void dmgDownloadOpensPackageInsteadOfReportingOnly();
     void prereleaseBuildChecksPrereleasesEvenWhenTheSettingIsOff();
 };
 
@@ -133,6 +140,7 @@ void AppUpdateCheckCoordinatorTests::manualCheckDownloadsWhenUserAccepts()
     QCOMPARE(downloadedName, QStringLiteral("SongBird.new.exe"));
     QCOMPARE(downloadedDirectory, QStringLiteral("C:/SongBird/updates"));
     QCOMPARE(feedback.restartPrompts, QStringList{QStringLiteral("C:/SongBird/updates/SongBird.new.exe")});
+    QVERIFY(feedback.openedPackages.isEmpty());
     QVERIFY(!backgroundTasks.isActive());
 }
 
@@ -171,6 +179,45 @@ void AppUpdateCheckCoordinatorTests::downloadClaimsAndFinishesAppUpdateTask()
     QVERIFY(!backgroundTasks.isActive());
     QCOMPARE(feedback.informationMessages.size(), 1);
     QVERIFY(feedback.restartPrompts.isEmpty());
+    QVERIFY(feedback.openedPackages.isEmpty());
+}
+
+// A macOS disk image is not an executable the restart-and-apply path can swap in, so the
+// download must offer to open it instead of reporting it with an information dialog whose OK
+// button does nothing (issue #5).
+void AppUpdateCheckCoordinatorTests::dmgDownloadOpensPackageInsteadOfReportingOnly()
+{
+    BackgroundTaskCoordinator backgroundTasks;
+    RecordingFeedback feedback;
+
+    AppUpdateCheckResult updateResult;
+    updateResult.latestVersion = QStringLiteral("v1.1.0");
+    updateResult.assetName = QStringLiteral("SongBird.dmg");
+    updateResult.assetDownloadUrl = QUrl(QStringLiteral("https://example.test/SongBird.dmg"));
+
+    AppUpdateCheckCoordinator coordinator({
+        &backgroundTasks,
+        &feedback,
+        []() { return QStringLiteral("1.0.0"); },
+        []() { return false; },
+        []() { return QStringLiteral("C:/SongBird"); },
+        []() { return false; },
+        {},
+        {},
+        [](const AppUpdateCheckResult&, const QString&, QString* savedPath) {
+            *savedPath = QStringLiteral("C:/SongBird/updates/SongBird.dmg");
+            return OperationResult::ok(QStringLiteral("SongBird update downloaded."));
+        },
+        [](std::function<void()> task) { task(); },
+        [](QObject*, std::function<void()> callback) { callback(); }
+    });
+
+    coordinator.downloadAppUpdate(updateResult);
+
+    QCOMPARE(feedback.openedPackages, QStringList{QStringLiteral("C:/SongBird/updates/SongBird.dmg")});
+    QVERIFY(feedback.informationMessages.isEmpty());
+    QVERIFY(feedback.restartPrompts.isEmpty());
+    QVERIFY(!backgroundTasks.isActive());
 }
 
 // The default configuration skips prereleases, and the newest stable release is numerically older
