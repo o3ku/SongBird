@@ -63,6 +63,7 @@ public:
     std::function<void(const QString&, const QString&, bool, int)> showTrayMessageFn;
     std::function<void(const QString&)> openExternalUrlFn;
     std::function<bool(const QString&, QWidget*)> promptRestartForDownloadedAppUpdateFn;
+    std::function<bool(const QString&, QWidget*)> promptOpenDownloadedAppUpdatePackageFn;
 
     QObject* uiContext() const override;
     QWidget* dialogParent() const override;
@@ -78,4 +79,5 @@ public:
     void showTrayMessage(const QString& title, const QString& message, bool critical, int timeoutMs) override;
     void openExternalUrl(const QString& url) override;
     bool promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent) override;
+    bool promptOpenDownloadedAppUpdatePackage(const QString& packagePath, QWidget* parent) override;
 };

@@ -482,6 +482,10 @@ Restart SongBird as administrator now to apply the saved TUN setting?</source>
         <translation>打开链接失败。</translation>
     </message>
     <message>
+        <source>Failed to open the downloaded package.</source>
+        <translation>无法打开已下载的安装包。</translation>
+    </message>
+    <message>
         <source>Restart Required</source>
         <translation>需要重启</translation>
     </message>
@@ -702,6 +706,14 @@ Restart SongBird and use the downloaded package to update to the new version.</s
     <message>
         <source>Downloaded package: %1</source>
         <translation>已下载包：%1</translation>
+    </message>
+    <message>
+        <source>Downloaded package: %1
+
+Open the package now? It will mount in Finder — drag SongBird to Applications to update, then relaunch SongBird.</source>
+        <translation>已下载安装包：%1
+
+现在打开安装包吗？它会在 Finder 中挂载——将 SongBird 拖到“应用程序”中完成更新，然后重新启动 SongBird。</translation>
     </message>
     <message>
         <source>Testing %1 (%2/%3)</source>

@@ -135,3 +135,9 @@ bool FunctionUserFeedback::promptRestartForDownloadedAppUpdate(const QString& ne
     return promptRestartForDownloadedAppUpdateFn
         && promptRestartForDownloadedAppUpdateFn(newExecutablePath, parent);
 }
+
+bool FunctionUserFeedback::promptOpenDownloadedAppUpdatePackage(const QString& packagePath, QWidget* parent)
+{
+    return promptOpenDownloadedAppUpdatePackageFn
+        && promptOpenDownloadedAppUpdatePackageFn(packagePath, parent);
+}

@@ -229,16 +229,25 @@ void AppUpdateCheckCoordinator::downloadAppUpdate(const AppUpdateCheckResult& up
                 return;
             }
 
-            if (!savedPath.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
-                const QString message = AppUpdateCheckPresentation::buildDownloadedPackageMessage(savedPath, result);
-                self->deps_.feedback->showInformation(
-                    messageParent,
-                    QCoreApplication::translate("AppBootstrap", "Update Downloaded"),
-                    message);
+            if (savedPath.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
+                self->deps_.feedback->promptRestartForDownloadedAppUpdate(savedPath, messageParent);
                 return;
             }
 
-            self->deps_.feedback->promptRestartForDownloadedAppUpdate(savedPath, messageParent);
+            if (savedPath.endsWith(QStringLiteral(".dmg"), Qt::CaseInsensitive)) {
+                // A disk image is not an executable to swap in, so the restart-and-apply path
+                // cannot install it. Offer to open it instead: Finder mounts it and the user
+                // drags SongBird to Applications. The generic branch below would only report
+                // the download, which is the dead end issue #5 reported.
+                self->deps_.feedback->promptOpenDownloadedAppUpdatePackage(savedPath, messageParent);
+                return;
+            }
+
+            const QString message = AppUpdateCheckPresentation::buildDownloadedPackageMessage(savedPath, result);
+            self->deps_.feedback->showInformation(
+                messageParent,
+                QCoreApplication::translate("AppBootstrap", "Update Downloaded"),
+                message);
         });
     });
 }

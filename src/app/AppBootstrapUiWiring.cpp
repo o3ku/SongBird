@@ -170,6 +170,9 @@ void AppBootstrap::wireUiObjects()
     userFeedback->promptRestartForDownloadedAppUpdateFn = [this](const QString& path, QWidget* parent) {
         return promptRestartForDownloadedAppUpdate(path, parent);
     };
+    userFeedback->promptOpenDownloadedAppUpdatePackageFn = [this](const QString& path, QWidget* parent) {
+        return promptOpenDownloadedAppUpdatePackage(path, parent);
+    };
     objects_->userFeedback = std::move(userFeedback);
 
     // Auto switch in group: constructed after the speed-test stack it borrows. The probe

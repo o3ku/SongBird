@@ -204,6 +204,7 @@ private:
     bool promptRestartAsAdministratorForTun();
     void promptRestartForLanguageChange();
     bool promptRestartForDownloadedAppUpdate(const QString& newExecutablePath, QWidget* parent);
+    bool promptOpenDownloadedAppUpdatePackage(const QString& packagePath, QWidget* parent);
     bool restartApplication(bool requireAdministrator);
     bool isCoreRunning() const;
     bool isCoreReady() const;
